@@ -56,7 +56,16 @@ export function attachPlivoMediaBridge(
   let wasSpeaking = false;
   let closed = false;
 
+  let inboundFrameCount = 0;
+  let utteranceCount = 0;
+
   const segmenter = new MulawVadSegmenter((mulawBytes) => {
+    utteranceCount += 1;
+    const durationMs = Math.round((mulawBytes.length / 160) * 20);
+    // eslint-disable-next-line no-console
+    console.log(
+      `[plivo-bridge:${sessionId}] VAD utterance #${utteranceCount}: ${mulawBytes.length} bytes (~${durationMs}ms), pushing to manager`,
+    );
     const payload: AudioPayload = {
       data: mulawBytes,
       encoding: "MULAW",
@@ -75,18 +84,42 @@ export function attachPlivoMediaBridge(
     }
   }
 
+  let outboundChunkCount = 0;
+  let outboundFrameTotal = 0;
+
   function enqueueOutbound(chunk: AudioPayload): void {
+    outboundChunkCount += 1;
+    // eslint-disable-next-line no-console
+    console.log(
+      `[plivo-bridge:${sessionId}] enqueueOutbound #${outboundChunkCount}: encoding=${chunk.encoding} sampleRate=${chunk.sampleRateHz} bytes=${chunk.data.byteLength}`,
+    );
+
+    if (chunk.encoding !== "PCM_16") {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[plivo-bridge:${sessionId}] WARNING: enqueueOutbound received encoding="${chunk.encoding}" but pcm16ToMulaw8k assumes PCM_16 — audio may be corrupted`,
+      );
+    }
+
     // TTS providers emit PCM_16 at their own configured sample
     // rate; Plivo's playAudio channel is fixed at 8kHz mu-law.
     const mulaw8k = pcm16ToMulaw8k(chunk.data, chunk.sampleRateHz);
+    const frameCount = Math.ceil(mulaw8k.length / OUTBOUND_FRAME_BYTES);
+    outboundFrameTotal += frameCount;
     for (let offset = 0; offset < mulaw8k.length; offset += OUTBOUND_FRAME_BYTES) {
       outboundQueue.push(mulaw8k.subarray(offset, offset + OUTBOUND_FRAME_BYTES));
     }
+    // eslint-disable-next-line no-console
+    console.log(
+      `[plivo-bridge:${sessionId}] enqueued ${frameCount} frames (${frameCount * OUTBOUND_FRAME_MS}ms), queue depth=${outboundQueue.length}, lifetime frames=${outboundFrameTotal}`,
+    );
     startPump();
   }
 
   function startPump(): void {
     if (pumpTimer) return;
+    // eslint-disable-next-line no-console
+    console.log(`[plivo-bridge:${sessionId}] pump started`);
     const startedAt = Date.now();
     let framesSent = 0;
     pumpTimer = setInterval(() => {
@@ -100,15 +133,21 @@ export function attachPlivoMediaBridge(
       for (let i = 0; i < framesDue; i += 1) {
         const frame = outboundQueue.shift();
         if (!frame) {
+          // eslint-disable-next-line no-console
+          console.log(`[plivo-bridge:${sessionId}] pump exhausted after ${framesSent} frames (${framesSent * OUTBOUND_FRAME_MS}ms of audio)`);
           clearInterval(pumpTimer);
           pumpTimer = undefined;
           return;
         }
         framesSent += 1;
+        if (framesSent === 1 || framesSent % 50 === 0) {
+          // eslint-disable-next-line no-console
+          console.log(`[plivo-bridge:${sessionId}] pump sending frame #${framesSent}, remaining=${outboundQueue.length}`);
+        }
         sendJson({
           event: "playAudio",
           media: {
-            contentType: "audio/x-mulaw",
+            contentType: "audio/x-mulaw;rate=8000",
             sampleRate: 8000,
             payload: Buffer.from(frame).toString("base64"),
           },
@@ -118,11 +157,14 @@ export function attachPlivoMediaBridge(
   }
 
   function clearOutboundPlayback(): void {
+    const droppedFrames = outboundQueue.length;
     outboundQueue = [];
     if (pumpTimer) {
       clearInterval(pumpTimer);
       pumpTimer = undefined;
     }
+    // eslint-disable-next-line no-console
+    console.log(`[plivo-bridge:${sessionId}] clearOutboundPlayback: dropped ${droppedFrames} queued frames, sending clearAudio`);
     sendJson({ event: "clearAudio" });
   }
 
@@ -166,6 +208,11 @@ export function attachPlivoMediaBridge(
         if (event.media?.track && event.media.track !== "inbound") return;
         const b64 = event.media?.payload;
         if (!b64) return;
+        inboundFrameCount += 1;
+        if (inboundFrameCount === 1 || inboundFrameCount % 100 === 0) {
+          // eslint-disable-next-line no-console
+          console.log(`[plivo-bridge:${sessionId}] inbound media frame #${inboundFrameCount}`);
+        }
         segmenter.push(new Uint8Array(Buffer.from(b64, "base64")));
         return;
       }

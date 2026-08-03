@@ -49,21 +49,39 @@ export async function withGracefulRetry<T>(
   try {
     return await operation();
   } catch (firstError) {
+    const firstMsg = firstError instanceof Error ? firstError.message : String(firstError);
+    const firstType = firstError?.constructor?.name ?? typeof firstError;
+
     if (firstError instanceof VoiceAgentError && firstError.severity === ErrorSeverity.FATAL) {
+      // eslint-disable-next-line no-console
+      console.error(`[retry:${sourceCategory}] first attempt FATAL (not retrying): type=${firstType} msg=${firstMsg}`);
       throw firstError;
     }
     if (!isRecoverable(firstError)) {
+      // eslint-disable-next-line no-console
+      console.error(`[retry:${sourceCategory}] first attempt non-recoverable (not retrying): type=${firstType} msg=${firstMsg}`);
       throw firstError;
     }
 
+    // eslint-disable-next-line no-console
+    console.warn(`[retry:${sourceCategory}] first attempt failed (will retry in ${retryDelayMs}ms): type=${firstType} msg=${firstMsg}`);
     await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
 
     try {
+      // eslint-disable-next-line no-console
+      console.log(`[retry:${sourceCategory}] retrying (attempt 2)...`);
       return await operation();
     } catch (secondError) {
+      const secondMsg = secondError instanceof Error ? secondError.message : String(secondError);
+      const secondType = secondError?.constructor?.name ?? typeof secondError;
+
       if (secondError instanceof VoiceAgentError && secondError.severity === ErrorSeverity.FATAL) {
+        // eslint-disable-next-line no-console
+        console.error(`[retry:${sourceCategory}] second attempt FATAL: type=${secondType} msg=${secondMsg}`);
         throw secondError;
       }
+      // eslint-disable-next-line no-console
+      console.error(`[retry:${sourceCategory}] both attempts failed — throwing RecoverableTurnError: type=${secondType} msg=${secondMsg}`);
       throw new RecoverableTurnError(
         sourceCategory,
         `${sourceCategory} failed twice for this turn: ${

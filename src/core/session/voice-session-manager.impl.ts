@@ -135,9 +135,13 @@ export class DefaultVoiceSessionManager implements VoiceSessionManager, Pipeline
 
   async start(sessionId: SessionId): Promise<SessionSnapshot> {
     const record = this.getRecordOrThrow(sessionId);
+    // eslint-disable-next-line no-console
+    console.log(`[session-mgr:${sessionId}] start() called, current state=${record.state}`);
     this.transition(record, SessionState.CALLING, "placing/accepting the call");
 
     const telephony = this.registry.resolve(ProviderCategory.TELEPHONY, record.providerStack.telephony.id);
+    // eslint-disable-next-line no-console
+    console.log(`[session-mgr:${sessionId}] telephony.startCall() — provider=${record.providerStack.telephony.id}`);
     const handle: TelephonyCallHandle = await telephony.startCall({
       sessionId,
       ...(record.request.destinationNumber !== undefined
@@ -145,6 +149,8 @@ export class DefaultVoiceSessionManager implements VoiceSessionManager, Pipeline
         : {}),
     });
     record.telephonyHandle = handle;
+    // eslint-disable-next-line no-console
+    console.log(`[session-mgr:${sessionId}] call placed, providerCallId=${handle.providerCallId}, hasOpenMediaStream=${typeof telephony.openMediaStream === "function"}`);
 
     if (telephony.openMediaStream) {
       // A provider that can hand back a live media stream directly
@@ -174,11 +180,22 @@ export class DefaultVoiceSessionManager implements VoiceSessionManager, Pipeline
    */
   confirmCallAnswered(sessionId: SessionId): void {
     const record = this.getRecordOrThrow(sessionId);
-    if (record.state !== SessionState.CALLING) return;
+    // eslint-disable-next-line no-console
+    console.log(`[session-mgr:${sessionId}] confirmCallAnswered() called, current state=${record.state}`);
+    if (record.state !== SessionState.CALLING) {
+      // eslint-disable-next-line no-console
+      console.log(`[session-mgr:${sessionId}] confirmCallAnswered() skipped — state is ${record.state}, not CALLING`);
+      return;
+    }
     this.beginConversation(record);
   }
 
   private beginConversation(record: SessionRecord): void {
+    // eslint-disable-next-line no-console
+    console.log(
+      `[session-mgr:${record.id}] beginConversation() — resolving providers: telephony=${record.providerStack.telephony.id} stt=${record.providerStack.speechToText.id} llm=${record.providerStack.languageModel.id} tts=${record.providerStack.textToSpeech.id}`,
+    );
+
     const providers: ResolvedProviderStack = {
       telephony: this.registry.resolve(ProviderCategory.TELEPHONY, record.providerStack.telephony.id),
       stt: this.registry.resolve(ProviderCategory.SPEECH_TO_TEXT, record.providerStack.speechToText.id),
@@ -188,6 +205,11 @@ export class DefaultVoiceSessionManager implements VoiceSessionManager, Pipeline
 
     this.transition(record, SessionState.LISTENING, "call connected");
 
+    // eslint-disable-next-line no-console
+    console.log(
+      `[session-mgr:${record.id}] providers resolved, state now LISTENING, creating ConversationPipeline, hasMediaStream=${!!record.mediaStream}`,
+    );
+
     record.loopAbortController = new AbortController();
     const pipeline = new ConversationPipeline(record, providers, this);
     this.pipelines.set(record.id, pipeline);
@@ -196,11 +218,15 @@ export class DefaultVoiceSessionManager implements VoiceSessionManager, Pipeline
 
   async end(sessionId: SessionId): Promise<SessionSnapshot> {
     const record = this.getRecordOrThrow(sessionId);
+    // eslint-disable-next-line no-console
+    console.log(`[session-mgr:${sessionId}] end() called, current state=${record.state}`);
 
     if (record.state === SessionState.IDLE) {
       // Already fully ended (e.g. the Dashboard's End Call and the
       // Plivo media stream closing due to a remote hangup both
       // resolved to this call) — nothing left to do.
+      // eslint-disable-next-line no-console
+      console.log(`[session-mgr:${sessionId}] end() no-op — already IDLE`);
       return record.toSnapshot();
     }
 
@@ -266,6 +292,10 @@ export class DefaultVoiceSessionManager implements VoiceSessionManager, Pipeline
 
   transition(record: SessionRecord, to: SessionState, reason?: string): void {
     if (!this.canTransition(record.state, to)) {
+      // eslint-disable-next-line no-console
+      console.error(
+        `[session-mgr:${record.id}] INVALID TRANSITION: ${record.state} -> ${to} (reason: ${reason ?? "none"})`,
+      );
       throw new InvalidSessionStateTransitionError(record.state, to);
     }
 
@@ -276,6 +306,11 @@ export class DefaultVoiceSessionManager implements VoiceSessionManager, Pipeline
       ...(reason !== undefined ? { reason } : {}),
     };
 
+    // eslint-disable-next-line no-console
+    console.log(
+      `[session-mgr:${record.id}] transition: ${record.state} -> ${to} (reason: ${reason ?? "none"})`,
+    );
+
     record.state = to;
     record.updatedAt = transitionRecord.at;
     record.stateHistory.push(transitionRecord);
@@ -285,6 +320,10 @@ export class DefaultVoiceSessionManager implements VoiceSessionManager, Pipeline
 
   markError(record: SessionRecord, sourceCategory: string, error: unknown): void {
     record.lastError = toSessionErrorInfo(error, sourceCategory);
+    // eslint-disable-next-line no-console
+    console.error(
+      `[session-mgr:${record.id}] markError: source=${sourceCategory} state=${record.state} error=${record.lastError.message}`,
+    );
     if (this.canTransition(record.state, SessionState.ERROR)) {
       this.transition(record, SessionState.ERROR, `${sourceCategory} error: ${record.lastError.message}`);
     }
@@ -301,8 +340,20 @@ export class DefaultVoiceSessionManager implements VoiceSessionManager, Pipeline
    * implemented yet). A future webhook/media-bridge layer, or a
    * test harness, calls this as real audio arrives.
    */
+  private inboundAudioPushCount = new Map<SessionId, number>();
+
   pushInboundAudio(sessionId: SessionId, chunk: AudioPayload): void {
     const record = this.getRecordOrThrow(sessionId);
+    const count = (this.inboundAudioPushCount.get(sessionId) ?? 0) + 1;
+    this.inboundAudioPushCount.set(sessionId, count);
+
+    if (count === 1 || count % 50 === 0) {
+      // eslint-disable-next-line no-console
+      console.log(
+        `[session-mgr:${sessionId}] pushInboundAudio #${count}: encoding=${chunk.encoding} bytes=${chunk.data.byteLength} state=${record.state} hasMediaStream=${!!record.mediaStream}`,
+      );
+    }
+
     if (!record.mediaStream) {
       record.inboundAudioFallback.push(chunk);
     }

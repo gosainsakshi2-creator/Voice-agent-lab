@@ -491,22 +491,24 @@ export class ConversationPipeline {
    *      prompt-echo).
    *   3. History order: system → user → assistant → user → assistant …
    */
-  private buildRequestHistory(detectedLanguage: SupportedLanguage): readonly ConversationTurn[] {
-    const turns = [...this.record.memory.history()];
-    const hint = languageHintFor(detectedLanguage);
+private buildRequestHistory(detectedLanguage: SupportedLanguage): readonly ConversationTurn[] {
+  const turns: ConversationTurn[] = this.record.memory.history().map((turn) => ({ ...turn }));
 
-    // Prepend the language hint to the LAST user turn so the model
-    // knows which language to reply in, without polluting the turn
-    // structure with extra system messages.
-    for (let i = turns.length - 1; i >= 0; i--) {
-      if (turns[i].role === "user") {
-        turns[i] = { ...turns[i], content: `[${hint}] ${turns[i].content}` };
-        break;
-      }
-    }
+  const hint = languageHintFor(detectedLanguage);
+for (let i = turns.length - 1; i >= 0; i--) {
+  const turn = turns[i];
+  if (turn?.role !== "user") continue;
 
-    return turns;
-  }
+  turns[i] = {
+    ...turn,
+    content: `[${hint}] ${turn.content}`,
+  };
+
+  break;
+}
+
+  return turns;
+}
 
   private async runThinkingAndSpeaking(
     userText: string,

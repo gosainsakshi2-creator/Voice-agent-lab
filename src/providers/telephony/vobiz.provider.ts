@@ -164,10 +164,12 @@ export class VobizTelephonyProvider implements TelephonyProvider {
 
   async checkHealth(): Promise<ProviderHealthStatus> {
     return probeHealth(this.descriptor, async () => {
-      // Lightweight probe: hit the account endpoint to verify
-      // credentials are valid without placing a call.
+      // Lightweight probe: hit the credential-verification endpoint
+      // documented at https://vobiz.ai/docs/api-reference/authentication
+      // — returns the full account object on success, confirming
+      // both auth_id and auth_token are valid.
       const { authId, authToken, baseUrl } = this.config;
-      const url = `${baseUrl}/api/v1/Account/${authId}/`;
+      const url = `${baseUrl}/api/v1/auth/me`;
       const response = await fetch(url, {
         method: "GET",
         headers: {

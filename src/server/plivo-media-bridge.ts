@@ -16,12 +16,12 @@
  * already understands (`AudioPayload`).
  *
  * Plivo Media Stream JSON protocol (documented, vendor-fixed):
- *   inbound:  {"event":"start", start:{mediaFormat:{...}}}
- *             {"event":"media", media:{track, payload: base64 mu-law}}
+ *   inbound:  {"event":"start", start:{streamId, callId, mediaFormat:{...}}}
+ *             {"event":"media", media:{track, payload: base64 audio}}
  *             {"event":"dtmf", dtmf:{digit}}
  *             {"event":"stop"}
- *   outbound: {"event":"playAudio", media:{contentType, sampleRate, payload}}
- *             {"event":"clearAudio"}   <- stops in-flight playback (barge-in)
+ *   outbound: {"event":"playAudio", media:{contentType:"audio/x-l16", sampleRate:8000, payload}}
+ *             {"event":"clearAudio", streamId}  <- stops in-flight playback (barge-in)
  */
 
 import type { SessionId } from "../types/session.types";
@@ -29,7 +29,7 @@ import type { AudioPayload } from "../types/provider.types";
 import { SessionState } from "../types/enums";
 import type { DefaultVoiceSessionManager } from "../core/session/voice-session-manager.impl";
 import { MulawVadSegmenter } from "./vad-segmenter";
-import { pcm16ToMulaw8k } from "./audio-codec";
+import { bytesToPcm16, resamplePcm16, pcm16ToBytes } from "./audio-codec";
 
 /** Minimal shape both `ws`'s WebSocket and the DOM WebSocket satisfy, kept narrow for testability. */
 export interface BridgeSocket {
@@ -41,7 +41,12 @@ export interface BridgeSocket {
 }
 
 const OPEN_STATE = 1;
-const OUTBOUND_FRAME_BYTES = 160; // 20ms @ 8kHz mu-law
+/**
+ * Plivo's bidirectional stream accepts `audio/x-l16` (signed 16-bit
+ * linear PCM) at 8 kHz — NOT mu-law. Each sample is 2 bytes, so
+ * 20 ms of audio = 160 samples × 2 bytes = 320 bytes per frame.
+ */
+const OUTBOUND_FRAME_BYTES = 320; // 20ms @ 8kHz L16 (16-bit PCM)
 const OUTBOUND_FRAME_MS = 20;
 
 export function attachPlivoMediaBridge(
@@ -55,6 +60,8 @@ export function attachPlivoMediaBridge(
   let pumpTimer: ReturnType<typeof setInterval> | undefined;
   let wasSpeaking = false;
   let closed = false;
+  /** Plivo's stream identifier — required in `clearAudio` events. */
+  let plivoStreamId: string | undefined;
 
   let inboundFrameCount = 0;
   let utteranceCount = 0;
@@ -97,17 +104,20 @@ export function attachPlivoMediaBridge(
     if (chunk.encoding !== "PCM_16") {
       // eslint-disable-next-line no-console
       console.warn(
-        `[plivo-bridge:${sessionId}] WARNING: enqueueOutbound received encoding="${chunk.encoding}" but pcm16ToMulaw8k assumes PCM_16 — audio may be corrupted`,
+        `[plivo-bridge:${sessionId}] WARNING: enqueueOutbound received encoding="${chunk.encoding}" but expected PCM_16 — audio may be corrupted`,
       );
     }
 
     // TTS providers emit PCM_16 at their own configured sample
-    // rate; Plivo's playAudio channel is fixed at 8kHz mu-law.
-    const mulaw8k = pcm16ToMulaw8k(chunk.data, chunk.sampleRateHz);
-    const frameCount = Math.ceil(mulaw8k.length / OUTBOUND_FRAME_BYTES);
+    // rate; Plivo's playAudio channel accepts `audio/x-l16` (signed
+    // 16-bit linear PCM) at 8 kHz — resample but do NOT mu-law encode.
+    const pcm = bytesToPcm16(chunk.data);
+    const resampled = resamplePcm16(pcm, chunk.sampleRateHz, 8000);
+    const l16Bytes = pcm16ToBytes(resampled);
+    const frameCount = Math.ceil(l16Bytes.length / OUTBOUND_FRAME_BYTES);
     outboundFrameTotal += frameCount;
-    for (let offset = 0; offset < mulaw8k.length; offset += OUTBOUND_FRAME_BYTES) {
-      outboundQueue.push(mulaw8k.subarray(offset, offset + OUTBOUND_FRAME_BYTES));
+    for (let offset = 0; offset < l16Bytes.length; offset += OUTBOUND_FRAME_BYTES) {
+      outboundQueue.push(l16Bytes.subarray(offset, offset + OUTBOUND_FRAME_BYTES));
     }
     // eslint-disable-next-line no-console
     console.log(
@@ -147,7 +157,7 @@ export function attachPlivoMediaBridge(
         sendJson({
           event: "playAudio",
           media: {
-            contentType: "audio/x-mulaw;rate=8000",
+            contentType: "audio/x-l16",
             sampleRate: 8000,
             payload: Buffer.from(frame).toString("base64"),
           },
@@ -164,8 +174,8 @@ export function attachPlivoMediaBridge(
       pumpTimer = undefined;
     }
     // eslint-disable-next-line no-console
-    console.log(`[plivo-bridge:${sessionId}] clearOutboundPlayback: dropped ${droppedFrames} queued frames, sending clearAudio`);
-    sendJson({ event: "clearAudio" });
+    console.log(`[plivo-bridge:${sessionId}] clearOutboundPlayback: dropped ${droppedFrames} queued frames, sending clearAudio (streamId=${plivoStreamId ?? "unknown"})`);
+    sendJson({ event: "clearAudio", ...(plivoStreamId ? { streamId: plivoStreamId } : {}) });
   }
 
   unsubscribeOutbound = manager.onOutboundAudio(sessionId, enqueueOutbound);
@@ -201,7 +211,12 @@ export function attachPlivoMediaBridge(
   });
 
   function handleMessage(raw: string): void {
-    let event: { event?: string; media?: { payload?: string; track?: string }; stop?: unknown };
+    let event: {
+      event?: string;
+      start?: { streamId?: string };
+      media?: { payload?: string; track?: string };
+      stop?: unknown;
+    };
     try {
       event = JSON.parse(raw);
     } catch {
@@ -210,8 +225,9 @@ export function attachPlivoMediaBridge(
 
     switch (event.event) {
       case "start":
+        plivoStreamId = event.start?.streamId;
         // eslint-disable-next-line no-console
-        console.log(`[plivo-bridge:${sessionId}] "start" event received -> confirming call answered`);
+        console.log(`[plivo-bridge:${sessionId}] "start" event received -> streamId=${plivoStreamId ?? "none"}, confirming call answered`);
         manager.confirmCallAnswered(sessionId);
         return;
       case "media": {

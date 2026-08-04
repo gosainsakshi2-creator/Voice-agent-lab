@@ -487,8 +487,9 @@ export class ConversationPipeline {
     // knows which language to reply in, without polluting the turn
     // structure with extra system messages.
     for (let i = turns.length - 1; i >= 0; i--) {
-      if (turns[i].role === "user") {
-        turns[i] = { ...turns[i], content: `[${hint}] ${turns[i].content}` };
+      const turn = turns[i];
+      if (turn && turn.role === "user") {
+        turns[i] = { ...turn, content: `[${hint}] ${turn.content}` };
         break;
       }
     }

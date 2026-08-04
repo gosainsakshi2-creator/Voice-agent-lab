@@ -63,8 +63,25 @@ export class DeepgramSpeechToTextProvider implements SpeechToTextProvider {
   }
 
   async transcribe(request: TranscriptionRequest): Promise<readonly TranscriptSegment[]> {
+    // Deepgram's `transcribeFile` expects a Node.js Buffer (or a
+    // ReadableStream / URL). The VAD segmenter hands us a Uint8Array.
+    // Passing a raw Uint8Array to older SDK versions can cause a silent
+    // failure or a "source not provided" error. Wrap to Buffer to be safe.
+    const audioBuffer = Buffer.isBuffer(request.audio.data)
+      ? request.audio.data
+      : Buffer.from(
+          request.audio.data.buffer,
+          request.audio.data.byteOffset,
+          request.audio.data.byteLength,
+        );
+
+    // eslint-disable-next-line no-console
+    console.log(
+      `[STT:deepgram] transcribe: encoding=${request.audio.encoding} sampleRate=${request.audio.sampleRateHz} bytes=${audioBuffer.byteLength} language=${LANGUAGE_METADATA[request.language].bcp47Tag} model=${this.config.model}`,
+    );
+
     const response = await this.client.listen.v1.media.transcribeFile(
-      request.audio.data,
+      audioBuffer,
       {
         model: this.config.model,
         encoding: toDeepgramEncoding(request.audio.encoding),
@@ -82,6 +99,8 @@ export class DeepgramSpeechToTextProvider implements SpeechToTextProvider {
     // Streaming/partial-result semantics are out of scope, so batch
     // transcription always yields final segments.
     if (!("results" in response)) {
+      // eslint-disable-next-line no-console
+      console.log(`[STT:deepgram] transcribeFile returned async/accepted response (no inline results)`);
       // ListenV1AcceptedResponse (async callback flow) — no inline
       // transcript is available synchronously.
       return [];
@@ -89,8 +108,15 @@ export class DeepgramSpeechToTextProvider implements SpeechToTextProvider {
 
     const alternative = response.results.channels[0]?.alternatives?.[0];
     if (!alternative || !alternative.transcript) {
+      // eslint-disable-next-line no-console
+      console.log(`[STT:deepgram] No transcript in response (silence or unrecognized audio)`);
       return [];
     }
+
+    // eslint-disable-next-line no-console
+    console.log(
+      `[STT:deepgram] Transcript: "${alternative.transcript.slice(0, 80)}${alternative.transcript.length > 80 ? "..." : ""}" confidence=${alternative.confidence}`,
+    );
 
     const words = alternative.words ?? [];
     const startedAtMs = words.length > 0 ? (words[0]?.start ?? 0) * 1000 : 0;

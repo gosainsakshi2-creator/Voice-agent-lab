@@ -101,13 +101,13 @@ export class ConversationPipeline {
     const loopSignal = this.record.loopAbortController?.signal;
     if (!loopSignal) {
       // eslint-disable-next-line no-console
-      console.error(`[pipeline:${sid}] run() aborted — no loopAbortController on session record`);
+      console.error(`[PIPELINE:${sid}] run() aborted — no loopAbortController on session record`);
       return;
     }
 
     // eslint-disable-next-line no-console
     console.log(
-      `[pipeline:${sid}] run() started — state=${this.record.state} streamingSTT=${this.usesStreamingStt} llm=${this.providers.llm.descriptor.id} tts=${this.providers.tts.descriptor.id} stt=${this.providers.stt.descriptor.id}`,
+      `[PIPELINE:${sid}] run() started — state=${this.record.state} streamingSTT=${this.usesStreamingStt} llm=${this.providers.llm.descriptor.id} tts=${this.providers.tts.descriptor.id} stt=${this.providers.stt.descriptor.id}`,
     );
 
     if (this.usesStreamingStt) {
@@ -117,13 +117,19 @@ export class ConversationPipeline {
     // --- Greeting phase ---
     if (!loopSignal.aborted) {
       // eslint-disable-next-line no-console
-      console.log(`[pipeline:${sid}] greeting phase: generating greeting via runThinkingAndSpeaking(""), state=${this.record.state}`);
+      console.log(`[PIPELINE:${sid}] Conversation started — generating greeting, state=${this.record.state}`);
       try {
+        // Inject a synthetic user turn so the LLM sees an explicit
+        // instruction to greet the caller, rather than receiving
+        // only system messages (which some models answer with
+        // empty text, producing silence on the line).
+        this.record.memory.recordUserTurn("[Call connected — greet the caller]", this.record.memory.currentLanguage);
+
         const detected = detectLanguage("", this.record.memory.currentLanguage);
         const greeting = await this.runThinkingAndSpeaking("", detected, loopSignal);
         // eslint-disable-next-line no-console
         console.log(
-          `[pipeline:${sid}] greeting succeeded: text="${greeting.assistantText.slice(0, 80)}${greeting.assistantText.length > 80 ? "..." : ""}" llmMs=${greeting.llmMs} ttsMs=${greeting.ttsMs} state=${this.record.state}`,
+          `[PIPELINE:${sid}] Greeting succeeded: text="${greeting.assistantText.slice(0, 80)}${greeting.assistantText.length > 80 ? "..." : ""}" llmMs=${greeting.llmMs} ttsMs=${greeting.ttsMs} state=${this.record.state}`,
         );
         if (greeting.assistantText.length > 0) {
           this.record.memory.recordAssistantTurn(greeting.assistantText);
@@ -133,44 +139,57 @@ export class ConversationPipeline {
         if (!(error instanceof RecoverableTurnError)) {
           // eslint-disable-next-line no-console
           console.error(
-            `[pipeline:${sid}] greeting FATAL error (not RecoverableTurnError): state=${this.record.state} error=${error instanceof Error ? error.message : String(error)} errorType=${error?.constructor?.name}`,
+            `[PIPELINE:${sid}] Greeting FATAL error: state=${this.record.state} error=${error instanceof Error ? error.message : String(error)} errorType=${error?.constructor?.name}`,
           );
           this.host.markError(this.record, "PIPELINE", error);
           return;
         }
         // eslint-disable-next-line no-console
         console.error(
-          `[pipeline:${sid}] greeting RecoverableTurnError (swallowed): state=${this.record.state} error=${error.message} source=${error.sourceCategory} cause=${error.cause instanceof Error ? error.cause.message : String(error.cause)}`,
+          `[PIPELINE:${sid}] Greeting RecoverableTurnError (recovering): state=${this.record.state} error=${error.message} source=${error.sourceCategory} cause=${error.cause instanceof Error ? error.cause.message : String(error.cause)}`,
         );
-        // NOTE: State may still be THINKING here — the main loop's
-        // transition to LISTENING will fail if so. This is a known
-        // issue logged for diagnosis.
+        // State may be THINKING or SPEAKING here after the error.
+        // Recover to LISTENING so the main loop can proceed. The
+        // state machine now allows THINKING → LISTENING for exactly
+        // this recovery case.
+        if (this.record.state !== SessionState.LISTENING) {
+          try {
+            this.host.transition(this.record, SessionState.LISTENING, "recovering from greeting error");
+          } catch {
+            // eslint-disable-next-line no-console
+            console.error(`[PIPELINE:${sid}] Could not recover to LISTENING from state=${this.record.state} — ending pipeline`);
+            this.host.markError(this.record, "PIPELINE", error);
+            return;
+          }
+        }
       }
     }
 
     // --- Main loop ---
     // eslint-disable-next-line no-console
-    console.log(`[pipeline:${sid}] entering main loop — state=${this.record.state} aborted=${loopSignal.aborted}`);
+    console.log(`[PIPELINE:${sid}] entering main loop — state=${this.record.state} aborted=${loopSignal.aborted}`);
 
     while (!loopSignal.aborted) {
       try {
         if (this.record.state !== SessionState.LISTENING) {
           // eslint-disable-next-line no-console
           console.log(
-            `[pipeline:${sid}] main loop: state=${this.record.state}, attempting transition to LISTENING`,
+            `[PIPELINE:${sid}] Main loop: state=${this.record.state}, transitioning to LISTENING`,
           );
           this.host.transition(this.record, SessionState.LISTENING, "awaiting user speech");
         }
 
+        // eslint-disable-next-line no-console
+        console.log(`[PIPELINE:${sid}] Waiting for user speech...`);
         const turn = await this.acquireNextUserTurn(loopSignal);
         if (!turn || loopSignal.aborted) {
           // eslint-disable-next-line no-console
-          console.log(`[pipeline:${sid}] main loop: acquireNextUserTurn returned null or aborted — exiting loop`);
+          console.log(`[PIPELINE:${sid}] acquireNextUserTurn returned null or aborted — exiting loop`);
           break;
         }
 
         // eslint-disable-next-line no-console
-        console.log(`[pipeline:${sid}] main loop: user turn acquired, text="${turn.text.slice(0, 60)}${turn.text.length > 60 ? "..." : ""}" sttMs=${turn.sttMs}`);
+        console.log(`[STT:${sid}] Transcript received: "${turn.text.slice(0, 80)}${turn.text.length > 80 ? "..." : ""}" sttMs=${turn.sttMs}`);
 
         const detected = detectLanguage(turn.text, this.record.memory.currentLanguage);
         this.record.memory.recordUserTurn(turn.text, detected.language);
@@ -178,7 +197,7 @@ export class ConversationPipeline {
         const turnStartedAt = Date.now();
         const result = await this.runThinkingAndSpeaking(turn.text, detected, loopSignal);
         // eslint-disable-next-line no-console
-        console.log(`[pipeline:${sid}] main loop: thinking+speaking done, text="${result.assistantText.slice(0, 60)}${result.assistantText.length > 60 ? "..." : ""}" llmMs=${result.llmMs} ttsMs=${result.ttsMs}`);
+        console.log(`[PIPELINE:${sid}] Turn complete: assistant="${result.assistantText.slice(0, 80)}${result.assistantText.length > 80 ? "..." : ""}" llmMs=${result.llmMs} ttsMs=${result.ttsMs}`);
         this.record.memory.recordAssistantTurn(result.assistantText);
         this.record.bargeIn.reset();
 
@@ -194,16 +213,22 @@ export class ConversationPipeline {
         });
       } catch (error) {
         if (error instanceof RecoverableTurnError) {
-          // The current turn is lost, but the session stays alive —
-          // this is exactly the "never crash the entire session"
-          // requirement for transient provider failures.
           // eslint-disable-next-line no-console
-          console.warn(`[pipeline:${sid}] main loop: RecoverableTurnError (continuing): ${error.message}`);
+          console.warn(`[PIPELINE:${sid}] RecoverableTurnError (continuing): ${error.message}`);
+          // Recover state to LISTENING so the next iteration can proceed.
+          if (this.record.state !== SessionState.LISTENING) {
+            try {
+              this.host.transition(this.record, SessionState.LISTENING, "recovering from turn error");
+            } catch {
+              // eslint-disable-next-line no-console
+              console.error(`[PIPELINE:${sid}] Cannot recover to LISTENING from state=${this.record.state}`);
+            }
+          }
           continue;
         }
         // eslint-disable-next-line no-console
         console.error(
-          `[pipeline:${sid}] main loop: FATAL error — state=${this.record.state} errorType=${error?.constructor?.name} error=${error instanceof Error ? error.message : String(error)}`,
+          `[PIPELINE:${sid}] FATAL error — state=${this.record.state} errorType=${error?.constructor?.name} error=${error instanceof Error ? error.message : String(error)}`,
         );
         this.host.markError(this.record, "PIPELINE", error);
         return;
@@ -211,7 +236,7 @@ export class ConversationPipeline {
     }
 
     // eslint-disable-next-line no-console
-    console.log(`[pipeline:${sid}] run() exiting — state=${this.record.state} aborted=${loopSignal.aborted}`);
+    console.log(`[PIPELINE:${sid}] run() exiting — state=${this.record.state} aborted=${loopSignal.aborted}`);
   }
 
   /** Externally-triggered barge-in (e.g. from a future real-time transport, or a test harness). */
@@ -376,7 +401,7 @@ export class ConversationPipeline {
     const isGreeting = userText === "";
     // eslint-disable-next-line no-console
     console.log(
-      `[pipeline:${sid}] runThinkingAndSpeaking: isGreeting=${isGreeting} language=${detected.language} currentState=${this.record.state} llmProvider=${this.providers.llm.descriptor.id}`,
+      `[LLM:${sid}] Prompt generated: isGreeting=${isGreeting} language=${detected.language} currentState=${this.record.state} llmProvider=${this.providers.llm.descriptor.id}`,
     );
 
     this.host.transition(this.record, SessionState.THINKING, "generating a reply");
@@ -386,7 +411,7 @@ export class ConversationPipeline {
 
     // eslint-disable-next-line no-console
     console.log(
-      `[pipeline:${sid}] LLM request: historyLength=${request.history.length} roles=[${request.history.map((t) => t.role).join(",")}] hasStream=${typeof this.providers.llm.generateCompletionStream === "function"}`,
+      `[LLM:${sid}] Sending to ${llmProviderId}: historyLength=${request.history.length} roles=[${request.history.map((t) => t.role).join(",")}] streaming=${typeof this.providers.llm.generateCompletionStream === "function"}`,
     );
 
     if (this.providers.llm.generateCompletionStream) {
@@ -395,13 +420,13 @@ export class ConversationPipeline {
 
     return withGracefulRetry("LANGUAGE_MODEL", async () => {
       // eslint-disable-next-line no-console
-      console.log(`[pipeline:${sid}] calling llm.generateCompletion() (batch mode)...`);
+      console.log(`[LLM:${sid}] Calling generateCompletion() (batch mode)...`);
       const startedAt = Date.now();
       const completion = await this.providers.llm.generateCompletion(request);
       const llmMs = Date.now() - startedAt;
       // eslint-disable-next-line no-console
       console.log(
-        `[pipeline:${sid}] LLM completed in ${llmMs}ms: text="${completion.turn.content.slice(0, 80)}${completion.turn.content.length > 80 ? "..." : ""}" state=${this.record.state}`,
+        `[LLM:${sid}] Response generated in ${llmMs}ms: text="${completion.turn.content.slice(0, 120)}${completion.turn.content.length > 120 ? "..." : ""}" state=${this.record.state}`,
       );
 
       if (this.record.state !== SessionState.SPEAKING) {
@@ -506,13 +531,13 @@ export class ConversationPipeline {
     const sid = this.record.id;
     if (speakingSignal.aborted || text.trim().length === 0) {
       // eslint-disable-next-line no-console
-      console.log(`[pipeline:${sid}] synthesizeAndPlay: skipped (aborted=${speakingSignal.aborted} emptyText=${text.trim().length === 0})`);
+      console.log(`[TTS:${sid}] synthesizeAndPlay skipped (aborted=${speakingSignal.aborted} emptyText=${text.trim().length === 0})`);
       return { ttsMs: 0, ttsCostUsd: 0 };
     }
 
     const ttsProviderId = this.providers.tts.descriptor.id;
     // eslint-disable-next-line no-console
-    console.log(`[pipeline:${sid}] synthesizeAndPlay: ttsProvider=${ttsProviderId} textLen=${text.length} hasStream=${typeof this.providers.tts.synthesizeStream === "function"}`);
+    console.log(`[TTS:${sid}] Synthesis started: provider=${ttsProviderId} textLen=${text.length} text="${text.slice(0, 60)}${text.length > 60 ? "..." : ""}" streaming=${typeof this.providers.tts.synthesizeStream === "function"}`);
     const task: SynthesisTaskRequest = {
       sessionId: this.record.id,
       request: { text, language: this.record.memory.currentLanguage },
@@ -530,29 +555,29 @@ export class ConversationPipeline {
       } catch (err) {
         if (!speakingSignal.aborted) {
           // eslint-disable-next-line no-console
-          console.warn(`[pipeline:${sid}] synthesizeAndPlay: streaming TTS error after ${chunkCount} chunks: ${err instanceof Error ? err.message : String(err)}`);
+          console.warn(`[TTS:${sid}] streaming TTS error after ${chunkCount} chunks: ${err instanceof Error ? err.message : String(err)}`);
         }
       }
       const ttsMs = Date.now() - startedAt;
       // eslint-disable-next-line no-console
-      console.log(`[pipeline:${sid}] synthesizeAndPlay: streaming TTS done, ${chunkCount} chunks, ${ttsMs}ms`);
+      console.log(`[TTS:${sid}] streaming TTS done: ${chunkCount} chunks, ${ttsMs}ms`);
       return { ttsMs, ttsCostUsd: estimateTtsCost(ttsProviderId, text.length) };
     }
 
     return withGracefulRetry("TEXT_TO_SPEECH", async () => {
       // eslint-disable-next-line no-console
-      console.log(`[pipeline:${sid}] calling tts.synthesize() (batch mode)...`);
+      console.log(`[TTS:${sid}] Calling synthesize() (batch mode)...`);
       const audio = await this.providers.tts.synthesize(task);
       const ttsCallMs = Date.now() - startedAt;
       // eslint-disable-next-line no-console
       console.log(
-        `[pipeline:${sid}] TTS completed in ${ttsCallMs}ms: encoding=${audio.encoding} sampleRate=${audio.sampleRateHz} bytes=${audio.data.byteLength}`,
+        `[TTS:${sid}] Audio chunks generated: ${ttsCallMs}ms encoding=${audio.encoding} sampleRate=${audio.sampleRateHz} bytes=${audio.data.byteLength}`,
       );
       await this.playAudioChunk(audio);
 
       const playbackMs = estimateAudioSeconds(audio) * 1000;
       // eslint-disable-next-line no-console
-      console.log(`[pipeline:${sid}] simulated playback sleep: ${Math.round(playbackMs)}ms`);
+      console.log(`[PLAYBACK:${sid}] Playback started: estimated ${Math.round(playbackMs)}ms`);
       await abortableSleep(playbackMs, speakingSignal);
       if (speakingSignal.aborted) {
         await this.record.mediaStream?.interruptPlayback();
@@ -569,7 +594,7 @@ export class ConversationPipeline {
     const sid = this.record.id;
     // eslint-disable-next-line no-console
     console.log(
-      `[pipeline:${sid}] playAudioChunk #${this.playAudioChunkCount}: encoding=${audio.encoding} sampleRate=${audio.sampleRateHz} bytes=${audio.data.byteLength} hasMediaStream=${!!this.record.mediaStream} listenerCount=${this.record.outboundAudioListeners.size}`,
+      `[PLAYBACK:${sid}] playAudioChunk #${this.playAudioChunkCount}: encoding=${audio.encoding} sampleRate=${audio.sampleRateHz} bytes=${audio.data.byteLength} hasMediaStream=${!!this.record.mediaStream} listenerCount=${this.record.outboundAudioListeners.size}`,
     );
     if (this.record.mediaStream) {
       await this.record.mediaStream.sendAudio(audio);

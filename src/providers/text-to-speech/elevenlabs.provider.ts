@@ -34,19 +34,55 @@ function loadEnvConfig(): ElevenLabsEnvConfig {
   };
 }
 
-/** Reads a full ReadableStream<Uint8Array> into a single Uint8Array. */
-async function collectStream(stream: ReadableStream<Uint8Array>): Promise<Uint8Array> {
-  const reader = stream.getReader();
+/**
+ * Reads a stream into a single Uint8Array.
+ *
+ * The ElevenLabs SDK may return either a Web ReadableStream (browser /
+ * newer Node.js) or a Node.js Readable / AsyncIterable (older SDK
+ * builds or certain Node runtimes). This helper handles both shapes
+ * so TTS synthesis never silently fails due to a stream-type mismatch.
+ */
+async function collectStream(stream: unknown): Promise<Uint8Array> {
   const chunks: Uint8Array[] = [];
   let totalLength = 0;
 
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    if (value) {
-      chunks.push(value);
-      totalLength += value.byteLength;
+  const push = (value: Uint8Array | Buffer): void => {
+    const u8 = value instanceof Uint8Array ? value : new Uint8Array(value);
+    chunks.push(u8);
+    totalLength += u8.byteLength;
+  };
+
+  // Path 1: Web ReadableStream (has .getReader)
+  if (
+    typeof stream === "object" &&
+    stream !== null &&
+    typeof (stream as ReadableStream<Uint8Array>).getReader === "function"
+  ) {
+    const reader = (stream as ReadableStream<Uint8Array>).getReader();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) push(value);
     }
+  }
+  // Path 2: Node.js Readable / AsyncIterable (has Symbol.asyncIterator)
+  else if (
+    typeof stream === "object" &&
+    stream !== null &&
+    Symbol.asyncIterator in (stream as Record<symbol, unknown>)
+  ) {
+    for await (const chunk of stream as AsyncIterable<Uint8Array | Buffer>) {
+      push(chunk);
+    }
+  }
+  // Path 3: Already a Buffer or Uint8Array (some SDK versions return the whole thing)
+  else if (stream instanceof Uint8Array || Buffer.isBuffer(stream)) {
+    push(stream);
+  } else {
+    throw new Error(
+      `[ElevenLabs] collectStream: unsupported stream type "${typeof stream}" — ` +
+        `expected ReadableStream, AsyncIterable, or Buffer`,
+    );
   }
 
   const merged = new Uint8Array(totalLength);
@@ -118,6 +154,11 @@ export class ElevenLabsTextToSpeechProvider implements TextToSpeechProvider {
     const voiceId = task.request.voiceId ?? this.config.defaultVoiceId;
     const languageCode = languageToIsoCode(task.request.language);
 
+    // eslint-disable-next-line no-console
+    console.log(
+      `[TTS:elevenlabs] synthesize: voiceId=${voiceId} model=${this.config.modelId} outputFormat=${toPcmOutputFormat(this.config.sampleRateHz)} language=${languageCode ?? "auto"} textLen=${task.request.text.length}`,
+    );
+
     const stream = await this.client.textToSpeech.convert(voiceId, {
       text: task.request.text,
       modelId: this.config.modelId,
@@ -125,7 +166,15 @@ export class ElevenLabsTextToSpeechProvider implements TextToSpeechProvider {
       ...(languageCode ? { languageCode } : {}),
     });
 
+    // eslint-disable-next-line no-console
+    console.log(
+      `[TTS:elevenlabs] convert() returned: type=${typeof stream} constructor=${(stream as object)?.constructor?.name} hasGetReader=${typeof (stream as ReadableStream)?.getReader === "function"} hasAsyncIterator=${typeof stream === "object" && stream !== null && Symbol.asyncIterator in (stream as Record<symbol, unknown>)}`,
+    );
+
     const data = await collectStream(stream);
+
+    // eslint-disable-next-line no-console
+    console.log(`[TTS:elevenlabs] collectStream done: ${data.byteLength} bytes of PCM_16 audio`);
 
     return {
       data,

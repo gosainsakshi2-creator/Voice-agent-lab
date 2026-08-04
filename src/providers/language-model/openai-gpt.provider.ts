@@ -71,6 +71,11 @@ export class OpenAiGptLanguageModelProvider implements LanguageModelProvider {
   async generateCompletion(request: CompletionRequest): Promise<CompletionResult> {
     const messages: ChatCompletionMessageParam[] = request.history.map((turn) => toOpenAiMessage(turn));
 
+    // eslint-disable-next-line no-console
+    console.log(
+      `[LLM:openai] generateCompletion: model=${this.config.model} messageCount=${messages.length} roles=[${messages.map((m) => m.role).join(",")}]`,
+    );
+
     const { result: completion, latencyMs } = await timed(() =>
       this.client.chat.completions.create({
         model: this.config.model,
@@ -79,6 +84,18 @@ export class OpenAiGptLanguageModelProvider implements LanguageModelProvider {
     );
 
     const content = completion.choices[0]?.message?.content ?? "";
+
+    // eslint-disable-next-line no-console
+    console.log(
+      `[LLM:openai] Response: ${latencyMs}ms contentLen=${content.length} text="${content.slice(0, 100)}${content.length > 100 ? "..." : ""}" finishReason=${completion.choices[0]?.finish_reason}`,
+    );
+
+    if (content.length === 0) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[LLM:openai] WARNING: empty content from model — choices=${JSON.stringify(completion.choices)}`,
+      );
+    }
 
     const turn: ConversationTurn = {
       role: "assistant",

@@ -34,7 +34,7 @@ export const SESSION_STATE_TRANSITIONS: Readonly<
   [SessionState.READY]: [SessionState.CALLING, SessionState.ERROR, SessionState.ENDING],
   [SessionState.CALLING]: [SessionState.LISTENING, SessionState.ERROR, SessionState.ENDING],
   [SessionState.LISTENING]: [SessionState.THINKING, SessionState.ERROR, SessionState.ENDING],
-  [SessionState.THINKING]: [SessionState.SPEAKING, SessionState.ERROR, SessionState.ENDING],
+  [SessionState.THINKING]: [SessionState.SPEAKING, SessionState.LISTENING, SessionState.ERROR, SessionState.ENDING],
   [SessionState.SPEAKING]: [SessionState.LISTENING, SessionState.ERROR, SessionState.ENDING],
   [SessionState.ENDING]: [SessionState.IDLE, SessionState.ERROR],
   [SessionState.ERROR]: [SessionState.ENDING, SessionState.IDLE],

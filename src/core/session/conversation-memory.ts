@@ -115,6 +115,25 @@ export class ConversationMemory {
     return this.turns;
   }
 
+  /**
+   * Windowed turn history for LLM requests: system turn + last
+   * `maxPairs` user/assistant exchange pairs. Keeps the LLM context
+   * bounded so token usage and latency don't grow with call length,
+   * while preserving enough recent context for a natural conversation.
+   */
+  recentHistory(maxPairs: number = 6): readonly ConversationTurn[] {
+    const systemTurn = this.turns[0];
+    if (!systemTurn || systemTurn.role !== "system") return this.turns;
+
+    const nonSystem = this.turns.slice(1);
+    // Each pair is a user + assistant turn = 2 entries.
+    const maxEntries = maxPairs * 2;
+    const windowed = nonSystem.length <= maxEntries
+      ? nonSystem
+      : nonSystem.slice(-maxEntries);
+    return [systemTurn, ...windowed];
+  }
+
   snapshot(): ConversationMemorySnapshot {
     return {
       turns: [...this.turns],

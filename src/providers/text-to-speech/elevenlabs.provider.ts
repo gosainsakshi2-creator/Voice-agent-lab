@@ -11,6 +11,7 @@ import { ElevenLabsClient, type ElevenLabs } from "@elevenlabs/elevenlabs-js";
 import { TEXT_TO_SPEECH_PROVIDER_IDS } from "../../constants/providers.constants";
 import { ProviderCategory, SupportedLanguage } from "../../types/enums";
 import type { AudioPayload, ProviderDescriptor, ProviderHealthStatus } from "../../types/provider.types";
+import type { TtsAudioChunk } from "../../types/streaming.types";
 import type {
   SynthesisTaskRequest,
   TextToSpeechProvider,
@@ -182,6 +183,83 @@ export class ElevenLabsTextToSpeechProvider implements TextToSpeechProvider {
       data,
       encoding: "PCM_16",
       sampleRateHz: this.config.sampleRateHz,
+    };
+  }
+
+  async *synthesizeStream(
+    task: SynthesisTaskRequest,
+    signal?: AbortSignal,
+  ): AsyncIterable<TtsAudioChunk> {
+    const voiceId = task.request.voiceId ?? this.config.defaultVoiceId;
+    const languageCode = languageToIsoCode(task.request.language);
+
+    // eslint-disable-next-line no-console
+    console.log(
+      `[TTS:elevenlabs] synthesizeStream: voiceId=${voiceId} model=${this.config.modelId} textLen=${task.request.text.length}`,
+    );
+
+    const stream = await this.client.textToSpeech.convertAsStream(voiceId, {
+      text: task.request.text,
+      modelId: this.config.modelId,
+      outputFormat: toPcmOutputFormat(this.config.sampleRateHz),
+      ...(languageCode ? { languageCode } : {}),
+    });
+
+    let sequence = 0;
+
+    // The SDK returns an AsyncIterable or ReadableStream of audio chunks.
+    if (
+      typeof stream === "object" &&
+      stream !== null &&
+      Symbol.asyncIterator in (stream as object)
+    ) {
+      const asyncStream = stream as unknown as AsyncIterable<Uint8Array | Buffer>;
+      for await (const chunk of asyncStream) {
+        if (signal?.aborted) break;
+        const u8 = chunk instanceof Uint8Array ? chunk : new Uint8Array(chunk);
+        if (u8.byteLength === 0) continue;
+        yield {
+          audio: { data: u8, encoding: "PCM_16" as const, sampleRateHz: this.config.sampleRateHz },
+          sequence: sequence++,
+          isFinal: false,
+        };
+      }
+    } else if (
+      typeof stream === "object" &&
+      stream !== null &&
+      typeof (stream as ReadableStream<Uint8Array>).getReader === "function"
+    ) {
+      const reader = (stream as ReadableStream<Uint8Array>).getReader();
+      for (;;) {
+        if (signal?.aborted) break;
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value && value.byteLength > 0) {
+          yield {
+            audio: { data: value, encoding: "PCM_16" as const, sampleRateHz: this.config.sampleRateHz },
+            sequence: sequence++,
+            isFinal: false,
+          };
+        }
+      }
+    } else {
+      // Fallback: treat as single chunk
+      const data = await collectStream(stream);
+      if (data.byteLength > 0) {
+        yield {
+          audio: { data, encoding: "PCM_16" as const, sampleRateHz: this.config.sampleRateHz },
+          sequence: sequence++,
+          isFinal: true,
+        };
+        return;
+      }
+    }
+
+    // Emit a zero-byte final marker so callers know the stream is done.
+    yield {
+      audio: { data: new Uint8Array(0), encoding: "PCM_16" as const, sampleRateHz: this.config.sampleRateHz },
+      sequence: sequence++,
+      isFinal: true,
     };
   }
 

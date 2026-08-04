@@ -18,9 +18,9 @@
 
 import type { TranscriptSegment } from "../../types/provider.types";
 
-const DEFAULT_SILENCE_TIMEOUT_MS = 700;
-const MIN_SILENCE_TIMEOUT_MS = 300;
-const MAX_SILENCE_TIMEOUT_MS = 1400;
+const DEFAULT_SILENCE_TIMEOUT_MS = 500;
+const MIN_SILENCE_TIMEOUT_MS = 250;
+const MAX_SILENCE_TIMEOUT_MS = 1200;
 /** How strongly a single observed gap nudges the running estimate (0..1). */
 const ADAPTATION_RATE = 0.25;
 

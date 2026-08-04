@@ -140,7 +140,7 @@ const CONTAMINATION_MARKERS = [
 
 function isContaminatedOutput(text: string): boolean {
   const lower = text.toLowerCase();
-  return CONTAMINATION_MARKERS.filter((m) => lower.includes(m)).length >= 1;
+  return CONTAMINATION_MARKERS.filter((m) => lower.includes(m)).length >= 2;
 }
 
 /** Language-appropriate fallback greetings when the LLM fails or produces contaminated output. */
@@ -203,7 +203,7 @@ export class ConversationPipeline {
         // Gemma that fold system prompts into the user turn can
         // misinterpret bracket syntax and echo the prompt back.
         this.record.memory.recordUserTurn(
-          "The call has just connected. Greet the caller naturally in one short sentence.",
+          "Hi!",
           this.record.memory.currentLanguage,
         );
 
@@ -479,23 +479,30 @@ export class ConversationPipeline {
    *      prompt-echo).
    *   3. History order: system → user → assistant → user → assistant …
    */
-  private buildRequestHistory(detectedLanguage: SupportedLanguage): readonly ConversationTurn[] {
-    const turns = [...this.record.memory.history()];
-    const hint = languageHintFor(detectedLanguage);
+ private buildRequestHistory(
+  detectedLanguage: SupportedLanguage
+): readonly ConversationTurn[] {
 
-    // Prepend the language hint to the LAST user turn so the model
-    // knows which language to reply in, without polluting the turn
-    // structure with extra system messages.
-    for (let i = turns.length - 1; i >= 0; i--) {
+  const turns = this.record.memory.recentHistory().map(turn => ({ ...turn }));
+
+  const hint = languageHintFor(detectedLanguage);
+
+  for (let i = turns.length - 1; i >= 0; i--) {
+
       const turn = turns[i];
-      if (turn && turn.role === "user") {
-        turns[i] = { ...turn, content: `[${hint}] ${turn.content}` };
-        break;
-      }
-    }
 
-    return turns;
+      if (!turn) continue;
+
+      if (turn.role === "user") {
+
+          turn.content = `${hint}\n${turn.content}`;
+
+          break;
+      }
   }
+
+  return turns;
+}
 
   private async runThinkingAndSpeaking(
     userText: string,
@@ -780,7 +787,7 @@ export class ConversationPipeline {
 
     // On the first chunk, wait for the bridge to register its listener.
     if (this.playAudioChunkCount === 1) {
-      await this.waitForOutboundReady(2000, this.record.loopAbortController?.signal ?? AbortSignal.abort());
+      await this.waitForOutboundReady(500, this.record.loopAbortController?.signal ?? AbortSignal.abort());
     }
 
     // eslint-disable-next-line no-console

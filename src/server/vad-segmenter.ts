@@ -36,9 +36,9 @@ export interface VadSegmenterOptions {
 
 const DEFAULTS: Required<VadSegmenterOptions> = {
   speechThreshold: 150,
-  endSilenceMs: 600,
-  minUtteranceMs: 250,
-  maxUtteranceMs: 20_000,
+  endSilenceMs: 400,
+  minUtteranceMs: 200,
+  maxUtteranceMs: 15_000,
 };
 
 /** One 20ms mu-law frame is 160 bytes at 8kHz. */

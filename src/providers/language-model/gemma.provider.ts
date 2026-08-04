@@ -22,6 +22,7 @@ import type { Content } from "@google/generative-ai";
 import { LANGUAGE_MODEL_PROVIDER_IDS } from "../../constants/providers.constants";
 import { ProviderCategory, SupportedLanguage } from "../../types/enums";
 import type { ConversationTurn, ProviderDescriptor, ProviderHealthStatus } from "../../types/provider.types";
+import type { LlmStreamEvent } from "../../types/streaming.types";
 import type {
   CompletionRequest,
   CompletionResult,
@@ -92,18 +93,8 @@ export class GemmaLanguageModelProvider implements LanguageModelProvider {
   }
 
   async generateCompletion(request: CompletionRequest): Promise<CompletionResult> {
-    // Extract the system prompt to pass via systemInstruction,
-    // keeping it completely out of the conversation contents.
-    const systemParts = request.history
-      .filter((turn) => turn.role === "system")
-      .map((turn) => turn.content);
-    const systemPreamble = systemParts.join("\n\n");
-
-    const model = this.client.getGenerativeModel({
-      model: this.config.model,
-      ...(systemPreamble.length > 0 ? { systemInstruction: systemPreamble } : {}),
-    });
-
+    const systemPreamble = this.extractSystemPreamble(request.history);
+    const model = this.buildModel(systemPreamble);
     const contents = toGoogleContents(request.history);
 
     // eslint-disable-next-line no-console
@@ -112,7 +103,6 @@ export class GemmaLanguageModelProvider implements LanguageModelProvider {
     );
 
     const { result, latencyMs } = await timed(() => model.generateContent({ contents }));
-
     const content = result.response.text();
 
     // eslint-disable-next-line no-console
@@ -132,6 +122,63 @@ export class GemmaLanguageModelProvider implements LanguageModelProvider {
     };
 
     return { turn, latencyMs };
+  }
+
+  private buildModel(systemPreamble: string) {
+    return this.client.getGenerativeModel({
+      model: this.config.model,
+      ...(systemPreamble.length > 0 ? { systemInstruction: systemPreamble } : {}),
+    });
+  }
+
+  private extractSystemPreamble(history: readonly ConversationTurn[]): string {
+    return history
+      .filter((turn) => turn.role === "system")
+      .map((turn) => turn.content)
+      .join("\n\n");
+  }
+
+  async *generateCompletionStream(
+    request: CompletionRequest,
+    signal?: AbortSignal,
+  ): AsyncIterable<LlmStreamEvent> {
+    const systemPreamble = this.extractSystemPreamble(request.history);
+    const model = this.buildModel(systemPreamble);
+    const contents = toGoogleContents(request.history);
+
+    // eslint-disable-next-line no-console
+    console.log(
+      `[LLM:gemma] generateCompletionStream: model=${this.config.model} contentsLength=${contents.length}`,
+    );
+
+    const startedAt = Date.now();
+    let tokenIndex = 0;
+    let fullContent = "";
+
+    const streamResult = await model.generateContentStream({ contents });
+
+    for await (const chunk of streamResult.stream) {
+      if (signal?.aborted) break;
+
+      const text = chunk.text();
+      if (text) {
+        fullContent += text;
+        yield { type: "token" as const, delta: text, index: tokenIndex++ };
+      }
+    }
+
+    const latencyMs = Date.now() - startedAt;
+
+    // eslint-disable-next-line no-console
+    console.log(
+      `[LLM:gemma] Stream complete: ${latencyMs}ms tokens=${tokenIndex} contentLen=${fullContent.length}`,
+    );
+
+    yield {
+      type: "final" as const,
+      turn: { role: "assistant" as const, content: fullContent, timestamp: new Date() },
+      latencyMs,
+    };
   }
 
   async checkHealth(): Promise<ProviderHealthStatus> {

@@ -78,10 +78,6 @@ export class SarvamTextToSpeechProvider implements TextToSpeechProvider {
 
   async synthesize(task: SynthesisTaskRequest): Promise<AudioPayload> {
     const speaker = task.request.voiceId ?? this.config.defaultSpeaker;
-    console.log("=== SARVAM DEBUG ===");
-    console.log("voiceId:", task.request.voiceId);
-    console.log("defaultSpeaker:", this.config.defaultSpeaker);
-    console.log("selectedSpeaker:", speaker);
     const response = await postJson<SarvamTtsResponse>(
       this.descriptor.id,
       `${this.config.baseUrl}/text-to-speech`,

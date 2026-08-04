@@ -13,6 +13,7 @@ import type { ChatCompletionMessageParam } from "openai/resources/chat/completio
 import { LANGUAGE_MODEL_PROVIDER_IDS } from "../../constants/providers.constants";
 import { ProviderCategory, SupportedLanguage } from "../../types/enums";
 import type { ConversationTurn, ProviderDescriptor, ProviderHealthStatus } from "../../types/provider.types";
+import type { LlmStreamEvent } from "../../types/streaming.types";
 import type {
   CompletionRequest,
   CompletionResult,
@@ -104,6 +105,53 @@ export class OpenAiGptLanguageModelProvider implements LanguageModelProvider {
     };
 
     return { turn, latencyMs };
+  }
+
+  async *generateCompletionStream(
+    request: CompletionRequest,
+    signal?: AbortSignal,
+  ): AsyncIterable<LlmStreamEvent> {
+    const messages: ChatCompletionMessageParam[] = request.history.map((turn) => toOpenAiMessage(turn));
+
+    // eslint-disable-next-line no-console
+    console.log(
+      `[LLM:openai] generateCompletionStream: model=${this.config.model} messageCount=${messages.length}`,
+    );
+
+    const startedAt = Date.now();
+    let tokenIndex = 0;
+    let fullContent = "";
+
+    const stream = await this.client.chat.completions.create({
+      model: this.config.model,
+      messages,
+      stream: true,
+    });
+
+    for await (const chunk of stream) {
+      if (signal?.aborted) break;
+
+      const delta = chunk.choices[0]?.delta?.content;
+      if (delta) {
+        fullContent += delta;
+        yield { type: "token" as const, delta, index: tokenIndex++ };
+      }
+
+      if (chunk.choices[0]?.finish_reason) break;
+    }
+
+    const latencyMs = Date.now() - startedAt;
+
+    // eslint-disable-next-line no-console
+    console.log(
+      `[LLM:openai] Stream complete: ${latencyMs}ms tokens=${tokenIndex} contentLen=${fullContent.length}`,
+    );
+
+    yield {
+      type: "final" as const,
+      turn: { role: "assistant" as const, content: fullContent, timestamp: new Date() },
+      latencyMs,
+    };
   }
 
   async checkHealth(): Promise<ProviderHealthStatus> {

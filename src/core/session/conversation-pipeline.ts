@@ -80,6 +80,79 @@ interface ThinkingAndSpeakingResult {
   readonly ttsCostUsd: number;
 }
 
+// ------------------------------------------------------------------
+// Voice-safe text sanitization
+// ------------------------------------------------------------------
+
+/**
+ * Strips markdown / formatting artefacts that would sound wrong when
+ * read aloud by TTS. Applied to ALL LLM output before synthesis,
+ * regardless of provider.
+ */
+function sanitizeForVoice(raw: string): string {
+  let text = raw;
+
+  // Remove markdown bullet points and numbered lists (e.g. "- ", "* ", "1. ")
+  text = text.replace(/^[\t ]*[-*•]\s+/gm, "");
+  text = text.replace(/^[\t ]*\d+\.\s+/gm, "");
+
+  // Remove markdown headers ("# ", "## ", etc.)
+  text = text.replace(/^[\t ]*#{1,6}\s+/gm, "");
+
+  // Remove bold / italic markers (* ** _ __ ` ``)
+  text = text.replace(/\*{1,3}([^*]+)\*{1,3}/g, "$1");
+  text = text.replace(/_{1,3}([^_]+)_{1,3}/g, "$1");
+  text = text.replace(/`{1,3}([^`]+)`{1,3}/g, "$1");
+
+  // Collapse multiple newlines into a single space (voice is continuous)
+  text = text.replace(/\n{2,}/g, " ");
+  text = text.replace(/\n/g, " ");
+
+  // Collapse multiple spaces
+  text = text.replace(/ {2,}/g, " ");
+
+  return text.trim();
+}
+
+/**
+ * Heuristic guard: detects when the LLM has echoed back system-prompt
+ * instructions (bullet points about persona, constraints, etc.)
+ * instead of producing a natural conversational reply.
+ */
+function looksLikePromptEcho(text: string): boolean {
+  // Common system-prompt keywords that should never appear in a spoken reply
+  const echoMarkers = [
+    "Persona:",
+    "Constraints:",
+    "Spoken conversation",
+    "Option 1",
+    "Option 2",
+    "Option 3",
+    "Immediate Task:",
+    "voice assistant on a live phone call",
+    "corporate-sounding phrasing",
+    "How to talk:",
+  ];
+  const lowerText = text.toLowerCase();
+  const hits = echoMarkers.filter((m) => lowerText.includes(m.toLowerCase()));
+  return hits.length >= 2;
+}
+
+/** Language-appropriate fallback greetings when the LLM fails. */
+function fallbackGreeting(language: SupportedLanguage): string {
+  switch (language) {
+    case "hi":
+      return "नमस्ते! मैं आपकी कैसे मदद कर सकता हूँ?";
+    case "hi-en":
+      return "Hey, namaste! Kaise help kar sakta hoon aapki?";
+    default:
+      return "Hey there! How can I help you today?";
+  }
+}
+
+/** Maximum characters for a greeting — anything longer is almost certainly a prompt echo. */
+const MAX_GREETING_CHARS = 200;
+
 export class ConversationPipeline {
   private readonly usesStreamingStt: boolean;
   private sinceLastTurnBytes = 0;
@@ -120,13 +193,14 @@ export class ConversationPipeline {
       console.log(`[PIPELINE:${sid}] Conversation started — generating greeting, state=${this.record.state}`);
       try {
         // Inject a synthetic user turn so the LLM sees an explicit
-        // instruction to greet the caller, rather than receiving
-        // only system messages (which some models answer with
-        // empty text, producing silence on the line).
+        // instruction to greet the caller. Phrased as natural speech
+        // (not a bracketed meta-instruction) because models like
+        // Gemma that fold system prompts into the user turn can
+        // misinterpret bracket syntax and echo the prompt back.
         this.record.memory.recordUserTurn(
-    "The call has just connected. Greet the caller naturally in one short sentence.",
-    this.record.memory.currentLanguage
-);
+          "The call has just connected. Greet the caller naturally in one short sentence.",
+          this.record.memory.currentLanguage,
+        );
 
         const detected = detectLanguage("", this.record.memory.currentLanguage);
         const greeting = await this.runThinkingAndSpeaking("", detected, loopSignal);
@@ -388,9 +462,12 @@ export class ConversationPipeline {
   // LLM + TTS
   // ---------------------------------------------------------------
 
-private buildRequestHistory(): readonly ConversationTurn[] {
-  return this.record.memory.history();
-}
+  private buildRequestHistory(detectedLanguage: SupportedLanguage): readonly ConversationTurn[] {
+    return [
+      ...this.record.memory.history(),
+      { role: "system", content: languageHintFor(detectedLanguage), timestamp: new Date() },
+    ];
+  }
 
   private async runThinkingAndSpeaking(
     userText: string,
@@ -406,7 +483,7 @@ private buildRequestHistory(): readonly ConversationTurn[] {
 
     this.host.transition(this.record, SessionState.THINKING, "generating a reply");
     const thinkingSignal = combineSignals([this.record.bargeIn.beginThinking(), loopSignal]);
-    const request: CompletionRequest = { sessionId: this.record.id, history: this.buildRequestHistory() };
+    const request: CompletionRequest = { sessionId: this.record.id, history: this.buildRequestHistory(detected.language) };
     const llmProviderId = this.providers.llm.descriptor.id;
 
     // eslint-disable-next-line no-console
@@ -424,9 +501,31 @@ private buildRequestHistory(): readonly ConversationTurn[] {
       const startedAt = Date.now();
       const completion = await this.providers.llm.generateCompletion(request);
       const llmMs = Date.now() - startedAt;
+
+      // Sanitize for voice — strip markdown bullets, headers, bold,
+      // etc. that would be read aloud nonsensically by TTS.
+      const rawContent = completion.turn.content;
+      let spokenContent = sanitizeForVoice(rawContent);
+      if (spokenContent !== rawContent) {
+        // eslint-disable-next-line no-console
+        console.log(`[LLM:${sid}] Sanitized for voice: ${rawContent.length} chars -> ${spokenContent.length} chars`);
+      }
+
+      // For greetings, guard against prompt-echo and excessive length.
+      // Replace with a language-appropriate fallback so the caller
+      // hears a clean, short greeting instead of 68 seconds of the
+      // system prompt read aloud.
+      if (isGreeting && (looksLikePromptEcho(spokenContent) || spokenContent.length > MAX_GREETING_CHARS)) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[LLM:${sid}] Greeting rejected (promptEcho=${looksLikePromptEcho(spokenContent)} len=${spokenContent.length}) — using fallback`,
+        );
+        spokenContent = fallbackGreeting(this.record.memory.currentLanguage);
+      }
+
       // eslint-disable-next-line no-console
       console.log(
-        `[LLM:${sid}] Response generated in ${llmMs}ms: text="${completion.turn.content.slice(0, 120)}${completion.turn.content.length > 120 ? "..." : ""}" state=${this.record.state}`,
+        `[LLM:${sid}] Response generated in ${llmMs}ms: text="${spokenContent.slice(0, 120)}${spokenContent.length > 120 ? "..." : ""}" state=${this.record.state}`,
       );
 
       if (this.record.state !== SessionState.SPEAKING) {
@@ -434,12 +533,12 @@ private buildRequestHistory(): readonly ConversationTurn[] {
       }
       const speakingSignal = combineSignals([this.record.bargeIn.beginSpeaking(), loopSignal]);
 
-      const { ttsMs, ttsCostUsd } = await this.synthesizeAndPlay(completion.turn.content, speakingSignal);
+      const { ttsMs, ttsCostUsd } = await this.synthesizeAndPlay(spokenContent, speakingSignal);
 
       return {
-        assistantText: completion.turn.content,
+        assistantText: spokenContent,
         llmMs,
-        llmCostUsd: estimateLlmCost(llmProviderId, estimateTokenCount(userText) + estimateTokenCount(completion.turn.content)),
+        llmCostUsd: estimateLlmCost(llmProviderId, estimateTokenCount(userText) + estimateTokenCount(spokenContent)),
         ttsMs,
         ttsCostUsd,
       };
@@ -473,9 +572,11 @@ private buildRequestHistory(): readonly ConversationTurn[] {
           fullText += event.delta;
           const readySentences = chunker.push(event.delta);
           for (const sentence of readySentences) {
+            const cleaned = sanitizeForVoice(sentence);
+            if (cleaned.length === 0) continue;
             speakingSignal ??= this.enterSpeaking();
             if (speakingSignal.aborted) break;
-            const spoken = await this.synthesizeAndPlay(sentence, speakingSignal);
+            const spoken = await this.synthesizeAndPlay(cleaned, speakingSignal);
             ttsMs += spoken.ttsMs;
             ttsCostUsd += spoken.ttsCostUsd;
           }
@@ -493,8 +594,9 @@ private buildRequestHistory(): readonly ConversationTurn[] {
 
     if (llmMs === 0) llmMs = Date.now() - startedAt;
 
-    const remainder = chunker.flush();
-    if (remainder && !(speakingSignal?.aborted ?? false)) {
+    const rawRemainder = chunker.flush();
+    const remainder = rawRemainder ? sanitizeForVoice(rawRemainder) : "";
+    if (remainder.length > 0 && !(speakingSignal?.aborted ?? false)) {
       speakingSignal ??= this.enterSpeaking();
       if (!speakingSignal.aborted) {
         const spoken = await this.synthesizeAndPlay(remainder, speakingSignal);
@@ -503,7 +605,7 @@ private buildRequestHistory(): readonly ConversationTurn[] {
       }
     }
 
-    const assistantText = (finalText ?? fullText).trim();
+    const assistantText = sanitizeForVoice((finalText ?? fullText));
 
     // If nothing was ever spoken (e.g. immediate barge-in), still
     // make sure we transitioned through SPEAKING at least nominally

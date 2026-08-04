@@ -35,7 +35,7 @@ interface GemmaEnvConfig {
 function loadEnvConfig(): GemmaEnvConfig {
   return {
     apiKey: requireEnv("GEMMA_API_KEY", LANGUAGE_MODEL_PROVIDER_IDS.GEMMA_4),
-    model: optionalEnv("GEMMA_MODEL", "gemma-4-31b-it"),
+    model: optionalEnv("GEMMA_MODEL", "gemma-3-27b-it"),
   };
 }
 
@@ -86,11 +86,28 @@ export class GemmaLanguageModelProvider implements LanguageModelProvider {
     const model = this.client.getGenerativeModel({ model: this.config.model });
     const contents = toGoogleContents(request.history);
 
+    // eslint-disable-next-line no-console
+    console.log(
+      `[LLM:gemma] generateCompletion: model=${this.config.model} contentsLength=${contents.length} roles=[${contents.map((c) => c.role).join(",")}]`,
+    );
+
     const { result, latencyMs } = await timed(() => model.generateContent({ contents }));
+
+    const content = result.response.text();
+
+    // eslint-disable-next-line no-console
+    console.log(
+      `[LLM:gemma] Response: ${latencyMs}ms contentLen=${content.length} text="${content.slice(0, 100)}${content.length > 100 ? "..." : ""}"`,
+    );
+
+    if (content.length === 0) {
+      // eslint-disable-next-line no-console
+      console.warn(`[LLM:gemma] WARNING: empty content from model`);
+    }
 
     const turn: ConversationTurn = {
       role: "assistant",
-      content: result.response.text(),
+      content,
       timestamp: new Date(),
     };
 

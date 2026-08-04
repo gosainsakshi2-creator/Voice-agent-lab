@@ -88,7 +88,7 @@ export function pcm16ToBytes(pcm: Int16Array): Uint8Array {
 
 /**
  * Same as `pcm16ToBytes` but writes big-endian (network byte order).
- * Required by Plivo's `audio/x-l16` format (RFC 3551 §4.5.10).
+ * Required by Plivo's `audio/x-l16` format (RFC 3551 §4.5.11).
  * Kept separate so `pcm16ToBytes` (little-endian) continues to work
  * for WAV/PCM file processing elsewhere.
  */

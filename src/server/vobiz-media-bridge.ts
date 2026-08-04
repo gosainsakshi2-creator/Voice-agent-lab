@@ -122,6 +122,11 @@ export function attachVobizMediaBridge(
   let inboundFrameCount = 0;
   let utteranceCount = 0;
 
+  // ── TEMPORARY DEBUG (remove after test call) ──────────────
+  let lastPlayAudioSendTs = 0;
+  let debugBurstCapCount = 0;
+  // ──────────────────────────────────────────────────────────
+
   // Inbound: we configure the answer-URL XML with
   // contentType="audio/x-mulaw;rate=8000", so Vobiz sends mulaw
   // at 8 kHz — same format the MulawVadSegmenter expects.
@@ -183,9 +188,15 @@ export function attachVobizMediaBridge(
 
     const frameCount = Math.ceil(l16Bytes.length / outboundFrameBytes!);
     outboundFrameTotal += frameCount;
+    let runtDetectedInChunk = false;
     for (let offset = 0; offset < l16Bytes.length; offset += outboundFrameBytes!) {
       const slice = l16Bytes.subarray(offset, offset + outboundFrameBytes!);
       if (slice.length < outboundFrameBytes!) {
+        runtDetectedInChunk = true;
+        // eslint-disable-next-line no-console
+        console.log(
+          `[DEBUG][vobiz-bridge:${sessionId}] RUNT FRAME DETECTED: sliceBytes=${slice.length} expected=${outboundFrameBytes} shortBy=${outboundFrameBytes! - slice.length} (padding with silence)`,
+        );
         // Pad the final sub-frame slice with silence (zero bytes) so
         // every frame sent to Vobiz is exactly the declared frame size.
         // In L16, 0x0000 = zero amplitude = silence. A truncated frame
@@ -198,6 +209,10 @@ export function attachVobizMediaBridge(
         outboundQueue.push(slice);
       }
     }
+    // eslint-disable-next-line no-console
+    console.log(
+      `[DEBUG][vobiz-bridge:${sessionId}] enqueue summary: chunk#${outboundChunkCount} l16Bytes=${l16Bytes.length} frameSize=${outboundFrameBytes} frames=${frameCount} runtDetected=${runtDetectedInChunk} remainder=${l16Bytes.length % outboundFrameBytes!}`,
+    );
     // eslint-disable-next-line no-console
     console.log(
       `[vobiz-bridge:${sessionId}] enqueued ${frameCount} frames (${frameCount * OUTBOUND_FRAME_MS}ms), queue depth=${outboundQueue.length}, lifetime frames=${outboundFrameTotal}`,
@@ -217,12 +232,21 @@ export function attachVobizMediaBridge(
       // correction would dump dozens of frames in one tick.
       const rawDue = Math.floor((Date.now() - startedAt) / OUTBOUND_FRAME_MS) - framesSent;
       const framesDue = Math.min(rawDue, MAX_FRAMES_PER_TICK);
+      const burstCapped = rawDue > MAX_FRAMES_PER_TICK;
       if (rawDue > MAX_FRAMES_PER_TICK && framesSent === 0) {
         // eslint-disable-next-line no-console
         console.log(
           `[vobiz-bridge:${sessionId}] pump burst capped: ${rawDue} frames due, sending ${framesDue} (event loop starved ~${rawDue * OUTBOUND_FRAME_MS}ms)`,
         );
       }
+      // ── TEMPORARY DEBUG (remove after test call) ──────────────
+      // Point 6: burst-cap trigger  |  Point 7: queue depth
+      if (burstCapped) debugBurstCapCount += 1;
+      // eslint-disable-next-line no-console
+      console.log(
+        `[DEBUG][vobiz-bridge:${sessionId}] pump tick: rawDue=${rawDue} framesDue=${framesDue} burstCapped=${burstCapped} burstCapTotal=${debugBurstCapCount} queueDepth=${outboundQueue.length} elapsedMs=${Date.now() - startedAt}`,
+      );
+      // ──────────────────────────────────────────────────────────
       for (let i = 0; i < framesDue; i += 1) {
         const frame = outboundQueue.shift();
         if (!frame) {
@@ -233,6 +257,17 @@ export function attachVobizMediaBridge(
           return;
         }
         framesSent += 1;
+        // ── TEMPORARY DEBUG (remove after test call) ────────────
+        // Points 1,2,3,4,5: frame size, sampleRate, contentType,
+        //   runt check (post-pad), inter-send delta
+        const now = Date.now();
+        const sendDeltaMs = lastPlayAudioSendTs > 0 ? now - lastPlayAudioSendTs : 0;
+        lastPlayAudioSendTs = now;
+        // eslint-disable-next-line no-console
+        console.log(
+          `[DEBUG][vobiz-bridge:${sessionId}] SEND frame#${framesSent}: bytes=${frame.length} expected=${outboundFrameBytes} match=${frame.length === outboundFrameBytes} contentType=audio/x-l16 sampleRate=${outboundRateHz} sendDeltaMs=${sendDeltaMs} remaining=${outboundQueue.length}`,
+        );
+        // ────────────────────────────────────────────────────────
         if (framesSent === 1 || framesSent % 50 === 0) {
           // eslint-disable-next-line no-console
           console.log(`[vobiz-bridge:${sessionId}] pump sending frame #${framesSent}, remaining=${outboundQueue.length}`);

@@ -87,6 +87,21 @@ export function pcm16ToBytes(pcm: Int16Array): Uint8Array {
 }
 
 /**
+ * Same as `pcm16ToBytes` but writes big-endian (network byte order).
+ * Required by Plivo's `audio/x-l16` format (RFC 3551 §4.5.10).
+ * Kept separate so `pcm16ToBytes` (little-endian) continues to work
+ * for WAV/PCM file processing elsewhere.
+ */
+export function pcm16ToBigEndianBytes(pcm: Int16Array): Uint8Array {
+  const out = new Uint8Array(pcm.length * 2);
+  const view = new DataView(out.buffer);
+  for (let i = 0; i < pcm.length; i += 1) {
+    view.setInt16(i * 2, pcm[i]!, false); // false = big-endian
+  }
+  return out;
+}
+
+/**
  * Simple linear-interpolation resampler. Not audiophile-grade, but
  * sufficient for telephony-quality 8kHz voice, and dependency-free —
  * pulling in a native resampling library is unnecessary weight for

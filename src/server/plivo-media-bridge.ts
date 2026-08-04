@@ -29,7 +29,7 @@ import type { AudioPayload } from "../types/provider.types";
 import { SessionState } from "../types/enums";
 import type { DefaultVoiceSessionManager } from "../core/session/voice-session-manager.impl";
 import { MulawVadSegmenter } from "./vad-segmenter";
-import { bytesToPcm16, resamplePcm16, pcm16ToBytes } from "./audio-codec";
+import { bytesToPcm16, resamplePcm16, pcm16ToBigEndianBytes } from "./audio-codec";
 
 /** Minimal shape both `ws`'s WebSocket and the DOM WebSocket satisfy, kept narrow for testability. */
 export interface BridgeSocket {
@@ -113,7 +113,7 @@ export function attachPlivoMediaBridge(
     // 16-bit linear PCM) at 8 kHz — resample but do NOT mu-law encode.
     const pcm = bytesToPcm16(chunk.data);
     const resampled = resamplePcm16(pcm, chunk.sampleRateHz, 8000);
-    const l16Bytes = pcm16ToBytes(resampled);
+    const l16Bytes = pcm16ToBigEndianBytes(resampled);
     const frameCount = Math.ceil(l16Bytes.length / OUTBOUND_FRAME_BYTES);
     outboundFrameTotal += frameCount;
     for (let offset = 0; offset < l16Bytes.length; offset += OUTBOUND_FRAME_BYTES) {

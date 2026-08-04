@@ -198,7 +198,10 @@ export class ElevenLabsTextToSpeechProvider implements TextToSpeechProvider {
       `[TTS:elevenlabs] synthesizeStream: voiceId=${voiceId} model=${this.config.modelId} textLen=${task.request.text.length}`,
     );
 
-    const stream = await this.client.textToSpeech.convertAsStream(voiceId, {
+    // Use the same `convert` method as `synthesize` — it already returns a
+    // stream (ReadableStream or AsyncIterable depending on SDK build). The
+    // separate `convertAsStream` helper doesn't exist in every SDK version.
+    const stream = await this.client.textToSpeech.convert(voiceId, {
       text: task.request.text,
       modelId: this.config.modelId,
       outputFormat: toPcmOutputFormat(this.config.sampleRateHz),

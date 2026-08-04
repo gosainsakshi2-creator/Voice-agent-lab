@@ -72,7 +72,7 @@ export const MOCK_TEXT_TO_SPEECH_PROVIDERS: readonly ProviderDescriptor[] = [
     id: TEXT_TO_SPEECH_PROVIDER_IDS.CARTESIA,
     displayName: "Cartesia",
     supportedLanguages: [SupportedLanguage.ENGLISH, SupportedLanguage.HINGLISH],
-    version: "sonic-2",
+    version: "sonic-3.5",
   },
   {
     category: ProviderCategory.TEXT_TO_SPEECH,

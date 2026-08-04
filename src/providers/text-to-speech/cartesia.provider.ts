@@ -35,7 +35,7 @@ function loadEnvConfig(): CartesiaEnvConfig {
 
   return {
     apiKey: requireEnv("CARTESIA_API_KEY", TEXT_TO_SPEECH_PROVIDER_IDS.CARTESIA),
-    modelId: optionalEnv("CARTESIA_MODEL_ID", "sonic-2"),
+    modelId: optionalEnv("CARTESIA_MODEL_ID", "sonic"),
     defaultVoiceId: requireEnv("CARTESIA_DEFAULT_VOICE_ID", TEXT_TO_SPEECH_PROVIDER_IDS.CARTESIA),
     sampleRateHz,
   };
@@ -62,7 +62,7 @@ export class CartesiaTextToSpeechProvider implements TextToSpeechProvider {
     id: TEXT_TO_SPEECH_PROVIDER_IDS.CARTESIA,
     displayName: "Cartesia",
     supportedLanguages: [SupportedLanguage.ENGLISH, SupportedLanguage.HINGLISH],
-    version: "sonic-2",
+    version: "sonic",
   };
 
   private readonly client: Cartesia;

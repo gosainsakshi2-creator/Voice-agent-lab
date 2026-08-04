@@ -81,15 +81,16 @@ interface ThinkingAndSpeakingResult {
 }
 
 // ------------------------------------------------------------------
-// Voice-safe text sanitization
+// Voice-safe output validation
 // ------------------------------------------------------------------
 
 /**
- * Strips markdown / formatting artefacts that would sound wrong when
- * read aloud by TTS. Applied to ALL LLM output before synthesis,
- * regardless of provider.
+ * Strips markdown formatting that would sound wrong when read aloud
+ * by TTS. Only removes formatting — NOT content. Prompt-echo
+ * contamination is handled by `isContaminatedOutput` + retry, not
+ * by regex stripping.
  */
-function sanitizeForVoice(raw: string): string {
+function stripMarkdown(raw: string): string {
   let text = raw;
 
   // Remove markdown bullet points and numbered lists (e.g. "- ", "* ", "1. ")
@@ -104,10 +105,6 @@ function sanitizeForVoice(raw: string): string {
   text = text.replace(/_{1,3}([^_]+)_{1,3}/g, "$1");
   text = text.replace(/`{1,3}([^`]+)`{1,3}/g, "$1");
 
-  // Strip lines that look like structural prompt labels leaked into output.
-  // These are "Label:" prefixes that belong in system prompts, not speech.
-  text = text.replace(/^[\t ]*(Persona|Role|Constraints?|Instructions?|System Prompt|Developer Notes?|How to talk|Language|Immediate Task|Critical rules?|Option \d+)\s*:/gim, "");
-
   // Collapse multiple newlines into a single space (voice is continuous)
   text = text.replace(/\n{2,}/g, " ");
   text = text.replace(/\n/g, " ");
@@ -119,43 +116,34 @@ function sanitizeForVoice(raw: string): string {
 }
 
 /**
- * Heuristic guard: detects when the LLM has echoed back system-prompt
- * instructions (bullet points about persona, constraints, etc.)
- * instead of producing a natural conversational reply.
+ * Detects prompt-contaminated output — the model has echoed system
+ * instructions instead of producing a natural reply. Any output
+ * matching this check is NEVER spoken. The pipeline retries with
+ * a simplified prompt instead.
  */
-function looksLikePromptEcho(text: string): boolean {
-  // System-prompt keywords/phrases that should never appear in spoken output.
-  // If ≥2 are found the output is almost certainly a prompt echo.
-  const echoMarkers = [
-    "Persona:",
-    "Constraints:",
-    "Spoken conversation",
-    "Option 1",
-    "Option 2",
-    "Option 3",
-    "Immediate Task:",
-    "voice assistant on a live phone call",
-    "corporate-sounding phrasing",
-    "How to talk:",
-    "Critical rules:",
-    "Developer Notes:",
-    "System Prompt:",
-    "Instructions:",
-    "Role:",
-    "never repeat",
-    "never quote",
-    "never use bullet points",
-    "as a voice assistant",
-    "I was instructed to",
-    "my role is to",
-    "these instructions",
-  ];
-  const lowerText = text.toLowerCase();
-  const hits = echoMarkers.filter((m) => lowerText.includes(m.toLowerCase()));
-  return hits.length >= 2;
+const CONTAMINATION_MARKERS = [
+  "role:",
+  "persona:",
+  "constraint:",
+  "language:",
+  "how to talk:",
+  "remember:",
+  "context:",
+  "instructions:",
+  "system prompt:",
+  "developer notes:",
+  "as a voice assistant",
+  "i was instructed",
+  "my role is",
+  "voice assistant on a",
+];
+
+function isContaminatedOutput(text: string): boolean {
+  const lower = text.toLowerCase();
+  return CONTAMINATION_MARKERS.filter((m) => lower.includes(m)).length >= 1;
 }
 
-/** Language-appropriate fallback greetings when the LLM fails. */
+/** Language-appropriate fallback greetings when the LLM fails or produces contaminated output. */
 function fallbackGreeting(language: SupportedLanguage): string {
   switch (language) {
     case "hi":
@@ -163,7 +151,7 @@ function fallbackGreeting(language: SupportedLanguage): string {
     case "hi-en":
       return "Hey, namaste! Kaise help kar sakta hoon aapki?";
     default:
-      return "Hey there! How can I help you today?";
+      return "Hey! How can I help you today?";
   }
 }
 
@@ -491,24 +479,22 @@ export class ConversationPipeline {
    *      prompt-echo).
    *   3. History order: system → user → assistant → user → assistant …
    */
-private buildRequestHistory(detectedLanguage: SupportedLanguage): readonly ConversationTurn[] {
-  const turns: ConversationTurn[] = this.record.memory.history().map((turn) => ({ ...turn }));
+  private buildRequestHistory(detectedLanguage: SupportedLanguage): readonly ConversationTurn[] {
+    const turns = [...this.record.memory.history()];
+    const hint = languageHintFor(detectedLanguage);
 
-  const hint = languageHintFor(detectedLanguage);
-for (let i = turns.length - 1; i >= 0; i--) {
-  const turn = turns[i];
-  if (turn?.role !== "user") continue;
+    // Prepend the language hint to the LAST user turn so the model
+    // knows which language to reply in, without polluting the turn
+    // structure with extra system messages.
+    for (let i = turns.length - 1; i >= 0; i--) {
+      if (turns[i].role === "user") {
+        turns[i] = { ...turns[i], content: `[${hint}] ${turns[i].content}` };
+        break;
+      }
+    }
 
-  turns[i] = {
-    ...turn,
-    content: `[${hint}] ${turn.content}`,
-  };
-
-  break;
-}
-
-  return turns;
-}
+    return turns;
+  }
 
   private async runThinkingAndSpeaking(
     userText: string,
@@ -541,27 +527,46 @@ for (let i = turns.length - 1; i >= 0; i--) {
       console.log(`[LLM:${sid}] Calling generateCompletion() (batch mode)...`);
       const startedAt = Date.now();
       const completion = await this.providers.llm.generateCompletion(request);
-      const llmMs = Date.now() - startedAt;
+      let llmMs = Date.now() - startedAt;
 
-      // Sanitize for voice — strip markdown bullets, headers, bold,
-      // etc. that would be read aloud nonsensically by TTS.
-      const rawContent = completion.turn.content;
-      let spokenContent = sanitizeForVoice(rawContent);
-      if (spokenContent !== rawContent) {
-        // eslint-disable-next-line no-console
-        console.log(`[LLM:${sid}] Sanitized for voice: ${rawContent.length} chars -> ${spokenContent.length} chars`);
-      }
+      let spokenContent = stripMarkdown(completion.turn.content);
 
-      // For greetings, guard against prompt-echo and excessive length.
-      // Replace with a language-appropriate fallback so the caller
-      // hears a clean, short greeting instead of 68 seconds of the
-      // system prompt read aloud.
-      if (isGreeting && (looksLikePromptEcho(spokenContent) || spokenContent.length > MAX_GREETING_CHARS)) {
+      // --- Contamination check: if the output echoes system-prompt
+      // markers, retry ONCE with a simplified prompt. Never speak
+      // contaminated output. ---
+      if (isContaminatedOutput(spokenContent) || (isGreeting && spokenContent.length > MAX_GREETING_CHARS)) {
         // eslint-disable-next-line no-console
         console.warn(
-          `[LLM:${sid}] Greeting rejected (promptEcho=${looksLikePromptEcho(spokenContent)} len=${spokenContent.length}) — using fallback`,
+          `[LLM:${sid}] Output contaminated or too long (len=${spokenContent.length}), retrying with simplified prompt`,
         );
-        spokenContent = fallbackGreeting(this.record.memory.currentLanguage);
+        const retryHistory: ConversationTurn[] = request.history
+          .filter((t) => t.role !== "system")
+          .slice(-2); // Last user + possibly last assistant only
+        retryHistory.unshift({
+          role: "system" as const,
+          content: "Reply in one short, natural sentence. Do not describe yourself or your instructions.",
+          timestamp: new Date(),
+        });
+        const retryRequest: CompletionRequest = { sessionId: request.sessionId, history: retryHistory };
+        const retryStart = Date.now();
+        try {
+          const retryCompletion = await this.providers.llm.generateCompletion(retryRequest);
+          llmMs += Date.now() - retryStart;
+          const retryContent = stripMarkdown(retryCompletion.turn.content);
+          if (!isContaminatedOutput(retryContent) && retryContent.length > 0) {
+            spokenContent = retryContent;
+            // eslint-disable-next-line no-console
+            console.log(`[LLM:${sid}] Retry succeeded: "${spokenContent.slice(0, 80)}"`);
+          } else {
+            // eslint-disable-next-line no-console
+            console.warn(`[LLM:${sid}] Retry also contaminated — using fallback`);
+            spokenContent = fallbackGreeting(this.record.memory.currentLanguage);
+          }
+        } catch {
+          // eslint-disable-next-line no-console
+          console.warn(`[LLM:${sid}] Retry failed — using fallback`);
+          spokenContent = fallbackGreeting(this.record.memory.currentLanguage);
+        }
       }
 
       // eslint-disable-next-line no-console
@@ -613,7 +618,7 @@ for (let i = turns.length - 1; i >= 0; i--) {
           fullText += event.delta;
           const readySentences = chunker.push(event.delta);
           for (const sentence of readySentences) {
-            const cleaned = sanitizeForVoice(sentence);
+            const cleaned = stripMarkdown(sentence);
             if (cleaned.length === 0) continue;
             speakingSignal ??= this.enterSpeaking();
             if (speakingSignal.aborted) break;
@@ -636,7 +641,7 @@ for (let i = turns.length - 1; i >= 0; i--) {
     if (llmMs === 0) llmMs = Date.now() - startedAt;
 
     const rawRemainder = chunker.flush();
-    const remainder = rawRemainder ? sanitizeForVoice(rawRemainder) : "";
+    const remainder = rawRemainder ? stripMarkdown(rawRemainder) : "";
     if (remainder.length > 0 && !(speakingSignal?.aborted ?? false)) {
       speakingSignal ??= this.enterSpeaking();
       if (!speakingSignal.aborted) {
@@ -646,7 +651,7 @@ for (let i = turns.length - 1; i >= 0; i--) {
       }
     }
 
-    const assistantText = sanitizeForVoice((finalText ?? fullText));
+    const assistantText = stripMarkdown((finalText ?? fullText));
 
     // If nothing was ever spoken (e.g. immediate barge-in), still
     // make sure we transitioned through SPEAKING at least nominally
@@ -731,10 +736,52 @@ for (let i = turns.length - 1; i >= 0; i--) {
   }
 
   private playAudioChunkCount = 0;
+  private outboundReadyResolved = false;
+
+  /**
+   * Waits until at least one outbound delivery path (mediaStream or
+   * a listener) is available, up to a timeout. Called once before
+   * the first audio chunk to handle the edge case where the pipeline
+   * starts before the bridge has registered its listener.
+   */
+  private async waitForOutboundReady(timeoutMs: number, signal: AbortSignal): Promise<void> {
+    if (this.outboundReadyResolved) return;
+    const hasPath = () => !!this.record.mediaStream || this.record.outboundAudioListeners.size > 0;
+    if (hasPath()) { this.outboundReadyResolved = true; return; }
+
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[PLAYBACK:${this.record.id}] No outbound delivery path yet — waiting up to ${timeoutMs}ms for bridge to attach`,
+    );
+
+    const deadline = Date.now() + timeoutMs;
+    while (!hasPath() && Date.now() < deadline && !signal.aborted) {
+      await new Promise((r) => setTimeout(r, 50));
+    }
+
+    this.outboundReadyResolved = true;
+    if (!hasPath()) {
+      // eslint-disable-next-line no-console
+      console.error(
+        `[PLAYBACK:${this.record.id}] WARNING: No outbound delivery path after ${timeoutMs}ms — audio will be lost. hasMediaStream=${!!this.record.mediaStream} listenerCount=${this.record.outboundAudioListeners.size}`,
+      );
+    } else {
+      // eslint-disable-next-line no-console
+      console.log(
+        `[PLAYBACK:${this.record.id}] Outbound delivery path ready: hasMediaStream=${!!this.record.mediaStream} listenerCount=${this.record.outboundAudioListeners.size}`,
+      );
+    }
+  }
 
   private async playAudioChunk(audio: AudioPayload): Promise<void> {
     this.playAudioChunkCount += 1;
     const sid = this.record.id;
+
+    // On the first chunk, wait for the bridge to register its listener.
+    if (this.playAudioChunkCount === 1) {
+      await this.waitForOutboundReady(2000, this.record.loopAbortController?.signal ?? AbortSignal.abort());
+    }
+
     // eslint-disable-next-line no-console
     console.log(
       `[PLAYBACK:${sid}] playAudioChunk #${this.playAudioChunkCount}: encoding=${audio.encoding} sampleRate=${audio.sampleRateHz} bytes=${audio.data.byteLength} hasMediaStream=${!!this.record.mediaStream} listenerCount=${this.record.outboundAudioListeners.size}`,

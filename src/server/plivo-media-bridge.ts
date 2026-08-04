@@ -169,6 +169,8 @@ export function attachPlivoMediaBridge(
   }
 
   unsubscribeOutbound = manager.onOutboundAudio(sessionId, enqueueOutbound);
+  // eslint-disable-next-line no-console
+  console.log(`[plivo-bridge:${sessionId}] outbound audio listener registered`);
 
   // Full-duplex barge-in: when the pipeline leaves SPEAKING because
   // the user interrupted (barge-in), clear the outbound queue AND

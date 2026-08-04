@@ -4,13 +4,17 @@
  * Concrete `LanguageModelProvider` implementation for Gemma, backed
  * by Google AI Studio's official Node.js SDK (`@google/generative-ai`).
  *
- * Google's Generative Language API only recognizes "user" and
- * "model" roles inside `contents`, and — per Google's own
- * documentation — Gemma models (unlike Gemini) do not support the
- * separate `systemInstruction` field. To stay within documented
- * behavior rather than inventing support for an unsupported field,
- * this adapter folds any "system" turns into a leading "user" turn
- * instead of passing `systemInstruction`.
+ * The system prompt is passed via the SDK's `systemInstruction`
+ * parameter — a dedicated field that keeps behavioural instructions
+ * completely separate from the conversation content the model sees.
+ * This prevents the model from echoing the system prompt back as
+ * conversational output, which happened when the system prompt was
+ * folded into the `contents` array as a user turn.
+ *
+ * Google's API requires strict user/model alternation inside
+ * `contents`. This adapter enforces that invariant by merging
+ * adjacent same-role turns and filtering out any system turns
+ * before they reach the `contents` array.
  */
 
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -40,54 +44,20 @@ function loadEnvConfig(): GemmaEnvConfig {
 }
 
 /**
- * Converts vendor-neutral conversation history into Google's
- * `Content[]` shape.
+ * Converts ONLY the non-system turns of a conversation history into
+ * Google's `Content[]` shape. System turns are excluded — they are
+ * passed separately via `systemInstruction`.
  *
- * Gemma models do NOT support `systemInstruction`, so system
- * turns must be woven into the `contents` array as user/model
- * exchanges. The previous implementation concatenated every
- * system turn and prepended the blob to the first user message —
- * this caused Gemma to treat the growing instruction dump as
- * content to echo back rather than instructions to follow.
- *
- * New approach:
- *   1. Emit the system prompt as its own user turn.
- *   2. Follow it with a short model-acknowledgement turn so Gemma
- *      sees the instructions as something it has already agreed to
- *      follow — not content the user just typed that needs a reply.
- *   3. Emit the real conversation turns afterwards.
- *
- * Google's API requires strict user/model alternation. This
- * function ensures that invariant even if the input history has
- * adjacent same-role turns (merges them).
+ * Google's API requires strict user/model alternation. Adjacent
+ * same-role turns are merged into a single Content entry.
  */
 function toGoogleContents(history: readonly ConversationTurn[]): Content[] {
-  // Separate system turns from conversation turns.
-  const systemParts = history
-    .filter((turn) => turn.role === "system")
-    .map((turn) => turn.content);
-  const systemPreamble = systemParts.join("\n\n");
-
-  const conversational = history.filter((turn) => turn.role !== "system");
-
   const contents: Content[] = [];
 
-  // 1. System prompt as a user turn + model acknowledgement.
-  //    The model ack gives Gemma a clear signal that these are
-  //    instructions it accepted, not content to parrot.
-  if (systemPreamble.length > 0) {
-    contents.push({
-      role: "user",
-      parts: [{ text: systemPreamble }],
-    });
-    contents.push({
-      role: "model",
-      parts: [{ text: "Understood. I'll speak naturally and follow these instructions." }],
-    });
-  }
+  for (const turn of history) {
+    // System turns are handled via systemInstruction — skip them.
+    if (turn.role === "system") continue;
 
-  // 2. Map real conversation turns.
-  for (const turn of conversational) {
     const role = turn.role === "assistant" ? "model" : "user";
     const last = contents[contents.length - 1];
 
@@ -122,12 +92,23 @@ export class GemmaLanguageModelProvider implements LanguageModelProvider {
   }
 
   async generateCompletion(request: CompletionRequest): Promise<CompletionResult> {
-    const model = this.client.getGenerativeModel({ model: this.config.model });
+    // Extract the system prompt to pass via systemInstruction,
+    // keeping it completely out of the conversation contents.
+    const systemParts = request.history
+      .filter((turn) => turn.role === "system")
+      .map((turn) => turn.content);
+    const systemPreamble = systemParts.join("\n\n");
+
+    const model = this.client.getGenerativeModel({
+      model: this.config.model,
+      ...(systemPreamble.length > 0 ? { systemInstruction: systemPreamble } : {}),
+    });
+
     const contents = toGoogleContents(request.history);
 
     // eslint-disable-next-line no-console
     console.log(
-      `[LLM:gemma] generateCompletion: model=${this.config.model} contentsLength=${contents.length} roles=[${contents.map((c) => c.role).join(",")}]`,
+      `[LLM:gemma] generateCompletion: model=${this.config.model} contentsLength=${contents.length} roles=[${contents.map((c) => c.role).join(",")}] systemInstructionLen=${systemPreamble.length}`,
     );
 
     const { result, latencyMs } = await timed(() => model.generateContent({ contents }));
@@ -155,9 +136,6 @@ export class GemmaLanguageModelProvider implements LanguageModelProvider {
 
   async checkHealth(): Promise<ProviderHealthStatus> {
     return probeHealth(this.descriptor, async () => {
-      // The SDK does not expose a dedicated "list models" call; use
-      // the official REST list-models endpoint (same API the SDK
-      // wraps) as a lightweight, side-effect-free credential check.
       await getOk(
         this.descriptor.id,
         `https://generativelanguage.googleapis.com/v1beta/models?key=${this.config.apiKey}`,

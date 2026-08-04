@@ -123,7 +123,10 @@ export class ConversationPipeline {
         // instruction to greet the caller, rather than receiving
         // only system messages (which some models answer with
         // empty text, producing silence on the line).
-        this.record.memory.recordUserTurn("[Call connected — greet the caller]", this.record.memory.currentLanguage);
+        this.record.memory.recordUserTurn(
+    "The call has just connected. Greet the caller naturally in one short sentence.",
+    this.record.memory.currentLanguage
+);
 
         const detected = detectLanguage("", this.record.memory.currentLanguage);
         const greeting = await this.runThinkingAndSpeaking("", detected, loopSignal);
@@ -385,12 +388,9 @@ export class ConversationPipeline {
   // LLM + TTS
   // ---------------------------------------------------------------
 
-  private buildRequestHistory(detectedLanguage: SupportedLanguage): readonly ConversationTurn[] {
-    return [
-      ...this.record.memory.history(),
-      { role: "system", content: languageHintFor(detectedLanguage), timestamp: new Date() },
-    ];
-  }
+private buildRequestHistory(): readonly ConversationTurn[] {
+  return this.record.memory.history();
+}
 
   private async runThinkingAndSpeaking(
     userText: string,
@@ -406,7 +406,7 @@ export class ConversationPipeline {
 
     this.host.transition(this.record, SessionState.THINKING, "generating a reply");
     const thinkingSignal = combineSignals([this.record.bargeIn.beginThinking(), loopSignal]);
-    const request: CompletionRequest = { sessionId: this.record.id, history: this.buildRequestHistory(detected.language) };
+    const request: CompletionRequest = { sessionId: this.record.id, history: this.buildRequestHistory() };
     const llmProviderId = this.providers.llm.descriptor.id;
 
     // eslint-disable-next-line no-console

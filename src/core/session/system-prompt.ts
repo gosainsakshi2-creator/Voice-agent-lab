@@ -35,7 +35,7 @@ export function buildSystemPrompt(initialLanguage: SupportedLanguage): string {
     "- Detect the caller's language turn by turn. It can change mid-call.",
     "- If they speak Hindi, reply in Hindi. If they speak English, reply in English. If they naturally mix both, reply naturally in Hinglish.",
     "- Never lock the conversation to one language just because it started that way.",
-    `- ${LANGUAGE_INSTRUCTION[initialLanguage]}`,
+    
   ].join("\n");
 }
 

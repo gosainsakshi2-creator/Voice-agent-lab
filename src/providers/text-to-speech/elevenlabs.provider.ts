@@ -66,15 +66,17 @@ async function collectStream(stream: unknown): Promise<Uint8Array> {
     }
   }
   // Path 2: Node.js Readable / AsyncIterable (has Symbol.asyncIterator)
-  else if (
-    typeof stream === "object" &&
-    stream !== null &&
-    Symbol.asyncIterator in (stream as Record<symbol, unknown>)
-  ) {
-    for await (const chunk of stream as AsyncIterable<Uint8Array | Buffer>) {
-      push(chunk);
-    }
+else if (
+  typeof stream === "object" &&
+  stream !== null &&
+  Symbol.asyncIterator in (stream as object)
+) {
+  const asyncStream = stream as unknown as AsyncIterable<Uint8Array | Buffer>;
+
+  for await (const chunk of asyncStream) {
+    push(chunk);
   }
+}
   // Path 3: Already a Buffer or Uint8Array (some SDK versions return the whole thing)
   else if (stream instanceof Uint8Array || Buffer.isBuffer(stream)) {
     push(stream);
@@ -168,7 +170,7 @@ export class ElevenLabsTextToSpeechProvider implements TextToSpeechProvider {
 
     // eslint-disable-next-line no-console
     console.log(
-      `[TTS:elevenlabs] convert() returned: type=${typeof stream} constructor=${(stream as object)?.constructor?.name} hasGetReader=${typeof (stream as ReadableStream)?.getReader === "function"} hasAsyncIterator=${typeof stream === "object" && stream !== null && Symbol.asyncIterator in (stream as Record<symbol, unknown>)}`,
+      `[TTS:elevenlabs] convert() returned: type=${typeof stream} constructor=${(stream as object)?.constructor?.name} hasGetReader=${typeof (stream as ReadableStream)?.getReader === "function"} hasAsyncIterator=${typeof stream === "object" && stream !== null && Symbol.asyncIterator in (stream as object)}`,
     );
 
     const data = await collectStream(stream);

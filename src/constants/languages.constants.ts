@@ -18,17 +18,17 @@ export const LANGUAGE_METADATA: Readonly<Record<SupportedLanguage, LanguageMetad
   [SupportedLanguage.ENGLISH]: {
     code: SupportedLanguage.ENGLISH,
     label: "English",
-    bcp47Tag: "en-US",
+    bcp47Tag: "en",
   },
   [SupportedLanguage.HINDI]: {
     code: SupportedLanguage.HINDI,
     label: "Hindi",
-    bcp47Tag: "hi-IN",
+    bcp47Tag: "hi",
   },
   [SupportedLanguage.HINGLISH]: {
     code: SupportedLanguage.HINGLISH,
     label: "Hinglish",
-    bcp47Tag: "hi-Latn-IN",
+    bcp47Tag: "multi",
   },
 };
 

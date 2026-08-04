@@ -12,6 +12,7 @@ import { ProviderCategory } from "../types/enums";
 
 export const TELEPHONY_PROVIDER_IDS = {
   PLIVO: "plivo",
+  VOBIZ: "vobiz",
 } as const;
 
 export const SPEECH_TO_TEXT_PROVIDER_IDS = {

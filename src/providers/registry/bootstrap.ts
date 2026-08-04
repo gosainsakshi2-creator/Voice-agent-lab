@@ -26,6 +26,7 @@ import type { ProviderCategoryMap, ProviderRegistry } from "../../interfaces/pro
 import { InMemoryProviderRegistry } from "./in-memory-provider-registry";
 
 import { PlivoTelephonyProvider } from "../telephony/plivo.provider";
+import { VobizTelephonyProvider } from "../telephony/vobiz.provider";
 import { DeepgramSpeechToTextProvider } from "../speech-to-text/deepgram.provider";
 import { OpenAiGptLanguageModelProvider } from "../language-model/openai-gpt.provider";
 import { GemmaLanguageModelProvider } from "../language-model/gemma.provider";
@@ -94,6 +95,8 @@ export function bootstrapProviderRegistry(
 ): BootstrapResult {
   const outcomes: ProviderRegistrationOutcome[] = [];
 
+  // ── Telephony ──────────────────────────────────────────────
+
   registerIfConfigured(
     registry,
     ProviderCategory.TELEPHONY,
@@ -105,12 +108,25 @@ export function bootstrapProviderRegistry(
 
   registerIfConfigured(
     registry,
+    ProviderCategory.TELEPHONY,
+    TELEPHONY_PROVIDER_IDS.VOBIZ,
+    ["VOBIZ_AUTH_ID", "VOBIZ_AUTH_TOKEN", "VOBIZ_FROM_NUMBER", "VOBIZ_ANSWER_URL"],
+    () => new VobizTelephonyProvider(),
+    outcomes,
+  );
+
+  // ── Speech-to-Text ─────────────────────────────────────────
+
+  registerIfConfigured(
+    registry,
     ProviderCategory.SPEECH_TO_TEXT,
     SPEECH_TO_TEXT_PROVIDER_IDS.DEEPGRAM,
     ["DEEPGRAM_API_KEY"],
     () => new DeepgramSpeechToTextProvider(),
     outcomes,
   );
+
+  // ── Language Model ─────────────────────────────────────────
 
   registerIfConfigured(
     registry,
@@ -129,6 +145,8 @@ export function bootstrapProviderRegistry(
     () => new GemmaLanguageModelProvider(),
     outcomes,
   );
+
+  // ── Text-to-Speech ─────────────────────────────────────────
 
   registerIfConfigured(
     registry,

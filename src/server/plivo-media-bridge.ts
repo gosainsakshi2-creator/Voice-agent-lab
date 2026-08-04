@@ -170,17 +170,31 @@ export function attachPlivoMediaBridge(
 
   unsubscribeOutbound = manager.onOutboundAudio(sessionId, enqueueOutbound);
 
-  // Full-duplex barge-in: the moment the pipeline leaves SPEAKING
-  // (either a normal turn finish or a barge-in abort) while we still
-  // have queued/playing audio on the wire, tell Plivo to drop it
-  // immediately rather than let stale audio keep playing.
+  // Full-duplex barge-in: when the pipeline leaves SPEAKING because
+  // the user interrupted (barge-in), clear the outbound queue AND
+  // send Plivo a `clearAudio` so stale assistant audio stops
+  // immediately. On a NORMAL turn completion (the assistant finished
+  // speaking), do NOT clear — the pump is still draining the last
+  // few frames and Plivo still has audio in its playback buffer.
+  // Sending `clearAudio` on every SPEAKING → LISTENING transition
+  // was silencing the tail of every utterance.
   unsubscribeState = manager.onStateChange((eventSessionId, transition) => {
     if (eventSessionId !== sessionId) return;
     if (transition.to === SessionState.SPEAKING) {
       wasSpeaking = true;
     } else if (wasSpeaking && transition.to === SessionState.LISTENING) {
       wasSpeaking = false;
-      clearOutboundPlayback();
+      // Only clear on barge-in (user interrupted). Normal turn
+      // completion uses reasons like "awaiting user speech".
+      const isBargeIn = transition.reason != null && /barge.?in/i.test(transition.reason);
+      if (isBargeIn) {
+        clearOutboundPlayback();
+      } else {
+        // eslint-disable-next-line no-console
+        console.log(
+          `[plivo-bridge:${sessionId}] SPEAKING->LISTENING (normal completion, reason="${transition.reason}") — letting pump drain naturally, queue=${outboundQueue.length}`,
+        );
+      }
     }
   });
 

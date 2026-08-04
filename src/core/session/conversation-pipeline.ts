@@ -104,6 +104,10 @@ function sanitizeForVoice(raw: string): string {
   text = text.replace(/_{1,3}([^_]+)_{1,3}/g, "$1");
   text = text.replace(/`{1,3}([^`]+)`{1,3}/g, "$1");
 
+  // Strip lines that look like structural prompt labels leaked into output.
+  // These are "Label:" prefixes that belong in system prompts, not speech.
+  text = text.replace(/^[\t ]*(Persona|Role|Constraints?|Instructions?|System Prompt|Developer Notes?|How to talk|Language|Immediate Task|Critical rules?|Option \d+)\s*:/gim, "");
+
   // Collapse multiple newlines into a single space (voice is continuous)
   text = text.replace(/\n{2,}/g, " ");
   text = text.replace(/\n/g, " ");
@@ -120,7 +124,8 @@ function sanitizeForVoice(raw: string): string {
  * instead of producing a natural conversational reply.
  */
 function looksLikePromptEcho(text: string): boolean {
-  // Common system-prompt keywords that should never appear in a spoken reply
+  // System-prompt keywords/phrases that should never appear in spoken output.
+  // If ≥2 are found the output is almost certainly a prompt echo.
   const echoMarkers = [
     "Persona:",
     "Constraints:",
@@ -132,6 +137,18 @@ function looksLikePromptEcho(text: string): boolean {
     "voice assistant on a live phone call",
     "corporate-sounding phrasing",
     "How to talk:",
+    "Critical rules:",
+    "Developer Notes:",
+    "System Prompt:",
+    "Instructions:",
+    "Role:",
+    "never repeat",
+    "never quote",
+    "never use bullet points",
+    "as a voice assistant",
+    "I was instructed to",
+    "my role is to",
+    "these instructions",
   ];
   const lowerText = text.toLowerCase();
   const hits = echoMarkers.filter((m) => lowerText.includes(m.toLowerCase()));
@@ -462,11 +479,33 @@ export class ConversationPipeline {
   // LLM + TTS
   // ---------------------------------------------------------------
 
+  /**
+   * Builds the turn array sent to the LLM.
+   *
+   * Rules:
+   *   1. Exactly ONE system turn — the leading prompt from ConversationMemory.
+   *   2. Language hints are folded into the latest user message,
+   *      never added as a separate system turn (doing so caused
+   *      Gemma's `toGoogleContents` to merge ALL system turns into
+   *      the first user message, growing it each turn and triggering
+   *      prompt-echo).
+   *   3. History order: system → user → assistant → user → assistant …
+   */
   private buildRequestHistory(detectedLanguage: SupportedLanguage): readonly ConversationTurn[] {
-    return [
-      ...this.record.memory.history(),
-      { role: "system", content: languageHintFor(detectedLanguage), timestamp: new Date() },
-    ];
+    const turns = [...this.record.memory.history()];
+    const hint = languageHintFor(detectedLanguage);
+
+    // Prepend the language hint to the LAST user turn so the model
+    // knows which language to reply in, without polluting the turn
+    // structure with extra system messages.
+    for (let i = turns.length - 1; i >= 0; i--) {
+      if (turns[i].role === "user") {
+        turns[i] = { ...turns[i], content: `[${hint}] ${turns[i].content}` };
+        break;
+      }
+    }
+
+    return turns;
   }
 
   private async runThinkingAndSpeaking(

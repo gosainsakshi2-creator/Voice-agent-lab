@@ -41,25 +41,64 @@ function loadEnvConfig(): GemmaEnvConfig {
 
 /**
  * Converts vendor-neutral conversation history into Google's
- * `Content[]` shape, merging any "system" turns into the first
- * "user" turn (see file-level comment for rationale).
+ * `Content[]` shape.
+ *
+ * Gemma models do NOT support `systemInstruction`, so system
+ * turns must be woven into the `contents` array as user/model
+ * exchanges. The previous implementation concatenated every
+ * system turn and prepended the blob to the first user message —
+ * this caused Gemma to treat the growing instruction dump as
+ * content to echo back rather than instructions to follow.
+ *
+ * New approach:
+ *   1. Emit the system prompt as its own user turn.
+ *   2. Follow it with a short model-acknowledgement turn so Gemma
+ *      sees the instructions as something it has already agreed to
+ *      follow — not content the user just typed that needs a reply.
+ *   3. Emit the real conversation turns afterwards.
+ *
+ * Google's API requires strict user/model alternation. This
+ * function ensures that invariant even if the input history has
+ * adjacent same-role turns (merges them).
  */
 function toGoogleContents(history: readonly ConversationTurn[]): Content[] {
-  const systemPreamble = history
+  // Separate system turns from conversation turns.
+  const systemParts = history
     .filter((turn) => turn.role === "system")
-    .map((turn) => turn.content)
-    .join("\n\n");
+    .map((turn) => turn.content);
+  const systemPreamble = systemParts.join("\n\n");
 
   const conversational = history.filter((turn) => turn.role !== "system");
 
-  const contents: Content[] = conversational.map((turn) => ({
-    role: turn.role === "assistant" ? "model" : "user",
-    parts: [{ text: turn.content }],
-  }));
+  const contents: Content[] = [];
 
-  if (systemPreamble.length > 0 && contents.length > 0 && contents[0]?.role === "user") {
-    const first = contents[0];
-    contents[0] = { role: "user", parts: [{ text: `${systemPreamble}\n\n${first.parts[0]?.text ?? ""}` }] };
+  // 1. System prompt as a user turn + model acknowledgement.
+  //    The model ack gives Gemma a clear signal that these are
+  //    instructions it accepted, not content to parrot.
+  if (systemPreamble.length > 0) {
+    contents.push({
+      role: "user",
+      parts: [{ text: systemPreamble }],
+    });
+    contents.push({
+      role: "model",
+      parts: [{ text: "Understood. I'll speak naturally and follow these instructions." }],
+    });
+  }
+
+  // 2. Map real conversation turns.
+  for (const turn of conversational) {
+    const role = turn.role === "assistant" ? "model" : "user";
+    const last = contents[contents.length - 1];
+
+    // Google requires strict alternation. If two consecutive turns
+    // share a role (e.g. multiple user utterances before the model
+    // replied), merge them into one Content entry.
+    if (last && last.role === role) {
+      last.parts.push({ text: turn.content });
+    } else {
+      contents.push({ role, parts: [{ text: turn.content }] });
+    }
   }
 
   return contents;

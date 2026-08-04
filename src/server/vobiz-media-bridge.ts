@@ -184,7 +184,19 @@ export function attachVobizMediaBridge(
     const frameCount = Math.ceil(l16Bytes.length / outboundFrameBytes!);
     outboundFrameTotal += frameCount;
     for (let offset = 0; offset < l16Bytes.length; offset += outboundFrameBytes!) {
-      outboundQueue.push(l16Bytes.subarray(offset, offset + outboundFrameBytes!));
+      const slice = l16Bytes.subarray(offset, offset + outboundFrameBytes!);
+      if (slice.length < outboundFrameBytes!) {
+        // Pad the final sub-frame slice with silence (zero bytes) so
+        // every frame sent to Vobiz is exactly the declared frame size.
+        // In L16, 0x0000 = zero amplitude = silence. A truncated frame
+        // causes an audible click at the playback boundary because the
+        // receiver's buffer underruns mid-frame.
+        const padded = new Uint8Array(outboundFrameBytes!);
+        padded.set(slice);
+        outboundQueue.push(padded);
+      } else {
+        outboundQueue.push(slice);
+      }
     }
     // eslint-disable-next-line no-console
     console.log(

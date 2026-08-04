@@ -35,7 +35,7 @@ interface GemmaEnvConfig {
 function loadEnvConfig(): GemmaEnvConfig {
   return {
     apiKey: requireEnv("GEMMA_API_KEY", LANGUAGE_MODEL_PROVIDER_IDS.GEMMA_4),
-    model: optionalEnv("GEMMA_MODEL", "gemma-3-27b-it"),
+    model: optionalEnv("GEMMA_MODEL", "gemma-4-31b-it"),
   };
 }
 

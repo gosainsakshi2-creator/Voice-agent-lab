@@ -184,6 +184,7 @@ export class ElevenLabsTextToSpeechProvider implements TextToSpeechProvider {
     similarityBoost: 0.88,
     style: 0.08,
     useSpeakerBoost: true,
+    speed: 0.88,
   },
     });
 
@@ -229,6 +230,7 @@ export class ElevenLabsTextToSpeechProvider implements TextToSpeechProvider {
     similarityBoost: 0.88,
     style: 0.08,
     useSpeakerBoost: true,
+    speed: 0.88,
   },
     });
 

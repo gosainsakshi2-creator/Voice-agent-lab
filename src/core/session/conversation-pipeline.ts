@@ -591,7 +591,7 @@ console.log("Confidence:", detected.confidence);
       }
       const speakingSignal = combineSignals([this.record.bargeIn.beginSpeaking(), loopSignal]);
 
-      const { ttsMs, ttsCostUsd } = await this.synthesizeAndPlay(spokenContent, speakingSignal);
+      const { ttsMs, ttsCostUsd } = await this.synthesizeAndPlay(spokenContent, detected.language,speakingSignal);
 
       return {
         assistantText: spokenContent,
@@ -634,7 +634,7 @@ console.log("Confidence:", detected.confidence);
             if (cleaned.length === 0) continue;
             speakingSignal ??= this.enterSpeaking();
             if (speakingSignal.aborted) break;
-            const spoken = await this.synthesizeAndPlay(cleaned, speakingSignal);
+            const spoken = await this.synthesizeAndPlay(cleaned,  this.record.memory.currentLanguage,speakingSignal);
             ttsMs += spoken.ttsMs;
             ttsCostUsd += spoken.ttsCostUsd;
           }
@@ -657,7 +657,7 @@ console.log("Confidence:", detected.confidence);
     if (remainder.length > 0 && !(speakingSignal?.aborted ?? false)) {
       speakingSignal ??= this.enterSpeaking();
       if (!speakingSignal.aborted) {
-        const spoken = await this.synthesizeAndPlay(remainder, speakingSignal);
+        const spoken = await this.synthesizeAndPlay(remainder, this.record.memory.currentLanguage, speakingSignal);
         ttsMs += spoken.ttsMs;
         ttsCostUsd += spoken.ttsCostUsd;
       }
@@ -687,7 +687,12 @@ console.log("Confidence:", detected.confidence);
     return combineSignals([this.record.bargeIn.beginSpeaking(), this.record.loopAbortController!.signal]);
   }
 
-  private async synthesizeAndPlay(text: string, speakingSignal: AbortSignal): Promise<{ ttsMs: number; ttsCostUsd: number }> {
+  private async synthesizeAndPlay(
+  text: string,
+  language: SupportedLanguage,
+  speakingSignal: AbortSignal,
+): 
+  Promise<{ ttsMs: number; ttsCostUsd: number }> {
     const sid = this.record.id;
     if (speakingSignal.aborted || text.trim().length === 0) {
       // eslint-disable-next-line no-console
@@ -700,7 +705,7 @@ console.log("Confidence:", detected.confidence);
     console.log(`[TTS:${sid}] Synthesis started: provider=${ttsProviderId} textLen=${text.length} text="${text.slice(0, 60)}${text.length > 60 ? "..." : ""}" streaming=${typeof this.providers.tts.synthesizeStream === "function"}`);
     const task: SynthesisTaskRequest = {
       sessionId: this.record.id,
-      request: { text, language: this.record.memory.currentLanguage },
+      request: { text, language },
     };
     const startedAt = Date.now();
 

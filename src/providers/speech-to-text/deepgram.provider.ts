@@ -8,7 +8,7 @@
  * results are explicitly out of scope for this architecture pass
  * (see `SpeechToTextProvider.transcribe` doc comment).
  */
-
+import type { StreamingTranscriptionRequest } from "../../types/streaming.types";
 import { DeepgramClient } from "@deepgram/sdk";
 import { SPEECH_TO_TEXT_PROVIDER_IDS } from "../../constants/providers.constants";
 import { LANGUAGE_METADATA } from "../../constants/languages.constants";
@@ -20,7 +20,7 @@ import type {
 } from "../../interfaces/providers/speech-to-text-provider.interface";
 import { probeHealth } from "../shared/health";
 import { requireEnv, optionalEnv } from "../shared/env";
-
+import { AsyncQueue } from "../../core/session/async-queue";
 interface DeepgramEnvConfig {
   readonly apiKey: string;
   readonly model: string;
@@ -133,7 +133,30 @@ export class DeepgramSpeechToTextProvider implements SpeechToTextProvider {
 
     return [segment];
   }
+  async *transcribeStream(
+  request: StreamingTranscriptionRequest,
+): AsyncIterable<TranscriptSegment> {
+ const queue = new AsyncQueue<TranscriptSegment>();
+  const socket = await this.client.listen.v1.connect({
 
+  model: this.config.model,
+
+  language: LANGUAGE_METADATA[request.language].bcp47Tag,
+
+  encoding: toDeepgramEncoding("MULAW"),
+
+  sample_rate: 8000,
+
+interim_results: "true",
+smart_format: "true",
+punctuate: "true",
+vad_events: "true",
+
+  endpointing: 300,
+
+});
+await socket.waitForOpen();
+}
   async checkHealth(): Promise<ProviderHealthStatus> {
     return probeHealth(this.descriptor, async () => {
       await this.client.manage.v1.projects.list();

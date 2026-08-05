@@ -163,13 +163,12 @@ export class ElevenLabsTextToSpeechProvider implements TextToSpeechProvider {
     );
 
     const stream = await this.client.textToSpeech.convert(voiceId, {
-      
       text: task.request.text,
       modelId: this.config.modelId,
       outputFormat: toPcmOutputFormat(this.config.sampleRateHz),
       ...(languageCode ? { languageCode } : {}),
     });
-     console.log("[DEBUG] convert() returned at", Date.now());
+
     // eslint-disable-next-line no-console
     console.log(
       `[TTS:elevenlabs] convert() returned: type=${typeof stream} constructor=${(stream as object)?.constructor?.name} hasGetReader=${typeof (stream as ReadableStream)?.getReader === "function"} hasAsyncIterator=${typeof stream === "object" && stream !== null && Symbol.asyncIterator in (stream as object)}`,
@@ -206,11 +205,84 @@ export class ElevenLabsTextToSpeechProvider implements TextToSpeechProvider {
       text: task.request.text,
       modelId: this.config.modelId,
       outputFormat: toPcmOutputFormat(this.config.sampleRateHz),
-    
       ...(languageCode ? { languageCode } : {}),
     });
 
     let sequence = 0;
+
+    // ── PCM byte-alignment accumulator ──────────────────────────────
+    //
+    // The ElevenLabs SDK streams raw HTTP response chunks whose sizes
+    // are dictated by TCP segmentation, NOT by PCM sample boundaries.
+    // PCM_16 samples are 2 bytes each — an odd-length chunk splits a
+    // sample across two yields, causing `bytesToPcm16()` downstream
+    // to silently drop the orphan byte and shift every subsequent
+    // sample by one byte.  The result is ~50% of audio time rendered
+    // from byte-misaligned pairs → severe distortion on every call.
+    //
+    // Fix: accumulate raw bytes and only yield when:
+    //   (a) we have ≥ MIN_YIELD_BYTES (ensures reasonable chunk size,
+    //       reduces runt codec frames from ~70 to ~3-5 per sentence), AND
+    //   (b) the yielded length is EVEN (preserves PCM_16 sample alignment).
+    //
+    // At stream end, flush whatever remains (still even-aligned).
+    // ────────────────────────────────────────────────────────────────
+
+    /** ~100 ms of 16 kHz PCM_16 mono (16000 samples/s × 2 bytes × 0.1 s). */
+    const MIN_YIELD_BYTES = 3200;
+    let accBuf = new Uint8Array(MIN_YIELD_BYTES * 2); // pre-allocated, grows if needed
+    let accLen = 0;
+
+    const accumulate = (incoming: Uint8Array): void => {
+      if (accLen + incoming.byteLength > accBuf.byteLength) {
+        // Grow to 2× needed capacity
+        const next = new Uint8Array((accLen + incoming.byteLength) * 2);
+        next.set(accBuf.subarray(0, accLen));
+        accBuf = next;
+      }
+      accBuf.set(incoming, accLen);
+      accLen += incoming.byteLength;
+    };
+
+    /**
+     * Yield an even-aligned slice of the accumulator when it has
+     * reached `MIN_YIELD_BYTES`.  Returns the `TtsAudioChunk` to
+     * yield, or `undefined` if the buffer isn't full enough yet.
+     */
+    const drainIfReady = (): TtsAudioChunk | undefined => {
+      if (accLen < MIN_YIELD_BYTES) return undefined;
+      // Ensure even byte count so every PCM_16 sample is complete.
+      const yieldLen = accLen & ~1; // round down to even
+      if (yieldLen === 0) return undefined;
+      const out = new Uint8Array(yieldLen);
+      out.set(accBuf.subarray(0, yieldLen));
+      // Shift any leftover byte (at most 1) to the front.
+      const leftover = accLen - yieldLen;
+      if (leftover > 0) {
+        accBuf[0] = accBuf[yieldLen]!;
+      }
+      accLen = leftover;
+      return {
+        audio: { data: out, encoding: "PCM_16" as const, sampleRateHz: this.config.sampleRateHz },
+        sequence: sequence++,
+        isFinal: false,
+      };
+    };
+
+    /** Flush whatever remains in the accumulator (even-aligned). */
+    const flush = (): TtsAudioChunk | undefined => {
+      if (accLen === 0) return undefined;
+      const yieldLen = accLen & ~1;
+      if (yieldLen === 0) return undefined; // lone orphan byte — discard
+      const out = new Uint8Array(yieldLen);
+      out.set(accBuf.subarray(0, yieldLen));
+      accLen = 0;
+      return {
+        audio: { data: out, encoding: "PCM_16" as const, sampleRateHz: this.config.sampleRateHz },
+        sequence: sequence++,
+        isFinal: false,
+      };
+    };
 
     // The SDK returns an AsyncIterable or ReadableStream of audio chunks.
     if (
@@ -223,14 +295,9 @@ export class ElevenLabsTextToSpeechProvider implements TextToSpeechProvider {
         if (signal?.aborted) break;
         const u8 = chunk instanceof Uint8Array ? chunk : new Uint8Array(chunk);
         if (u8.byteLength === 0) continue;
-    console.log(
-      `[RAW SDK] chunk=${sequence} bytes=${u8.byteLength} even=${u8.byteLength % 2 === 0}`
-    );
-        yield {
-          audio: { data: u8, encoding: "PCM_16" as const, sampleRateHz: this.config.sampleRateHz },
-          sequence: sequence++,
-          isFinal: false,
-        };
+        accumulate(u8);
+        const ready = drainIfReady();
+        if (ready) yield ready;
       }
     } else if (
       typeof stream === "object" &&
@@ -243,25 +310,30 @@ export class ElevenLabsTextToSpeechProvider implements TextToSpeechProvider {
         const { done, value } = await reader.read();
         if (done) break;
         if (value && value.byteLength > 0) {
-          yield {
-            audio: { data: value, encoding: "PCM_16" as const, sampleRateHz: this.config.sampleRateHz },
-            sequence: sequence++,
-            isFinal: false,
-          };
+          accumulate(value);
+          const ready = drainIfReady();
+          if (ready) yield ready;
         }
       }
     } else {
-      // Fallback: treat as single chunk
+      // Fallback: treat as single chunk (already fully buffered)
       const data = await collectStream(stream);
       if (data.byteLength > 0) {
-        yield {
-          audio: { data, encoding: "PCM_16" as const, sampleRateHz: this.config.sampleRateHz },
-          sequence: sequence++,
-          isFinal: true,
-        };
+        const yieldLen = data.byteLength & ~1;
+        if (yieldLen > 0) {
+          yield {
+            audio: { data: data.subarray(0, yieldLen), encoding: "PCM_16" as const, sampleRateHz: this.config.sampleRateHz },
+            sequence: sequence++,
+            isFinal: true,
+          };
+        }
         return;
       }
     }
+
+    // Flush any remaining accumulated bytes before the final marker.
+    const tail = flush();
+    if (tail) yield tail;
 
     // Emit a zero-byte final marker so callers know the stream is done.
     yield {

@@ -31,7 +31,19 @@ function loadEnvConfig(): ElevenLabsEnvConfig {
     apiKey: requireEnv("ELEVENLABS_API_KEY", TEXT_TO_SPEECH_PROVIDER_IDS.ELEVENLABS),
     modelId: optionalEnv("ELEVENLABS_MODEL_ID", "eleven_multilingual_v2"),
     defaultVoiceId: requireEnv("ELEVENLABS_DEFAULT_VOICE_ID", TEXT_TO_SPEECH_PROVIDER_IDS.ELEVENLABS),
-    sampleRateHz: optionalEnvNumber("ELEVENLABS_SAMPLE_RATE_HZ", 16000),
+    // Default to 8 kHz — the native rate of both telephony transports
+    // (Plivo and Vobiz are fixed at 8 kHz G.711 mu-law). Requesting
+    // pcm_8000 makes ElevenLabs do the band-limiting and resampling
+    // server-side with a proper resampler, so the local
+    // `resamplePcm16` path is bypassed entirely (fromRate === toRate
+    // returns the input untouched). That removes the last resampling
+    // stage from the hot path: no aliasing, no filter transients, and
+    // half the bytes over the wire for lower latency.
+    //
+    // Set ELEVENLABS_SAMPLE_RATE_HZ to override; the anti-aliased
+    // resampler in audio-codec.ts now handles 16000/22050/24000/etc
+    // correctly too, so a higher rate is safe — just slower.
+    sampleRateHz: optionalEnvNumber("ELEVENLABS_SAMPLE_RATE_HZ", 8000),
   };
 }
 
@@ -228,8 +240,13 @@ export class ElevenLabsTextToSpeechProvider implements TextToSpeechProvider {
     // At stream end, flush whatever remains (still even-aligned).
     // ────────────────────────────────────────────────────────────────
 
-    /** ~100 ms of 16 kHz PCM_16 mono (16000 samples/s × 2 bytes × 0.1 s). */
-    const MIN_YIELD_BYTES = 3200;
+    /**
+     * ~100 ms of PCM_16 mono at the configured rate, rounded to a
+     * whole number of 20 ms telephony frames so the bridge's frame
+     * slicer never produces a runt frame mid-stream.
+     * (8 kHz -> 1600 bytes = 5 frames; 16 kHz -> 3200 bytes = 5 frames.)
+     */
+    const MIN_YIELD_BYTES = Math.max(320, Math.round(this.config.sampleRateHz * 2 * 0.1));
     let accBuf = new Uint8Array(MIN_YIELD_BYTES * 2); // pre-allocated, grows if needed
     let accLen = 0;
 

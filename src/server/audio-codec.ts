@@ -101,25 +101,133 @@ export function pcm16ToBigEndianBytes(pcm: Int16Array): Uint8Array {
   return out;
 }
 
+/* ────────────────────────────────────────────────────────────────
+ * ANTI-ALIASING LOW-PASS FILTER
+ *
+ * ROOT CAUSE OF THE "crackly / robotic / metallic" AI VOICE:
+ *
+ * The previous `resamplePcm16` did linear interpolation only. When
+ * the ratio is an exact integer (the 16000 -> 8000 telephony case,
+ * ratio = 2), `frac` is ALWAYS 0, so the interpolation term
+ * `(b - a) * frac` vanishes and the function degenerates into pure
+ * decimation — it simply keeps every 2nd sample and discards the
+ * rest.
+ *
+ * Discarding samples without first removing frequencies above the
+ * new Nyquist limit (4 kHz for an 8 kHz output) makes every
+ * component between 4 kHz and 8 kHz FOLD BACK into the audible
+ * band as a mirror image. Speech sibilants (/s/ /sh/ /f/ /t/ /ch/)
+ * and the bright HF detail ElevenLabs voices are full of live
+ * exactly in that 4-8 kHz range, so they reappear as loud,
+ * inharmonic mid-range buzzing mixed on top of the speech.
+ *
+ * A 6 kHz sibilant becomes a 2 kHz tone. A 7 kHz one becomes 1 kHz.
+ * The result is continuous crackle, a metallic/robotic timbre, and
+ * a raised noise floor — on EVERY utterance, from the very first
+ * greeting, identically on Plivo and Vobiz, because both call
+ * `pcm16ToMulaw8k` -> `resamplePcm16`.
+ *
+ * The fix is the standard one: band-limit BEFORE decimating.
+ * ──────────────────────────────────────────────────────────────── */
+
+/** Cache of computed FIR kernels, keyed by "fromRate:toRate". */
+const antiAliasTapCache = new Map<string, Float32Array>();
+
 /**
- * Simple linear-interpolation resampler. Not audiophile-grade, but
- * sufficient for telephony-quality 8kHz voice, and dependency-free —
- * pulling in a native resampling library is unnecessary weight for
- * a single mu-law voice channel.
+ * Builds a Hamming-windowed sinc low-pass FIR kernel with its cutoff
+ * placed just below the output Nyquist frequency. 63 taps gives
+ * roughly 50 dB of stopband rejection — far more than enough to put
+ * the aliased energy well under the mu-law quantisation floor, at a
+ * negligible CPU cost for a single 8 kHz voice channel.
+ */
+function getAntiAliasTaps(fromRateHz: number, toRateHz: number): Float32Array {
+  const key = `${fromRateHz}:${toRateHz}`;
+  const cached = antiAliasTapCache.get(key);
+  if (cached) return cached;
+
+  const numTaps = 63;
+  // Cutoff at 0.45 x output rate (3600 Hz for 8 kHz out), expressed
+  // in cycles-per-sample of the INPUT rate. The 0.45 (rather than
+  // 0.5) leaves a transition band so the filter is fully rolled off
+  // by the time it reaches Nyquist.
+  const fc = (0.45 * toRateHz) / fromRateHz;
+  const taps = new Float32Array(numTaps);
+  const mid = (numTaps - 1) / 2;
+  let sum = 0;
+
+  for (let i = 0; i < numTaps; i += 1) {
+    const n = i - mid;
+    const sinc = n === 0 ? 2 * fc : Math.sin(2 * Math.PI * fc * n) / (Math.PI * n);
+    const window = 0.54 - 0.46 * Math.cos((2 * Math.PI * i) / (numTaps - 1));
+    const value = sinc * window;
+    taps[i] = value;
+    sum += value;
+  }
+  // Normalise to unity DC gain so overall loudness is unchanged.
+  for (let i = 0; i < numTaps; i += 1) taps[i] = taps[i]! / sum;
+
+  antiAliasTapCache.set(key, taps);
+  return taps;
+}
+
+/**
+ * Applies the FIR kernel to a PCM_16 buffer.
+ *
+ * Edges use clamp-to-edge (sample replication) rather than
+ * zero-padding. Zero-padding would create a ramp-in/ramp-out
+ * transient at the start and end of every streamed chunk, which is
+ * audible as faint ticking; replication keeps the chunk seams
+ * continuous.
+ */
+function lowPassPcm16(input: Int16Array, taps: Float32Array): Int16Array {
+  const length = input.length;
+  const numTaps = taps.length;
+  const mid = (numTaps - 1) >> 1;
+  const out = new Int16Array(length);
+
+  for (let i = 0; i < length; i += 1) {
+    let acc = 0;
+    for (let k = 0; k < numTaps; k += 1) {
+      const idx = i + k - mid;
+      const sample = idx < 0 ? input[0]! : idx >= length ? input[length - 1]! : input[idx]!;
+      acc += sample * taps[k]!;
+    }
+    // Clamp: windowed-sinc filters can overshoot (Gibbs phenomenon),
+    // and an out-of-range write into an Int16Array wraps around,
+    // which would produce a loud click.
+    out[i] = acc > 32767 ? 32767 : acc < -32768 ? -32768 : Math.round(acc);
+  }
+  return out;
+}
+
+/**
+ * Band-limited resampler.
+ *
+ * When DOWNsampling (the 16 kHz TTS -> 8 kHz telephony case) the
+ * input is first low-pass filtered to the output Nyquist limit, then
+ * resampled. Skipping that filter is what caused the distorted AI
+ * voice; see the comment block above.
+ *
+ * When UPsampling, no anti-alias filter is required — linear
+ * interpolation alone is sufficient for a telephony voice channel.
  */
 export function resamplePcm16(input: Int16Array, fromRateHz: number, toRateHz: number): Int16Array {
   if (fromRateHz === toRateHz || input.length === 0) return input;
 
+  // ── THE FIX: band-limit before decimating ──
+  const source =
+    toRateHz < fromRateHz ? lowPassPcm16(input, getAntiAliasTaps(fromRateHz, toRateHz)) : input;
+
   const ratio = fromRateHz / toRateHz;
-  const outLength = Math.max(1, Math.round(input.length / ratio));
+  const outLength = Math.max(1, Math.round(source.length / ratio));
   const out = new Int16Array(outLength);
 
   for (let i = 0; i < outLength; i += 1) {
     const srcPos = i * ratio;
     const srcIndex = Math.floor(srcPos);
     const frac = srcPos - srcIndex;
-    const a = input[srcIndex] ?? input[input.length - 1] ?? 0;
-    const b = input[srcIndex + 1] ?? a;
+    const a = source[srcIndex] ?? source[source.length - 1] ?? 0;
+    const b = source[srcIndex + 1] ?? a;
     out[i] = Math.round(a + (b - a) * frac);
   }
   return out;

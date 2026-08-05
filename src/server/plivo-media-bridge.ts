@@ -32,7 +32,7 @@ import type { AudioPayload } from "../types/provider.types";
 import { SessionState } from "../types/enums";
 import type { DefaultVoiceSessionManager } from "../core/session/voice-session-manager.impl";
 import { MulawVadSegmenter } from "./vad-segmenter";
-import { pcm16ToMulaw8k } from "./audio-codec";
+import { createOutboundMulawEncoder } from "./audio-codec";
 
 /** Minimal shape both `ws`'s WebSocket and the DOM WebSocket satisfy, kept narrow for testability. */
 export interface BridgeSocket {
@@ -99,6 +99,10 @@ export function attachPlivoMediaBridge(
 
   let outboundChunkCount = 0;
   let outboundFrameTotal = 0;
+  // One encoder instance for this call's whole outbound stream — its
+  // internal seam-crossfade state only makes sense within a single
+  // continuous conversation, never shared across sessions.
+  const mulawEncoder = createOutboundMulawEncoder();
 
   function enqueueOutbound(chunk: AudioPayload): void {
     outboundChunkCount += 1;
@@ -116,9 +120,10 @@ export function attachPlivoMediaBridge(
 
     // TTS providers emit PCM_16 at their own configured sample rate.
     // Plivo's recommended outbound format for Voice AI is G.711 mu-law
-    // at 8 kHz — `pcm16ToMulaw8k` handles resampling + mu-law encoding
-    // in one step (already existed in audio-codec.ts, previously unused).
-    const mulawBytes = pcm16ToMulaw8k(chunk.data, chunk.sampleRateHz);
+    // at 8 kHz — the encoder handles resampling + mu-law encoding, and
+    // (see audio-codec.ts) smooths the seam against the previous chunk
+    // since each streamed TTS chunk is otherwise resampled in isolation.
+    const mulawBytes = mulawEncoder.encode(chunk.data, chunk.sampleRateHz);
     const frameCount = Math.ceil(mulawBytes.length / OUTBOUND_FRAME_BYTES);
     outboundFrameTotal += frameCount;
     for (let offset = 0; offset < mulawBytes.length; offset += OUTBOUND_FRAME_BYTES) {

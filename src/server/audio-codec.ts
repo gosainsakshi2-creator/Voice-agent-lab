@@ -240,6 +240,88 @@ export function pcm16ToMulaw8k(pcmBytes: Uint8Array, sourceSampleRateHz: number)
   return pcm16ToMulaw(resampled);
 }
 
+/* ────────────────────────────────────────────────────────────────
+ * OUTBOUND SEAM SMOOTHER
+ *
+ * `pcm16ToMulaw8k` is CALLED FRESH for every `AudioPayload` chunk
+ * that reaches a bridge's `enqueueOutbound`. For streaming TTS
+ * (ElevenLabs) that is roughly every ~100ms; for batch TTS (Cartesia,
+ * Sarvam, Smallest AI) it is once per LLM-generated sentence. Either
+ * way, `resamplePcm16`'s anti-alias filter treats every call as an
+ * independent buffer and pads its edges by replicating that buffer's
+ * own boundary sample — it has no way to know what came immediately
+ * before or after in the real, continuous utterance.
+ *
+ * That per-call edge assumption is usually close enough to be
+ * inaudible, but not always: whenever the true signal was still
+ * moving at the moment a chunk boundary happens to fall, replication
+ * produces a small but real discontinuity right at that seam — heard
+ * as an intermittent tick/tear, not a constant hiss, which is why it
+ * reads as "slightly crackly / torn" rather than gross corruption:
+ * only the handful of samples immediately around each seam are
+ * affected, not the chunk's contents as a whole.
+ *
+ * A fully stateful fix (carrying real FIR history and a continuous
+ * resample phase across calls) is the "correct" answer but is a
+ * meaningfully larger, easier-to-get-subtly-wrong change than
+ * warranted here. A short linear crossfade across each seam is the
+ * standard, minimal, provably-safe de-click technique: it can't
+ * introduce a value outside the range of the two real signals being
+ * blended, and it removes exactly the kind of instantaneous jump
+ * that the ear reads as a click — regardless of the exact filter
+ * mechanics that produced it. Kept as an OPT-IN wrapper so any
+ * existing one-shot caller of `pcm16ToMulaw8k` (e.g. tests, or a
+ * future batch-only path) is completely unaffected.
+ * ──────────────────────────────────────────────────────────────── */
+
+/** Number of 8kHz output samples blended across each chunk boundary (1ms). */
+const SEAM_CROSSFADE_SAMPLES = 8;
+
+export interface OutboundMulawEncoder {
+  /** Encode one outbound `AudioPayload`'s PCM bytes, smoothing the seam against the previous call. */
+  encode(pcmBytes: Uint8Array, sourceSampleRateHz: number): Uint8Array;
+}
+
+/**
+ * Creates a small stateful wrapper around `pcm16ToMulaw8k` that
+ * crossfades each new chunk's leading edge against the previous
+ * chunk's trailing edge, in the 8kHz PCM domain, before mu-law
+ * encoding. One instance should live for the lifetime of a single
+ * outbound call (created once per bridge attachment) — never shared
+ * across sessions, since the crossfade only makes sense within one
+ * continuous audio stream.
+ */
+export function createOutboundMulawEncoder(): OutboundMulawEncoder {
+  let previousTail: Int16Array | undefined;
+
+  return {
+    encode(pcmBytes: Uint8Array, sourceSampleRateHz: number): Uint8Array {
+      const pcm = bytesToPcm16(pcmBytes);
+      const resampled = resamplePcm16(pcm, sourceSampleRateHz, 8000);
+
+      if (previousTail && previousTail.length > 0 && resampled.length > 0) {
+        const n = Math.min(SEAM_CROSSFADE_SAMPLES, previousTail.length, resampled.length);
+        for (let i = 0; i < n; i += 1) {
+          // weight ramps 0->1 across the overlap so sample 0 is mostly
+          // the previous chunk's true tail and sample n-1 is mostly
+          // this chunk's own (correct) content.
+          const weight = (i + 1) / (n + 1);
+          const prev = previousTail[previousTail.length - n + i]!;
+          const curr = resampled[i]!;
+          resampled[i] = Math.round(prev * (1 - weight) + curr * weight);
+        }
+      }
+
+      previousTail =
+        resampled.length >= SEAM_CROSSFADE_SAMPLES
+          ? resampled.slice(resampled.length - SEAM_CROSSFADE_SAMPLES)
+          : resampled.slice();
+
+      return pcm16ToMulaw(resampled);
+    },
+  };
+}
+
 /** Convert inbound 8kHz mu-law bytes from Plivo to PCM_16 bytes at a target rate (rarely needed; Deepgram accepts MULAW directly). */
 export function mulaw8kToPcm16(mulawBytes: Uint8Array): Uint8Array {
   return pcm16ToBytes(mulawToPcm16(mulawBytes));

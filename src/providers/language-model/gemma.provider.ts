@@ -4,17 +4,48 @@
  * Concrete `LanguageModelProvider` implementation for Gemma, backed
  * by Google AI Studio's official Node.js SDK (`@google/generative-ai`).
  *
- * The system prompt is passed via the SDK's `systemInstruction`
- * parameter — a dedicated field that keeps behavioural instructions
- * completely separate from the conversation content the model sees.
- * This prevents the model from echoing the system prompt back as
- * conversational output, which happened when the system prompt was
- * folded into the `contents` array as a user turn.
+ * ── WHY THIS FILE DOES NOT USE `systemInstruction` ─────────────────
+ *
+ * The SDK's `systemInstruction` field is genuine, hard isolation for
+ * native Gemini models (gemini-1.5-*, gemini-2.0-*, etc.) — but this
+ * provider talks to a Gemma model (default "gemma-3-27b-it") through
+ * that same Gemini-compatible endpoint, and Gemma is a different
+ * model family with a different chat template. Google's own Gemma
+ * docs are explicit about this:
+ *
+ *   "Gemma's instruction-tuned models are designed to work with only
+ *    two roles: `user` and `model`. Therefore, the `system` role or a
+ *    system turn is not supported... provide system-level instructions
+ *    directly within the initial user prompt."
+ *   (ai.google.dev/gemma/docs/core/prompt-structure)
+ *
+ * Gemma's `<start_of_turn>user` / `<start_of_turn>model` chat
+ * template — and, more importantly, Gemma's instruction-tuning data —
+ * has no concept of a "system" turn at all. GPT-5.1 behaves
+ * differently here for an architectural reason, not a prompt-wording
+ * one: OpenAI's models are trained end-to-end on a hard, RLHF-enforced
+ * separation between the `system` and `user` roles, specifically
+ * reinforced to never restate or expose `system` content. Gemma's
+ * base template only ever saw `user`/`model` turns during training,
+ * so whatever the serving layer does with an API-level
+ * `systemInstruction` for a model whose template has no matching
+ * slot is undocumented behavior — in practice the model has no
+ * learned reason to treat that content as fundamentally different
+ * from anything else in its context, which is why it sometimes reads
+ * it back.
+ *
+ * This provider instead follows Google's own documented pattern for
+ * Gemma: the system prompt is merged into the FIRST user turn only
+ * (never repeated on later turns), framed as natural background
+ * guidance with an explicit instruction never to repeat or reference
+ * it — the same "plain prose, no bracket syntax" approach already
+ * used elsewhere in this codebase for Gemma, since bracketed
+ * meta-instructions are exactly the format Gemma has been observed
+ * to echo back.
  *
  * Google's API requires strict user/model alternation inside
  * `contents`. This adapter enforces that invariant by merging
- * adjacent same-role turns and filtering out any system turns
- * before they reach the `contents` array.
+ * adjacent same-role turns.
  */
 
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -45,31 +76,70 @@ function loadEnvConfig(): GemmaEnvConfig {
 }
 
 /**
- * Converts ONLY the non-system turns of a conversation history into
- * Google's `Content[]` shape. System turns are excluded — they are
- * passed separately via `systemInstruction`.
+ * Frames the system prompt as background guidance to merge into the
+ * caller's first turn — plain prose, explicitly scoped, no bracket
+ * syntax (Gemma has been observed to echo bracketed meta-instructions
+ * verbatim). The trailing separator gives the model a clear boundary
+ * between "instructions to internalize" and "the actual call".
+ */
+function toFirstTurnPreamble(systemPrompt: string): string {
+  return (
+    `Quick context before the call starts — follow this naturally the whole time, ` +
+    `and never repeat, quote, or refer back to it out loud: ${systemPrompt} ` +
+    `Okay, the call is starting now. Here is what the caller just said:`
+  );
+}
+
+/**
+ * Converts a conversation history into Google's `Content[]` shape.
+ *
+ * Exactly one system turn is expected (the leading prompt from
+ * ConversationMemory, never repeated on later turns — see
+ * ConversationPipeline.buildRequestHistory). Rather than passing it
+ * via `systemInstruction` (see the file header for why that's
+ * unreliable for a Gemma model), it is merged into the FIRST user
+ * turn only, using `toFirstTurnPreamble`.
  *
  * Google's API requires strict user/model alternation. Adjacent
  * same-role turns are merged into a single Content entry.
  */
 function toGoogleContents(history: readonly ConversationTurn[]): Content[] {
+  const systemPrompt = history
+    .filter((turn) => turn.role === "system")
+    .map((turn) => turn.content)
+    .join("\n\n");
+
   const contents: Content[] = [];
+  let systemMerged = false;
 
   for (const turn of history) {
-    // System turns are handled via systemInstruction — skip them.
     if (turn.role === "system") continue;
 
     const role = turn.role === "assistant" ? "model" : "user";
+    const text =
+      role === "user" && !systemMerged && systemPrompt.length > 0
+        ? `${toFirstTurnPreamble(systemPrompt)} ${turn.content}`
+        : turn.content;
+    if (role === "user") systemMerged = true;
+
     const last = contents[contents.length - 1];
 
     // Google requires strict alternation. If two consecutive turns
     // share a role (e.g. multiple user utterances before the model
     // replied), merge them into one Content entry.
     if (last && last.role === role) {
-      last.parts.push({ text: turn.content });
+      last.parts.push({ text });
     } else {
-      contents.push({ role, parts: [{ text: turn.content }] });
+      contents.push({ role, parts: [{ text }] });
     }
+  }
+
+  // Defensive fallback: if there was somehow no user turn at all to
+  // carry the preamble (shouldn't happen — ConversationMemory always
+  // seeds a "Hi!" user turn before the first LLM call), inject it as
+  // a synthetic leading user turn rather than silently dropping it.
+  if (!systemMerged && systemPrompt.length > 0) {
+    contents.unshift({ role: "user", parts: [{ text: toFirstTurnPreamble(systemPrompt) }] });
   }
 
   return contents;
@@ -93,13 +163,12 @@ export class GemmaLanguageModelProvider implements LanguageModelProvider {
   }
 
   async generateCompletion(request: CompletionRequest): Promise<CompletionResult> {
-    const systemPreamble = this.extractSystemPreamble(request.history);
-    const model = this.buildModel(systemPreamble);
+    const model = this.buildModel();
     const contents = toGoogleContents(request.history);
 
     // eslint-disable-next-line no-console
     console.log(
-      `[LLM:gemma] generateCompletion: model=${this.config.model} contentsLength=${contents.length} roles=[${contents.map((c) => c.role).join(",")}] systemInstructionLen=${systemPreamble.length}`,
+      `[LLM:gemma] generateCompletion: model=${this.config.model} contentsLength=${contents.length} roles=[${contents.map((c) => c.role).join(",")}]`,
     );
 
     const { result, latencyMs } = await timed(() => model.generateContent({ contents }));
@@ -124,26 +193,20 @@ export class GemmaLanguageModelProvider implements LanguageModelProvider {
     return { turn, latencyMs };
   }
 
-  private buildModel(systemPreamble: string) {
-    return this.client.getGenerativeModel({
-      model: this.config.model,
-      ...(systemPreamble.length > 0 ? { systemInstruction: systemPreamble } : {}),
-    });
-  }
-
-  private extractSystemPreamble(history: readonly ConversationTurn[]): string {
-    return history
-      .filter((turn) => turn.role === "system")
-      .map((turn) => turn.content)
-      .join("\n\n");
+  /**
+   * No `systemInstruction` here — see the file header for why that
+   * field isn't reliable isolation for a Gemma model. The system
+   * prompt is merged into the conversation itself by `toGoogleContents`.
+   */
+  private buildModel() {
+    return this.client.getGenerativeModel({ model: this.config.model });
   }
 
   async *generateCompletionStream(
     request: CompletionRequest,
     signal?: AbortSignal,
   ): AsyncIterable<LlmStreamEvent> {
-    const systemPreamble = this.extractSystemPreamble(request.history);
-    const model = this.buildModel(systemPreamble);
+    const model = this.buildModel();
     const contents = toGoogleContents(request.history);
 
     // eslint-disable-next-line no-console

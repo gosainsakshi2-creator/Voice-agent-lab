@@ -58,7 +58,7 @@ import type { AudioPayload } from "../types/provider.types";
 import { SessionState } from "../types/enums";
 import type { DefaultVoiceSessionManager } from "../core/session/voice-session-manager.impl";
 import { MulawVadSegmenter } from "./vad-segmenter";
-import { pcm16ToMulaw8k } from "./audio-codec";
+import { createOutboundMulawEncoder } from "./audio-codec";
 
 // Re-use the same BridgeSocket interface shape for testability.
 export interface BridgeSocket {
@@ -131,6 +131,10 @@ export function attachVobizMediaBridge(
 
   let outboundChunkCount = 0;
   let outboundFrameTotal = 0;
+  // One encoder instance for this call's whole outbound stream — see
+  // audio-codec.ts: it crossfades each chunk's seam against the
+  // previous chunk, so it must persist for the life of the call.
+  const mulawEncoder = createOutboundMulawEncoder();
 
   function enqueueOutbound(chunk: AudioPayload): void {
     outboundChunkCount += 1;
@@ -147,9 +151,9 @@ export function attachVobizMediaBridge(
     }
 
     // Pipeline: identical to the Plivo bridge's proven outbound path.
-    // pcm16ToMulaw8k handles resampling (any TTS rate → 8kHz) and
-    // mu-law encoding in one step. Result is 1 byte per sample.
-    const mulawBytes = pcm16ToMulaw8k(chunk.data, chunk.sampleRateHz);
+    // The encoder handles resampling (any TTS rate → 8kHz), mu-law
+    // encoding, and seam-crossfading in one step. Result is 1 byte per sample.
+    const mulawBytes = mulawEncoder.encode(chunk.data, chunk.sampleRateHz);
 
     const frameCount = Math.ceil(mulawBytes.length / OUTBOUND_FRAME_BYTES);
     outboundFrameTotal += frameCount;

@@ -392,9 +392,12 @@ export class DefaultVoiceSessionManager implements VoiceSessionManager, Pipeline
    * behavior, and duplicates no orchestration logic — it only
    * exposes state that already exists.
    */
-  getTranscript(sessionId: SessionId): readonly import("../../types/provider.types").ConversationTurn[] {
-    return this.getRecordOrThrow(sessionId).memory.history();
-  }
+getTranscript(sessionId: SessionId): readonly import("../../types/provider.types").ConversationTurn[] {
+  return this.getRecordOrThrow(sessionId)
+    .memory
+    .history()
+    .filter(turn => turn.role !== "system");
+}
 
   // ---------------------------------------------------------------
 

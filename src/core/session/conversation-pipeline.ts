@@ -202,10 +202,10 @@ export class ConversationPipeline {
         // (not a bracketed meta-instruction) because models like
         // Gemma that fold system prompts into the user turn can
         // misinterpret bracket syntax and echo the prompt back.
-        this.record.memory.recordUserTurn(
-          "Hi!",
-          this.record.memory.currentLanguage,
-        );
+       this.record.memory.recordUserTurn(
+    "The call has just connected. Start the conversation naturally.",
+    this.record.memory.currentLanguage,
+);
 
         const detected = detectLanguage("", this.record.memory.currentLanguage);
         const greeting = await this.runThinkingAndSpeaking("", detected, loopSignal);

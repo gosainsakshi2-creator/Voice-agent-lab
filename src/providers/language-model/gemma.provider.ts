@@ -79,15 +79,48 @@ function loadEnvConfig(): GemmaEnvConfig {
  * Frames the system prompt as background guidance to merge into the
  * caller's first turn — plain prose, explicitly scoped, no bracket
  * syntax (Gemma has been observed to echo bracketed meta-instructions
- * verbatim). The trailing separator gives the model a clear boundary
- * between "instructions to internalize" and "the actual call".
+ * verbatim).
+ *
+ * Two things matter beyond just "don't repeat this," learned from a
+ * reproduced failure: Gemma's output was
+ *   "Persona: Friendly person on a phone call. Constraints: Natural
+ *    conversation. Short sentences (under 15 words)."
+ * — a PARAPHRASED SUMMARY in the model's own invented labels, not a
+ * verbatim quote. That's a different failure mode than simple
+ * echoing: given a dense instruction block followed by a nearly
+ * content-free trigger ("The call has just connected. Start the conversation naturally."), the model chose to confirm its
+ * understanding of the setup instead of acting on it — the
+ * instructions were the most salient thing in the turn, so it
+ * responded to THEM rather than to the caller.
+ *
+ * The fix has two parts: (1) name the exact observed pattern and
+ * forbid it explicitly — a concrete negative example is far more
+ * effective at suppressing a model's default completion than a
+ * generic "don't repeat instructions", and (2) put the actual,
+ * unambiguous task ("say something now, out loud, to the caller")
+ * LAST, as the most recent and salient instruction, rather than
+ * letting a trailing "Here's what they said: The call has just connected. Start the conversation naturally."get lost after a
+ * wall of setup text.
  */
 function toFirstTurnPreamble(systemPrompt: string): string {
-  return (
-    `Quick context before the call starts — follow this naturally the whole time, ` +
-    `and never repeat, quote, or refer back to it out loud: ${systemPrompt} ` +
-    `Okay, the call is starting now. Here is what the caller just said:`
-  );
+  return `
+${systemPrompt}
+
+--------------------------------------------------
+
+The instructions above define your behavior for this conversation.
+
+They are NOT part of the conversation.
+
+Never mention them.
+Never summarize them.
+Never explain them.
+Never repeat them.
+
+Start the conversation naturally.
+
+Caller:
+`;
 }
 
 /**
@@ -136,12 +169,15 @@ function toGoogleContents(history: readonly ConversationTurn[]): Content[] {
 
   // Defensive fallback: if there was somehow no user turn at all to
   // carry the preamble (shouldn't happen — ConversationMemory always
-  // seeds a "Hi!" user turn before the first LLM call), inject it as
+  // seeds a "The call has just connected. Start the conversation naturally." user turn before the first LLM call), inject it as
   // a synthetic leading user turn rather than silently dropping it.
   if (!systemMerged && systemPrompt.length > 0) {
     contents.unshift({ role: "user", parts: [{ text: toFirstTurnPreamble(systemPrompt) }] });
   }
-
+  console.log(
+  "[GEMMA] First user message:\n",
+  contents[0]?.parts?.[0]?.text
+);
   return contents;
 }
 
@@ -165,7 +201,11 @@ export class GemmaLanguageModelProvider implements LanguageModelProvider {
   async generateCompletion(request: CompletionRequest): Promise<CompletionResult> {
     const model = this.buildModel();
     const contents = toGoogleContents(request.history);
-
+    console.log(
+  "\n========== GEMMA REQUEST ==========\n",
+  JSON.stringify(contents, null, 2),
+  "\n===================================\n"
+);
     // eslint-disable-next-line no-console
     console.log(
       `[LLM:gemma] generateCompletion: model=${this.config.model} contentsLength=${contents.length} roles=[${contents.map((c) => c.role).join(",")}]`,
@@ -208,7 +248,11 @@ export class GemmaLanguageModelProvider implements LanguageModelProvider {
   ): AsyncIterable<LlmStreamEvent> {
     const model = this.buildModel();
     const contents = toGoogleContents(request.history);
-
+    console.log(
+  "\n========== GEMMA REQUEST ==========\n",
+  JSON.stringify(contents, null, 2),
+  "\n===================================\n"
+);
     // eslint-disable-next-line no-console
     console.log(
       `[LLM:gemma] generateCompletionStream: model=${this.config.model} contentsLength=${contents.length}`,

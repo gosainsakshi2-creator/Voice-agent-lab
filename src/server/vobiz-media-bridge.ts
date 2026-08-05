@@ -22,9 +22,10 @@
  *   1. `playAudio` carries `streamId` at the top level:
  *        {event:"playAudio", streamId, media:{contentType, sampleRate, payload}}
  *
- *   2. Outbound audio supports L16 at 8000, 16000, OR 24000 Hz —
- *      so we can send L16 at the TTS provider's native rate instead
- *      of always downsampling to 8 kHz (significant quality gain).
+ *   2. Outbound audio now uses G.711 μ-law at 8 kHz — the same
+ *      proven codec the Plivo bridge sends. This avoids endianness
+ *      ambiguity (mulaw is single-byte) and server-side transcoding
+ *      (8 kHz mulaw is the native PSTN format).
  *
  *   3. Vobiz sends `clearedAudio` confirmation (informational; no action needed).
  *
@@ -43,7 +44,10 @@
  *                  {"event":"playedStream", ...}        (checkpoint ack)
  *                  {"event":"clearedAudio", ...}        (clear ack)
  *                  (WebSocket close = stream end)
- *   to platform:   {"event":"playAudio", streamId, media:{contentType, sampleRate, payload}}
+ *   to platform:   {"event":"playAudio", streamId, media:{contentType:"audio/x-mulaw", sampleRate:8000, payload}}
+ *                  NOTE: bare contentType (no ";rate=" suffix) — the rate
+ *                  travels in `sampleRate`. ";rate=8000" is only valid on
+ *                  the <Stream> XML attribute.
  *                  {"event":"clearAudio", streamId}
  *                  {"event":"checkpoint", streamId, name}
  *                  {"event":"stop", streamId}
@@ -54,7 +58,7 @@ import type { AudioPayload } from "../types/provider.types";
 import { SessionState } from "../types/enums";
 import type { DefaultVoiceSessionManager } from "../core/session/voice-session-manager.impl";
 import { MulawVadSegmenter } from "./vad-segmenter";
-import { bytesToPcm16, resamplePcm16, pcm16ToBigEndianBytes } from "./audio-codec";
+import { pcm16ToMulaw8k } from "./audio-codec";
 
 // Re-use the same BridgeSocket interface shape for testability.
 export interface BridgeSocket {
@@ -68,34 +72,17 @@ export interface BridgeSocket {
 const OPEN_STATE = 1;
 
 /**
- * Vobiz outbound L16 supports 8000, 16000, and 24000 Hz.
- * Pick the highest supported rate that doesn't UPSAMPLE from
- * the TTS provider's output — upsampling adds no information and
- * wastes bandwidth; downsampling within a close range is fine for
- * telephony.
+ * Outbound format: G.711 μ-law at 8 kHz — the native PSTN codec.
+ * Matches the Plivo bridge's proven outbound path: each sample is
+ * 1 byte, so 20 ms = 160 samples × 1 byte = 160 bytes per frame.
+ * Resampling + mu-law encoding are handled by `pcm16ToMulaw8k()`
+ * from audio-codec.ts (the same helper the Plivo bridge uses).
  */
-const VOBIZ_SUPPORTED_RATES = [8000, 16000, 24000] as const;
-
-function pickOutboundRate(ttsSampleRateHz: number): number {
-  // Pick the largest Vobiz rate <= ttsSampleRateHz.
-  // If the TTS rate is below 8000, fall back to 8000.
-  let best = 8000;
-  for (const r of VOBIZ_SUPPORTED_RATES) {
-    if (r <= ttsSampleRateHz) best = r;
-  }
-  return best;
-}
-
+const OUTBOUND_FRAME_BYTES = 160; // 20ms @ 8kHz mulaw (8-bit)
 const OUTBOUND_FRAME_MS = 20;
 /** Maximum frames the pump may send in a single tick to prevent
  *  burst-flooding the WebSocket after event-loop starvation. */
 const MAX_FRAMES_PER_TICK = 3;
-
-/** Compute the raw byte size of one 20 ms L16 (16-bit) frame at a given sample rate. */
-function l16FrameBytes(sampleRateHz: number): number {
-  // samples-per-frame × 2 bytes-per-sample
-  return (sampleRateHz / 1000) * OUTBOUND_FRAME_MS * 2;
-}
 
 export function attachVobizMediaBridge(
   socket: BridgeSocket,
@@ -112,20 +99,8 @@ export function attachVobizMediaBridge(
   /** Vobiz's stream identifier — required in outbound events. */
   let vobizStreamId: string | undefined;
 
-  /**
-   * Outbound rate is locked on the first TTS chunk so the pump's
-   * frame size stays consistent for the lifetime of the call.
-   */
-  let outboundRateHz: number | undefined;
-  let outboundFrameBytes: number | undefined;
-
   let inboundFrameCount = 0;
   let utteranceCount = 0;
-
-  // ── TEMPORARY DEBUG (remove after test call) ──────────────
-  let lastPlayAudioSendTs = 0;
-  let debugBurstCapCount = 0;
-  // ──────────────────────────────────────────────────────────
 
   // Inbound: we configure the answer-URL XML with
   // contentType="audio/x-mulaw;rate=8000", so Vobiz sends mulaw
@@ -171,51 +146,19 @@ export function attachVobizMediaBridge(
       );
     }
 
-    // Lock the outbound rate on the first chunk.
-    if (outboundRateHz === undefined) {
-      outboundRateHz = pickOutboundRate(chunk.sampleRateHz);
-      outboundFrameBytes = l16FrameBytes(outboundRateHz);
-      // eslint-disable-next-line no-console
-      console.log(
-        `[vobiz-bridge:${sessionId}] outbound rate locked: ttsRate=${chunk.sampleRateHz} -> vobizRate=${outboundRateHz} frameBytes=${outboundFrameBytes}`,
-      );
-    }
+    // Pipeline: identical to the Plivo bridge's proven outbound path.
+    // pcm16ToMulaw8k handles resampling (any TTS rate → 8kHz) and
+    // mu-law encoding in one step. Result is 1 byte per sample.
+    const mulawBytes = pcm16ToMulaw8k(chunk.data, chunk.sampleRateHz);
 
-    // Pipeline: PCM_16 LE bytes -> Int16Array -> resample -> BE bytes
-    const pcm = bytesToPcm16(chunk.data);
-    const resampled = resamplePcm16(pcm, chunk.sampleRateHz, outboundRateHz);
-    const l16Bytes = pcm16ToBigEndianBytes(resampled);
-
-    const frameCount = Math.ceil(l16Bytes.length / outboundFrameBytes!);
+    const frameCount = Math.ceil(mulawBytes.length / OUTBOUND_FRAME_BYTES);
     outboundFrameTotal += frameCount;
-    let runtDetectedInChunk = false;
-    for (let offset = 0; offset < l16Bytes.length; offset += outboundFrameBytes!) {
-      const slice = l16Bytes.subarray(offset, offset + outboundFrameBytes!);
-      if (slice.length < outboundFrameBytes!) {
-        runtDetectedInChunk = true;
-        // eslint-disable-next-line no-console
-        console.log(
-          `[DEBUG][vobiz-bridge:${sessionId}] RUNT FRAME DETECTED: sliceBytes=${slice.length} expected=${outboundFrameBytes} shortBy=${outboundFrameBytes! - slice.length} (padding with silence)`,
-        );
-        // Pad the final sub-frame slice with silence (zero bytes) so
-        // every frame sent to Vobiz is exactly the declared frame size.
-        // In L16, 0x0000 = zero amplitude = silence. A truncated frame
-        // causes an audible click at the playback boundary because the
-        // receiver's buffer underruns mid-frame.
-        const padded = new Uint8Array(outboundFrameBytes!);
-        padded.set(slice);
-        outboundQueue.push(padded);
-      } else {
-        outboundQueue.push(slice);
-      }
+    for (let offset = 0; offset < mulawBytes.length; offset += OUTBOUND_FRAME_BYTES) {
+      outboundQueue.push(mulawBytes.subarray(offset, offset + OUTBOUND_FRAME_BYTES));
     }
     // eslint-disable-next-line no-console
     console.log(
-      `[DEBUG][vobiz-bridge:${sessionId}] enqueue summary: chunk#${outboundChunkCount} l16Bytes=${l16Bytes.length} frameSize=${outboundFrameBytes} frames=${frameCount} runtDetected=${runtDetectedInChunk} remainder=${l16Bytes.length % outboundFrameBytes!}`,
-    );
-    // eslint-disable-next-line no-console
-    console.log(
-      `[vobiz-bridge:${sessionId}] enqueued ${frameCount} frames (${frameCount * OUTBOUND_FRAME_MS}ms), queue depth=${outboundQueue.length}, lifetime frames=${outboundFrameTotal}`,
+      `[vobiz-bridge:${sessionId}] enqueued ${frameCount} mulaw frames (${frameCount * OUTBOUND_FRAME_MS}ms), queue depth=${outboundQueue.length}, lifetime frames=${outboundFrameTotal}`,
     );
     startPump();
   }
@@ -232,21 +175,12 @@ export function attachVobizMediaBridge(
       // correction would dump dozens of frames in one tick.
       const rawDue = Math.floor((Date.now() - startedAt) / OUTBOUND_FRAME_MS) - framesSent;
       const framesDue = Math.min(rawDue, MAX_FRAMES_PER_TICK);
-      const burstCapped = rawDue > MAX_FRAMES_PER_TICK;
       if (rawDue > MAX_FRAMES_PER_TICK && framesSent === 0) {
         // eslint-disable-next-line no-console
         console.log(
           `[vobiz-bridge:${sessionId}] pump burst capped: ${rawDue} frames due, sending ${framesDue} (event loop starved ~${rawDue * OUTBOUND_FRAME_MS}ms)`,
         );
       }
-      // ── TEMPORARY DEBUG (remove after test call) ──────────────
-      // Point 6: burst-cap trigger  |  Point 7: queue depth
-      if (burstCapped) debugBurstCapCount += 1;
-      // eslint-disable-next-line no-console
-      console.log(
-        `[DEBUG][vobiz-bridge:${sessionId}] pump tick: rawDue=${rawDue} framesDue=${framesDue} burstCapped=${burstCapped} burstCapTotal=${debugBurstCapCount} queueDepth=${outboundQueue.length} elapsedMs=${Date.now() - startedAt}`,
-      );
-      // ──────────────────────────────────────────────────────────
       for (let i = 0; i < framesDue; i += 1) {
         const frame = outboundQueue.shift();
         if (!frame) {
@@ -257,17 +191,6 @@ export function attachVobizMediaBridge(
           return;
         }
         framesSent += 1;
-        // ── TEMPORARY DEBUG (remove after test call) ────────────
-        // Points 1,2,3,4,5: frame size, sampleRate, contentType,
-        //   runt check (post-pad), inter-send delta
-        const now = Date.now();
-        const sendDeltaMs = lastPlayAudioSendTs > 0 ? now - lastPlayAudioSendTs : 0;
-        lastPlayAudioSendTs = now;
-        // eslint-disable-next-line no-console
-        console.log(
-          `[DEBUG][vobiz-bridge:${sessionId}] SEND frame#${framesSent}: bytes=${frame.length} expected=${outboundFrameBytes} match=${frame.length === outboundFrameBytes} contentType=audio/x-l16 sampleRate=${outboundRateHz} sendDeltaMs=${sendDeltaMs} remaining=${outboundQueue.length}`,
-        );
-        // ────────────────────────────────────────────────────────
         if (framesSent === 1 || framesSent % 50 === 0) {
           // eslint-disable-next-line no-console
           console.log(`[vobiz-bridge:${sessionId}] pump sending frame #${framesSent}, remaining=${outboundQueue.length}`);
@@ -277,8 +200,16 @@ export function attachVobizMediaBridge(
           // Vobiz requires streamId at the top level of playAudio
           ...(vobizStreamId ? { streamId: vobizStreamId } : {}),
           media: {
-            contentType: "audio/x-l16",
-            sampleRate: outboundRateHz,
+            // ── CRITICAL: BARE MIME TYPE, NO ";rate=" SUFFIX ──
+            // The ";rate=8000" parameter is valid ONLY on the
+            // <Stream contentType="..."> XML attribute (inbound
+            // direction). Inside a playAudio event the rate must be
+            // carried by the separate `sampleRate` field and the
+            // contentType must be bare, or the platform fails to parse
+            // it and falls back to decoding our mu-law bytes as L16 —
+            // which is exactly the crackly/robotic/distorted voice.
+            contentType: "audio/x-mulaw",
+            sampleRate: 8000,
             payload: Buffer.from(frame).toString("base64"),
           },
         });

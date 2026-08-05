@@ -20,7 +20,10 @@
  *             {"event":"media", media:{track, payload: base64 audio}}
  *             {"event":"dtmf", dtmf:{digit}}
  *             {"event":"stop"}
- *   outbound: {"event":"playAudio", media:{contentType:"audio/x-l16", sampleRate:8000, payload}}
+ *   outbound: {"event":"playAudio", streamId, media:{contentType:"audio/x-mulaw", sampleRate:8000, payload}}
+ *             NOTE: contentType here is BARE (no ";rate=" suffix) — the
+ *             rate travels in the separate `sampleRate` field. The
+ *             ";rate=8000" form is only valid on the <Stream> XML attribute.
  *             {"event":"clearAudio", streamId}  <- stops in-flight playback (barge-in)
  */
 
@@ -29,7 +32,7 @@ import type { AudioPayload } from "../types/provider.types";
 import { SessionState } from "../types/enums";
 import type { DefaultVoiceSessionManager } from "../core/session/voice-session-manager.impl";
 import { MulawVadSegmenter } from "./vad-segmenter";
-import { bytesToPcm16, resamplePcm16, pcm16ToBigEndianBytes } from "./audio-codec";
+import { pcm16ToMulaw8k } from "./audio-codec";
 
 /** Minimal shape both `ws`'s WebSocket and the DOM WebSocket satisfy, kept narrow for testability. */
 export interface BridgeSocket {
@@ -42,12 +45,15 @@ export interface BridgeSocket {
 
 const OPEN_STATE = 1;
 /**
- * Plivo's bidirectional stream accepts `audio/x-l16` (signed 16-bit
- * linear PCM) at 8 kHz — NOT mu-law. Each sample is 2 bytes, so
- * 20 ms of audio = 160 samples × 2 bytes = 320 bytes per frame.
+ * Plivo's recommended outbound format for Voice AI is
+ * `audio/x-mulaw;rate=8000` (G.711 mu-law). Each sample is 1 byte,
+ * so 20 ms of audio = 160 samples × 1 byte = 160 bytes per frame.
  */
-const OUTBOUND_FRAME_BYTES = 320; // 20ms @ 8kHz L16 (16-bit PCM)
+const OUTBOUND_FRAME_BYTES = 160; // 20ms @ 8kHz mulaw (8-bit)
 const OUTBOUND_FRAME_MS = 20;
+/** Maximum frames the pump may send in a single tick to prevent
+ *  burst-flooding the WebSocket after event-loop starvation. */
+const MAX_FRAMES_PER_TICK = 3;
 
 export function attachPlivoMediaBridge(
   socket: BridgeSocket,
@@ -108,16 +114,15 @@ export function attachPlivoMediaBridge(
       );
     }
 
-    // TTS providers emit PCM_16 at their own configured sample
-    // rate; Plivo's playAudio channel accepts `audio/x-l16` (signed
-    // 16-bit linear PCM) at 8 kHz — resample but do NOT mu-law encode.
-    const pcm = bytesToPcm16(chunk.data);
-    const resampled = resamplePcm16(pcm, chunk.sampleRateHz, 8000);
-    const l16Bytes = pcm16ToBigEndianBytes(resampled);
-    const frameCount = Math.ceil(l16Bytes.length / OUTBOUND_FRAME_BYTES);
+    // TTS providers emit PCM_16 at their own configured sample rate.
+    // Plivo's recommended outbound format for Voice AI is G.711 mu-law
+    // at 8 kHz — `pcm16ToMulaw8k` handles resampling + mu-law encoding
+    // in one step (already existed in audio-codec.ts, previously unused).
+    const mulawBytes = pcm16ToMulaw8k(chunk.data, chunk.sampleRateHz);
+    const frameCount = Math.ceil(mulawBytes.length / OUTBOUND_FRAME_BYTES);
     outboundFrameTotal += frameCount;
-    for (let offset = 0; offset < l16Bytes.length; offset += OUTBOUND_FRAME_BYTES) {
-      outboundQueue.push(l16Bytes.subarray(offset, offset + OUTBOUND_FRAME_BYTES));
+    for (let offset = 0; offset < mulawBytes.length; offset += OUTBOUND_FRAME_BYTES) {
+      outboundQueue.push(mulawBytes.subarray(offset, offset + OUTBOUND_FRAME_BYTES));
     }
     // eslint-disable-next-line no-console
     console.log(
@@ -133,13 +138,20 @@ export function attachPlivoMediaBridge(
     const startedAt = Date.now();
     let framesSent = 0;
     pumpTimer = setInterval(() => {
-      // Drift correction: a delayed tick (Node's event loop was busy
-      // with something else — an STT/LLM/TTS call, GC, etc.) must
-      // not permanently lose real-time pacing. Send however many
-      // 20ms frames are actually due by wall-clock time, not just
-      // one per tick, so playback catches back up instead of
-      // trailing further and further behind.
-      const framesDue = Math.floor((Date.now() - startedAt) / OUTBOUND_FRAME_MS) - framesSent;
+      // Drift correction with burst cap: after event-loop starvation
+      // (e.g. TTS streaming holding the microtask queue for >1s),
+      // uncapped drift correction would dump dozens of frames in one
+      // tick, overwhelming Plivo's playback buffer. Cap to
+      // MAX_FRAMES_PER_TICK so catch-up is gradual (~60ms per tick
+      // at cap=3) instead of a single burst.
+      const rawDue = Math.floor((Date.now() - startedAt) / OUTBOUND_FRAME_MS) - framesSent;
+      const framesDue = Math.min(rawDue, MAX_FRAMES_PER_TICK);
+      if (rawDue > MAX_FRAMES_PER_TICK && framesSent === 0) {
+        // eslint-disable-next-line no-console
+        console.log(
+          `[plivo-bridge:${sessionId}] pump burst capped: ${rawDue} frames due, sending ${framesDue} (event loop was starved ~${rawDue * OUTBOUND_FRAME_MS}ms)`,
+        );
+      }
       for (let i = 0; i < framesDue; i += 1) {
         const frame = outboundQueue.shift();
         if (!frame) {
@@ -156,8 +168,34 @@ export function attachPlivoMediaBridge(
         }
         sendJson({
           event: "playAudio",
+          // `streamId` is a TOP-LEVEL sibling of `event`/`media` — not
+          // inside `media`. Plivo's own reference serializer includes
+          // it on every playAudio event.
+          ...(plivoStreamId ? { streamId: plivoStreamId } : {}),
           media: {
-            contentType: "audio/x-l16",
+            // ── CRITICAL: BARE MIME TYPE, NO ";rate=" SUFFIX ──
+            //
+            // The `;rate=8000` parameter belongs ONLY on the
+            // `<Stream contentType="...">` XML attribute (which
+            // configures the INBOUND direction). Inside a `playAudio`
+            // WebSocket event the rate must be carried by the separate
+            // `sampleRate` field and the contentType must be bare.
+            //
+            // Plivo's own examples repo lists
+            //   contentType: "audio/x-mulaw;rate=8000"
+            // as a known common mistake ("wrong - rate must be
+            // separate") that triggers an `incorrectPayload` error.
+            //
+            // When Plivo cannot parse the contentType it falls back to
+            // its stream default of L16, so our G.711 mu-law bytes get
+            // reinterpreted as 16-bit signed PCM. That mis-decode is
+            // what produced the loud crackly/robotic/noisy voice that
+            // still carried the rhythm of speech — and why no amount of
+            // frame padding, pump retiming, endianness swapping or
+            // codec substitution ever changed it. The bytes we sent
+            // were always correct; the receiver was told the wrong
+            // format to decode them with.
+            contentType: "audio/x-mulaw",
             sampleRate: 8000,
             payload: Buffer.from(frame).toString("base64"),
           },

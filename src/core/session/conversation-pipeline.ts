@@ -706,6 +706,9 @@ export class ConversationPipeline {
         for await (const chunk of this.providers.tts.synthesizeStream(task, speakingSignal)) {
           if (speakingSignal.aborted) break;
           chunkCount += 1;
+          console.log(
+  `[STREAM] chunk=${chunkCount} bytes=${chunk.audio.data.byteLength} time=${Date.now()}`
+);
           await this.playAudioChunk(chunk.audio);
         }
       } catch (err) {
@@ -782,6 +785,9 @@ export class ConversationPipeline {
   }
 
   private async playAudioChunk(audio: AudioPayload): Promise<void> {
+    console.log(
+  `[PLAY] chunk=${this.playAudioChunkCount + 1} time=${Date.now()}`
+);
     this.playAudioChunkCount += 1;
     const sid = this.record.id;
 

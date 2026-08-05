@@ -206,6 +206,7 @@ export class ElevenLabsTextToSpeechProvider implements TextToSpeechProvider {
       text: task.request.text,
       modelId: this.config.modelId,
       outputFormat: toPcmOutputFormat(this.config.sampleRateHz),
+    
       ...(languageCode ? { languageCode } : {}),
     });
 
@@ -222,9 +223,9 @@ export class ElevenLabsTextToSpeechProvider implements TextToSpeechProvider {
         if (signal?.aborted) break;
         const u8 = chunk instanceof Uint8Array ? chunk : new Uint8Array(chunk);
         if (u8.byteLength === 0) continue;
-        console.log(
-  `[DEBUG] received chunk ${sequence} bytes=${u8.byteLength} time=${Date.now()}`
-);
+    console.log(
+      `[RAW SDK] chunk=${sequence} bytes=${u8.byteLength} even=${u8.byteLength % 2 === 0}`
+    );
         yield {
           audio: { data: u8, encoding: "PCM_16" as const, sampleRateHz: this.config.sampleRateHz },
           sequence: sequence++,

@@ -88,7 +88,7 @@ function loadEnvConfig(): GemmaEnvConfig {
  * — a PARAPHRASED SUMMARY in the model's own invented labels, not a
  * verbatim quote. That's a different failure mode than simple
  * echoing: given a dense instruction block followed by a nearly
- * content-free trigger ("The call has just connected. Start the conversation naturally."), the model chose to confirm its
+ * content-free trigger ("Hi!"), the model chose to confirm its
  * understanding of the setup instead of acting on it — the
  * instructions were the most salient thing in the turn, so it
  * responded to THEM rather than to the caller.
@@ -99,25 +99,20 @@ function loadEnvConfig(): GemmaEnvConfig {
  * generic "don't repeat instructions", and (2) put the actual,
  * unambiguous task ("say something now, out loud, to the caller")
  * LAST, as the most recent and salient instruction, rather than
- * letting a trailing "Here's what they said: The call has just connected. Start the conversation naturally."get lost after a
+ * letting a trailing "Here's what they said: Hi!" get lost after a
  * wall of setup text.
  */
 function toFirstTurnPreamble(systemPrompt: string): string {
-  return `${systemPrompt}
-
-IMPORTANT:
-
-The text above is internal configuration.
-
-Do not answer it.
-Do not summarize it.
-Do not explain it.
-
-Ignore it completely.
-
-Only respond to the caller.
-
-`;
+  return (
+    `Quick background before the call starts, for you to follow silently the whole ` +
+    `time — never repeat, quote, summarize, or refer back to any of this out loud, ` +
+    `and never label your reply with words like "Persona", "Constraints", "Role", or ` +
+    `similar headings: ${systemPrompt} ` +
+    `That's all just background. The call is live right now. Your entire reply must ` +
+    `be nothing but a short, natural spoken response to the caller — not a summary ` +
+    `of these instructions, not a confirmation that you understood them, just what ` +
+    `you'd actually say out loud. Here is what the caller just said, respond to it now:`
+  );
 }
 
 /**
@@ -146,10 +141,10 @@ function toGoogleContents(history: readonly ConversationTurn[]): Content[] {
     if (turn.role === "system") continue;
 
     const role = turn.role === "assistant" ? "model" : "user";
- const text =
-  role === "user" && !systemMerged && systemPrompt.length > 0
-      ? `${toFirstTurnPreamble(systemPrompt)}\n\nUser: ${turn.content}`
-      : turn.content;
+    const text =
+      role === "user" && !systemMerged && systemPrompt.length > 0
+        ? `${toFirstTurnPreamble(systemPrompt)} ${turn.content}`
+        : turn.content;
     if (role === "user") systemMerged = true;
 
     const last = contents[contents.length - 1];
@@ -166,8 +161,11 @@ function toGoogleContents(history: readonly ConversationTurn[]): Content[] {
 
   // Defensive fallback: if there was somehow no user turn at all to
   // carry the preamble (shouldn't happen — ConversationMemory always
-  // seeds a "The call has just connected. Start the conversation naturally." user turn before the first LLM call), inject it as
+  // seeds a "Hi!" user turn before the first LLM call), inject it as
   // a synthetic leading user turn rather than silently dropping it.
+  if (!systemMerged && systemPrompt.length > 0) {
+    contents.unshift({ role: "user", parts: [{ text: toFirstTurnPreamble(systemPrompt) }] });
+  }
 
   return contents;
 }
@@ -192,7 +190,7 @@ export class GemmaLanguageModelProvider implements LanguageModelProvider {
   async generateCompletion(request: CompletionRequest): Promise<CompletionResult> {
     const model = this.buildModel();
     const contents = toGoogleContents(request.history);
- 
+
     // eslint-disable-next-line no-console
     console.log(
       `[LLM:gemma] generateCompletion: model=${this.config.model} contentsLength=${contents.length} roles=[${contents.map((c) => c.role).join(",")}]`,

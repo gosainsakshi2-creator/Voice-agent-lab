@@ -116,13 +116,14 @@ export class SarvamTextToSpeechProvider implements TextToSpeechProvider {
         this.descriptor.id,
         `${this.config.baseUrl}/text-to-speech`,
         { "api-subscription-key": this.config.apiKey },
-        {
-          text: "Hello ",
-          target_language_code: toSarvamLanguage(SupportedLanguage.ENGLISH),
-          speaker: this.config.defaultSpeaker,
-          model: this.config.model,
-          speech_sample_rate: this.config.sampleRateHz,
-        },
+       {
+  text: "Hello ",
+  target_language_code: toSarvamLanguage(SupportedLanguage.ENGLISH),
+  speaker: this.config.defaultSpeaker,
+  model: this.config.model,
+  speech_sample_rate: this.config.sampleRateHz,
+  enable_preprocessing: true,
+},
       );
  
     });

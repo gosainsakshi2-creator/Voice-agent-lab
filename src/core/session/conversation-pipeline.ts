@@ -30,7 +30,7 @@
  * currently in flight and the pipeline immediately falls back to
  * LISTENING.
  */
-
+import { formatForSpeech } from "../../utils/speech-formatter";
 import { SessionState } from "../../types/enums";
 import type { SupportedLanguage } from "../../types/enums";
 import type { AudioPayload, ConversationTurn } from "../../types/provider.types";
@@ -538,7 +538,7 @@ export class ConversationPipeline {
       let llmMs = Date.now() - startedAt;
 
       let spokenContent = stripMarkdown(completion.turn.content);
-
+      spokenContent = formatForSpeech(spokenContent);
       // --- Contamination check: if the output echoes system-prompt
       // markers, retry ONCE with a simplified prompt. Never speak
       // contaminated output. ---

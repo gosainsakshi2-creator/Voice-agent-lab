@@ -179,6 +179,12 @@ export class ElevenLabsTextToSpeechProvider implements TextToSpeechProvider {
       modelId: this.config.modelId,
       outputFormat: toPcmOutputFormat(this.config.sampleRateHz),
       ...(languageCode ? { languageCode } : {}),
+        voiceSettings: {
+    stability: 0.42,
+    similarityBoost: 0.88,
+    style: 0.08,
+    useSpeakerBoost: true,
+  },
     });
 
     // eslint-disable-next-line no-console
@@ -218,6 +224,12 @@ export class ElevenLabsTextToSpeechProvider implements TextToSpeechProvider {
       modelId: this.config.modelId,
       outputFormat: toPcmOutputFormat(this.config.sampleRateHz),
       ...(languageCode ? { languageCode } : {}),
+        voiceSettings: {
+    stability: 0.42,
+    similarityBoost: 0.88,
+    style: 0.08,
+    useSpeakerBoost: true,
+  },
     });
 
     let sequence = 0;

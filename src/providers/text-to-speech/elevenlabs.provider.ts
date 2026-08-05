@@ -180,11 +180,11 @@ export class ElevenLabsTextToSpeechProvider implements TextToSpeechProvider {
       outputFormat: toPcmOutputFormat(this.config.sampleRateHz),
       ...(languageCode ? { languageCode } : {}),
         voiceSettings: {
-    stability: 0.30,
+    stability: 0.42,
     similarityBoost: 0.88,
-    style: 0.08,
-    useSpeakerBoost: false,
-    speed: 0.90,
+    style: 0,
+    useSpeakerBoost: true,
+    speed: 0.88,
   },
     });
 
@@ -226,11 +226,12 @@ export class ElevenLabsTextToSpeechProvider implements TextToSpeechProvider {
       outputFormat: toPcmOutputFormat(this.config.sampleRateHz),
       ...(languageCode ? { languageCode } : {}),
         voiceSettings: {
-    stability: 0.30,
+    stability: 0.42,
     similarityBoost: 0.88,
-    style: 0.08,
-    useSpeakerBoost: false,
-    speed: 0.90,
+    style: 0,
+    useSpeakerBoost: true,
+    speed: 0.88,
+    
   },
     });
 

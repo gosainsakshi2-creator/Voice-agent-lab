@@ -163,12 +163,13 @@ export class ElevenLabsTextToSpeechProvider implements TextToSpeechProvider {
     );
 
     const stream = await this.client.textToSpeech.convert(voiceId, {
+      
       text: task.request.text,
       modelId: this.config.modelId,
       outputFormat: toPcmOutputFormat(this.config.sampleRateHz),
       ...(languageCode ? { languageCode } : {}),
     });
-
+     console.log("[DEBUG] convert() returned at", Date.now());
     // eslint-disable-next-line no-console
     console.log(
       `[TTS:elevenlabs] convert() returned: type=${typeof stream} constructor=${(stream as object)?.constructor?.name} hasGetReader=${typeof (stream as ReadableStream)?.getReader === "function"} hasAsyncIterator=${typeof stream === "object" && stream !== null && Symbol.asyncIterator in (stream as object)}`,
@@ -221,6 +222,9 @@ export class ElevenLabsTextToSpeechProvider implements TextToSpeechProvider {
         if (signal?.aborted) break;
         const u8 = chunk instanceof Uint8Array ? chunk : new Uint8Array(chunk);
         if (u8.byteLength === 0) continue;
+        console.log(
+  `[DEBUG] received chunk ${sequence} bytes=${u8.byteLength} time=${Date.now()}`
+);
         yield {
           audio: { data: u8, encoding: "PCM_16" as const, sampleRateHz: this.config.sampleRateHz },
           sequence: sequence++,

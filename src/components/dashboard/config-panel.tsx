@@ -138,14 +138,17 @@ export function ConfigPanel({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {Object.values(SupportedLanguage).map((code) => (
-                    <SelectItem key={code} value={code}>
-                      {LANGUAGE_METADATA[code].label}
-                      <span className="ml-1.5 font-mono text-[11px] text-muted-foreground">
-                        {LANGUAGE_METADATA[code].bcp47Tag}
-                      </span>
-                    </SelectItem>
-                  ))}
+                {[
+  SupportedLanguage.ENGLISH,
+  SupportedLanguage.HINDI,
+].map((code) => (
+  <SelectItem key={code} value={code}>
+    {LANGUAGE_METADATA[code].label}
+    <span className="ml-1.5 font-mono text-[11px] text-muted-foreground">
+      {LANGUAGE_METADATA[code].bcp47Tag}
+    </span>
+  </SelectItem>
+))}
                 </SelectContent>
               </Select>
             </div>

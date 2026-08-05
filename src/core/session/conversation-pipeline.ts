@@ -274,6 +274,10 @@ export class ConversationPipeline {
         console.log(`[STT:${sid}] Transcript received: "${turn.text.slice(0, 80)}${turn.text.length > 80 ? "..." : ""}" sttMs=${turn.sttMs}`);
 
         const detected = detectLanguage(turn.text, this.record.memory.currentLanguage);
+        console.log("[LANG DETECT]");
+console.log("Transcript:", turn.text);
+console.log("Detected:", detected.language);
+console.log("Confidence:", detected.confidence);
         this.record.memory.recordUserTurn(turn.text, detected.language);
 
         const turnStartedAt = Date.now();

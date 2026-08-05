@@ -31,7 +31,15 @@ const ROMAN_HINDI_MARKERS = new Set([
   "acha", "theek", "thik", "bhai", "yaar", "kar", "kro", "karo", "karna",
   "raha", "rahi", "rahe", "matlab", "abhi", "bahut", "bohot", "thoda",
   "zyada", "jyada", "bilkul", "chaliye", "chalo", "sahi", "galat", "bata",
-  "batao", "suno", "dekho", "pata", "samajh", "samjha", "samjhi",
+  "batao", "suno", "dekho", "pata", "samajh", "samjha", "samjhi","bol", "bolo", "baat", "baatkaro", "hindi", "english",
+"switch", "change", "language", "boliye", "kripya",
+"kripya", "kripayaa", "kripyah", "ji", "mujhse",
+"baat",
+"hindi",
+"bolo",
+"boliye",
+"english",
+"switch"
 ]);
 
 export interface LanguageDetectionResult {
@@ -60,7 +68,7 @@ export function detectLanguage(
   const hasLatin = LATIN_LETTERS.test(trimmed);
 
   if (hasDevanagari && hasLatin) {
-    return { language: SupportedLanguage.HINGLISH, confidence: 0.85, script: "mixed" };
+    return { language: SupportedLanguage.HINDI, confidence: 0.85, script: "mixed" };
   }
   if (hasDevanagari) {
     return { language: SupportedLanguage.HINDI, confidence: 0.9, script: "devanagari" };
@@ -75,19 +83,24 @@ export function detectLanguage(
   const hindiHits = words.filter((word) => ROMAN_HINDI_MARKERS.has(word)).length;
   const hindiRatio = words.length > 0 ? hindiHits / words.length : 0;
 
-  if (hindiRatio >= 0.34) {
-    return {
-      language: SupportedLanguage.HINGLISH,
-      confidence: Math.min(0.6 + hindiRatio * 0.3, 0.95),
-      script: "latin",
-    };
-  }
-  if (hindiHits > 0) {
-    // A romanized Hindi word appeared, but not enough of them to
-    // call this fully mixed — still worth flagging as Hinglish
-    // rather than forcing a false-confidence English classification.
-    return { language: SupportedLanguage.HINGLISH, confidence: 0.5, script: "latin" };
-  }
+ if (hindiRatio >= 0.25) {
+  return {
+    language: SupportedLanguage.HINDI,
+    confidence: Math.min(0.7 + hindiRatio * 0.25, 0.95),
+    script: "latin",
+  };
+}
 
-  return { language: SupportedLanguage.ENGLISH, confidence: 0.75, script: "latin" };
+if (hindiHits > 0) {
+  return {
+    language: SupportedLanguage.HINDI,
+    confidence: 0.65,
+    script: "latin",
+  };
+} 
+return {
+  language: SupportedLanguage.ENGLISH,
+  confidence: 0.75,
+  script: "latin",
+};
 }

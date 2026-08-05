@@ -8,7 +8,7 @@
  * results are explicitly out of scope for this architecture pass
  * (see `SpeechToTextProvider.transcribe` doc comment).
  */
-
+import type { StreamingTranscriptionRequest } from "../../types/streaming.types";
 import { DeepgramClient } from "@deepgram/sdk";
 import { SPEECH_TO_TEXT_PROVIDER_IDS } from "../../constants/providers.constants";
 import { LANGUAGE_METADATA } from "../../constants/languages.constants";
@@ -20,7 +20,7 @@ import type {
 } from "../../interfaces/providers/speech-to-text-provider.interface";
 import { probeHealth } from "../shared/health";
 import { requireEnv, optionalEnv } from "../shared/env";
-
+import { AsyncQueue } from "../../core/session/async-queue";
 interface DeepgramEnvConfig {
   readonly apiKey: string;
   readonly model: string;

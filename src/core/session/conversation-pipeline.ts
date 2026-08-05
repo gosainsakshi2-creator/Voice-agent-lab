@@ -202,10 +202,6 @@ export class ConversationPipeline {
         // (not a bracketed meta-instruction) because models like
         // Gemma that fold system prompts into the user turn can
         // misinterpret bracket syntax and echo the prompt back.
-       this.record.memory.recordUserTurn(
-    "The call has just connected. Start the conversation naturally.",
-    this.record.memory.currentLanguage,
-);
 
         const detected = detectLanguage("", this.record.memory.currentLanguage);
         const greeting = await this.runThinkingAndSpeaking("", detected, loopSignal);
@@ -274,7 +270,7 @@ export class ConversationPipeline {
         console.log(`[STT:${sid}] Transcript received: "${turn.text.slice(0, 80)}${turn.text.length > 80 ? "..." : ""}" sttMs=${turn.sttMs}`);
 
         const detected = detectLanguage(turn.text, this.record.memory.currentLanguage);
-        this.record.memory.recordUserTurn(turn.text, detected.language);
+        
 
         const turnStartedAt = Date.now();
         const result = await this.runThinkingAndSpeaking(turn.text, detected, loopSignal);
@@ -479,28 +475,33 @@ export class ConversationPipeline {
    *      prompt-echo).
    *   3. History order: system → user → assistant → user → assistant …
    */
- private buildRequestHistory(
-  detectedLanguage: SupportedLanguage
+private buildRequestHistory(
+  detectedLanguage: SupportedLanguage,
+  isGreeting = false
 ): readonly ConversationTurn[] {
 
-  const turns = this.record.memory.recentHistory().map(turn => ({ ...turn }));
+  const turns = (
+  isGreeting
+    ? this.record.memory.history()
+    : this.record.memory.recentHistory()
+).map(turn => ({ ...turn }));
 
+
+
+ if (!isGreeting) {
   const hint = languageHintFor(detectedLanguage);
 
   for (let i = turns.length - 1; i >= 0; i--) {
+    const turn = turns[i];
 
-      const turn = turns[i];
+    if (!turn) continue;
 
-      if (!turn) continue;
-
-      if (turn.role === "user") {
-
-          turn.content = `${hint}\n${turn.content}`;
-
-          break;
-      }
+    if (turn.role === "user") {
+      turn.content = `${hint}\n${turn.content}`;
+      break;
+    }
   }
-
+}
   return turns;
 }
 
@@ -518,7 +519,7 @@ export class ConversationPipeline {
 
     this.host.transition(this.record, SessionState.THINKING, "generating a reply");
     const thinkingSignal = combineSignals([this.record.bargeIn.beginThinking(), loopSignal]);
-    const request: CompletionRequest = { sessionId: this.record.id, history: this.buildRequestHistory(detected.language) };
+    const request: CompletionRequest = { sessionId: this.record.id, history: this.buildRequestHistory(detected.language,userText === "") };
     const llmProviderId = this.providers.llm.descriptor.id;
 
     // eslint-disable-next-line no-console

@@ -15,7 +15,7 @@
  * changes because of this file — it only changes how the process is
  * started (`next dev` -> `tsx server.ts`).
  */
-
+import "dotenv/config";
 import { createServer, type IncomingMessage } from "node:http";
 import { parse } from "node:url";
 import next from "next";

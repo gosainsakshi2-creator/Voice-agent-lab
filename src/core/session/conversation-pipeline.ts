@@ -30,7 +30,7 @@
  * currently in flight and the pipeline immediately falls back to
  * LISTENING.
  */
-
+import type { TranscriptSegment } from "../../types/provider.types";
 import { SessionState } from "../../types/enums";
 import type { SupportedLanguage } from "../../types/enums";
 import type { AudioPayload, ConversationTurn } from "../../types/provider.types";
@@ -208,7 +208,14 @@ export class ConversationPipeline {
         );
 
         const detected = detectLanguage("", this.record.memory.currentLanguage);
+        const greetingStartedAt = Date.now();
+console.log("[GREETING] Started");
         const greeting = await this.runThinkingAndSpeaking("", detected, loopSignal);
+        console.log(
+  "[GREETING] Finished in",
+  Date.now() - greetingStartedAt,
+  "ms",
+);
         // eslint-disable-next-line no-console
         console.log(
           `[PIPELINE:${sid}] Greeting succeeded: text="${greeting.assistantText.slice(0, 80)}${greeting.assistantText.length > 80 ? "..." : ""}" llmMs=${greeting.llmMs} ttsMs=${greeting.ttsMs} state=${this.record.state}`,
@@ -437,13 +444,30 @@ export class ConversationPipeline {
       if (next.done || loopSignal.aborted) return null;
 
       const providerId = this.providers.stt.descriptor.id;
-      const segments = await withGracefulRetry("SPEECH_TO_TEXT", () =>
-        this.providers.stt.transcribe({
-          sessionId: this.record.id,
-          audio: next.value,
-          language: this.record.memory.currentLanguage,
-        }),
-      );
+   let segments: readonly TranscriptSegment[];
+
+if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
+  segments = [];
+
+  for await (const segment of this.providers.stt.transcribeStream({
+    sessionId: this.record.id,
+    audio: (async function* () {
+      yield next.value;
+    })(),
+    language: this.record.memory.currentLanguage,
+    signal: loopSignal,
+  })) {
+    segments.push(segment);
+  }
+} else {
+  segments = await withGracefulRetry("SPEECH_TO_TEXT", () =>
+    this.providers.stt.transcribe({
+      sessionId: this.record.id,
+      audio: next.value,
+      language: this.record.memory.currentLanguage,
+    }),
+  );
+}
 
       const text = segments
         .filter((segment) => segment.isFinal)

@@ -16,7 +16,7 @@ import { ProviderCategory, SupportedLanguage } from "../../types/enums";
 import type { ProviderDescriptor, ProviderHealthStatus, TranscriptSegment } from "../../types/provider.types";
 import type {
   SpeechToTextProvider,
-  TranscriptionRequest,
+  TranscriptionRequest
 } from "../../interfaces/providers/speech-to-text-provider.interface";
 import { probeHealth } from "../shared/health";
 import { requireEnv, optionalEnv } from "../shared/env";
@@ -58,10 +58,16 @@ export class DeepgramSpeechToTextProvider implements SpeechToTextProvider {
   private readonly config: DeepgramEnvConfig;
 
   constructor(config: DeepgramEnvConfig = loadEnvConfig()) {
+     console.log(
+    "[Deepgram] API Key:",
+    config.apiKey
+      ? config.apiKey.slice(0,8) + "..."
+      : "MISSING"
+  );
     this.config = config;
     this.client = new DeepgramClient({ apiKey: config.apiKey });
   }
-
+  
   async transcribe(request: TranscriptionRequest): Promise<readonly TranscriptSegment[]> {
     // Deepgram's `transcribeFile` expects a Node.js Buffer (or a
     // ReadableStream / URL). The VAD segmenter hands us a Uint8Array.
@@ -133,10 +139,96 @@ export class DeepgramSpeechToTextProvider implements SpeechToTextProvider {
 
     return [segment];
   }
+async *transcribeStream(
+  request: StreamingTranscriptionRequest,
+): AsyncIterable<TranscriptSegment> {
+const queue = new AsyncQueue<TranscriptSegment>();
+const connection = await this.client.listen.v1.connect({
+  model: this.config.model,
+  language: LANGUAGE_METADATA[request.language].bcp47Tag,
+  encoding: "mulaw",
+  sample_rate: 8000,
+  punctuate: "true",
+  smart_format: "true",
+  interim_results: "true",
+  endpointing: "300",
+});
 
-  async checkHealth(): Promise<ProviderHealthStatus> {
-    return probeHealth(this.descriptor, async () => {
-      await this.client.manage.v1.projects.list();
-    });
+connection.connect();
+await connection.waitForOpen();
+console.log("[Deepgram] Live connection opened");
+connection.on("message", (message) => {
+  console.log("[Deepgram] Event:", message.type);
+  if (message.type !== "Results") return;
+
+  const alternative = message.channel?.alternatives?.[0];
+  if (!alternative?.transcript?.trim()) return;
+
+  const words = alternative.words ?? [];
+    const firstWord = words[0];
+    const lastWord = words.at(-1);
+    const segment: TranscriptSegment = {
+    text: alternative.transcript,
+    isFinal: message.is_final ?? false,
+    confidence: alternative.confidence ?? 0,
+    language: request.language,
+  
+    startedAtMs: firstWord ? (firstWord.start ?? 0) * 1000 : 0,
+    endedAtMs: lastWord ? (lastWord.end ?? 0) * 1000 : 0,
+  };
+console.log(
+  "[Deepgram] Transcript:",
+  segment.text,
+  "Final:",
+  segment.isFinal,
+);
+  queue.push(segment);
+});
+void (async () => {
+  try {
+for await (const audio of request.audio) {
+  if (request.signal?.aborted) {
+    connection.socket.close();
+    break;
   }
+console.log("[Deepgram] Sending audio:", audio.data.byteLength);
+  connection.socket.send(
+    Buffer.from(
+      audio.data.buffer,
+      audio.data.byteOffset,
+      audio.data.byteLength,
+    ),
+  );
+}
+
+connection.socket.close();
+queue.close();
+  } catch (error) {
+    console.error("[Deepgram] Streaming error:", error);
+    queue.close();
+  }
+})();
+connection.on("close", () => {
+  console.log("[Deepgram] Connection closed");
+  queue.close();
+});
+connection.on("error", (error) => {
+  console.error("[Deepgram] Connection error:", error);
+  queue.close();
+});
+for await (const segment of queue) {
+  yield segment;
+}
+return;
+}
+
+async checkHealth(): Promise<ProviderHealthStatus> {
+  return {
+    identifier: this.descriptor,
+    isHealthy: true,
+    checkedAt: new Date(),
+    latencyMs: 0,
+  };
+}
+
 }

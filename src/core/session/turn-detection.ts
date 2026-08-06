@@ -45,8 +45,11 @@ export class AdaptiveTurnDetector {
   private lastFinalEndedAtMs: number | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private readonly listeners = new Set<(event: TurnDetectionEvent) => void>();
-
-  constructor(private readonly now: () => number = Date.now) {}
+  constructor(
+  private readonly now: () => number = Date.now,
+  private readonly immediateOnFinal = false,
+) {}
+  
 
   onTurnEnd(listener: (event: TurnDetectionEvent) => void): () => void {
     this.listeners.add(listener);
@@ -62,21 +65,29 @@ export class AdaptiveTurnDetector {
     }
     this.lastSegmentAtMs = nowMs;
 
-    if (segment.isFinal) {
-      this.pendingFinalText = this.pendingFinalText.length > 0
-        ? `${this.pendingFinalText} ${segment.text}`.trim()
-        : segment.text;
+ if (segment.isFinal) {
+  this.pendingFinalText = this.pendingFinalText.length > 0
+    ? `${this.pendingFinalText} ${segment.text}`.trim()
+    : segment.text;
 
-      if (this.lastFinalEndedAtMs !== null) {
-        const observedGapMs = segment.startedAtMs - this.lastFinalEndedAtMs;
-        if (observedGapMs > 0) {
-          this.adaptTimeout(observedGapMs);
-        }
-      }
-      this.lastFinalEndedAtMs = segment.endedAtMs;
+  if (this.lastFinalEndedAtMs !== null) {
+    const observedGapMs = segment.startedAtMs - this.lastFinalEndedAtMs;
+    if (observedGapMs > 0) {
+      this.adaptTimeout(observedGapMs);
     }
+  }
 
-    this.rearmTimer();
+  this.lastFinalEndedAtMs = segment.endedAtMs;
+
+  // Deepgram already decides when the user has finished speaking.
+  // Don't wait for another silence timer.
+  if (this.immediateOnFinal) {
+    this.emitTurnEnd();
+    return;
+  }
+}
+
+this.rearmTimer();
   }
 
   /** Force an immediate end-of-turn (e.g. the caller detected hard silence via another signal). */

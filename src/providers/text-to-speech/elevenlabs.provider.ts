@@ -161,7 +161,12 @@ export class ElevenLabsTextToSpeechProvider implements TextToSpeechProvider {
   private readonly config: ElevenLabsEnvConfig;
 
   constructor(config: ElevenLabsEnvConfig = loadEnvConfig()) {
-    this.config = config;
+    this.config = config; console.log("========== ELEVENLABS DEBUG ==========");
+  console.log("Key prefix:", config.apiKey.substring(0, 10));
+  console.log("Starts with sk_ ?", config.apiKey.startsWith("sk_"));
+  console.log("Length:", config.apiKey.length);
+  console.log("======================================");
+
     this.client = new ElevenLabsClient({ apiKey: config.apiKey });
   }
 

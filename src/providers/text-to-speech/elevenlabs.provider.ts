@@ -166,7 +166,15 @@ export class ElevenLabsTextToSpeechProvider implements TextToSpeechProvider {
   console.log("Starts with sk_ ?", config.apiKey.startsWith("sk_"));
   console.log("Length:", config.apiKey.length);
   console.log("======================================");
+  console.log(
+  "ENV variable name: ELEVENLABS_API_KEY",
+  process.env.ELEVENLABS_API_KEY?.substring(0, 10)
+);
 
+console.log(
+  "Config key:",
+  config.apiKey.substring(0, 10)
+);
     this.client = new ElevenLabsClient({ apiKey: config.apiKey });
   }
 

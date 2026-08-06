@@ -40,11 +40,7 @@ export async function probeHealth(
     };
   }
 }
-for (const health of healthResults) {
-  console.log(
-    `[HEALTH] ${health.identifier.category}/${health.identifier.id} healthy=${health.isHealthy} message=${health.message ?? "OK"}`
-  );
-}
+
 /**
  * Time an arbitrary async operation, returning both its result and
  * the elapsed milliseconds. Used by LLM adapters to populate

@@ -49,6 +49,7 @@ export interface SessionCreationRequest {
   /** Required for CallDirection.OUTBOUND; irrelevant for INBOUND. */
   readonly destinationNumber?: string;
   readonly metadata?: Readonly<Record<string, string>>;
+  readonly voiceGender: "male" | "female";
 }
 
 /**

@@ -123,6 +123,7 @@ export class SarvamTextToSpeechProvider implements TextToSpeechProvider {
   model: this.config.model,
   speech_sample_rate: this.config.sampleRateHz,
   enable_preprocessing: true,
+  speed: 1.0,
 },
       );
  

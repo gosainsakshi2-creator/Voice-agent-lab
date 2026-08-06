@@ -17,6 +17,7 @@ import type {
   SessionStateTransition,
   SessionWarmupResult,
 } from "../../types/session.types";
+import { TTS_VOICE_METADATA } from "../../constants/voice.constants";
 import type { AudioPayload } from "../../types/provider.types";
 import type { TelephonyCallHandle } from "../../interfaces/providers/telephony-provider.interface";
 import type { TelephonyMediaStream } from "../../types/streaming.types";
@@ -56,11 +57,21 @@ export class SessionRecord {
   readonly turnDetector = new AdaptiveTurnDetector();
 
   constructor(
+    
     readonly id: SessionId,
     readonly request: SessionCreationRequest,
     readonly providerStack: ProviderStackSelection,
   ) {
-    this.memory = new ConversationMemory(request.language, buildSystemPrompt(request.language));
+    const voiceGender =
+  TTS_VOICE_METADATA.get(request.providerStack.textToSpeech.id) ?? "female";
+
+    this.memory = new ConversationMemory(
+    request.language,
+    buildSystemPrompt(
+        request.language,
+        voiceGender
+    )
+);
     this.metrics = new SessionMetricsCollector(id, providerStack);
   }
 

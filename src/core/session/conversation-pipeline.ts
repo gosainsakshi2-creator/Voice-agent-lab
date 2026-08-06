@@ -444,7 +444,7 @@ console.log("[GREETING] Started");
       if (next.done || loopSignal.aborted) return null;
 
       const providerId = this.providers.stt.descriptor.id;
-   let segments: readonly TranscriptSegment[];
+      let segments: TranscriptSegment[] = [];
 
 if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
   segments = [];
@@ -460,13 +460,15 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
     segments.push(segment);
   }
 } else {
-  segments = await withGracefulRetry("SPEECH_TO_TEXT", () =>
+  segments = [
+    ...(await withGracefulRetry("SPEECH_TO_TEXT", () =>
     this.providers.stt.transcribe({
       sessionId: this.record.id,
       audio: next.value,
       language: this.record.memory.currentLanguage,
     }),
-  );
+    )),
+];
 }
 
       const text = segments

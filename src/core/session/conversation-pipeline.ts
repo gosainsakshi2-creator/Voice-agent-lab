@@ -203,7 +203,7 @@ export class ConversationPipeline {
         // Gemma that fold system prompts into the user turn can
         // misinterpret bracket syntax and echo the prompt back.
         this.record.memory.recordUserTurn(
-          "Hi!",
+          "The Caller has just joined the call. Please greet them in a friendly and natural way.",
           this.record.memory.currentLanguage,
         );
 

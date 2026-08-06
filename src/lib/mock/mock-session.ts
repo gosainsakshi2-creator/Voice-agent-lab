@@ -36,10 +36,10 @@ export const DEFAULT_PROVIDER_STACK: ProviderStackSelection = {
 };
 
 export const DEFAULT_SESSION_REQUEST: SessionCreationRequest = {
-  language: SupportedLanguage.HINGLISH,
+  language: SupportedLanguage.HINDI,
   direction: CallDirection.OUTBOUND,
   providerStack: DEFAULT_PROVIDER_STACK,
-  destinationNumber: "+91 98765 43210",
+  destinationNumber: "+91 xxxxxxxxxx",
 };
 
 /**

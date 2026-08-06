@@ -62,8 +62,8 @@ export class SessionRecord {
     readonly request: SessionCreationRequest,
     readonly providerStack: ProviderStackSelection,
   ) {
-    const voiceGender =
-  TTS_VOICE_METADATA.get(request.providerStack.textToSpeech.id) ?? "female";
+    const providerId = request.providerStack.textToSpeech.id;
+    const voiceGender =TTS_VOICE_METADATA.get(request.providerStack.textToSpeech.id) ?? "female";
 
     this.memory = new ConversationMemory(
     request.language,

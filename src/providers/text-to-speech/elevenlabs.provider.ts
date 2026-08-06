@@ -43,7 +43,7 @@ function loadEnvConfig(): ElevenLabsEnvConfig {
     // Set ELEVENLABS_SAMPLE_RATE_HZ to override; the anti-aliased
     // resampler in audio-codec.ts now handles 16000/22050/24000/etc
     // correctly too, so a higher rate is safe — just slower.
-    sampleRateHz: optionalEnvNumber("ELEVENLABS_SAMPLE_RATE_HZ", 16000),
+    sampleRateHz: optionalEnvNumber("ELEVENLABS_SAMPLE_RATE_HZ", 8000),
   };
 }
 
@@ -179,13 +179,6 @@ export class ElevenLabsTextToSpeechProvider implements TextToSpeechProvider {
       modelId: this.config.modelId,
       outputFormat: toPcmOutputFormat(this.config.sampleRateHz),
       ...(languageCode ? { languageCode } : {}),
-        voiceSettings: {
-    stability: 0.42,
-    similarityBoost: 0.88,
-    style: 0,
-    useSpeakerBoost: true,
-    speed: 0.88,
-  },
     });
 
     // eslint-disable-next-line no-console
@@ -225,14 +218,6 @@ export class ElevenLabsTextToSpeechProvider implements TextToSpeechProvider {
       modelId: this.config.modelId,
       outputFormat: toPcmOutputFormat(this.config.sampleRateHz),
       ...(languageCode ? { languageCode } : {}),
-        voiceSettings: {
-    stability: 0.42,
-    similarityBoost: 0.88,
-    style: 0,
-    useSpeakerBoost: true,
-    speed: 0.88,
-    
-  },
     });
 
     let sequence = 0;

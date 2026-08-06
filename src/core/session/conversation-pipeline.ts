@@ -30,7 +30,7 @@
  * currently in flight and the pipeline immediately falls back to
  * LISTENING.
  */
-import { formatForSpeech } from "../../utils/speech-formatter";
+
 import { SessionState } from "../../types/enums";
 import type { SupportedLanguage } from "../../types/enums";
 import type { AudioPayload, ConversationTurn } from "../../types/provider.types";
@@ -124,7 +124,7 @@ function stripMarkdown(raw: string): string {
 const CONTAMINATION_MARKERS = [
   "role:",
   "persona:",
-  "constraint:",
+  "constraint",
   "language:",
   "how to talk:",
   "remember:",
@@ -203,7 +203,7 @@ export class ConversationPipeline {
         // Gemma that fold system prompts into the user turn can
         // misinterpret bracket syntax and echo the prompt back.
         this.record.memory.recordUserTurn(
-          "The call has just connected. Start the conversation naturally, greeting the caller in their preferred language.",
+          "Hi!",
           this.record.memory.currentLanguage,
         );
 
@@ -274,10 +274,6 @@ export class ConversationPipeline {
         console.log(`[STT:${sid}] Transcript received: "${turn.text.slice(0, 80)}${turn.text.length > 80 ? "..." : ""}" sttMs=${turn.sttMs}`);
 
         const detected = detectLanguage(turn.text, this.record.memory.currentLanguage);
-        console.log("[LANG DETECT]");
-console.log("Transcript:", turn.text);
-console.log("Detected:", detected.language);
-console.log("Confidence:", detected.confidence);
         this.record.memory.recordUserTurn(turn.text, detected.language);
 
         const turnStartedAt = Date.now();
@@ -542,7 +538,7 @@ console.log("Confidence:", detected.confidence);
       let llmMs = Date.now() - startedAt;
 
       let spokenContent = stripMarkdown(completion.turn.content);
-      spokenContent = formatForSpeech(spokenContent);
+
       // --- Contamination check: if the output echoes system-prompt
       // markers, retry ONCE with a simplified prompt. Never speak
       // contaminated output. ---
@@ -591,7 +587,7 @@ console.log("Confidence:", detected.confidence);
       }
       const speakingSignal = combineSignals([this.record.bargeIn.beginSpeaking(), loopSignal]);
 
-      const { ttsMs, ttsCostUsd } = await this.synthesizeAndPlay(spokenContent, detected.language,speakingSignal);
+      const { ttsMs, ttsCostUsd } = await this.synthesizeAndPlay(spokenContent, speakingSignal);
 
       return {
         assistantText: spokenContent,
@@ -617,6 +613,12 @@ console.log("Confidence:", detected.confidence);
     let ttsMs = 0;
     let ttsCostUsd = 0;
     let speakingSignal: AbortSignal | undefined;
+    // Set once contamination is detected mid-stream: stops speaking any
+    // further sentences from this turn. See the contamination check
+    // below for why this exists — the batch path's isContaminatedOutput
+    // + retry safety net never runs for a streaming provider, and both
+    // configured LLM providers (GPT-5.1, Gemma) implement streaming.
+    let contaminated = false;
     const startedAt = Date.now();
 
     try {
@@ -632,9 +634,25 @@ console.log("Confidence:", detected.confidence);
           for (const sentence of readySentences) {
             const cleaned = stripMarkdown(sentence);
             if (cleaned.length === 0) continue;
+
+            // Check the ACCUMULATED text so far, not just this sentence
+            // in isolation — a leak's markers are often split across
+            // sentence boundaries (e.g. "Persona: ..." / "Constraints:
+            // ..."), and isContaminatedOutput requires two markers to
+            // avoid false positives on an innocent single word. This
+            // can't prevent an EARLIER sentence in the same turn from
+            // having already been spoken (streaming speaks as it goes,
+            // by design, for latency) — but it stops the turn the
+            // moment contamination becomes detectable, rather than
+            // speaking the entire echoed prompt to the caller.
+            if (isContaminatedOutput(fullText)) {
+              contaminated = true;
+              break;
+            }
+
             speakingSignal ??= this.enterSpeaking();
             if (speakingSignal.aborted) break;
-            const spoken = await this.synthesizeAndPlay(cleaned,  this.record.memory.currentLanguage,speakingSignal);
+            const spoken = await this.synthesizeAndPlay(cleaned, speakingSignal);
             ttsMs += spoken.ttsMs;
             ttsCostUsd += spoken.ttsCostUsd;
           }
@@ -643,7 +661,7 @@ console.log("Confidence:", detected.confidence);
           llmMs = event.latencyMs;
         }
 
-        if (speakingSignal?.aborted) break;
+        if (contaminated || speakingSignal?.aborted) break;
       }
     } catch {
       // Streaming LLM connection dropped mid-reply — speak whatever
@@ -652,12 +670,35 @@ console.log("Confidence:", detected.confidence);
 
     if (llmMs === 0) llmMs = Date.now() - startedAt;
 
+    if (contaminated) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[LLM:${this.record.id}] Streaming output contaminated (prompt echo) — suppressing remainder of turn, using fallback`,
+      );
+      const fallback = fallbackGreeting(this.record.memory.currentLanguage);
+      if (!(speakingSignal?.aborted ?? false)) {
+        speakingSignal ??= this.enterSpeaking();
+        if (!speakingSignal.aborted) {
+          const spoken = await this.synthesizeAndPlay(fallback, speakingSignal);
+          ttsMs += spoken.ttsMs;
+          ttsCostUsd += spoken.ttsCostUsd;
+        }
+      }
+      return {
+        assistantText: fallback,
+        llmMs,
+        llmCostUsd: estimateLlmCost(llmProviderId, estimateTokenCount(userText) + estimateTokenCount(fallback)),
+        ttsMs,
+        ttsCostUsd,
+      };
+    }
+
     const rawRemainder = chunker.flush();
     const remainder = rawRemainder ? stripMarkdown(rawRemainder) : "";
     if (remainder.length > 0 && !(speakingSignal?.aborted ?? false)) {
       speakingSignal ??= this.enterSpeaking();
       if (!speakingSignal.aborted) {
-        const spoken = await this.synthesizeAndPlay(remainder, this.record.memory.currentLanguage, speakingSignal);
+        const spoken = await this.synthesizeAndPlay(remainder, speakingSignal);
         ttsMs += spoken.ttsMs;
         ttsCostUsd += spoken.ttsCostUsd;
       }
@@ -687,12 +728,7 @@ console.log("Confidence:", detected.confidence);
     return combineSignals([this.record.bargeIn.beginSpeaking(), this.record.loopAbortController!.signal]);
   }
 
-  private async synthesizeAndPlay(
-  text: string,
-  language: SupportedLanguage,
-  speakingSignal: AbortSignal,
-): 
-  Promise<{ ttsMs: number; ttsCostUsd: number }> {
+  private async synthesizeAndPlay(text: string, speakingSignal: AbortSignal): Promise<{ ttsMs: number; ttsCostUsd: number }> {
     const sid = this.record.id;
     if (speakingSignal.aborted || text.trim().length === 0) {
       // eslint-disable-next-line no-console
@@ -705,7 +741,7 @@ console.log("Confidence:", detected.confidence);
     console.log(`[TTS:${sid}] Synthesis started: provider=${ttsProviderId} textLen=${text.length} text="${text.slice(0, 60)}${text.length > 60 ? "..." : ""}" streaming=${typeof this.providers.tts.synthesizeStream === "function"}`);
     const task: SynthesisTaskRequest = {
       sessionId: this.record.id,
-      request: { text, language },
+      request: { text, language: this.record.memory.currentLanguage },
     };
     const startedAt = Date.now();
 
@@ -715,9 +751,6 @@ console.log("Confidence:", detected.confidence);
         for await (const chunk of this.providers.tts.synthesizeStream(task, speakingSignal)) {
           if (speakingSignal.aborted) break;
           chunkCount += 1;
-          console.log(
-  `[STREAM] chunk=${chunkCount} bytes=${chunk.audio.data.byteLength} time=${Date.now()}`
-);
           await this.playAudioChunk(chunk.audio);
         }
       } catch (err) {
@@ -794,9 +827,6 @@ console.log("Confidence:", detected.confidence);
   }
 
   private async playAudioChunk(audio: AudioPayload): Promise<void> {
-    console.log(
-  `[PLAY] chunk=${this.playAudioChunkCount + 1} time=${Date.now()}`
-);
     this.playAudioChunkCount += 1;
     const sid = this.record.id;
 

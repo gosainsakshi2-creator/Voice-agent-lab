@@ -89,6 +89,10 @@ export class DefaultVoiceSessionManager implements VoiceSessionManager, Pipeline
       targets.map(async (target) => {
         const provider = this.registry.resolve(target.category, target.id);
         const health = await provider.checkHealth();
+        console.log(
+  `[HEALTH] ${target.category}/${target.id}`,
+  health
+);
         return {
           category: target.category,
           identifier: { category: target.category, id: target.id },
@@ -97,7 +101,6 @@ export class DefaultVoiceSessionManager implements VoiceSessionManager, Pipeline
         };
       }),
     );
-
     const isReady = providerStatuses.every((status) => status.health.isHealthy);
     const warmupResult: SessionWarmupResult = {
       sessionId,

@@ -178,6 +178,13 @@ export class ElevenLabsTextToSpeechProvider implements TextToSpeechProvider {
       text: task.request.text,
       modelId: this.config.modelId,
       outputFormat: toPcmOutputFormat(this.config.sampleRateHz),
+      voiceSettings: {
+  stability: 0.42,
+  similarityBoost: 0.88,
+  style: 0,
+  useSpeakerBoost: true,
+  speed: 0.88,
+},
       ...(languageCode ? { languageCode } : {}),
     });
 
@@ -217,6 +224,13 @@ export class ElevenLabsTextToSpeechProvider implements TextToSpeechProvider {
       text: task.request.text,
       modelId: this.config.modelId,
       outputFormat: toPcmOutputFormat(this.config.sampleRateHz),
+      voiceSettings: {
+  stability: 0.42,
+  similarityBoost: 0.88,
+  style: 0,
+  useSpeakerBoost: true,
+  speed: 0.88,
+},
       ...(languageCode ? { languageCode } : {}),
     });
 

@@ -187,6 +187,7 @@ export class ConversationPipeline {
     console.log(
       `[PIPELINE:${sid}] run() started — state=${this.record.state} streamingSTT=${this.usesStreamingStt} llm=${this.providers.llm.descriptor.id} tts=${this.providers.tts.descriptor.id} stt=${this.providers.stt.descriptor.id}`,
     );
+    console.log("[PIPELINE] usesStreamingStt =", this.usesStreamingStt);
 
     if (this.usesStreamingStt) {
       this.startContinuousStt(loopSignal);
@@ -345,6 +346,7 @@ console.log("[GREETING] Started");
   }
 
   private startContinuousStt(loopSignal: AbortSignal): void {
+    console.log("[PIPELINE] startContinuousStt() called");
     const wrapped = withByteCounter(this.inboundAudioSource(), (chunk) => {
       this.sinceLastTurnBytes += chunk.data.byteLength;
       this.sinceLastTurnEncoding ??= chunk.encoding;

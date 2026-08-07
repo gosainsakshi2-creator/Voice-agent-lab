@@ -537,6 +537,23 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
     detected: LanguageDetectionResult,
     loopSignal: AbortSignal,
   ): Promise<ThinkingAndSpeakingResult> {
+    this.host.transition(this.record, SessionState.SPEAKING, "test");
+
+await this.synthesizeAndPlay(
+  "Hello, this is a latency test.",
+  combineSignals([
+    this.record.bargeIn.beginSpeaking(),
+    loopSignal,
+  ])
+);
+
+return {
+  assistantText: "Hello, this is a latency test.",
+  llmMs: 0,
+  llmCostUsd: 0,
+  ttsMs: 0,
+  ttsCostUsd: 0,
+};
     const sid = this.record.id;
     const isGreeting = userText === "";
     // eslint-disable-next-line no-console

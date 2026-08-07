@@ -42,7 +42,7 @@ export interface BridgeSocket {
   on?(event: string, listener: (...args: unknown[]) => void): void;
   addEventListener?(event: string, listener: (...args: unknown[]) => void): void;
 }
-
+const MAX_QUEUE_FRAMES = 100;
 const OPEN_STATE = 1;
 /**
  * Plivo's recommended outbound format for Voice AI is
@@ -126,9 +126,23 @@ export function attachPlivoMediaBridge(
     const mulawBytes = mulawEncoder.encode(chunk.data, chunk.sampleRateHz);
     const frameCount = Math.ceil(mulawBytes.length / OUTBOUND_FRAME_BYTES);
     outboundFrameTotal += frameCount;
-    for (let offset = 0; offset < mulawBytes.length; offset += OUTBOUND_FRAME_BYTES) {
-      outboundQueue.push(mulawBytes.subarray(offset, offset + OUTBOUND_FRAME_BYTES));
+for (
+    let offset = 0;
+    offset < mulawBytes.length;
+    offset += OUTBOUND_FRAME_BYTES
+) {
+
+    while (outboundQueue.length >= MAX_QUEUE_FRAMES) {
+        outboundQueue.shift();
     }
+
+    outboundQueue.push(
+        mulawBytes.subarray(
+            offset,
+            offset + OUTBOUND_FRAME_BYTES,
+        ),
+    );
+}
     // eslint-disable-next-line no-console
     console.log(
       `[plivo-bridge:${sessionId}] enqueued ${frameCount} frames (${frameCount * OUTBOUND_FRAME_MS}ms), queue depth=${outboundQueue.length}, lifetime frames=${outboundFrameTotal}`,

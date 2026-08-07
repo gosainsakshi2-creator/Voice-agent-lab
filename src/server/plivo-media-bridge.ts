@@ -85,7 +85,12 @@ export function attachPlivoMediaBridge(
       sampleRateHz: 8000,
     };
     manager.pushInboundAudio(sessionId, payload);
-  });
+  },
+   () => {
+    console.log("[BARGE] Speech detected by VAD");
+    manager.signalBargeIn(sessionId);
+  }
+);
 
   function sendJson(obj: unknown): void {
     if (closed || socket.readyState !== OPEN_STATE) return;

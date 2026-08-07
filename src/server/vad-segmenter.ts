@@ -50,7 +50,11 @@ export class MulawVadSegmenter {
   private bufferedMs = 0;
   private silenceMs = 0;
   private speaking = false;
-
+constructor(
+    private readonly onUtterance: (mulawBytes: Uint8Array) => void,
+    private readonly onSpeechStart?: () => void,
+    options: VadSegmenterOptions = {},
+)
   constructor(
     private readonly onUtterance: (mulawBytes: Uint8Array) => void,
     options: VadSegmenterOptions = {},
@@ -63,8 +67,15 @@ export class MulawVadSegmenter {
     const frameMs = (mulawFrame.length / 160) * FRAME_MS;
     const isSpeech = this.frameHasSpeech(mulawFrame);
 
-    if (isSpeech) {
-      this.speaking = true;
+   if (isSpeech) {
+    if (!this.speaking) {
+        this.speaking = true;
+        this.onSpeechStart?.();
+    }
+
+    this.silenceMs = 0;
+    ...
+}
       this.silenceMs = 0;
       this.buffered.push(mulawFrame);
       this.bufferedMs += frameMs;

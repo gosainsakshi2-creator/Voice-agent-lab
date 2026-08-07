@@ -108,6 +108,9 @@ export function attachPlivoMediaBridge(
     outboundChunkCount += 1;
     // eslint-disable-next-line no-console
     console.log(
+    `[QUEUE] ${Date.now()} depth=${outboundQueue.length}`
+);
+    console.log(
       `[plivo-bridge:${sessionId}] enqueueOutbound #${outboundChunkCount}: encoding=${chunk.encoding} sampleRate=${chunk.sampleRateHz} bytes=${chunk.data.byteLength}`,
     );
 
@@ -126,23 +129,16 @@ export function attachPlivoMediaBridge(
     const mulawBytes = mulawEncoder.encode(chunk.data, chunk.sampleRateHz);
     const frameCount = Math.ceil(mulawBytes.length / OUTBOUND_FRAME_BYTES);
     outboundFrameTotal += frameCount;
-for (
-    let offset = 0;
-    offset < mulawBytes.length;
-    offset += OUTBOUND_FRAME_BYTES
-) {
-
-    while (outboundQueue.length >= MAX_QUEUE_FRAMES) {
-        outboundQueue.shift();
-    }
+    for (let offset = 0; offset < mulawBytes.length; offset += OUTBOUND_FRAME_BYTES) {
+     
 
     outboundQueue.push(
         mulawBytes.subarray(
             offset,
             offset + OUTBOUND_FRAME_BYTES,
         ),
-    );
-}
+          );
+        }
     // eslint-disable-next-line no-console
     console.log(
       `[plivo-bridge:${sessionId}] enqueued ${frameCount} frames (${frameCount * OUTBOUND_FRAME_MS}ms), queue depth=${outboundQueue.length}, lifetime frames=${outboundFrameTotal}`,
@@ -199,7 +195,9 @@ function startPump(): void {
     if (pumpTimer) {
       clearInterval(pumpTimer);
       pumpTimer = undefined;
-    }
+    }console.log(
+    `[CLEAR AUDIO] ${Date.now()} dropped=${droppedFrames}`
+);
     // eslint-disable-next-line no-console
     console.log(`[plivo-bridge:${sessionId}] clearOutboundPlayback: dropped ${droppedFrames} queued frames, sending clearAudio (streamId=${plivoStreamId ?? "unknown"})`);
     sendJson({ event: "clearAudio", ...(plivoStreamId ? { streamId: plivoStreamId } : {}) });

@@ -405,6 +405,9 @@ console.log("[GREETING] Started");
       };
 
       const unsubscribe = this.record.turnDetector.onTurnEnd((event) => {
+             console.log(
+  `[TURN END] ${Date.now()} text="${event.text}" sttMs=${event.turnDurationMs}`
+);
         const audioSeconds = this.consumeSinceLastTurnAudioSeconds();
         const providerId = this.providers.stt.descriptor.id;
         finish({
@@ -537,29 +540,12 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
     detected: LanguageDetectionResult,
     loopSignal: AbortSignal,
   ): Promise<ThinkingAndSpeakingResult> {
-    this.host.transition(this.record, SessionState.SPEAKING, "test");
-
-await this.synthesizeAndPlay(
-  "Hello, this is a latency test.",
-  combineSignals([
-    this.record.bargeIn.beginSpeaking(),
-    loopSignal,
-  ])
-);
-
-return {
-  assistantText: "Hello, this is a latency test.",
-  llmMs: 0,
-  llmCostUsd: 0,
-  ttsMs: 0,
-  ttsCostUsd: 0,
-};
     const sid = this.record.id;
     const isGreeting = userText === "";
     // eslint-disable-next-line no-console
-    console.log(
-      `[LLM:${sid}] Prompt generated: isGreeting=${isGreeting} language=${detected.language} currentState=${this.record.state} llmProvider=${this.providers.llm.descriptor.id}`,
-    );
+  console.log(
+  `[LLM START] ${Date.now()} state=${this.record.state} user="${userText.slice(0, 60)}"`
+);
 
     this.host.transition(this.record, SessionState.THINKING, "generating a reply");
     const thinkingSignal = combineSignals([this.record.bargeIn.beginThinking(), loopSignal]);
@@ -798,13 +784,12 @@ const { ttsMs, ttsCostUsd } =
       let chunkCount = 0;
       try {
        for await (const chunk of this.providers.tts.synthesizeStream(task, speakingSignal)) {
-
+   if (chunkCount === 0) {
+    console.log(`[FIRST TTS CHUNK] ${Date.now()}`);
+}
   if (speakingSignal.aborted) {
     console.log(`[TTS:${sid}] Barge-in detected, interrupting playback`);
-    console.log(
-    "[TTS] mediaStream exists:",
-    !!this.record.mediaStream
-);
+
     await this.record.mediaStream?.interruptPlayback();
 
     break;

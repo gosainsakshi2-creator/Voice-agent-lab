@@ -1,36 +1,24 @@
 /**
  * vad-segmenter.ts
  *
- * Transport-level concern, NOT orchestration logic. The registered
- * Speech-To-Text provider (Deepgram) implements only the batch
- * `transcribe(one whole AudioPayload)` contract — none of the four
- * provider adapters implement the optional `transcribeStream`
- * member (verified in the Provider Layer; see integration report).
- * `ConversationPipeline.acquireBatchTurn` therefore expects exactly
- * one `AudioPayload` per caller utterance from the inbound audio
- * source.
- *
- * A live phone call obviously doesn't arrive pre-split into
- * utterances — Plivo streams ~20ms mu-law frames continuously. This
- * module's only job is turning that continuous frame stream into
- * discrete utterance-sized `AudioPayload`s using simple
- * energy-based endpointing, then handing each one to
- * `pushInboundAudio`. It does not detect language, transcribe
- * anything, manage session state, or decide when the assistant
- * should speak — all of that remains exactly where it already lived
- * (`AdaptiveTurnDetector`, `ConversationPipeline`, unchanged).
+ * Transport-level concern, NOT orchestration logic.
+ * Splits a continuous stream of 8 kHz G.711 μ-law frames into
+ * utterance-sized chunks using simple energy-based VAD.
  */
 
 import { mulawToPcm16 } from "./audio-codec";
 
 export interface VadSegmenterOptions {
-  /** RMS amplitude (0-32767 scale) above which a frame counts as speech. */
+  /** RMS amplitude (0–32767) above which a frame counts as speech. */
   readonly speechThreshold?: number;
-  /** Consecutive silence duration (ms) that ends the current utterance. */
+
+  /** Consecutive silence (ms) that ends an utterance. */
   readonly endSilenceMs?: number;
-  /** Minimum utterance length (ms) worth flushing at all. */
+
+  /** Ignore utterances shorter than this. */
   readonly minUtteranceMs?: number;
-  /** Hard cap (ms) so a stuck-open mic can't buffer forever. */
+
+  /** Hard cap to avoid buffering forever. */
   readonly maxUtteranceMs?: number;
 }
 
@@ -41,50 +29,50 @@ const DEFAULTS: Required<VadSegmenterOptions> = {
   maxUtteranceMs: 15_000,
 };
 
-/** One 20ms mu-law frame is 160 bytes at 8kHz. */
+/** One μ-law frame from Plivo = 160 bytes = 20 ms @ 8 kHz */
 const FRAME_MS = 20;
 
 export class MulawVadSegmenter {
   private readonly opts: Required<VadSegmenterOptions>;
+
   private buffered: Uint8Array[] = [];
   private bufferedMs = 0;
   private silenceMs = 0;
   private speaking = false;
-constructor(
+
+  constructor(
     private readonly onUtterance: (mulawBytes: Uint8Array) => void,
     private readonly onSpeechStart?: () => void,
     options: VadSegmenterOptions = {},
-)
-  constructor(
-    private readonly onUtterance: (mulawBytes: Uint8Array) => void,
-    options: VadSegmenterOptions = {},
   ) {
-    this.opts = { ...DEFAULTS, ...options };
+    this.opts = {
+      ...DEFAULTS,
+      ...options,
+    };
   }
 
-  /** Feed one raw mu-law frame (any length; Plivo sends ~20ms/160-byte frames). */
+  /**
+   * Feed one μ-law frame.
+   */
   push(mulawFrame: Uint8Array): void {
     const frameMs = (mulawFrame.length / 160) * FRAME_MS;
     const isSpeech = this.frameHasSpeech(mulawFrame);
 
-   if (isSpeech) {
-    if (!this.speaking) {
+    if (isSpeech) {
+      if (!this.speaking) {
         this.speaking = true;
         this.onSpeechStart?.();
-    }
+      }
 
-    this.silenceMs = 0;
-    ...
-}
       this.silenceMs = 0;
       this.buffered.push(mulawFrame);
       this.bufferedMs += frameMs;
     } else if (this.speaking) {
-      // Keep trailing silence in the buffer (natural word endings)
-      // until it's long enough to declare the utterance over.
+      // Keep trailing silence so we don't clip word endings.
       this.buffered.push(mulawFrame);
       this.bufferedMs += frameMs;
       this.silenceMs += frameMs;
+
       if (this.silenceMs >= this.opts.endSilenceMs) {
         this.flush();
       }
@@ -95,22 +83,33 @@ constructor(
     }
   }
 
-  /** Force-emit whatever is buffered (e.g. on call end). */
+  /**
+   * Force-emit whatever is buffered.
+   */
   flush(): void {
     if (this.buffered.length === 0) {
       this.reset();
       return;
     }
+
     if (this.bufferedMs >= this.opts.minUtteranceMs) {
-      const total = this.buffered.reduce((sum, frame) => sum + frame.length, 0);
-      const merged = new Uint8Array(total);
+      const totalBytes = this.buffered.reduce(
+        (sum, frame) => sum + frame.length,
+        0,
+      );
+
+      const merged = new Uint8Array(totalBytes);
+
       let offset = 0;
+
       for (const frame of this.buffered) {
         merged.set(frame, offset);
         offset += frame.length;
       }
+
       this.onUtterance(merged);
     }
+
     this.reset();
   }
 
@@ -123,12 +122,16 @@ constructor(
 
   private frameHasSpeech(mulawFrame: Uint8Array): boolean {
     const pcm = mulawToPcm16(mulawFrame);
+
     let sumSquares = 0;
+
     for (let i = 0; i < pcm.length; i += 1) {
       const sample = pcm[i]!;
       sumSquares += sample * sample;
     }
+
     const rms = Math.sqrt(sumSquares / Math.max(1, pcm.length));
+
     return rms >= this.opts.speechThreshold;
   }
 }

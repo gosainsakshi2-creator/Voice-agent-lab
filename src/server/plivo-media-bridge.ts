@@ -136,78 +136,48 @@ export function attachPlivoMediaBridge(
     startPump();
   }
 
-  function startPump(): void {
-    if (pumpTimer) return;
-    // eslint-disable-next-line no-console
-    console.log(`[plivo-bridge:${sessionId}] pump started`);
-    const startedAt = Date.now();
-    let framesSent = 0;
-    pumpTimer = setInterval(() => {
-      // Drift correction with burst cap: after event-loop starvation
-      // (e.g. TTS streaming holding the microtask queue for >1s),
-      // uncapped drift correction would dump dozens of frames in one
-      // tick, overwhelming Plivo's playback buffer. Cap to
-      // MAX_FRAMES_PER_TICK so catch-up is gradual (~60ms per tick
-      // at cap=3) instead of a single burst.
-      const rawDue = Math.floor((Date.now() - startedAt) / OUTBOUND_FRAME_MS) - framesSent;
-      const framesDue = Math.min(rawDue, MAX_FRAMES_PER_TICK);
-      if (rawDue > MAX_FRAMES_PER_TICK && framesSent === 0) {
-        // eslint-disable-next-line no-console
-        console.log(
-          `[plivo-bridge:${sessionId}] pump burst capped: ${rawDue} frames due, sending ${framesDue} (event loop was starved ~${rawDue * OUTBOUND_FRAME_MS}ms)`,
-        );
-      }
-      for (let i = 0; i < framesDue; i += 1) {
-        const frame = outboundQueue.shift();
-        if (!frame) {
-          // eslint-disable-next-line no-console
-          console.log(`[plivo-bridge:${sessionId}] pump exhausted after ${framesSent} frames (${framesSent * OUTBOUND_FRAME_MS}ms of audio)`);
-          clearInterval(pumpTimer);
-          pumpTimer = undefined;
-          return;
-        }
-        framesSent += 1;
-        if (framesSent === 1 || framesSent % 50 === 0) {
-          // eslint-disable-next-line no-console
-          console.log(`[plivo-bridge:${sessionId}] pump sending frame #${framesSent}, remaining=${outboundQueue.length}`);
-        }
-        sendJson({
-          event: "playAudio",
-          // `streamId` is a TOP-LEVEL sibling of `event`/`media` — not
-          // inside `media`. Plivo's own reference serializer includes
-          // it on every playAudio event.
-          ...(plivoStreamId ? { streamId: plivoStreamId } : {}),
-          media: {
-            // ── CRITICAL: BARE MIME TYPE, NO ";rate=" SUFFIX ──
-            //
-            // The `;rate=8000` parameter belongs ONLY on the
-            // `<Stream contentType="...">` XML attribute (which
-            // configures the INBOUND direction). Inside a `playAudio`
-            // WebSocket event the rate must be carried by the separate
-            // `sampleRate` field and the contentType must be bare.
-            //
-            // Plivo's own examples repo lists
-            //   contentType: "audio/x-mulaw;rate=8000"
-            // as a known common mistake ("wrong - rate must be
-            // separate") that triggers an `incorrectPayload` error.
-            //
-            // When Plivo cannot parse the contentType it falls back to
-            // its stream default of L16, so our G.711 mu-law bytes get
-            // reinterpreted as 16-bit signed PCM. That mis-decode is
-            // what produced the loud crackly/robotic/noisy voice that
-            // still carried the rhythm of speech — and why no amount of
-            // frame padding, pump retiming, endianness swapping or
-            // codec substitution ever changed it. The bytes we sent
-            // were always correct; the receiver was told the wrong
-            // format to decode them with.
-            contentType: "audio/x-mulaw",
-            sampleRate: 8000,
-            payload: Buffer.from(frame).toString("base64"),
-          },
-        });
-      }
-    }, OUTBOUND_FRAME_MS);
-  }
+function startPump(): void {
+  if (pumpTimer) return;
+
+  // eslint-disable-next-line no-console
+  console.log(`[plivo-bridge:${sessionId}] pump started`);
+
+  let framesSent = 0;
+
+  pumpTimer = setInterval(() => {
+    const frame = outboundQueue.shift();
+
+    if (!frame) {
+      // eslint-disable-next-line no-console
+      console.log(
+        `[plivo-bridge:${sessionId}] pump exhausted after ${framesSent} frames (${framesSent * OUTBOUND_FRAME_MS}ms of audio)`
+      );
+
+      clearInterval(pumpTimer!);
+      pumpTimer = undefined;
+      return;
+    }
+
+    framesSent++;
+
+    if (framesSent === 1 || framesSent % 50 === 0) {
+      // eslint-disable-next-line no-console
+      console.log(
+        `[plivo-bridge:${sessionId}] pump sending frame #${framesSent}, remaining=${outboundQueue.length}`
+      );
+    }
+
+    sendJson({
+      event: "playAudio",
+      ...(plivoStreamId ? { streamId: plivoStreamId } : {}),
+      media: {
+        contentType: "audio/x-mulaw",
+        sampleRate: 8000,
+        payload: Buffer.from(frame).toString("base64"),
+      },
+    });
+  }, OUTBOUND_FRAME_MS);
+}
 
   function clearOutboundPlayback(): void {
     const droppedFrames = outboundQueue.length;

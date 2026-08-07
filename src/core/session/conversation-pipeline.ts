@@ -609,13 +609,17 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
       console.log(
         `[LLM:${sid}] Response generated in ${llmMs}ms: text="${spokenContent.slice(0, 120)}${spokenContent.length > 120 ? "..." : ""}" state=${this.record.state}`,
       );
+const speakingSignal = combineSignals([
+  this.record.bargeIn.beginSpeaking(),
+  loopSignal,
+]);
 
-      if (this.record.state !== SessionState.SPEAKING) {
-        this.host.transition(this.record, SessionState.SPEAKING, "speaking the reply");
-      }
-      const speakingSignal = combineSignals([this.record.bargeIn.beginSpeaking(), loopSignal]);
+if (this.record.state !== SessionState.SPEAKING) {
+  this.host.transition(this.record, SessionState.SPEAKING, "speaking the reply");
+}
 
-      const { ttsMs, ttsCostUsd } = await this.synthesizeAndPlay(spokenContent, speakingSignal);
+const { ttsMs, ttsCostUsd } =
+  await this.synthesizeAndPlay(spokenContent, speakingSignal);
 
       return {
         assistantText: spokenContent,
@@ -776,11 +780,23 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
     if (this.providers.tts.synthesizeStream) {
       let chunkCount = 0;
       try {
-        for await (const chunk of this.providers.tts.synthesizeStream(task, speakingSignal)) {
-          if (speakingSignal.aborted) break;
-          chunkCount += 1;
-          await this.playAudioChunk(chunk.audio);
-        }
+       for await (const chunk of this.providers.tts.synthesizeStream(task, speakingSignal)) {
+
+  if (speakingSignal.aborted) {
+    console.log(`[TTS:${sid}] Barge-in detected, interrupting playback`);
+    console.log(
+    "[TTS] mediaStream exists:",
+    !!this.record.mediaStream
+);
+    await this.record.mediaStream?.interruptPlayback();
+
+    break;
+  }
+
+  chunkCount += 1;
+
+  await this.playAudioChunk(chunk.audio);
+}
       } catch (err) {
         if (!speakingSignal.aborted) {
           // eslint-disable-next-line no-console

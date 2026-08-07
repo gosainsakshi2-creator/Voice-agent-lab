@@ -365,7 +365,13 @@ console.log("[GREETING] Started");
 
         for await (const segment of stream) {
           if (loopSignal.aborted) break;
-
+         console.log(
+  "[PIPELINE GOT]",
+  Date.now(),
+  segment.text,
+  segment.isFinal,
+  this.record.state
+);
           // The user has started talking while the assistant was
           // speaking — cut TTS immediately and resume listening,
           // then keep feeding this segment into the turn detector so

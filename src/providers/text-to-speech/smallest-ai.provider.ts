@@ -33,7 +33,12 @@ interface SmallestAiEnvConfig {
   readonly baseUrl: string;
   readonly defaultVoiceId: string;
   readonly sampleRateHz: number;
+  /** `speed` — clamped to the documented 0.5–2.0 window (vendor default 1.0). */
+  readonly speed: number;
 }
+
+const MIN_SPEED = 0.5;
+const MAX_SPEED = 2.0;
 
 function loadEnvConfig(): SmallestAiEnvConfig {
   return {
@@ -41,6 +46,10 @@ function loadEnvConfig(): SmallestAiEnvConfig {
     baseUrl: optionalEnv("SMALLEST_AI_BASE_URL", "https://api.smallest.ai"),
     defaultVoiceId: requireEnv("SMALLEST_AI_DEFAULT_VOICE_ID", TEXT_TO_SPEECH_PROVIDER_IDS.SMALLEST_AI),
     sampleRateHz: optionalEnvNumber("SMALLEST_AI_SAMPLE_RATE_HZ", 24000),
+    // Clamp rather than throw — an out-of-range speed would be rejected
+    // by the API mid-call, which is a worse failure than the nearest
+    // legal value.
+    speed: Math.min(MAX_SPEED, Math.max(MIN_SPEED, optionalEnvNumber("SMALLEST_AI_SPEED", 1.0))),
   };
 }
 
@@ -74,7 +83,7 @@ export class SmallestAiTextToSpeechProvider implements TextToSpeechProvider {
         voice_id: voiceId,
         sample_rate: this.config.sampleRateHz,
         output_format: "wav",
-        speed: .88,
+        speed: this.config.speed,
       },
     );
 
@@ -104,7 +113,7 @@ export class SmallestAiTextToSpeechProvider implements TextToSpeechProvider {
           voice_id: this.config.defaultVoiceId,
           sample_rate: this.config.sampleRateHz,
           output_format: "wav",
-          speed: .88,
+          speed: this.config.speed,
         },
       );
     });

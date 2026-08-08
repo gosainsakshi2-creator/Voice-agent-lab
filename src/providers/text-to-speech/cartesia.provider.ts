@@ -23,9 +23,15 @@ interface CartesiaEnvConfig {
   readonly modelId: string;
   readonly defaultVoiceId: string;
   readonly sampleRateHz: 8000 | 16000 | 22050 | 24000 | 44100 | 48000;
+  /** Sonic-3+ `generation_config.speed`, clamped to the SDK's documented [0.6, 1.5]. */
+  readonly speed: number;
 }
 
 const SUPPORTED_SAMPLE_RATES = [8000, 16000, 22050, 24000, 44100, 48000] as const;
+
+/** Documented bounds of `GenerationConfig.speed` in @cartesia/cartesia-js v3.5.1. */
+const MIN_SPEED = 0.6;
+const MAX_SPEED = 1.5;
 
 function loadEnvConfig(): CartesiaEnvConfig {
   const rate = optionalEnvNumber("CARTESIA_SAMPLE_RATE_HZ", 16000);
@@ -33,11 +39,17 @@ function loadEnvConfig(): CartesiaEnvConfig {
     ? (rate as CartesiaEnvConfig["sampleRateHz"])
     : 16000;
 
+  // Clamp rather than throw: an out-of-range value would otherwise be
+  // rejected by the API mid-call, which is a worse failure mode than
+  // speaking at the nearest legal rate.
+  const speed = Math.min(MAX_SPEED, Math.max(MIN_SPEED, optionalEnvNumber("CARTESIA_SPEED", 1.0)));
+
   return {
     apiKey: requireEnv("CARTESIA_API_KEY", TEXT_TO_SPEECH_PROVIDER_IDS.CARTESIA),
     modelId: optionalEnv("CARTESIA_MODEL_ID", "sonic"),
     defaultVoiceId: requireEnv("CARTESIA_DEFAULT_VOICE_ID", TEXT_TO_SPEECH_PROVIDER_IDS.CARTESIA),
     sampleRateHz,
+    speed,
   };
 }
 
@@ -81,6 +93,14 @@ export class CartesiaTextToSpeechProvider implements TextToSpeechProvider {
       transcript: task.request.text,
       voice: { id: voiceId, mode: "id" },
       language: toCartesiaLanguage(task.request.language),
+      // `generation_config` is the only officially supported voice-control
+      // surface in @cartesia/cartesia-js v3.5.1 — the v2-era
+      // `voice.__experimental_controls` object no longer exists. The SDK
+      // documents it as applying to `sonic-3` and newer only, so on an
+      // older CARTESIA_MODEL_ID it is simply ignored rather than an error.
+      // `emotion` and `volume` are also available here; both are left
+      // unset so the voice keeps its natural delivery.
+      generation_config: { speed: this.config.speed },
       output_format: {
         container: "raw",
         encoding: "pcm_s16le",

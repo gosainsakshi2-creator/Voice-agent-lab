@@ -127,6 +127,39 @@ function languageToIsoCode(language: SupportedLanguage): string | undefined {
   }
 }
 
+/**
+ * Voice settings applied to every Zara synthesis, shared by the batch
+ * and streaming paths so the two can never drift apart.
+ *
+ * Values are ElevenLabs' own reference defaults rather than
+ * hand-tuned extremes:
+ *
+ *  - `stability` 0.5 — the SDK documents low values as introducing
+ *    "randomness between each generation". This pipeline calls
+ *    `convert()` once PER SENTENCE (see SentenceChunker), so that
+ *    randomness lands *between sentences of the same reply* and is
+ *    heard as timbre that shifts mid-answer. 0.5 keeps one consistent
+ *    voice across the whole turn.
+ *  - `similarityBoost` 0.75 — the SDK documents higher values as
+ *    "a slightly higher computational load, which in turn increases
+ *    latency". 0.75 is the vendor's reference value.
+ *  - `style` 0 — documented to consume extra compute and increase
+ *    latency at any non-zero value. Must stay 0 for real-time calls.
+ *  - `useSpeakerBoost` true — preserves Zara's speaker identity.
+ *  - `speed` 1.0 — supported range is 0.7–1.2 and ElevenLabs warns
+ *    that values away from 1.0 can impact the quality of the
+ *    generated speech. Slowing the model down is not the same as
+ *    speaking calmly: it time-stretches the voice, which is a large
+ *    part of why the English read sounded synthetic.
+ */
+const ZARA_VOICE_SETTINGS = {
+  stability: 0.5,
+  similarityBoost: 0.75,
+  style: 0,
+  useSpeakerBoost: true,
+  speed: 1.0,
+} as const;
+
 /** Restricts a configured sample rate to ElevenLabs' documented raw-PCM output-format literals. */
 function toPcmOutputFormat(sampleRateHz: number): ElevenLabs.TextToSpeechConvertRequestOutputFormat {
   const supported: Record<number, ElevenLabs.TextToSpeechConvertRequestOutputFormat> = {
@@ -178,13 +211,7 @@ export class ElevenLabsTextToSpeechProvider implements TextToSpeechProvider {
       text: task.request.text,
       modelId: this.config.modelId,
       outputFormat: toPcmOutputFormat(this.config.sampleRateHz),
-      voiceSettings: {
-  stability: 0.42,
-  similarityBoost: 0.88,
-  style: 0,
-  useSpeakerBoost: true,
-  speed: 0.88,
-},
+      voiceSettings: ZARA_VOICE_SETTINGS,
       ...(languageCode ? { languageCode } : {}),
     });
 
@@ -224,13 +251,7 @@ export class ElevenLabsTextToSpeechProvider implements TextToSpeechProvider {
       text: task.request.text,
       modelId: this.config.modelId,
       outputFormat: toPcmOutputFormat(this.config.sampleRateHz),
-      voiceSettings: {
-  stability: 0.42,
-  similarityBoost: 0.88,
-  style: 0,
-  useSpeakerBoost: true,
-  speed: 0.88,
-},
+      voiceSettings: ZARA_VOICE_SETTINGS,
       ...(languageCode ? { languageCode } : {}),
     });
 

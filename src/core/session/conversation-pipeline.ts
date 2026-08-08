@@ -788,6 +788,13 @@ const { ttsMs, ttsCostUsd } =
 
     if (this.providers.tts.synthesizeStream) {
       let chunkCount = 0;
+      // Total realtime duration of the audio handed to the transport for
+      // this utterance, plus the moment the transport actually began
+      // playing it — i.e. when the FIRST chunk was enqueued, not when
+      // synthesis was requested. The TTS provider's time-to-first-byte
+      // must not be counted as playback time that has already elapsed.
+      let enqueuedAudioMs = 0;
+      let playbackStartedAt: number | undefined;
       try {
        for await (const chunk of this.providers.tts.synthesizeStream(task, speakingSignal)) {
    if (chunkCount === 0) {
@@ -804,6 +811,8 @@ const { ttsMs, ttsCostUsd } =
   chunkCount += 1;
 
   await this.playAudioChunk(chunk.audio);
+  playbackStartedAt ??= Date.now();
+  enqueuedAudioMs += estimateAudioSeconds(chunk.audio) * 1000;
 }
       } catch (err) {
         if (!speakingSignal.aborted) {
@@ -814,6 +823,31 @@ const { ttsMs, ttsCostUsd } =
       const ttsMs = Date.now() - startedAt;
       // eslint-disable-next-line no-console
       console.log(`[TTS:${sid}] streaming TTS done: ${chunkCount} chunks, ${ttsMs}ms`);
+
+      // Streaming synthesis outruns realtime playback: the loop above
+      // only ENQUEUED those chunks on the transport, which drains them
+      // at 1x. Hold the session in SPEAKING for the audio still in
+      // flight — the same wait the batch path below already performs via
+      // abortableSleep — so barge-in stays detectable for as long as the
+      // caller can actually hear this utterance, and the next turn's
+      // audio isn't queued up behind this one. Barge-in aborts the wait
+      // immediately. `ttsMs` is captured above, before this wait, so the
+      // benchmark metric keeps meaning "synthesis latency".
+      if (playbackStartedAt !== undefined) {
+        const remainingMs = enqueuedAudioMs - (Date.now() - playbackStartedAt);
+        if (remainingMs > 0) {
+          // eslint-disable-next-line no-console
+          console.log(
+            `[PLAYBACK:${sid}] draining enqueued audio: ${Math.round(remainingMs)}ms remaining of ${Math.round(enqueuedAudioMs)}ms`,
+          );
+          await abortableSleep(remainingMs, speakingSignal);
+          // eslint-disable-next-line no-console
+          console.log(
+            `[PLAYBACK:${sid}] drain wait finished (aborted=${speakingSignal.aborted})`,
+          );
+        }
+      }
+
       return { ttsMs, ttsCostUsd: estimateTtsCost(ttsProviderId, text.length) };
     }
 

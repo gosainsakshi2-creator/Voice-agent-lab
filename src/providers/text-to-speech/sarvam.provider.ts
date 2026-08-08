@@ -33,7 +33,17 @@ interface SarvamEnvConfig {
   readonly model: string;
   readonly defaultSpeaker: string;
   readonly sampleRateHz: number;
+  /** `pace` — clamped to bulbul:v3's documented 0.5–2.0 window. */
+  readonly pace: number;
 }
+
+/**
+ * `pace` is documented as 0.5–2.0 on bulbul:v3 and 0.3–3.0 on
+ * bulbul:v2; the narrower window is used so a single value is legal
+ * on both models regardless of which SARVAM_TTS_MODEL is configured.
+ */
+const MIN_PACE = 0.5;
+const MAX_PACE = 2.0;
 
 function loadEnvConfig(): SarvamEnvConfig {
   return {
@@ -42,6 +52,10 @@ function loadEnvConfig(): SarvamEnvConfig {
     model: optionalEnv("SARVAM_TTS_MODEL", "bulbul:v2"),
     defaultSpeaker: requireEnv("SARVAM_DEFAULT_SPEAKER", TEXT_TO_SPEECH_PROVIDER_IDS.SARVAM),
     sampleRateHz: optionalEnvNumber("SARVAM_SAMPLE_RATE_HZ", 22050),
+    // Clamp rather than throw — an out-of-range pace would be rejected
+    // by the API mid-call, which is a worse failure than the nearest
+    // legal value.
+    pace: Math.min(MAX_PACE, Math.max(MIN_PACE, optionalEnvNumber("SARVAM_PACE", 1.0))),
   };
 }
 function toSarvamLanguage(language: SupportedLanguage): string {
@@ -88,6 +102,13 @@ export class SarvamTextToSpeechProvider implements TextToSpeechProvider {
         speaker,
         model: this.config.model,
         speech_sample_rate: this.config.sampleRateHz,
+        // `pace` is the one delivery control Sarvam supports on BOTH
+        // bulbul:v2 and bulbul:v3 (v3 dropped `pitch` and `loudness`).
+        // Deliberately NOT sending `enable_preprocessing`: it is a v2-only
+        // field — on bulbul:v3 normalization of English words and numeric
+        // entities is always on and cannot be toggled, so sending it would
+        // be an unsupported parameter with no effect.
+        pace: this.config.pace,
       },
     );
 
@@ -122,8 +143,11 @@ export class SarvamTextToSpeechProvider implements TextToSpeechProvider {
   speaker: this.config.defaultSpeaker,
   model: this.config.model,
   speech_sample_rate: this.config.sampleRateHz,
-  enable_preprocessing: true,
-  speed: 1.0,
+  // `speed` and `enable_preprocessing` were previously sent here.
+  // Sarvam has no `speed` field at all (the pacing control is `pace`),
+  // and `enable_preprocessing` is v2-only, so neither belongs in the
+  // probe — the health check should mirror the real synthesis payload.
+  pace: this.config.pace,
 },
       );
  

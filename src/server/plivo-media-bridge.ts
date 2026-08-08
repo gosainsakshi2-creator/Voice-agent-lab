@@ -42,7 +42,7 @@ export interface BridgeSocket {
   on?(event: string, listener: (...args: unknown[]) => void): void;
   addEventListener?(event: string, listener: (...args: unknown[]) => void): void;
 }
-const MAX_QUEUE_FRAMES = 100;
+
 const OPEN_STATE = 1;
 /**
  * Plivo's recommended outbound format for Voice AI is
@@ -86,10 +86,7 @@ export function attachPlivoMediaBridge(
     };
     manager.pushInboundAudio(sessionId, payload);
   },
-   () => {
-    console.log("[BARGE] Speech detected by VAD");
-    manager.signalBargeIn(sessionId);
-  }
+  
 );
 
   function sendJson(obj: unknown): void {
@@ -113,9 +110,6 @@ export function attachPlivoMediaBridge(
     outboundChunkCount += 1;
     // eslint-disable-next-line no-console
     console.log(
-    `[QUEUE] ${Date.now()} depth=${outboundQueue.length}`
-);
-    console.log(
       `[plivo-bridge:${sessionId}] enqueueOutbound #${outboundChunkCount}: encoding=${chunk.encoding} sampleRate=${chunk.sampleRateHz} bytes=${chunk.data.byteLength}`,
     );
 
@@ -135,15 +129,8 @@ export function attachPlivoMediaBridge(
     const frameCount = Math.ceil(mulawBytes.length / OUTBOUND_FRAME_BYTES);
     outboundFrameTotal += frameCount;
     for (let offset = 0; offset < mulawBytes.length; offset += OUTBOUND_FRAME_BYTES) {
-     
-
-    outboundQueue.push(
-        mulawBytes.subarray(
-            offset,
-            offset + OUTBOUND_FRAME_BYTES,
-        ),
-          );
-        }
+      outboundQueue.push(mulawBytes.subarray(offset, offset + OUTBOUND_FRAME_BYTES));
+    }
     // eslint-disable-next-line no-console
     console.log(
       `[plivo-bridge:${sessionId}] enqueued ${frameCount} frames (${frameCount * OUTBOUND_FRAME_MS}ms), queue depth=${outboundQueue.length}, lifetime frames=${outboundFrameTotal}`,
@@ -151,48 +138,78 @@ export function attachPlivoMediaBridge(
     startPump();
   }
 
-function startPump(): void {
-  if (pumpTimer) return;
-
-  // eslint-disable-next-line no-console
-  console.log(`[plivo-bridge:${sessionId}] pump started`);
-
-  let framesSent = 0;
-
-  pumpTimer = setInterval(() => {
-    const frame = outboundQueue.shift();
-
-    if (!frame) {
-      // eslint-disable-next-line no-console
-      console.log(
-        `[plivo-bridge:${sessionId}] pump exhausted after ${framesSent} frames (${framesSent * OUTBOUND_FRAME_MS}ms of audio)`
-      );
-
-      clearInterval(pumpTimer!);
-      pumpTimer = undefined;
-      return;
-    }
-
-    framesSent++;
-
-    if (framesSent === 1 || framesSent % 50 === 0) {
-      // eslint-disable-next-line no-console
-      console.log(
-        `[plivo-bridge:${sessionId}] pump sending frame #${framesSent}, remaining=${outboundQueue.length}`
-      );
-    }
-
-    sendJson({
-      event: "playAudio",
-      ...(plivoStreamId ? { streamId: plivoStreamId } : {}),
-      media: {
-        contentType: "audio/x-mulaw",
-        sampleRate: 8000,
-        payload: Buffer.from(frame).toString("base64"),
-      },
-    });
-  }, OUTBOUND_FRAME_MS);
-}
+  function startPump(): void {
+    if (pumpTimer) return;
+    // eslint-disable-next-line no-console
+    console.log(`[plivo-bridge:${sessionId}] pump started`);
+    const startedAt = Date.now();
+    let framesSent = 0;
+    pumpTimer = setInterval(() => {
+      // Drift correction with burst cap: after event-loop starvation
+      // (e.g. TTS streaming holding the microtask queue for >1s),
+      // uncapped drift correction would dump dozens of frames in one
+      // tick, overwhelming Plivo's playback buffer. Cap to
+      // MAX_FRAMES_PER_TICK so catch-up is gradual (~60ms per tick
+      // at cap=3) instead of a single burst.
+      const rawDue = Math.floor((Date.now() - startedAt) / OUTBOUND_FRAME_MS) - framesSent;
+      const framesDue = Math.min(rawDue, MAX_FRAMES_PER_TICK);
+      if (rawDue > MAX_FRAMES_PER_TICK && framesSent === 0) {
+        // eslint-disable-next-line no-console
+        console.log(
+          `[plivo-bridge:${sessionId}] pump burst capped: ${rawDue} frames due, sending ${framesDue} (event loop was starved ~${rawDue * OUTBOUND_FRAME_MS}ms)`,
+        );
+      }
+      for (let i = 0; i < framesDue; i += 1) {
+        const frame = outboundQueue.shift();
+        if (!frame) {
+          // eslint-disable-next-line no-console
+          console.log(`[plivo-bridge:${sessionId}] pump exhausted after ${framesSent} frames (${framesSent * OUTBOUND_FRAME_MS}ms of audio)`);
+          clearInterval(pumpTimer);
+          pumpTimer = undefined;
+          return;
+        }
+        framesSent += 1;
+        if (framesSent === 1 || framesSent % 50 === 0) {
+          // eslint-disable-next-line no-console
+          console.log(`[plivo-bridge:${sessionId}] pump sending frame #${framesSent}, remaining=${outboundQueue.length}`);
+        }
+        sendJson({
+          event: "playAudio",
+          // `streamId` is a TOP-LEVEL sibling of `event`/`media` — not
+          // inside `media`. Plivo's own reference serializer includes
+          // it on every playAudio event.
+          ...(plivoStreamId ? { streamId: plivoStreamId } : {}),
+          media: {
+            // ── CRITICAL: BARE MIME TYPE, NO ";rate=" SUFFIX ──
+            //
+            // The `;rate=8000` parameter belongs ONLY on the
+            // `<Stream contentType="...">` XML attribute (which
+            // configures the INBOUND direction). Inside a `playAudio`
+            // WebSocket event the rate must be carried by the separate
+            // `sampleRate` field and the contentType must be bare.
+            //
+            // Plivo's own examples repo lists
+            //   contentType: "audio/x-mulaw;rate=8000"
+            // as a known common mistake ("wrong - rate must be
+            // separate") that triggers an `incorrectPayload` error.
+            //
+            // When Plivo cannot parse the contentType it falls back to
+            // its stream default of L16, so our G.711 mu-law bytes get
+            // reinterpreted as 16-bit signed PCM. That mis-decode is
+            // what produced the loud crackly/robotic/noisy voice that
+            // still carried the rhythm of speech — and why no amount of
+            // frame padding, pump retiming, endianness swapping or
+            // codec substitution ever changed it. The bytes we sent
+            // were always correct; the receiver was told the wrong
+            // format to decode them with.
+            contentType: "audio/x-mulaw",
+            sampleRate: 8000,
+            payload: Buffer.from(frame).toString("base64"),
+          },
+        });
+      }
+    }, OUTBOUND_FRAME_MS);
+  }
 
   function clearOutboundPlayback(): void {
     const droppedFrames = outboundQueue.length;
@@ -200,9 +217,7 @@ function startPump(): void {
     if (pumpTimer) {
       clearInterval(pumpTimer);
       pumpTimer = undefined;
-    }console.log(
-    `[CLEAR AUDIO] ${Date.now()} dropped=${droppedFrames}`
-);
+    }
     // eslint-disable-next-line no-console
     console.log(`[plivo-bridge:${sessionId}] clearOutboundPlayback: dropped ${droppedFrames} queued frames, sending clearAudio (streamId=${plivoStreamId ?? "unknown"})`);
     sendJson({ event: "clearAudio", ...(plivoStreamId ? { streamId: plivoStreamId } : {}) });
@@ -260,24 +275,20 @@ function startPump(): void {
         console.log(`[plivo-bridge:${sessionId}] "start" event received -> streamId=${plivoStreamId ?? "none"}, confirming call answered`);
         manager.confirmCallAnswered(sessionId);
         return;
-      case "media": {
-        // Plivo's bidirectional stream echoes back our own outbound
-        // audio as track:"outbound" in addition to the caller's real
-        // speech as track:"inbound". Only the caller's audio belongs
-        // in the turn-detection pipeline — feeding our own assistant
-        // audio back in here would make the pipeline think the
-        // caller said whatever we just spoke.
-        if (event.media?.track && event.media.track !== "inbound") return;
-        const b64 = event.media?.payload;
-        if (!b64) return;
-        inboundFrameCount += 1;
-        if (inboundFrameCount === 1 || inboundFrameCount % 100 === 0) {
-          // eslint-disable-next-line no-console
-          console.log(`[plivo-bridge:${sessionId}] inbound media frame #${inboundFrameCount}`);
-        }
-        segmenter.push(new Uint8Array(Buffer.from(b64, "base64")));
-        return;
-      }
+     case "media": {
+  const b64 = event.media?.payload;
+  if (!b64) return;
+
+  const audio = new Uint8Array(Buffer.from(b64, "base64"));
+
+  manager.pushInboundAudio(sessionId, {
+    data: audio,
+    encoding: "MULAW",
+    sampleRateHz: 8000,
+  });
+
+  return;
+}
       case "stop":
         // eslint-disable-next-line no-console
         console.log(`[plivo-bridge:${sessionId}] "stop" event received (Plivo ending the stream normally)`);

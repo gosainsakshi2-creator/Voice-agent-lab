@@ -20,7 +20,7 @@ import type { ProviderDescriptor, ProviderHealthStatus } from "../../types/provi
 import type {
   TelephonyCallHandle,
   TelephonyCallParams,
-  TelephonyProvider,
+    TelephonyProvider,
 } from "../../interfaces/providers/telephony-provider.interface";
 import { probeHealth } from "../shared/health";
 import { requireEnv } from "../shared/env";
@@ -62,26 +62,19 @@ export class PlivoTelephonyProvider implements TelephonyProvider {
     this.client = new PlivoClient(config.authId, config.authToken);
   }
 
- async startCall(params: TelephonyCallParams): Promise<{ sessionId: string; providerCallId: string }> {
-  if (!params.destinationNumber) {
-    throw new Error(
-      `Plivo telephony provider requires "destinationNumber" to start a call for session "${params.sessionId}".`,
-    );
-  }
+ async startCall(
+  params: TelephonyCallParams,
+): Promise<TelephonyCallHandle> {
+    if (!params.destinationNumber) {
+      throw new Error(
+        `Plivo telephony provider requires "destinationNumber" to start a call for session "${params.sessionId}".`,
+      );
+    }
 
-  console.log(
-    `[plivo] startCall: from=${this.config.fromNumber} destination=${params.destinationNumber} answerUrl=${this.config.answerUrl}`,
-  );
-
-  try {
     const response = await this.client.calls.create(
       this.config.fromNumber,
       params.destinationNumber,
       this.config.answerUrl,
-    );
-
-    console.log(
-      `[plivo] calls.create succeeded: requestUuid=${JSON.stringify(response.requestUuid)}`,
     );
 
     const providerCallId = Array.isArray(response.requestUuid)
@@ -98,15 +91,7 @@ export class PlivoTelephonyProvider implements TelephonyProvider {
       sessionId: params.sessionId,
       providerCallId,
     };
-  } catch (error) {
-    console.error(
-      `[plivo] calls.create FAILED:`,
-      error,
-    );
-
-    throw error;
   }
-}
 
   async endCall(handle: TelephonyCallHandle): Promise<void> {
     await this.client.calls.hangup(handle.providerCallId);
@@ -118,3 +103,4 @@ export class PlivoTelephonyProvider implements TelephonyProvider {
     });
   }
 }
+

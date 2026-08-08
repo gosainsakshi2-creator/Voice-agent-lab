@@ -69,10 +69,48 @@ export class PlivoTelephonyProvider implements TelephonyProvider {
       );
     }
 
+    // Diagnostic logging only — the call itself is unchanged.
+    //
+    // `JSON.stringify` (rather than plain interpolation) is deliberate
+    // for the two phone numbers: it makes stray whitespace and the
+    // unedited `"+91 xxxxxxxxxx"` placeholder visible in the logs,
+    // which bare interpolation hides. Plivo requires bare E.164.
+    // eslint-disable-next-line no-console
+    console.log(
+      `[Plivo] calls.create request: session=${params.sessionId} ` +
+        `from=${JSON.stringify(this.config.fromNumber)} ` +
+        `to=${JSON.stringify(params.destinationNumber)} ` +
+        `answerUrl=${this.config.answerUrl}`,
+    );
+
+    const startedAt = Date.now();
+    // `.catch` that rethrows, rather than try/catch, so `response`
+    // stays a `const` with its inferred `CreateCallResponse` type.
     const response = await this.client.calls.create(
       this.config.fromNumber,
       params.destinationNumber,
       this.config.answerUrl,
+    ).catch((error: unknown) => {
+      // The SDK rejects with `error.stack` — a STRING, not an Error —
+      // on transport-level failures (see plivo/dist/rest/axios.js), so
+      // `typeof` and `String()` are logged instead of `.message`, which
+      // would be `undefined` in exactly the case we care about.
+      // Elapsed time discriminates the failure mode: ~0-500ms is
+      // client-side/API validation, ~5000ms is the SDK's voice-request
+      // timeout, longer means retries were exhausted.
+      // eslint-disable-next-line no-console
+      console.error(
+        `[Plivo] calls.create FAILED after ${Date.now() - startedAt}ms: ` +
+          `typeof=${typeof error} ` +
+          `name=${(error as { constructor?: { name?: string } })?.constructor?.name ?? "n/a"} ` +
+          `value=${String(error)}`,
+      );
+      throw error;
+    });
+
+    // eslint-disable-next-line no-console
+    console.log(
+      `[Plivo] calls.create OK in ${Date.now() - startedAt}ms: ${JSON.stringify(response)}`,
     );
 
     const providerCallId = Array.isArray(response.requestUuid)

@@ -36,6 +36,37 @@ const handle = app.getRequestHandler();
 const PLIVO_STREAM_PATH = "/api/voice/plivo/stream";
 const VOBIZ_STREAM_PATH = "/api/voice/vobiz/stream";
 
+/**
+ * Diagnostic-only process-level handlers.
+ *
+ * Registered at module scope so they are in place before
+ * `app.prepare()` runs and therefore cover startup as well as
+ * request handling. These deliberately only LOG — they do not call
+ * `process.exit()`, so Node's own default behavior is unchanged
+ * apart from now printing the reason first.
+ *
+ * The distinction they expose is the important one: an
+ * `uncaughtException` / `unhandledRejection` line means the process
+ * died from a JavaScript error, a `SIGTERM` line means the platform
+ * asked it to stop (deploy, health check, OOM reaper), and the
+ * absence of ALL THREE before a restart means the process was
+ * SIGKILLed — which no in-process handler can ever observe.
+ */
+process.on("uncaughtException", (error) => {
+  // eslint-disable-next-line no-console
+  console.error("[FATAL] uncaughtException:", error);
+});
+
+process.on("unhandledRejection", (reason) => {
+  // eslint-disable-next-line no-console
+  console.error("[FATAL] unhandledRejection:", reason);
+});
+
+process.on("SIGTERM", () => {
+  // eslint-disable-next-line no-console
+  console.error("[FATAL] received SIGTERM — the platform is stopping this process");
+});
+
 async function main(): Promise<void> {
   await app.prepare();
 

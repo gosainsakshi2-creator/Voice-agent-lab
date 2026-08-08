@@ -44,8 +44,21 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         if (eventSessionId === sessionId) void send();
       });
 
+      // `controller.enqueue` throws `TypeError: Invalid state` once the
+      // stream is closed or errored. Unlike `send()` above, this runs
+      // inside a `setInterval` callback, so an unguarded throw here is
+      // an UNCAUGHT EXCEPTION that takes the whole process down rather
+      // than failing just this one SSE subscription. `closed` alone is
+      // not enough of a guard: it is only set by the `abort` handler
+      // below, and `cancel()` clears this timer without setting it.
       heartbeat = setInterval(() => {
-        if (!closed) controller.enqueue(encoder.encode(`: ping\n\n`));
+        if (closed) return;
+        try {
+          controller.enqueue(encoder.encode(`: ping\n\n`));
+        } catch {
+          closed = true;
+          if (heartbeat) clearInterval(heartbeat);
+        }
       }, 15_000);
 
       const onAbort = () => {

@@ -29,8 +29,29 @@ import type { TranscriptSegment } from "../../types/provider.types";
 const DEFAULT_SILENCE_TIMEOUT_MS = 650;
 const MIN_SILENCE_TIMEOUT_MS = 400;
 const MAX_SILENCE_TIMEOUT_MS = 1600;
-/** How strongly a single observed gap nudges the running estimate (0..1). */
+/** How strongly a single observed gap nudges the running estimate DOWN (0..1). */
 const ADAPTATION_RATE = 0.25;
+/**
+ * Smallest gap between two finals that can plausibly be a PAUSE.
+ *
+ * Deepgram emits several `is_final` chunks inside one continuous
+ * utterance — it finalises words once it will no longer revise them,
+ * which happens at chunk boundaries, not only at endpoints. The gap
+ * across such a boundary is near zero: the caller never stopped
+ * talking. Feeding those boundaries to `adaptTimeout` made every long
+ * sentence look like a rapid-fire series of tiny pauses and dragged
+ * the threshold down toward its floor WHILE the caller was still
+ * speaking, so the longer the sentence the sooner it was cut off.
+ * Anything below this is speech, not silence, and teaches us nothing.
+ */
+const MIN_OBSERVABLE_PAUSE_MS = 300;
+/**
+ * Head-room kept above the caller's observed pause length. A gap only
+ * reaches `adaptTimeout` if the caller paused and then CARRIED ON, so
+ * the threshold must sit comfortably above it — landing exactly on it
+ * means the next pause of the same length ends the turn mid-sentence.
+ */
+const PAUSE_SAFETY_MARGIN_MS = 250;
 /** Extra wait granted when the pending text is clearly an unfinished thought. */
 const CONTINUATION_GRACE_MS = 550;
 /**
@@ -159,7 +180,11 @@ export class AdaptiveTurnDetector {
 
       if (this.lastFinalEndedAtMs !== null) {
         const observedGapMs = segment.startedAtMs - this.lastFinalEndedAtMs;
-        if (observedGapMs > 0) {
+        // Only real silences count. A sub-threshold gap is Deepgram
+        // closing a chunk mid-sentence while the caller talks straight
+        // through it — treating that as a pause is what made the
+        // threshold collapse over the course of a long utterance.
+        if (observedGapMs >= MIN_OBSERVABLE_PAUSE_MS) {
           this.adaptTimeout(observedGapMs);
         }
       }
@@ -194,6 +219,11 @@ export class AdaptiveTurnDetector {
     this.pendingFinalText = "";
     this.turnStartedAtMs = null;
     this.lastSegmentAtMs = null;
+    // Must be cleared with the rest of the turn. Left set, the first
+    // final of the NEXT turn measures its gap back to the previous
+    // turn — a span that contains the assistant's entire reply — and
+    // adapts as if the caller had paused for that whole time.
+    this.lastFinalEndedAtMs = null;
     this.continuationGraces = 0;
   }
 
@@ -257,9 +287,24 @@ export class AdaptiveTurnDetector {
     for (const listener of this.listeners) listener(event);
   }
 
+  /**
+   * @param observedGapMs A silence the caller paused for and then kept
+   *   talking through — i.e. proof this pause length must NOT end a turn.
+   */
   private adaptTimeout(observedGapMs: number): void {
-    const clampedObservation = Math.min(Math.max(observedGapMs, MIN_SILENCE_TIMEOUT_MS), MAX_SILENCE_TIMEOUT_MS);
-    const next = this.silenceTimeoutMs + (clampedObservation - this.silenceTimeoutMs) * ADAPTATION_RATE;
+    const target = Math.min(
+      Math.max(observedGapMs + PAUSE_SAFETY_MARGIN_MS, MIN_SILENCE_TIMEOUT_MS),
+      MAX_SILENCE_TIMEOUT_MS,
+    );
+    // Asymmetric on purpose. Raise on the FIRST such pause: easing up
+    // by a fraction of the gap leaves the threshold below the pause we
+    // just watched the caller take, so their very next one cuts them
+    // off mid-sentence. Come back down gradually, so one thoughtful
+    // pause doesn't make the rest of the call feel sluggish.
+    const next =
+      target > this.silenceTimeoutMs
+        ? target
+        : this.silenceTimeoutMs + (target - this.silenceTimeoutMs) * ADAPTATION_RATE;
     this.silenceTimeoutMs = Math.min(Math.max(next, MIN_SILENCE_TIMEOUT_MS), MAX_SILENCE_TIMEOUT_MS);
   }
 }

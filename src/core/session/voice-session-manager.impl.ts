@@ -396,10 +396,20 @@ export class DefaultVoiceSessionManager implements VoiceSessionManager, Pipeline
    * exposes state that already exists.
    */
 getTranscript(sessionId: SessionId): readonly import("../../types/provider.types").ConversationTurn[] {
-  return this.getRecordOrThrow(sessionId)
-    .memory
+  const record = this.getRecordOrThrow(sessionId);
+  const committed = record.memory
     .history()
     .filter(turn => turn.role !== "system");
+
+  // Display-only tail: the utterance the caller is speaking right
+  // now, as reported by streaming STT before turn-end. It lives
+  // only in this projection — `memory` (and therefore the LLM) is
+  // untouched — and is replaced by the real turn once committed.
+  if (record.liveUserTranscript.length === 0) return committed;
+  return [
+    ...committed,
+    { role: "user" as const, content: record.liveUserTranscript, timestamp: new Date() },
+  ];
 }
 
   // ---------------------------------------------------------------

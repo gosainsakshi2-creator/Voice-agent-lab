@@ -51,6 +51,16 @@ export class SessionRecord {
 
   turnIndex = 0;
 
+  /**
+   * Latest STT text for the utterance currently in progress —
+   * DISPLAY ONLY. Written from interim (and final) Deepgram
+   * segments so the Dashboard can show what the caller is saying
+   * without waiting for turn-end. It is never read by the turn
+   * detector, never sent to the LLM, and is cleared the moment the
+   * real user turn is committed to `memory`.
+   */
+  liveUserTranscript = "";
+
   readonly memory: ConversationMemory;
   readonly metrics: SessionMetricsCollector;
   /** Grammatical gender of the selected TTS voice — also drives the deterministic Hindi greeting. */

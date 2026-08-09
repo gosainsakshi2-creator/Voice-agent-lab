@@ -393,6 +393,9 @@ export class ConversationPipeline {
 
         const detected = detectLanguage(turn.text, this.record.memory.currentLanguage);
         this.record.memory.recordUserTurn(turn.text, detected.language);
+        // The committed turn now carries this text — drop the
+        // display-only preview so it is not rendered twice.
+        this.record.liveUserTranscript = "";
 
         const turnStartedAt = Date.now();
         const result = await this.runThinkingAndSpeaking(turn.text, detected, loopSignal);
@@ -502,6 +505,16 @@ export class ConversationPipeline {
   segment.isFinal,
   this.record.state
 );
+          // DISPLAY ONLY: surface what the caller is saying as soon
+          // as Deepgram reports it (interim segments included) so the
+          // Dashboard transcript no longer lags turn-end. Nothing
+          // downstream reads this — turn detection, barge-in and the
+          // LLM continue to work off `segment` / the turn detector
+          // exactly as before.
+          if (segment.text.trim().length > 0) {
+            this.record.liveUserTranscript = segment.text;
+          }
+
           // The user has started talking while the assistant was
           // speaking — cut TTS immediately and resume listening,
           // then keep feeding this segment into the turn detector so

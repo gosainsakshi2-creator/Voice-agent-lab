@@ -103,18 +103,34 @@ export class PlivoTelephonyProvider implements TelephonyProvider {
       );
     }
 
-    const destination = toE164(params.destinationNumber, this.config.fromNumber);
+    // The caller id goes through the same normalizer as the dialled
+    // number. `PLIVO_FROM_NUMBER` is read verbatim from the process
+    // environment, and a value pasted into a hosting provider's env
+    // editor (or written by a CRLF-terminated env file) keeps its
+    // trailing "\n"/"\r". Plivo rejects that with
+    //   400 from parameter +918031452733\n is not a valid number
+    // — and because the control character is invisible once the
+    // message is printed, the error reads as though a perfectly valid,
+    // account-owned number had been refused. A leading/trailing SPACE
+    // is accepted by Plivo; only the line terminators are fatal.
+    const fromNumber = toE164(this.config.fromNumber, this.config.fromNumber);
+    const destination = toE164(params.destinationNumber, fromNumber);
 
+    // Values are JSON-quoted so any stray whitespace is visible in logs.
     // eslint-disable-next-line no-console
     console.log(
-      `[Plivo] startCall:\n  sessionId=${params.sessionId}\n  from=${this.config.fromNumber}\n  to=${destination} (raw="${params.destinationNumber}")\n  answerUrl=${this.config.answerUrl}`,
+      `[Plivo] startCall:\n  sessionId=${params.sessionId}\n  from=${JSON.stringify(fromNumber)} (raw=${JSON.stringify(
+        this.config.fromNumber,
+      )})\n  to=${JSON.stringify(destination)} (raw=${JSON.stringify(params.destinationNumber)})\n  answerUrl=${JSON.stringify(
+        this.config.answerUrl,
+      )}`,
     );
 
     const startedAt = Date.now();
     let response: Awaited<ReturnType<PlivoClient["calls"]["create"]>>;
     try {
       response = await this.client.calls.create(
-        this.config.fromNumber,
+        fromNumber,
         destination,
         this.config.answerUrl,
       );

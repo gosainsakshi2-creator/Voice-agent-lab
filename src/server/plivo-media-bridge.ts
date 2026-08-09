@@ -85,9 +85,7 @@ export function attachPlivoMediaBridge(
       sampleRateHz: 8000,
     };
     manager.pushInboundAudio(sessionId, payload);
-  },
-  
-);
+  });
 
   function sendJson(obj: unknown): void {
     if (closed || socket.readyState !== OPEN_STATE) return;
@@ -275,20 +273,24 @@ export function attachPlivoMediaBridge(
         console.log(`[plivo-bridge:${sessionId}] "start" event received -> streamId=${plivoStreamId ?? "none"}, confirming call answered`);
         manager.confirmCallAnswered(sessionId);
         return;
-     case "media": {
-  const b64 = event.media?.payload;
-  if (!b64) return;
-
-  const audio = new Uint8Array(Buffer.from(b64, "base64"));
-
-  manager.pushInboundAudio(sessionId, {
-    data: audio,
-    encoding: "MULAW",
-    sampleRateHz: 8000,
-  });
-
-  return;
-}
+      case "media": {
+        // Plivo's bidirectional stream echoes back our own outbound
+        // audio as track:"outbound" in addition to the caller's real
+        // speech as track:"inbound". Only the caller's audio belongs
+        // in the turn-detection pipeline — feeding our own assistant
+        // audio back in here would make the pipeline think the
+        // caller said whatever we just spoke.
+        if (event.media?.track && event.media.track !== "inbound") return;
+        const b64 = event.media?.payload;
+        if (!b64) return;
+        inboundFrameCount += 1;
+        if (inboundFrameCount === 1 || inboundFrameCount % 100 === 0) {
+          // eslint-disable-next-line no-console
+          console.log(`[plivo-bridge:${sessionId}] inbound media frame #${inboundFrameCount}`);
+        }
+        segmenter.push(new Uint8Array(Buffer.from(b64, "base64")));
+        return;
+      }
       case "stop":
         // eslint-disable-next-line no-console
         console.log(`[plivo-bridge:${sessionId}] "stop" event received (Plivo ending the stream normally)`);

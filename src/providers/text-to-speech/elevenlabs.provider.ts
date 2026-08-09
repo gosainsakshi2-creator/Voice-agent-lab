@@ -140,9 +140,18 @@ function languageToIsoCode(language: SupportedLanguage): string | undefined {
   }
 }
 
+/**
+ * The raw-PCM literals accepted by BOTH `textToSpeech.convert` (batch)
+ * and `textToSpeech.stream` (progressive). The two request types declare
+ * separate unions; intersecting them keeps one shared format table that
+ * is type-checked against whichever endpoint is called.
+ */
+type PcmOutputFormat = ElevenLabs.TextToSpeechConvertRequestOutputFormat &
+  ElevenLabs.TextToSpeechStreamRequestOutputFormat;
+
 /** Restricts a configured sample rate to ElevenLabs' documented raw-PCM output-format literals. */
-function toPcmOutputFormat(sampleRateHz: number): ElevenLabs.TextToSpeechConvertRequestOutputFormat {
-  const supported: Record<number, ElevenLabs.TextToSpeechConvertRequestOutputFormat> = {
+function toPcmOutputFormat(sampleRateHz: number): PcmOutputFormat {
+  const supported: Record<number, PcmOutputFormat> = {
     8000: "pcm_8000",
     16000: "pcm_16000",
     22050: "pcm_22050",
@@ -230,10 +239,31 @@ export class ElevenLabsTextToSpeechProvider implements TextToSpeechProvider {
       `[TTS:elevenlabs] synthesizeStream: voiceId=${voiceId} model=${this.config.modelId} textLen=${task.request.text.length}`,
     );
 
-    // Use the same `convert` method as `synthesize` — it already returns a
-    // stream (ReadableStream or AsyncIterable depending on SDK build). The
-    // separate `convertAsStream` helper doesn't exist in every SDK version.
-    const stream = await this.client.textToSpeech.convert(voiceId, {
+    // ── Must be `stream()`, NOT `convert()` ─────────────────────────
+    //
+    // Both SDK methods hand back a `ReadableStream`, which is why
+    // `convert()` looked interchangeable here — but they hit different
+    // endpoints, and only one of them streams:
+    //
+    //   convert() -> POST /v1/text-to-speech/{voice_id}
+    //                ElevenLabs renders the ENTIRE clip before it sends
+    //                a single byte. The client-side stream then delivers
+    //                the whole thing in one burst. Time-to-first-audio
+    //                therefore equals full synthesis time for the chunk
+    //                and scales with its length (measured: 2254ms).
+    //
+    //   stream()  -> POST /v1/text-to-speech/{voice_id}/stream
+    //                Chunked transfer — audio starts arriving while the
+    //                rest is still being generated (~300-400ms on
+    //                eleven_flash_v2_5, independent of chunk length).
+    //
+    // That difference is the whole of the dead-air problem. The pipeline
+    // synthesizes one clause/sentence chunk at a time, and the bridge's
+    // outbound queue only ever holds ~1.2s of audio, so a chunk boundary
+    // that costs a full 2s+ re-synthesis with zero bytes arriving drains
+    // the pump dry — heard as a 1-3s silence in the middle of a sentence
+    // and as a slow start on the first one.
+    const stream = await this.client.textToSpeech.stream(voiceId, {
       text: task.request.text,
       modelId: this.config.modelId,
       outputFormat: toPcmOutputFormat(this.config.sampleRateHz),
@@ -276,6 +306,21 @@ export class ElevenLabsTextToSpeechProvider implements TextToSpeechProvider {
     const MIN_YIELD_BYTES = Math.max(320, Math.round(this.config.sampleRateHz * 2 * 0.1));
     let accBuf = new Uint8Array(MIN_YIELD_BYTES * 2); // pre-allocated, grows if needed
     let accLen = 0;
+
+    // Diagnostic only. The pipeline's `tts-first-chunk` trace fires once
+    // per TURN, so the second and later chunks of a reply — exactly where
+    // the mid-sentence dead air was coming from — had no timing at all in
+    // the logs. One line per utterance makes every chunk boundary visible.
+    const requestedAt = Date.now();
+    let loggedFirstChunk = false;
+    const noteFirstChunk = (): void => {
+      if (loggedFirstChunk) return;
+      loggedFirstChunk = true;
+      // eslint-disable-next-line no-console
+      console.log(
+        `[TTS:elevenlabs] first audio chunk in ${Date.now() - requestedAt}ms (textLen=${task.request.text.length})`,
+      );
+    };
 
     const accumulate = (incoming: Uint8Array): void => {
       if (accLen + incoming.byteLength > accBuf.byteLength) {
@@ -341,7 +386,10 @@ export class ElevenLabsTextToSpeechProvider implements TextToSpeechProvider {
         if (u8.byteLength === 0) continue;
         accumulate(u8);
         const ready = drainIfReady();
-        if (ready) yield ready;
+        if (ready) {
+          noteFirstChunk();
+          yield ready;
+        }
       }
     } else if (
       typeof stream === "object" &&
@@ -356,7 +404,10 @@ export class ElevenLabsTextToSpeechProvider implements TextToSpeechProvider {
         if (value && value.byteLength > 0) {
           accumulate(value);
           const ready = drainIfReady();
-          if (ready) yield ready;
+          if (ready) {
+            noteFirstChunk();
+            yield ready;
+          }
         }
       }
     } else {

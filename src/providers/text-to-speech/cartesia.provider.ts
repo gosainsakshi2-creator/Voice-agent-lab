@@ -35,7 +35,7 @@ function loadEnvConfig(): CartesiaEnvConfig {
 
   return {
     apiKey: requireEnv("CARTESIA_API_KEY", TEXT_TO_SPEECH_PROVIDER_IDS.CARTESIA),
-    modelId: optionalEnv("CARTESIA_MODEL_ID", "sonic"),
+    modelId: optionalEnv("CARTESIA_MODEL_ID", "sonic-3.5"),
     defaultVoiceId: requireEnv("CARTESIA_DEFAULT_VOICE_ID", TEXT_TO_SPEECH_PROVIDER_IDS.CARTESIA),
     sampleRateHz,
   };
@@ -61,8 +61,8 @@ export class CartesiaTextToSpeechProvider implements TextToSpeechProvider {
     category: ProviderCategory.TEXT_TO_SPEECH,
     id: TEXT_TO_SPEECH_PROVIDER_IDS.CARTESIA,
     displayName: "Cartesia",
-    supportedLanguages: [SupportedLanguage.ENGLISH, SupportedLanguage.HINGLISH],
-    version: "sonic",
+    supportedLanguages: [SupportedLanguage.ENGLISH, SupportedLanguage.HINDI],
+    version: "sonic-3.5",
   };
 
   private readonly client: Cartesia;
@@ -80,6 +80,11 @@ export class CartesiaTextToSpeechProvider implements TextToSpeechProvider {
       model_id: this.config.modelId,
       transcript: task.request.text,
       voice: { id: voiceId, mode: "id" },
+      generation_config: {
+  speed: 1.15,
+  emotion: "neutral",
+  volume: 1.0,
+},
       language: toCartesiaLanguage(task.request.language),
       output_format: {
         container: "raw",

@@ -74,7 +74,7 @@ export class SmallestAiTextToSpeechProvider implements TextToSpeechProvider {
         voice_id: voiceId,
         sample_rate: this.config.sampleRateHz,
         output_format: "wav",
-        speed: .88,
+        speed: .92,
       },
     );
 
@@ -104,7 +104,7 @@ export class SmallestAiTextToSpeechProvider implements TextToSpeechProvider {
           voice_id: this.config.defaultVoiceId,
           sample_rate: this.config.sampleRateHz,
           output_format: "wav",
-          speed: .88,
+          speed: .92,
         },
       );
     });

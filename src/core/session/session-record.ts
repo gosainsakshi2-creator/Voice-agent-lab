@@ -43,7 +43,15 @@ export class SessionRecord {
 
   /** Fallback inbound-audio source used whenever the telephony provider has no `openMediaStream`. */
   readonly inboundAudioFallback = new AsyncQueue<AudioPayload>();
-  readonly outboundAudioListeners = new Set<(chunk: AudioPayload) => void>();
+  /**
+   * A listener MAY return a promise to apply backpressure: the pipeline
+   * awaits it before handing over the next chunk. Telephony bridges use
+   * this to stop a streaming TTS provider (which synthesizes ~25x faster
+   * than real time) from building a multi-second backlog in their own
+   * outbound queue. Returning `void` — the original contract — keeps the
+   * previous fire-and-forget behaviour.
+   */
+  readonly outboundAudioListeners = new Set<(chunk: AudioPayload) => void | Promise<void>>();
 
   /** Set while `start()`'s conversation loop is running; used to stop the loop on `end()`. */
   loopAbortController: AbortController | undefined;

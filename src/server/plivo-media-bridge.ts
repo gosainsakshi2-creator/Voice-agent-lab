@@ -65,6 +65,40 @@ const PREROLL_FRAMES = 5;
 /** Never hold the pre-roll longer than this (short utterances may never reach PREROLL_FRAMES). */
 const PREROLL_MAX_WAIT_MS = 120;
 /**
+ * Outbound queue backpressure.
+ *
+ * A streaming TTS provider hands us a whole reply at ~25x real time
+ * while the pump releases it at exactly 1x, so without a bound the
+ * queue grows to the FULL length of the utterance (measured: 412
+ * frames / 8.2s for a 156-character reply). Everything in that queue
+ * lives only in this process, and is discarded unplayed by
+ * `clearOutboundPlayback` on barge-in and by `cleanup` on socket
+ * close — which is why a single blip, or a dropped WebSocket, cost
+ * the caller eight seconds of an already-generated reply.
+ *
+ * Once the queue reaches the high-water mark `enqueueOutbound`
+ * returns a promise instead of `void`, which the pipeline awaits
+ * before reading the next TTS chunk (TCP backpressure then propagates
+ * to the provider). The pump releases the waiters as it drains past
+ * the low-water mark, so the queue oscillates between ~0.8s and ~1.2s
+ * instead of climbing to 8s+.
+ *
+ * This changes NOTHING about pump timing, frame size, barge-in
+ * decisions, or the order bytes are sent in — only how far ahead of
+ * the pump the producer is allowed to run. The first chunk is never
+ * delayed: the queue is empty at the start of an utterance, so the
+ * gate does not engage until ~1.2s of audio is already buffered.
+ */
+const OUTBOUND_HIGH_WATER_FRAMES = 60; // 1200ms
+const OUTBOUND_LOW_WATER_FRAMES = 40; // 800ms
+/**
+ * Safety net so a wedged pump can never deadlock the pipeline (and
+ * therefore `end()`, which awaits the loop promise). Comfortably longer
+ * than the ~400ms it takes the pump to drain high-water down to
+ * low-water, so it never fires in normal operation.
+ */
+const OUTBOUND_BACKPRESSURE_TIMEOUT_MS = 5000;
+/**
  * Barge-in onset gate. These only affect `onSpeechStart` (the VAD's
  * utterance callback here is diagnostic-only), i.e. they decide what
  * counts as "the caller started talking over us".
@@ -173,7 +207,45 @@ export function attachPlivoMediaBridge(
   // queue only ever holds whole 160-byte / 20ms frames.
   const framer = createOutboundMulawFramer(OUTBOUND_FRAME_BYTES);
 
-  function enqueueOutbound(chunk: AudioPayload): void {
+  /** Producers parked until the queue drains back to the low-water mark. */
+  let backpressureWaiters: Array<() => void> = [];
+
+  /** Wake every parked producer. Safe to call when none are parked. */
+  function releaseBackpressure(): void {
+    if (backpressureWaiters.length === 0) return;
+    const waiters = backpressureWaiters;
+    backpressureWaiters = [];
+    for (const wake of waiters) wake();
+  }
+
+  /**
+   * Returns a promise while the queue is over the high-water mark, or
+   * `undefined` (the original synchronous contract) when there is room.
+   */
+  function awaitQueueRoom(): Promise<void> | undefined {
+    if (closed) return undefined;
+    if (outboundQueue.length < OUTBOUND_HIGH_WATER_FRAMES) return undefined;
+
+    return new Promise<void>((resolve) => {
+      let settled = false;
+      const wake = (): void => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        resolve();
+      };
+      const timeout = setTimeout(() => {
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[plivo-bridge:${sessionId}] backpressure wait timed out after ${OUTBOUND_BACKPRESSURE_TIMEOUT_MS}ms (queue=${outboundQueue.length}) — releasing producer`,
+        );
+        wake();
+      }, OUTBOUND_BACKPRESSURE_TIMEOUT_MS);
+      backpressureWaiters.push(wake);
+    });
+  }
+
+  function enqueueOutbound(chunk: AudioPayload): void | Promise<void> {
     outboundChunkCount += 1;
     // eslint-disable-next-line no-console
     console.log(
@@ -206,6 +278,7 @@ export function attachPlivoMediaBridge(
       `[plivo-bridge:${sessionId}] enqueued ${frames.length} frames (${frames.length * OUTBOUND_FRAME_MS}ms), queue depth=${outboundQueue.length}, lifetime frames=${outboundFrameTotal}`,
     );
     startPump();
+    return awaitQueueRoom();
   }
 
   /** Emit the carried remainder, silence-padded, once an utterance truly ends. */
@@ -270,6 +343,7 @@ export function attachPlivoMediaBridge(
           return;
         }
         framesSent += 1;
+        if (outboundQueue.length <= OUTBOUND_LOW_WATER_FRAMES) releaseBackpressure();
         if (framesSent === 1 || framesSent % 50 === 0) {
           // eslint-disable-next-line no-console
           console.log(`[plivo-bridge:${sessionId}] pump sending frame #${framesSent}, remaining=${outboundQueue.length}`);
@@ -316,6 +390,10 @@ export function attachPlivoMediaBridge(
     const droppedFrames = outboundQueue.length;
     outboundQueue = [];
     framer.reset();
+    // The queue is gone, so anyone parked waiting for room must be woken
+    // — otherwise a barge-in would leave the TTS read loop blocked and
+    // it could never observe its own abort signal.
+    releaseBackpressure();
     if (pumpTimer) {
       clearInterval(pumpTimer);
       pumpTimer = undefined;
@@ -436,6 +514,10 @@ export function attachPlivoMediaBridge(
   function cleanup(): void {
     if (closed) return;
     closed = true;
+    // Nothing will drain the queue again, so release any parked producer
+    // before tearing down — `manager.end()` below awaits the pipeline's
+    // loop promise, which cannot settle while it is blocked here.
+    releaseBackpressure();
     segmenter.flush();
     unsubscribeOutbound?.();
     unsubscribeState?.();

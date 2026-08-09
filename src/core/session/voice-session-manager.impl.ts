@@ -363,7 +363,10 @@ export class DefaultVoiceSessionManager implements VoiceSessionManager, Pipeline
   }
 
   /** Subscribe to synthesized audio as the pipeline produces it. Returns an unsubscribe function. */
-  onOutboundAudio(sessionId: SessionId, listener: (chunk: AudioPayload) => void): () => void {
+  onOutboundAudio(
+    sessionId: SessionId,
+    listener: (chunk: AudioPayload) => void | Promise<void>,
+  ): () => void {
     const record = this.getRecordOrThrow(sessionId);
     record.outboundAudioListeners.add(listener);
     return () => record.outboundAudioListeners.delete(listener);

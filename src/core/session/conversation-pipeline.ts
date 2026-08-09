@@ -1029,6 +1029,7 @@ await this.drainPlayback(speakingSignal);
 
     if (this.providers.tts.synthesizeStream) {
       let chunkCount = 0;
+      this.transportBackpressureMs = 0;
       try {
        for await (const chunk of this.providers.tts.synthesizeStream(task, speakingSignal)) {
    if (chunkCount === 0 && !this.markedTtsThisTurn) {
@@ -1053,9 +1054,11 @@ await this.drainPlayback(speakingSignal);
           console.warn(`[TTS:${sid}] streaming TTS error after ${chunkCount} chunks: ${err instanceof Error ? err.message : String(err)}`);
         }
       }
-      const ttsMs = Date.now() - startedAt;
+      const ttsMs = Math.max(0, Date.now() - startedAt - this.transportBackpressureMs);
       // eslint-disable-next-line no-console
-      console.log(`[TTS:${sid}] streaming TTS done: ${chunkCount} chunks, ${ttsMs}ms`);
+      console.log(
+        `[TTS:${sid}] streaming TTS done: ${chunkCount} chunks, ${ttsMs}ms (paced ${this.transportBackpressureMs}ms on transport backpressure)`,
+      );
       return { ttsMs, ttsCostUsd: estimateTtsCost(ttsProviderId, text.length) };
     }
 
@@ -1084,6 +1087,14 @@ await this.drainPlayback(speakingSignal);
 
   private playAudioChunkCount = 0;
   private outboundReadyResolved = false;
+  /**
+   * Wall-clock ms the current `synthesizeAndPlay` call spent parked on
+   * transport backpressure. Subtracted from `ttsMs` so the benchmark
+   * metric keeps measuring how fast the TTS provider generated audio,
+   * not how long the telephony pump took to play it — the same
+   * separation `drainPlayback` already preserves.
+   */
+  private transportBackpressureMs = 0;
 
   /**
    * Waits until at least one outbound delivery path (mediaStream or
@@ -1152,7 +1163,21 @@ await this.drainPlayback(speakingSignal);
     if (this.record.mediaStream) {
       await this.record.mediaStream.sendAudio(audio);
     }
-    for (const listener of this.record.outboundAudioListeners) listener(audio);
+    for (const listener of this.record.outboundAudioListeners) {
+      // A transport may return a promise to apply backpressure once its
+      // outbound queue is full (see SessionRecord.outboundAudioListeners).
+      // Awaiting it paces this loop to roughly real time, which is what
+      // keeps the bridge's queue — and therefore the audio at risk of
+      // being discarded on barge-in or socket close — bounded.
+      // Bridges resolve pending waiters on barge-in/close, so this can
+      // never outlive the utterance it belongs to.
+      const pending = listener(audio);
+      if (pending) {
+        const parkedAt = Date.now();
+        await pending;
+        this.transportBackpressureMs += Date.now() - parkedAt;
+      }
+    }
   }
 }
 

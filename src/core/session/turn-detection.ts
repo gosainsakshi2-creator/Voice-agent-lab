@@ -45,6 +45,16 @@ export class AdaptiveTurnDetector {
   private lastFinalEndedAtMs: number | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private readonly listeners = new Set<(event: TurnDetectionEvent) => void>();
+  /**
+   * A turn that ended while nobody was subscribed. The pipeline only
+   * subscribes for the duration of `acquireNextUserTurn`, so a turn
+   * that endpoints during the barge-in unwind (aborting the LLM/TTS
+   * streams, recording the assistant turn) would otherwise be emitted
+   * into an empty listener set and silently dropped — losing exactly
+   * the words the caller interrupted with. Hold it until someone
+   * subscribes instead.
+   */
+  private pendingEvent: TurnDetectionEvent | null = null;
   constructor(
   private readonly now: () => number = Date.now,
   private readonly immediateOnFinal = false,
@@ -53,6 +63,14 @@ export class AdaptiveTurnDetector {
 
   onTurnEnd(listener: (event: TurnDetectionEvent) => void): () => void {
     this.listeners.add(listener);
+    if (this.pendingEvent !== null) {
+      const buffered = this.pendingEvent;
+      this.pendingEvent = null;
+      // Deliver on a microtask, never synchronously during subscribe —
+      // callers assign the returned unsubscribe function *after* this
+      // call returns and invoke it from inside the listener.
+      queueMicrotask(() => listener(buffered));
+    }
     return () => this.listeners.delete(listener);
   }
 
@@ -133,6 +151,10 @@ this.rearmTimer();
 
     const event: TurnDetectionEvent = { text: this.pendingFinalText.trim(), turnDurationMs };
     this.reset();
+    if (this.listeners.size === 0) {
+      this.pendingEvent = event;
+      return;
+    }
     for (const listener of this.listeners) listener(event);
   }
 

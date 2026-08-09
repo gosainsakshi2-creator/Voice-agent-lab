@@ -58,7 +58,7 @@ import type { AudioPayload } from "../types/provider.types";
 import { SessionState } from "../types/enums";
 import type { DefaultVoiceSessionManager } from "../core/session/voice-session-manager.impl";
 import { MulawVadSegmenter } from "./vad-segmenter";
-import { createOutboundMulawEncoder } from "./audio-codec";
+import { createOutboundMulawEncoder, createOutboundMulawFramer } from "./audio-codec";
 
 // Re-use the same BridgeSocket interface shape for testability.
 export interface BridgeSocket {
@@ -83,6 +83,17 @@ const OUTBOUND_FRAME_MS = 20;
 /** Maximum frames the pump may send in a single tick to prevent
  *  burst-flooding the WebSocket after event-loop starvation. */
 const MAX_FRAMES_PER_TICK = 3;
+/**
+ * Frames buffered before the pump sends its first one. The pump paces
+ * strictly at real time, so with zero pre-roll the far end's playout
+ * buffer never builds a cushion and the very first jitter event — the
+ * TTS/LLM streams are at their busiest exactly then — is heard as a
+ * clipped or broken opening. 5 frames = 100ms: enough to absorb a
+ * startup stall, far too little to be perceived as latency.
+ */
+const PREROLL_FRAMES = 5;
+/** Never hold the pre-roll longer than this (short utterances may never reach PREROLL_FRAMES). */
+const PREROLL_MAX_WAIT_MS = 120;
 
 export function attachVobizMediaBridge(
   socket: BridgeSocket,
@@ -93,6 +104,7 @@ export function attachVobizMediaBridge(
   let unsubscribeState: (() => void) | undefined;
   let outboundQueue: Uint8Array[] = [];
   let pumpTimer: ReturnType<typeof setInterval> | undefined;
+  let prerollTimer: ReturnType<typeof setTimeout> | undefined;
   let wasSpeaking = false;
   let closed = false;
 
@@ -105,20 +117,52 @@ export function attachVobizMediaBridge(
   // Inbound: we configure the answer-URL XML with
   // contentType="audio/x-mulaw;rate=8000", so Vobiz sends mulaw
   // at 8 kHz — same format the MulawVadSegmenter expects.
-  const segmenter = new MulawVadSegmenter((mulawBytes) => {
-    utteranceCount += 1;
-    const durationMs = Math.round((mulawBytes.length / 160) * 20);
+  //
+  // The segmenter is now a DETECTOR ONLY. It used to buffer the whole
+  // utterance and forward it to Deepgram after 400ms of trailing
+  // silence, which meant Deepgram saw nothing until the caller had
+  // already stopped talking — making real-time barge-in structurally
+  // impossible and adding (utterance duration + 400ms) of latency to
+  // every turn. Inbound frames now go straight to the manager (see the
+  // "media" case below) and the segmenter's only job is to fire
+  // `onSpeechStart` the instant the caller opens their mouth.
+  const segmenter = new MulawVadSegmenter(
+    (mulawBytes) => {
+      utteranceCount += 1;
+      const durationMs = Math.round((mulawBytes.length / 160) * 20);
+      // eslint-disable-next-line no-console
+      console.log(
+        `[vobiz-bridge:${sessionId}] VAD utterance #${utteranceCount} boundary: ${mulawBytes.length} bytes (~${durationMs}ms) — diagnostic only, audio already streamed`,
+      );
+    },
+    () => onCallerSpeechStart(),
+    // 2 frames = 40ms of continuous speech energy: fast enough to feel
+    // instant, enough to reject a single click or line-noise frame.
+    { speechStartFrames: 2 },
+  );
+
+  /**
+   * Real-time barge-in. Fires ~40ms after the caller starts speaking,
+   * not after they finish. Clears our own queue and Vobiz's playback
+   * buffer immediately, then tells the pipeline to abort the in-flight
+   * LLM/TTS work. The caller's speech is NOT swallowed: inbound frames
+   * keep streaming to Deepgram throughout, so whatever they said while
+   * interrupting becomes the next user turn.
+   */
+  function onCallerSpeechStart(): void {
+    if (!wasSpeaking && outboundQueue.length === 0) return;
+
     // eslint-disable-next-line no-console
     console.log(
-      `[vobiz-bridge:${sessionId}] VAD utterance #${utteranceCount}: ${mulawBytes.length} bytes (~${durationMs}ms), pushing to manager`,
+      `[vobiz-bridge:${sessionId}] BARGE-IN: caller speech detected while assistant audio was active (queue=${outboundQueue.length} frames)`,
     );
-    const payload: AudioPayload = {
-      data: mulawBytes,
-      encoding: "MULAW",
-      sampleRateHz: 8000,
-    };
-    manager.pushInboundAudio(sessionId, payload);
-  });
+    clearOutboundPlayback();
+    try {
+      manager.signalBargeIn(sessionId);
+    } catch {
+      // Session already ended — nothing left to interrupt.
+    }
+  }
 
   function sendJson(obj: unknown): void {
     if (closed || socket.readyState !== OPEN_STATE) return;
@@ -135,6 +179,9 @@ export function attachVobizMediaBridge(
   // audio-codec.ts: it crossfades each chunk's seam against the
   // previous chunk, so it must persist for the life of the call.
   const mulawEncoder = createOutboundMulawEncoder();
+  // Carries the sub-frame remainder between streamed TTS chunks so the
+  // queue only ever holds whole 160-byte / 20ms frames.
+  const framer = createOutboundMulawFramer(OUTBOUND_FRAME_BYTES);
 
   function enqueueOutbound(chunk: AudioPayload): void {
     outboundChunkCount += 1;
@@ -155,22 +202,55 @@ export function attachVobizMediaBridge(
     // encoding, and seam-crossfading in one step. Result is 1 byte per sample.
     const mulawBytes = mulawEncoder.encode(chunk.data, chunk.sampleRateHz);
 
-    const frameCount = Math.ceil(mulawBytes.length / OUTBOUND_FRAME_BYTES);
-    outboundFrameTotal += frameCount;
-    for (let offset = 0; offset < mulawBytes.length; offset += OUTBOUND_FRAME_BYTES) {
-      outboundQueue.push(mulawBytes.subarray(offset, offset + OUTBOUND_FRAME_BYTES));
-    }
+    // Whole frames only. Any 1..159-byte tail is carried into the next
+    // chunk instead of being queued as a runt frame — the pump spends a
+    // full 20ms slot on every frame it sends, so a short frame starves
+    // the far end by the difference and is heard as a click.
+    const frames = framer.push(mulawBytes);
+    outboundFrameTotal += frames.length;
+    for (const frame of frames) outboundQueue.push(frame);
     // eslint-disable-next-line no-console
     console.log(
-      `[vobiz-bridge:${sessionId}] enqueued ${frameCount} mulaw frames (${frameCount * OUTBOUND_FRAME_MS}ms), queue depth=${outboundQueue.length}, lifetime frames=${outboundFrameTotal}`,
+      `[vobiz-bridge:${sessionId}] enqueued ${frames.length} mulaw frames (${frames.length * OUTBOUND_FRAME_MS}ms), queue depth=${outboundQueue.length}, lifetime frames=${outboundFrameTotal}`,
     );
+    startPump();
+  }
+
+  /** Emit the carried remainder, silence-padded, once an utterance truly ends. */
+  function flushOutboundRemainder(): void {
+    const tail = framer.flush();
+    if (!tail) return;
+    outboundFrameTotal += 1;
+    outboundQueue.push(tail);
     startPump();
   }
 
   function startPump(): void {
     if (pumpTimer) return;
+
+    // Fill a small startup buffer before the first send so the far end
+    // has a cushion. A short utterance may never reach PREROLL_FRAMES,
+    // so a timer guarantees playback always begins.
+    if (outboundQueue.length < PREROLL_FRAMES) {
+      if (!prerollTimer) {
+        prerollTimer = setTimeout(() => {
+          prerollTimer = undefined;
+          if (!pumpTimer && outboundQueue.length > 0) beginPump();
+        }, PREROLL_MAX_WAIT_MS);
+      }
+      return;
+    }
+    if (prerollTimer) {
+      clearTimeout(prerollTimer);
+      prerollTimer = undefined;
+    }
+    beginPump();
+  }
+
+  function beginPump(): void {
+    if (pumpTimer) return;
     // eslint-disable-next-line no-console
-    console.log(`[vobiz-bridge:${sessionId}] pump started`);
+    console.log(`[vobiz-bridge:${sessionId}] pump started (buffered ${outboundQueue.length} frames)`);
     const startedAt = Date.now();
     let framesSent = 0;
     pumpTimer = setInterval(() => {
@@ -224,9 +304,14 @@ export function attachVobizMediaBridge(
   function clearOutboundPlayback(): void {
     const droppedFrames = outboundQueue.length;
     outboundQueue = [];
+    framer.reset();
     if (pumpTimer) {
       clearInterval(pumpTimer);
       pumpTimer = undefined;
+    }
+    if (prerollTimer) {
+      clearTimeout(prerollTimer);
+      prerollTimer = undefined;
     }
     // eslint-disable-next-line no-console
     console.log(`[vobiz-bridge:${sessionId}] clearOutboundPlayback: dropped ${droppedFrames} queued frames, sending clearAudio (streamId=${vobizStreamId ?? "unknown"})`);
@@ -251,6 +336,9 @@ export function attachVobizMediaBridge(
       if (isBargeIn) {
         clearOutboundPlayback();
       } else {
+        // Utterance genuinely finished — emit the carried remainder
+        // once, silence-padded, so the tail is not left unspoken.
+        flushOutboundRemainder();
         // eslint-disable-next-line no-console
         console.log(
           `[vobiz-bridge:${sessionId}] SPEAKING->LISTENING (normal completion, reason="${transition.reason}") — letting pump drain, queue=${outboundQueue.length}`,
@@ -297,7 +385,28 @@ export function attachVobizMediaBridge(
           // eslint-disable-next-line no-console
           console.log(`[vobiz-bridge:${sessionId}] inbound media frame #${inboundFrameCount}`);
         }
-        segmenter.push(new Uint8Array(Buffer.from(b64, "base64")));
+        const frame = new Uint8Array(Buffer.from(b64, "base64"));
+
+        // 1) Detection first, so barge-in fires with the least possible
+        //    delay. The segmenter no longer forwards audio anywhere.
+        segmenter.push(frame);
+
+        // 2) Stream every frame straight through to the manager (and so
+        //    to Deepgram's live socket). Continuous 20ms frames are what
+        //    a streaming STT expects; buffering whole utterances here
+        //    was adding (utterance + 400ms) before Deepgram saw a byte.
+        //    This is the ONLY path that forwards inbound audio — no
+        //    frame is delivered twice.
+        try {
+          const payload: AudioPayload = {
+            data: frame,
+            encoding: "MULAW",
+            sampleRateHz: 8000,
+          };
+          manager.pushInboundAudio(sessionId, payload);
+        } catch {
+          // Session not started yet or already ended — drop the frame.
+        }
         return;
       }
 
@@ -323,6 +432,7 @@ export function attachVobizMediaBridge(
     unsubscribeOutbound?.();
     unsubscribeState?.();
     if (pumpTimer) clearInterval(pumpTimer);
+    if (prerollTimer) clearTimeout(prerollTimer);
     // Vobiz closes the WebSocket when the call ends — make sure
     // the session state machine and Dashboard's SSE subscription
     // find out. Already-ended sessions no-op safely.

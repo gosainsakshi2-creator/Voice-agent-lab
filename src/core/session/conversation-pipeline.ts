@@ -158,6 +158,14 @@ function fallbackGreeting(language: SupportedLanguage): string {
 /** Maximum characters for a greeting — anything longer is almost certainly a prompt echo. */
 const MAX_GREETING_CHARS = 200;
 
+/**
+ * Compensates for the small startup buffer the telephony bridges fill
+ * before their playback pump sends its first frame. Keeps the drain
+ * from finishing marginally early and re-opening the "queue still
+ * playing while state says LISTENING" gap it exists to close.
+ */
+const PLAYBACK_PREROLL_ALLOWANCE_MS = 150;
+
 export class ConversationPipeline {
   private readonly usesStreamingStt: boolean;
   private sinceLastTurnBytes = 0;
@@ -626,9 +634,15 @@ const speakingSignal = combineSignals([
 if (this.record.state !== SessionState.SPEAKING) {
   this.host.transition(this.record, SessionState.SPEAKING, "speaking the reply");
 }
+this.resetPlaybackAccounting();
 
 const { ttsMs, ttsCostUsd } =
   await this.synthesizeAndPlay(spokenContent, speakingSignal);
+
+// Streaming TTS only enqueues; hold SPEAKING until playback drains.
+// (The batch-TTS branch already sleeps for its own playback and will
+// simply find nothing left to wait for here.)
+await this.drainPlayback(speakingSignal);
 
       return {
         assistantText: spokenContent,
@@ -725,6 +739,10 @@ const { ttsMs, ttsCostUsd } =
           ttsCostUsd += spoken.ttsCostUsd;
         }
       }
+      // Stay in SPEAKING until the queued audio has actually played.
+      // `ttsMs`/`ttsCostUsd` are already fixed above, so the drain
+      // never leaks into the TTS latency metric.
+      if (speakingSignal) await this.drainPlayback(speakingSignal);
       return {
         assistantText: fallback,
         llmMs,
@@ -744,6 +762,11 @@ const { ttsMs, ttsCostUsd } =
         ttsCostUsd += spoken.ttsCostUsd;
       }
     }
+
+    // Hold SPEAKING open for the audio still queued on the transport.
+    // Aborts instantly on barge-in; `ttsMs` was already accumulated
+    // from generation time only, so the metric is unaffected.
+    if (speakingSignal) await this.drainPlayback(speakingSignal);
 
     const assistantText = stripMarkdown((finalText ?? fullText));
 
@@ -766,7 +789,55 @@ const { ttsMs, ttsCostUsd } =
     if (this.record.state !== SessionState.SPEAKING) {
       this.host.transition(this.record, SessionState.SPEAKING, "speaking the reply");
     }
+    this.resetPlaybackAccounting();
     return combineSignals([this.record.bargeIn.beginSpeaking(), this.record.loopAbortController!.signal]);
+  }
+
+  // ---------------------------------------------------------------
+  // Real-time playback accounting
+  //
+  // A streaming TTS provider hands us a whole reply far faster than
+  // real time, and `playAudioChunk` only ENQUEUES it on the transport
+  // (both the Plivo and Vobiz bridges pace their own 20ms pumps).
+  // Without the drain below, SPEAKING ended the moment the last byte
+  // was queued — leaving several seconds of assistant audio still
+  // playing while the session already claimed to be LISTENING. That
+  // single fact broke barge-in (`state === SPEAKING` was false, so no
+  // interruption was ever triggered) and let a new turn's audio be
+  // appended behind the previous turn's backlog.
+  // ---------------------------------------------------------------
+
+  /** Total real-time duration of audio handed to the transport this speaking phase. */
+  private outboundQueuedMs = 0;
+  /** Wall clock at which the transport began playing this speaking phase. */
+  private outboundPlaybackStartedAt = 0;
+
+  private resetPlaybackAccounting(): void {
+    this.outboundQueuedMs = 0;
+    this.outboundPlaybackStartedAt = 0;
+  }
+
+  /**
+   * Holds SPEAKING open until the audio already handed to the
+   * transport has actually played out. Resolves immediately when
+   * `signal` aborts, so barge-in cuts the wait with no added latency.
+   */
+  private async drainPlayback(signal: AbortSignal): Promise<void> {
+    if (this.outboundPlaybackStartedAt === 0 || this.outboundQueuedMs <= 0) return;
+    if (signal.aborted) return;
+
+    const elapsedMs = Date.now() - this.outboundPlaybackStartedAt;
+    // Small allowance for the bridge's startup pre-roll: the pump waits
+    // for a few frames before its first send, so playback starts
+    // marginally later than the first enqueue.
+    const remainingMs = this.outboundQueuedMs - elapsedMs + PLAYBACK_PREROLL_ALLOWANCE_MS;
+    if (remainingMs <= 0) return;
+
+    // eslint-disable-next-line no-console
+    console.log(
+      `[PLAYBACK:${this.record.id}] draining ${Math.round(remainingMs)}ms of queued audio before leaving SPEAKING (queued=${Math.round(this.outboundQueuedMs)}ms elapsed=${elapsedMs}ms)`,
+    );
+    await abortableSleep(remainingMs, signal);
   }
 
   private async synthesizeAndPlay(text: string, speakingSignal: AbortSignal): Promise<{ ttsMs: number; ttsCostUsd: number }> {
@@ -891,6 +962,16 @@ const { ttsMs, ttsCostUsd } =
     console.log(
       `[PLAYBACK:${sid}] playAudioChunk #${this.playAudioChunkCount}: encoding=${audio.encoding} sampleRate=${audio.sampleRateHz} bytes=${audio.data.byteLength} hasMediaStream=${!!this.record.mediaStream} listenerCount=${this.record.outboundAudioListeners.size}`,
     );
+    // Account for the real-time duration handed to the transport so
+    // `drainPlayback` can hold SPEAKING open until it has actually
+    // played. Zero-byte chunks are stream-end markers, not audio.
+    if (audio.data.byteLength > 0) {
+      if (this.outboundPlaybackStartedAt === 0) {
+        this.outboundPlaybackStartedAt = Date.now();
+      }
+      this.outboundQueuedMs += estimateAudioSeconds(audio) * 1000;
+    }
+
     if (this.record.mediaStream) {
       await this.record.mediaStream.sendAudio(audio);
     }

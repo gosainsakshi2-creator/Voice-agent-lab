@@ -185,13 +185,21 @@ console.log(
   queue.push(segment);
 });
 void (async () => {
+  let sentFrames = 0;
   try {
 for await (const audio of request.audio) {
   if (request.signal?.aborted) {
     connection.socket.close();
     break;
   }
-console.log("[Deepgram] Sending audio:", audio.data.byteLength);
+  // Inbound audio is now a continuous 20ms frame stream (50/sec), not
+  // one buffered utterance. Logging every frame would issue ~100
+  // synchronous stdout writes per second and stall the event loop the
+  // outbound 20ms playback pump runs on. Sample instead.
+  sentFrames += 1;
+  if (sentFrames === 1 || sentFrames % 50 === 0) {
+    console.log("[DG SEND]", Date.now(), `frame #${sentFrames}`, audio.data.byteLength);
+  }
   connection.socket.send(
     Buffer.from(
       audio.data.buffer,

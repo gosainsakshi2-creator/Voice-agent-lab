@@ -20,6 +20,14 @@ export interface VadSegmenterOptions {
 
   /** Hard cap to avoid buffering forever. */
   readonly maxUtteranceMs?: number;
+
+  /**
+   * Consecutive speech frames required before `onSpeechStart` fires.
+   * 1 (the default) preserves the original behaviour. Bridges that use
+   * `onSpeechStart` to trigger barge-in pass 2 so a single noisy frame
+   * (a click, a cough, line noise) cannot cut off the assistant.
+   */
+  readonly speechStartFrames?: number;
 }
 
 const DEFAULTS: Required<VadSegmenterOptions> = {
@@ -27,6 +35,7 @@ const DEFAULTS: Required<VadSegmenterOptions> = {
   endSilenceMs: 400,
   minUtteranceMs: 200,
   maxUtteranceMs: 15_000,
+  speechStartFrames: 1,
 };
 
 /** One μ-law frame from Plivo = 160 bytes = 20 ms @ 8 kHz */
@@ -39,6 +48,8 @@ export class MulawVadSegmenter {
   private bufferedMs = 0;
   private silenceMs = 0;
   private speaking = false;
+  private consecutiveSpeechFrames = 0;
+  private speechStartNotified = false;
 
   constructor(
     private readonly onUtterance: (mulawBytes: Uint8Array) => void,
@@ -59,8 +70,17 @@ export class MulawVadSegmenter {
     const isSpeech = this.frameHasSpeech(mulawFrame);
 
     if (isSpeech) {
-      if (!this.speaking) {
-        this.speaking = true;
+      this.speaking = true;
+      this.consecutiveSpeechFrames += 1;
+
+      // Fire once per utterance, as early as the debounce allows — this
+      // is the real-time barge-in signal and must NOT wait for the
+      // end-of-utterance silence flush below.
+      if (
+        !this.speechStartNotified &&
+        this.consecutiveSpeechFrames >= this.opts.speechStartFrames
+      ) {
+        this.speechStartNotified = true;
         this.onSpeechStart?.();
       }
 
@@ -68,6 +88,7 @@ export class MulawVadSegmenter {
       this.buffered.push(mulawFrame);
       this.bufferedMs += frameMs;
     } else if (this.speaking) {
+      this.consecutiveSpeechFrames = 0;
       // Keep trailing silence so we don't clip word endings.
       this.buffered.push(mulawFrame);
       this.bufferedMs += frameMs;
@@ -118,6 +139,8 @@ export class MulawVadSegmenter {
     this.bufferedMs = 0;
     this.silenceMs = 0;
     this.speaking = false;
+    this.consecutiveSpeechFrames = 0;
+    this.speechStartNotified = false;
   }
 
   private frameHasSpeech(mulawFrame: Uint8Array): boolean {

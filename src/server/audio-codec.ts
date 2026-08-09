@@ -296,8 +296,25 @@ export function createOutboundMulawEncoder(): OutboundMulawEncoder {
 
   return {
     encode(pcmBytes: Uint8Array, sourceSampleRateHz: number): Uint8Array {
+      if (pcmBytes.byteLength === 0) return new Uint8Array(0);
+
       const pcm = bytesToPcm16(pcmBytes);
+
+      // When the TTS provider already emits 8 kHz (the telephony rate)
+      // `resamplePcm16` is a no-op: there is no anti-alias filter, no
+      // resample-phase reset and therefore NO seam to repair. Running
+      // the crossfade anyway would blend each chunk's first 8 samples
+      // against a copy of the signal delayed by 1ms — a comb filter
+      // that *creates* the intermittent metallic tick it was written
+      // to remove. Only crossfade when a resample actually happened.
+      const needsResample = sourceSampleRateHz !== 8000;
+      if (!needsResample) {
+        previousTail = undefined;
+        return pcm16ToMulaw(pcm);
+      }
+
       const resampled = resamplePcm16(pcm, sourceSampleRateHz, 8000);
+      if (resampled.length === 0) return new Uint8Array(0);
 
       if (previousTail && previousTail.length > 0 && resampled.length > 0) {
         const n = Math.min(SEAM_CROSSFADE_SAMPLES, previousTail.length, resampled.length);
@@ -318,6 +335,76 @@ export function createOutboundMulawEncoder(): OutboundMulawEncoder {
           : resampled.slice();
 
       return pcm16ToMulaw(resampled);
+    },
+  };
+}
+
+/* ────────────────────────────────────────────────────────────────
+ * OUTBOUND FRAME ALIGNER
+ *
+ * Both telephony bridges slice the encoded mu-law stream into fixed
+ * 20 ms / 160-byte frames. Slicing each streamed TTS chunk
+ * INDEPENDENTLY leaves a runt frame of `len % 160` bytes at the end
+ * of every chunk (streamed chunk sizes are dictated by TCP, never by
+ * frame boundaries). The pump still spends a full 20 ms wall-clock
+ * slot on that runt, so the far end is starved by up to 19 ms per
+ * chunk — one audible click roughly every 100 ms.
+ *
+ * This framer keeps the sub-frame remainder and prepends it to the
+ * next chunk, so only whole frames are ever queued. The remainder is
+ * flushed exactly once, silence-padded, when an utterance genuinely
+ * ends.
+ * ──────────────────────────────────────────────────────────────── */
+
+/** G.711 mu-law encoding of PCM silence (`linearToMulawSample(0)`). */
+export const MULAW_SILENCE_BYTE = 0xff;
+
+export interface OutboundMulawFramer {
+  /** Append encoded mu-law bytes; returns only the whole frames now available. */
+  push(mulawBytes: Uint8Array): Uint8Array[];
+  /** Emit the trailing partial frame (silence-padded) exactly once, if any. */
+  flush(): Uint8Array | undefined;
+  /** Drop any buffered remainder without emitting (barge-in). */
+  reset(): void;
+}
+
+export function createOutboundMulawFramer(frameBytes: number): OutboundMulawFramer {
+  let remainder = new Uint8Array(0);
+
+  return {
+    push(mulawBytes: Uint8Array): Uint8Array[] {
+      if (mulawBytes.length === 0) return [];
+
+      let source: Uint8Array;
+      if (remainder.length === 0) {
+        source = mulawBytes;
+      } else {
+        source = new Uint8Array(remainder.length + mulawBytes.length);
+        source.set(remainder, 0);
+        source.set(mulawBytes, remainder.length);
+      }
+
+      const frames: Uint8Array[] = [];
+      let offset = 0;
+      for (; offset + frameBytes <= source.length; offset += frameBytes) {
+        frames.push(source.subarray(offset, offset + frameBytes));
+      }
+      // `slice` (not `subarray`) so the carried remainder does not pin
+      // the whole source buffer alive between chunks.
+      remainder = source.slice(offset);
+      return frames;
+    },
+
+    flush(): Uint8Array | undefined {
+      if (remainder.length === 0) return undefined;
+      const frame = new Uint8Array(frameBytes).fill(MULAW_SILENCE_BYTE);
+      frame.set(remainder, 0);
+      remainder = new Uint8Array(0);
+      return frame;
+    },
+
+    reset(): void {
+      remainder = new Uint8Array(0);
     },
   };
 }

@@ -213,11 +213,31 @@ export class ConversationPipeline {
     );
     console.log("[PIPELINE] usesStreamingStt =", this.usesStreamingStt);
 
-    if (this.usesStreamingStt) {
-      this.startContinuousStt(loopSignal);
-    }
-
-    // --- Greeting phase ---
+    // --- Greeting phase: a dedicated startup action, NOT a turn ---
+    //
+    // Continuous STT is deliberately NOT started yet. It used to start
+    // here, concurrently with greeting generation, and that race is what
+    // broke startup:
+    //
+    //   `startContinuousStt`'s barge-in check accepts a segment as an
+    //   interruption when `segment.endedAtMs > speakingStartedAtStreamMs`.
+    //   `speakingStartedAtStreamMs` is a snapshot of `inboundStreamMs`,
+    //   which only advances as chunks are PULLED through the byte
+    //   counter — and nothing is pulled until Deepgram's socket opens.
+    //   So at greeting time the baseline is still ~0, and the very first
+    //   transcript Deepgram ever emits (the caller's "Hello?" as they
+    //   pick up, or line noise) satisfies `endedAtMs > 0` and barges in
+    //   on the greeting. The greeting's LLM stream then breaks with
+    //   empty text, so nothing is spoken and nothing is recorded — and
+    //   the caller's "hello" becomes turn 1 instead, whose reply arrives
+    //   many seconds later looking like a very slow greeting.
+    //
+    // Deferring the listener costs nothing: inbound audio accumulates in
+    // the session's `AsyncQueue` (no telephony provider implements
+    // `openMediaStream`, so that is always the source) and is replayed
+    // to Deepgram in full the moment consumption starts below. Anything
+    // the caller said during the greeting still becomes their first
+    // turn — it just can no longer abort the greeting.
     if (!loopSignal.aborted) {
       // eslint-disable-next-line no-console
       console.log(`[PIPELINE:${sid}] Conversation started — generating greeting, state=${this.record.state}`);
@@ -277,6 +297,15 @@ console.log("[GREETING] Started");
           }
         }
       }
+    }
+
+    // --- Hand off to the normal contextual conversation flow ---
+    // The greeting is done (or failed and recovered to LISTENING).
+    // Start the continuous listener now: from here on, everything —
+    // turn detection, barge-in, contextual replies — behaves exactly
+    // as it always has.
+    if (this.usesStreamingStt && !loopSignal.aborted) {
+      this.startContinuousStt(loopSignal);
     }
 
     // --- Main loop ---

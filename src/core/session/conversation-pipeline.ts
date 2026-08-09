@@ -253,6 +253,13 @@ export class ConversationPipeline {
   private markedTtsThisTurn = false;
   private markedAudioThisTurn = false;
   /**
+   * False until the greeting has finished. The STT listener now runs
+   * from call-connect (see `run()`), so this is what keeps the
+   * greeting's own SPEAKING phase from being barge-in-able — exactly
+   * the property deferring the listener used to provide.
+   */
+  private greetingDone = false;
+  /**
    * ---------------- Metrics bookkeeping (read-only observers) ----------------
    * Everything below is written from points that already exist in the
    * flow and is read only by `recordTurn`. Nothing here feeds turn
@@ -294,31 +301,39 @@ export class ConversationPipeline {
     );
     console.log("[PIPELINE] usesStreamingStt =", this.usesStreamingStt);
 
+    // --- Start the continuous listener BEFORE the greeting ---
+    //
+    // The listener used to start after the greeting had finished
+    // playing, to stop the greeting being barged in on by the caller's
+    // "Hello?" as they pick up. That worked, but it made the FIRST user
+    // turn pay three costs no later turn pays:
+    //
+    //   1. Deepgram's websocket handshake (connect + waitForOpen) sat
+    //      directly on the first turn's critical path — the provider's
+    //      `checkHealth` does no network I/O, so warm-up never opens it.
+    //   2. Inbound audio has been accumulating in the session's
+    //      unbounded `AsyncQueue` since call-connect (no telephony
+    //      provider implements `openMediaStream`, so that is always the
+    //      source). By greeting-end that is ~4.5s of audio, which then
+    //      burst-replayed into the socket — leaving Deepgram several
+    //      hundred ms behind the live edge for the whole first turn.
+    //   3. The caller's first words were therefore transcribed late,
+    //      which delayed the turn detector, the LLM and the reply.
+    //
+    // Starting here removes all three: the handshake completes while
+    // the greeting is playing, and audio streams in real time from the
+    // first frame, so there is no backlog to catch up on. The greeting
+    // stays exactly as protected as before — `greetingDone` gates the
+    // barge-in check below, which is the only thing that could have
+    // interrupted it. Everything else (turn detection, the display
+    // transcript, metrics) runs live, so anything the caller says
+    // during the greeting is already recognized and waiting to become
+    // their first turn instead of arriving in a post-greeting burst.
+    if (this.usesStreamingStt && !loopSignal.aborted) {
+      this.startContinuousStt(loopSignal);
+    }
+
     // --- Greeting phase: a dedicated startup action, NOT a turn ---
-    //
-    // Continuous STT is deliberately NOT started yet. It used to start
-    // here, concurrently with greeting generation, and that race is what
-    // broke startup:
-    //
-    //   `startContinuousStt`'s barge-in check accepts a segment as an
-    //   interruption when `segment.endedAtMs > speakingStartedAtStreamMs`.
-    //   `speakingStartedAtStreamMs` is a snapshot of `inboundStreamMs`,
-    //   which only advances as chunks are PULLED through the byte
-    //   counter — and nothing is pulled until Deepgram's socket opens.
-    //   So at greeting time the baseline is still ~0, and the very first
-    //   transcript Deepgram ever emits (the caller's "Hello?" as they
-    //   pick up, or line noise) satisfies `endedAtMs > 0` and barges in
-    //   on the greeting. The greeting's LLM stream then breaks with
-    //   empty text, so nothing is spoken and nothing is recorded — and
-    //   the caller's "hello" becomes turn 1 instead, whose reply arrives
-    //   many seconds later looking like a very slow greeting.
-    //
-    // Deferring the listener costs nothing: inbound audio accumulates in
-    // the session's `AsyncQueue` (no telephony provider implements
-    // `openMediaStream`, so that is always the source) and is replayed
-    // to Deepgram in full the moment consumption starts below. Anything
-    // the caller said during the greeting still becomes their first
-    // turn — it just can no longer abort the greeting.
     if (!loopSignal.aborted) {
       // --- The greeting is spoken, not generated ---
       //
@@ -387,12 +402,11 @@ export class ConversationPipeline {
 
     // --- Hand off to the normal contextual conversation flow ---
     // The greeting is done (or failed and recovered to LISTENING).
-    // Start the continuous listener now: from here on, everything —
-    // turn detection, barge-in, contextual replies — behaves exactly
-    // as it always has.
-    if (this.usesStreamingStt && !loopSignal.aborted) {
-      this.startContinuousStt(loopSignal);
-    }
+    // Release the barge-in gate: from here on, everything — turn
+    // detection, barge-in, contextual replies — behaves exactly as it
+    // always has. The listener itself has been running since before
+    // the greeting (see above), so nothing has to be caught up here.
+    this.greetingDone = true;
 
     // --- Main loop ---
     // eslint-disable-next-line no-console
@@ -599,7 +613,15 @@ export class ConversationPipeline {
           // it lands a second later — by which time the greeting has
           // entered SPEAKING — and the greeting is barged-in before a
           // single audio frame reaches the caller.
+          //
+          // `greetingDone` keeps that guarantee now that the listener
+          // starts before the greeting rather than after it: until the
+          // greeting has finished, no segment can trigger a barge-in,
+          // which is precisely the protection deferring the listener
+          // used to provide. The segment is still fed to the turn
+          // detector below, so the words are not lost.
           if (
+            this.greetingDone &&
             this.record.state === SessionState.SPEAKING &&
             segment.endedAtMs > this.speakingStartedAtStreamMs
           ) {

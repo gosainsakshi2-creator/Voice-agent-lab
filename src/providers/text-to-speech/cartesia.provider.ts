@@ -81,9 +81,9 @@ export class CartesiaTextToSpeechProvider implements TextToSpeechProvider {
       transcript: task.request.text,
       voice: { id: voiceId, mode: "id" },
       generation_config: {
-  speed: 1.15,
+  speed: 1.25,
   emotion: "neutral",
-  volume: 1.0,
+  volume: 1.5,
 },
       language: toCartesiaLanguage(task.request.language),
       output_format: {

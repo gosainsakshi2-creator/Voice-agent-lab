@@ -175,6 +175,8 @@ export function attachVobizMediaBridge(
 
   let outboundChunkCount = 0;
   let outboundFrameTotal = 0;
+  /** Cleared once the first frame of the call has actually gone out, so the greeting-startup logs fire exactly once. */
+  let awaitingFirstFrame = true;
   // One encoder instance for this call's whole outbound stream — see
   // audio-codec.ts: it crossfades each chunk's seam against the
   // previous chunk, so it must persist for the life of the call.
@@ -207,6 +209,10 @@ export function attachVobizMediaBridge(
     // full 20ms slot on every frame it sends, so a short frame starves
     // the far end by the difference and is heard as a click.
     const frames = framer.push(mulawBytes);
+    if (awaitingFirstFrame && outboundChunkCount === 1) {
+      // eslint-disable-next-line no-console
+      console.log(`[Vobiz] greeting queued (${frames.length} frames, streamId=${vobizStreamId ?? "none"})`);
+    }
     outboundFrameTotal += frames.length;
     for (const frame of frames) outboundQueue.push(frame);
     // eslint-disable-next-line no-console
@@ -251,6 +257,10 @@ export function attachVobizMediaBridge(
     if (pumpTimer) return;
     // eslint-disable-next-line no-console
     console.log(`[vobiz-bridge:${sessionId}] pump started (buffered ${outboundQueue.length} frames)`);
+    if (awaitingFirstFrame) {
+      // eslint-disable-next-line no-console
+      console.log(`[Vobiz] greeting pump started`);
+    }
     const startedAt = Date.now();
     let framesSent = 0;
     pumpTimer = setInterval(() => {
@@ -275,6 +285,11 @@ export function attachVobizMediaBridge(
           return;
         }
         framesSent += 1;
+        if (awaitingFirstFrame) {
+          awaitingFirstFrame = false;
+          // eslint-disable-next-line no-console
+          console.log(`[Vobiz] greeting first frame sent`);
+        }
         if (framesSent === 1 || framesSent % 50 === 0) {
           // eslint-disable-next-line no-console
           console.log(`[vobiz-bridge:${sessionId}] pump sending frame #${framesSent}, remaining=${outboundQueue.length}`);
@@ -367,6 +382,8 @@ export function attachVobizMediaBridge(
     switch (event.event) {
       case "start":
         vobizStreamId = event.start?.streamId;
+        // eslint-disable-next-line no-console
+        console.log(`[Vobiz] stream ready (streamId=${vobizStreamId ?? "none"})`);
         // eslint-disable-next-line no-console
         console.log(
           `[vobiz-bridge:${sessionId}] "start" event: streamId=${vobizStreamId ?? "none"} callId=${event.start?.callId ?? "none"} mediaFormat=${JSON.stringify(event.start?.mediaFormat)}, confirming call answered`,

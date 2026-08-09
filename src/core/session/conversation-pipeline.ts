@@ -172,6 +172,10 @@ export class ConversationPipeline {
   private sinceLastTurnEncoding: AudioPayload["encoding"] | undefined;
   private sinceLastTurnSampleRateHz: number | undefined;
   private batchAudioIterator: AsyncIterator<AudioPayload> | undefined;
+  /** Total inbound audio (ms) handed to the STT stream so far — the same clock Deepgram's word times use. */
+  private inboundStreamMs = 0;
+  /** Value of `inboundStreamMs` when the current SPEAKING phase began. */
+  private speakingStartedAtStreamMs = 0;
 
   constructor(
     private readonly record: SessionRecord,
@@ -359,6 +363,12 @@ console.log("[GREETING] Started");
       this.sinceLastTurnBytes += chunk.data.byteLength;
       this.sinceLastTurnEncoding ??= chunk.encoding;
       this.sinceLastTurnSampleRateHz ??= chunk.sampleRateHz;
+      // Monotonic clock over the audio actually handed to the STT
+      // stream, in the SAME units Deepgram reports word times in
+      // (ms from the start of the stream). Used below to tell
+      // "the caller is interrupting me" apart from "the caller
+      // spoke before I started, and the transcript only just landed".
+      this.inboundStreamMs += estimateAudioSeconds(chunk) * 1000;
     });
 
     void (async () => {
@@ -384,7 +394,20 @@ console.log("[GREETING] Started");
           // speaking — cut TTS immediately and resume listening,
           // then keep feeding this segment into the turn detector so
           // nothing the user said is lost.
-          if (this.record.state === SessionState.SPEAKING) {
+          //
+          // `segment.endedAtMs` is the stream-relative end of the last
+          // word Deepgram has transcribed. A segment only counts as an
+          // interruption if that speech happened AFTER the assistant
+          // started speaking. Without this check the very first turn is
+          // always destroyed: the caller says "Hello?" as they pick up
+          // (while we are still in THINKING), Deepgram's transcript for
+          // it lands a second later — by which time the greeting has
+          // entered SPEAKING — and the greeting is barged-in before a
+          // single audio frame reaches the caller.
+          if (
+            this.record.state === SessionState.SPEAKING &&
+            segment.endedAtMs > this.speakingStartedAtStreamMs
+          ) {
             this.triggerExternalBargeIn();
           }
 
@@ -815,6 +838,10 @@ await this.drainPlayback(speakingSignal);
   private resetPlaybackAccounting(): void {
     this.outboundQueuedMs = 0;
     this.outboundPlaybackStartedAt = 0;
+    // Called at exactly the two places the session enters SPEAKING, so
+    // this is the stream-clock mark the barge-in check above compares
+    // incoming transcript segments against.
+    this.speakingStartedAtStreamMs = this.inboundStreamMs;
   }
 
   /**

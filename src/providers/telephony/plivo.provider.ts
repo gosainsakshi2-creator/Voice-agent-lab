@@ -45,6 +45,38 @@ function loadEnvConfig(): PlivoEnvConfig {
   };
 }
 
+/**
+ * Normalizes a dialled number to E.164.
+ *
+ * Plivo tolerates `+`, spaces and dashes, but it REQUIRES a country
+ * code: a bare national number like `9876543210` is parsed as US
+ * `+1 234-567-890`, and the API answers
+ * `403 Calls to this destination region are barred.` — the call is
+ * never created, so there is not even a CDR to look at. A number
+ * typed the way people actually say it locally is therefore the one
+ * input that silently produces "Plivo doesn't call at all".
+ *
+ * When the country code is missing, it is taken from the caller-id
+ * number (`PLIVO_FROM_NUMBER`): the digits of `from` that sit in
+ * front of a national number of the dialled number's length. For
+ * `from = +918031452733` and `to = 9876543210` that is `91`, giving
+ * `+919876543210`.
+ */
+export function toE164(rawDestination: string, fromNumber: string): string {
+  const trimmed = rawDestination.trim();
+  const hadPlus = trimmed.startsWith("+") || trimmed.startsWith("00");
+  const digits = trimmed.replace(/\D/g, "").replace(/^00/, "");
+  if (digits.length === 0) return trimmed;
+  if (hadPlus) return `+${digits}`;
+
+  const fromDigits = fromNumber.replace(/\D/g, "");
+  if (digits.length < fromDigits.length) {
+    const countryCode = fromDigits.slice(0, fromDigits.length - digits.length);
+    return `+${countryCode}${digits}`;
+  }
+  return `+${digits}`;
+}
+
 export class PlivoTelephonyProvider implements TelephonyProvider {
   readonly descriptor: ProviderDescriptor = {
     category: ProviderCategory.TELEPHONY,
@@ -71,11 +103,36 @@ export class PlivoTelephonyProvider implements TelephonyProvider {
       );
     }
 
-    const response = await this.client.calls.create(
-      this.config.fromNumber,
-      params.destinationNumber,
-      this.config.answerUrl,
+    const destination = toE164(params.destinationNumber, this.config.fromNumber);
+
+    // eslint-disable-next-line no-console
+    console.log(
+      `[Plivo] startCall:\n  sessionId=${params.sessionId}\n  from=${this.config.fromNumber}\n  to=${destination} (raw="${params.destinationNumber}")\n  answerUrl=${this.config.answerUrl}`,
     );
+
+    const startedAt = Date.now();
+    let response: Awaited<ReturnType<PlivoClient["calls"]["create"]>>;
+    try {
+      response = await this.client.calls.create(
+        this.config.fromNumber,
+        destination,
+        this.config.answerUrl,
+      );
+    } catch (error) {
+      const details = error as { status?: number; statusText?: string; moreInfo?: string };
+      // eslint-disable-next-line no-console
+      console.error(
+        `[Plivo] calls.create FAILED\n  name=${error instanceof Error ? error.name : typeof error}\n  message=${
+          error instanceof Error ? error.message : String(error)
+        }\n  status=${details.status ?? "n/a"} ${details.statusText ?? ""}\n  body=${details.moreInfo ?? "n/a"}\n  elapsedMs=${
+          Date.now() - startedAt
+        }`,
+      );
+      throw error;
+    }
+
+    // eslint-disable-next-line no-console
+    console.log(`[Plivo] calls.create OK in ${Date.now() - startedAt}ms`);
 
     const providerCallId = Array.isArray(response.requestUuid)
       ? response.requestUuid[0]

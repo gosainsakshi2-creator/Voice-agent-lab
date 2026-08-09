@@ -15,7 +15,6 @@ import {
   MOCK_TELEPHONY_PROVIDERS,
   MOCK_TEXT_TO_SPEECH_PROVIDERS,
 } from "@/lib/mock";
-import { MOCK_BENCHMARK_METRICS } from "@/lib/mock/mock-benchmark";
 import { DEFAULT_PROVIDER_STACK, DEFAULT_SESSION_REQUEST } from "@/lib/mock/mock-session";
 import { ProviderCategory, SupportedLanguage } from "@/types/enums";
 import type { ProviderDescriptor } from "@/types/provider.types";
@@ -105,7 +104,12 @@ export function Dashboard() {
   }, [stackEntries, language]);
 
   const effectiveHealth = health.length > 0 ? health : MOCK_PROVIDER_HEALTH;
-  const effectiveMetrics = metrics.turnLatencies.length > 0 || isCallActive ? metrics : MOCK_BENCHMARK_METRICS;
+  // Benchmark metrics are ALWAYS the real ones. There used to be a
+  // fallback to a mock BenchmarkMetrics here whenever no turn had been
+  // recorded, which meant a call that completed zero turns rendered
+  // invented latencies and cost that were visually indistinguishable
+  // from measured ones. An empty metrics object renders as N/A, which
+  // is the honest answer.
   const isSystemHealthy = effectiveHealth.every((h) => h.isHealthy);
   return (
     <div className="flex h-dvh min-h-0 flex-col bg-background">
@@ -143,7 +147,7 @@ export function Dashboard() {
           <InsightsPanel
             stackEntries={stackEntries}
             health={effectiveHealth}
-            metrics={effectiveMetrics}
+            metrics={metrics}
             liveCallDurationSeconds={callDurationSeconds}
             isCallActive={isCallActive}
           />

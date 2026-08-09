@@ -20,50 +20,84 @@ export interface LatencyMeasurementMs {
 }
 
 /**
- * Latency contributed by the Speech-To-Text provider for a single
- * turn (audio-in to final transcript).
+ * STT RECOGNITION latency for a single turn: how long after the
+ * caller's audio ended the corresponding final transcript actually
+ * arrived. Measured as `inboundStreamMs - segment.endedAtMs` — both
+ * are positions on the SAME audio stream clock, so the difference is
+ * the provider's recognition lag.
+ *
+ * NOT the duration the caller spoke (see
+ * `TurnLatencyBreakdown.userSpeechMs` for that).
  */
 export interface SttLatencyMetric extends LatencyMeasurementMs {}
 
 /**
- * Latency contributed by the Language Model provider for a single
- * turn (prompt/history-in to completion-out).
+ * LLM latency for a single turn: request sent -> FIRST token
+ * received (time-to-first-token).
+ *
+ * TTFT is deliberately the headline number rather than
+ * time-to-last-token: the pipeline starts synthesizing on the first
+ * complete sentence, so TTFT is what actually sits on the critical
+ * path. It is also the only LLM figure that cannot be contaminated
+ * by TTS — see `TurnLatencyBreakdown.llmGenerationMs`.
  */
 export interface LlmLatencyMetric extends LatencyMeasurementMs {}
 
 /**
- * Latency contributed by the Text-To-Speech provider for a single
- * turn (text-in to synthesized audio-out).
+ * TTS latency for a single turn: synthesis request sent -> FIRST
+ * audio chunk received. Excludes playback entirely.
  */
 export interface TtsLatencyMetric extends LatencyMeasurementMs {}
 
 /**
- * End-to-end latency for a single conversational turn — i.e. the
- * sum (or measured wall-clock span) of STT + LLM + TTS for that
- * turn. Kept as its own type rather than a derived sum so it can be
- * measured directly (wall-clock) or reconciled against the
- * component metrics.
+ * TRUE end-to-end conversational response latency for a single turn:
+ *
+ *     caller stopped speaking  ->  first AI audio frame handed to
+ *                                  the telephony transport
+ *
+ * This is a single measured wall-clock span, NOT a sum of the
+ * component metrics above. It therefore includes everything the
+ * caller actually experiences as dead air — recognition lag,
+ * endpointing wait, LLM time-to-first-token, TTS time-to-first-chunk
+ * and all pipeline overhead in between — and excludes the duration
+ * of the reply itself (synthesis of later sentences, queue drain,
+ * playback), none of which the caller waits on.
  */
 export interface TotalLatencyMetric extends LatencyMeasurementMs {}
 
 /**
- * Total wall-clock duration of the call itself, independent of any
- * single turn's latency.
+ * Wall-clock duration of the CONNECTED call: from the moment the
+ * telephony provider confirmed the callee answered to the moment the
+ * call ended. Session creation, provider warm-up, dialling and
+ * ringing are all excluded by construction.
  */
 export interface CallDurationMetric {
-  readonly seconds: number;
-  readonly startedAt: Date;
+  /**
+   * Measured connected seconds. `undefined` until the call is
+   * answered — an unanswered call has no duration to report, and
+   * must render as N/A rather than as 0 or as time-since-dial.
+   */
+  readonly seconds?: number;
+  /** Session object creation. Diagnostic only — never the timer origin. */
+  readonly createdAt: Date;
+  /** Telephony-confirmed answer. This is the timer origin. */
+  readonly answeredAt?: Date;
   readonly endedAt?: Date;
 }
 
 /**
- * Estimated monetary cost of a session, broken down by the
- * provider category that incurred it. `currency` follows ISO 4217
- * (e.g. "USD").
+ * ESTIMATED monetary cost of a session, broken down by the provider
+ * category that incurred it. `currency` follows ISO 4217 (e.g. "USD").
+ *
+ * These are heuristics derived from published list prices and
+ * approximate token/character/second counts — never actual provider
+ * billing. `isEstimate` is a literal `true` so no consumer can
+ * accidentally present this as invoiced spend.
  */
 export interface EstimatedCostMetric {
   readonly amount: number;
   readonly currency: string;
+  readonly isEstimate: true;
   readonly breakdown?: Readonly<{
     readonly telephony?: number;
     readonly speechToText?: number;
@@ -76,13 +110,37 @@ export interface EstimatedCostMetric {
  * A single latency sample tied to the turn it was measured in,
  * allowing per-turn benchmarking rather than only session-level
  * averages.
+ *
+ * Every latency field is OPTIONAL: a turn that was barged into
+ * before any audio was produced, or served by a provider that does
+ * not expose the necessary timestamps, genuinely has no measurement
+ * to report. Consumers must render those as N/A — never substitute a
+ * zero or a derived value.
  */
 export interface TurnLatencyBreakdown {
   readonly turnIndex: number;
-  readonly stt: SttLatencyMetric;
-  readonly llm: LlmLatencyMetric;
-  readonly tts: TtsLatencyMetric;
-  readonly total: TotalLatencyMetric;
+  readonly stt?: SttLatencyMetric;
+  readonly llm?: LlmLatencyMetric;
+  readonly tts?: TtsLatencyMetric;
+  readonly total?: TotalLatencyMetric;
+
+  // --- Secondary throughput figures. NOT latency; never summed into
+  // `total`, and not shown as headline numbers. ---
+
+  /**
+   * Full LLM generation span (request -> last token) with the
+   * wall-clock the pipeline spent inside TTS subtracted back out.
+   *
+   * The subtraction is required for correctness, not polish: the
+   * provider's async generator is suspended at its `yield` while the
+   * pipeline synthesizes each sentence, so its own `latencyMs`
+   * silently absorbs that TTS time.
+   */
+  readonly llmGenerationMs?: number;
+  /** Total TTS synthesis wall-clock for the turn, summed across sentence chunks. */
+  readonly ttsSynthesisMs?: number;
+  /** How long the caller spoke. Useful context; explicitly not a latency. */
+  readonly userSpeechMs?: number;
 }
 
 /**

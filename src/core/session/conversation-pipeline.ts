@@ -69,15 +69,26 @@ export interface PipelineHost {
 
 interface AcquiredTurn {
   readonly text: string;
-  readonly sttMs: number;
+  /** How long the caller spoke. Context, NOT a latency — see benchmark.types.ts. */
+  readonly userSpeechMs: number;
+  /** STT recognition lag of the final segment that completed this turn. */
+  readonly sttLagMs: number | undefined;
+  /** Wall clock at which the caller's audio actually ended, back-dated by the recognition lag. */
+  readonly userSpeechEndedAtMs: number | undefined;
   readonly sttCostUsd: number;
 }
 
 interface ThinkingAndSpeakingResult {
   readonly assistantText: string;
-  readonly llmMs: number;
+  /** LLM time-to-first-token. */
+  readonly llmMs: number | undefined;
+  /** Full generation span with TTS blocking time subtracted out. */
+  readonly llmGenerationMs: number | undefined;
   readonly llmCostUsd: number;
-  readonly ttsMs: number;
+  /** TTS time-to-first-audio-chunk for the first utterance of the turn. */
+  readonly ttsMs: number | undefined;
+  /** Total synthesis wall-clock across every sentence chunk of the turn. */
+  readonly ttsSynthesisMs: number;
   readonly ttsCostUsd: number;
 }
 
@@ -179,6 +190,14 @@ const MAX_GREETING_CHARS = 200;
 const PLAYBACK_PREROLL_ALLOWANCE_MS = 150;
 
 /**
+ * Upper bound on a believable STT recognition lag, used only to
+ * discard nonsense samples from the benchmark (see
+ * `lastFinalSttLagMs`). Purely a metrics guard — it gates no
+ * transcript, no turn and no audio.
+ */
+const MAX_PLAUSIBLE_STT_LAG_MS = 10_000;
+
+/**
  * One end-to-end latency trace per turn.
  *
  * The pipeline's stages run across three different async contexts
@@ -233,6 +252,23 @@ export class ConversationPipeline {
   /** Guards `tts-first-chunk` / `audio-queued` so they mark the FIRST occurrence of each per turn. */
   private markedTtsThisTurn = false;
   private markedAudioThisTurn = false;
+  /**
+   * ---------------- Metrics bookkeeping (read-only observers) ----------------
+   * Everything below is written from points that already exist in the
+   * flow and is read only by `recordTurn`. Nothing here feeds turn
+   * detection, barge-in, STT, LLM, TTS or transport decisions.
+   */
+  /** Wall clock at which the most recent non-empty FINAL transcript segment arrived. */
+  private lastFinalSegmentAtMs: number | undefined;
+  /**
+   * Recognition lag of that segment: `inboundStreamMs - segment.endedAtMs`.
+   * Both operands are positions on the same audio-stream clock (the
+   * barge-in check above already relies on that equivalence), so the
+   * difference is how far behind the audio the transcript arrived.
+   */
+  private lastFinalSttLagMs: number | undefined;
+  /** Wall clock at which this turn's FIRST audio frame reached the transport. */
+  private firstAudioQueuedAtMs: number | undefined;
 
   constructor(
     private readonly record: SessionRecord,
@@ -382,7 +418,7 @@ export class ConversationPipeline {
         }
 
         // eslint-disable-next-line no-console
-        console.log(`[STT:${sid}] Transcript received: "${turn.text.slice(0, 80)}${turn.text.length > 80 ? "..." : ""}" sttMs=${turn.sttMs}`);
+        console.log(`[STT:${sid}] Transcript received: "${turn.text.slice(0, 80)}${turn.text.length > 80 ? "..." : ""}" userSpeechMs=${turn.userSpeechMs} sttLagMs=${turn.sttLagMs ?? "n/a"}`);
 
         // t0 for this turn's latency trace: the turn detector has just
         // endpointed, i.e. the caller has stopped speaking as far as
@@ -397,7 +433,6 @@ export class ConversationPipeline {
         // display-only preview so it is not rendered twice.
         this.record.liveUserTranscript = "";
 
-        const turnStartedAt = Date.now();
         const result = await this.runThinkingAndSpeaking(turn.text, detected, loopSignal);
         timer.summarize();
         this.activeTimer = undefined;
@@ -406,12 +441,30 @@ export class ConversationPipeline {
         this.record.memory.recordAssistantTurn(result.assistantText);
         this.record.bargeIn.reset();
 
+        // TRUE end-to-end response latency: the caller stopped talking
+        // -> the first AI audio frame reached the transport. Both
+        // endpoints are wall-clock stamps captured where those events
+        // actually happen, so this is one measured span rather than a
+        // sum of stages. It is deliberately NOT extended to cover the
+        // rest of the reply — synthesis of later sentences, queue
+        // drain and playback all happen while the caller is already
+        // being spoken to, so none of it is latency they wait on.
+        // Absent when the turn produced no audio at all (e.g. an
+        // immediate barge-in), which reports as N/A rather than 0.
+        const totalMs =
+          turn.userSpeechEndedAtMs !== undefined && this.firstAudioQueuedAtMs !== undefined
+            ? this.firstAudioQueuedAtMs - turn.userSpeechEndedAtMs
+            : undefined;
+
         this.record.metrics.recordTurn({
           turnIndex: this.record.turnIndex++,
-          sttMs: turn.sttMs,
+          sttMs: turn.sttLagMs,
           llmMs: result.llmMs,
           ttsMs: result.ttsMs,
-          totalMs: turn.sttMs + (Date.now() - turnStartedAt),
+          totalMs,
+          llmGenerationMs: result.llmGenerationMs,
+          ttsSynthesisMs: result.ttsSynthesisMs,
+          userSpeechMs: turn.userSpeechMs,
           sttCostUsd: turn.sttCostUsd,
           llmCostUsd: result.llmCostUsd,
           ttsCostUsd: result.ttsCostUsd,
@@ -449,6 +502,7 @@ export class ConversationPipeline {
     this.activeTimer = timer;
     this.markedTtsThisTurn = false;
     this.markedAudioThisTurn = false;
+    this.firstAudioQueuedAtMs = undefined;
   }
 
   /** Records a stage on the in-flight turn's trace, if one is active. */
@@ -515,6 +569,22 @@ export class ConversationPipeline {
             this.record.liveUserTranscript = segment.text;
           }
 
+          // METRICS ONLY — pure observation, no control flow. Records
+          // when this final landed and how far behind the audio it
+          // was, so `recordTurn` can report real recognition latency
+          // instead of the caller's speaking duration.
+          if (segment.isFinal && segment.text.trim().length > 0) {
+            this.lastFinalSegmentAtMs = Date.now();
+            const lagMs = this.inboundStreamMs - segment.endedAtMs;
+            // Bounded: during the initial replay of audio buffered
+            // while the greeting played, the stream clock advances far
+            // faster than real time and a segment landing inside that
+            // burst yields a meaningless span.
+            if (Number.isFinite(lagMs) && lagMs >= 0 && lagMs <= MAX_PLAUSIBLE_STT_LAG_MS) {
+              this.lastFinalSttLagMs = lagMs;
+            }
+          }
+
           // The user has started talking while the assistant was
           // speaking — cut TTS immediately and resume listening,
           // then keep feeding this segment into the turn detector so
@@ -572,9 +642,24 @@ export class ConversationPipeline {
 );
         const audioSeconds = this.consumeSinceLastTurnAudioSeconds();
         const providerId = this.providers.stt.descriptor.id;
+
+        // Snapshot the metrics observers for THIS turn before the next
+        // one starts overwriting them. `userSpeechEndedAtMs` back-dates
+        // the last final's arrival by its own recognition lag, giving
+        // the wall clock at which the caller actually stopped talking —
+        // the t0 the end-to-end latency is measured from.
+        const sttLagMs = this.lastFinalSttLagMs;
+        const lastSegmentAtMs = this.lastFinalSegmentAtMs;
+        const userSpeechEndedAtMs =
+          lastSegmentAtMs !== undefined ? lastSegmentAtMs - (sttLagMs ?? 0) : undefined;
+        this.lastFinalSttLagMs = undefined;
+        this.lastFinalSegmentAtMs = undefined;
+
         finish({
           text: event.text,
-          sttMs: event.turnDurationMs,
+          userSpeechMs: event.turnDurationMs,
+          sttLagMs,
+          userSpeechEndedAtMs,
           sttCostUsd: estimateSttCost(providerId, audioSeconds),
         });
       });
@@ -646,9 +731,14 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
 
       if (text.length === 0) continue; // silence/noise chunk — keep listening
 
+      // A batch `transcribe()` exposes no per-segment stream
+      // timestamps, so recognition lag and end-of-speech are genuinely
+      // unmeasurable here — reported as absent rather than as 0.
       return {
         text,
-        sttMs: 0,
+        userSpeechMs: 0,
+        sttLagMs: undefined,
+        userSpeechEndedAtMs: undefined,
         sttCostUsd: estimateSttCost(providerId, estimateAudioSeconds(next.value)),
       };
     }
@@ -713,7 +803,11 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
     const speakingSignal = this.enterSpeaking();
     if (speakingSignal.aborted || loopSignal.aborted) return;
 
-    await this.synthesizeAndPlay(toSpokenText(text), speakingSignal);
+    const spoken = await this.synthesizeAndPlay(toSpokenText(text), speakingSignal);
+    // The greeting is a startup action, not a turn, so it is correctly
+    // absent from `turnLatencies` — but it still consumes real TTS
+    // characters, and that cost used to be dropped on the floor.
+    this.record.metrics.recordAuxiliaryCost({ textToSpeech: spoken.ttsCostUsd });
     await this.drainPlayback(speakingSignal);
   }
 
@@ -736,8 +830,17 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
     );
     this.markTiming("llm-request");
 
+    // Cost basis: the tokens ACTUALLY sent — system prompt and recent
+    // history included — not just the latest user utterance, which is
+    // what was previously counted and is why multi-turn calls were
+    // undercounted by roughly an order of magnitude.
+    const promptTokens = request.history.reduce(
+      (sum, turn) => sum + estimateTokenCount(turn.content),
+      0,
+    );
+
     if (this.providers.llm.generateCompletionStream) {
-      return this.runStreamingCompletion(request, thinkingSignal, loopSignal, userText, llmProviderId);
+      return this.runStreamingCompletion(request, thinkingSignal, loopSignal, promptTokens, llmProviderId);
     }
 
     return withGracefulRetry("LANGUAGE_MODEL", async () => {
@@ -801,7 +904,7 @@ if (this.record.state !== SessionState.SPEAKING) {
 }
 this.resetPlaybackAccounting();
 
-const { ttsMs, ttsCostUsd } =
+const { ttsMs, ttsCostUsd, firstChunkMs } =
   await this.synthesizeAndPlay(spokenContent, speakingSignal);
 
 // Streaming TTS only enqueues; hold SPEAKING until playback drains.
@@ -809,11 +912,18 @@ const { ttsMs, ttsCostUsd } =
 // simply find nothing left to wait for here.)
 await this.drainPlayback(speakingSignal);
 
+      // A non-streaming provider emits nothing until generation is
+      // complete, so time-to-first-token and full generation time are
+      // necessarily the same measurement. Neither is contaminated by
+      // TTS here: `generateCompletion` is a single await with no
+      // synthesis interleaved inside it.
       return {
         assistantText: spokenContent,
         llmMs,
-        llmCostUsd: estimateLlmCost(llmProviderId, estimateTokenCount(userText) + estimateTokenCount(spokenContent)),
-        ttsMs,
+        llmGenerationMs: llmMs,
+        llmCostUsd: estimateLlmCost(llmProviderId, promptTokens + estimateTokenCount(spokenContent)),
+        ttsMs: firstChunkMs,
+        ttsSynthesisMs: ttsMs,
         ttsCostUsd,
       };
     });
@@ -823,16 +933,30 @@ await this.drainPlayback(speakingSignal);
     request: CompletionRequest,
     thinkingSignal: AbortSignal,
     loopSignal: AbortSignal,
-    userText: string,
+    promptTokens: number,
     llmProviderId: string,
   ): Promise<ThinkingAndSpeakingResult> {
     const chunker = new SentenceChunker();
     let fullText = "";
     let finalText: string | undefined;
-    let llmMs = 0;
-    let ttsMs = 0;
+    let ttsSynthesisMs = 0;
     let ttsCostUsd = 0;
     let speakingSignal: AbortSignal | undefined;
+    // --- Metrics accumulators (no effect on generation or playback) ---
+    /** Request -> first token. The only LLM figure TTS cannot contaminate. */
+    let llmFirstTokenMs: number | undefined;
+    /** Time-to-first-audio of the FIRST utterance spoken this turn. */
+    let ttsFirstChunkMs: number | undefined;
+    /**
+     * Wall clock spent inside `synthesizeAndPlay` while the LLM stream
+     * was still open. The provider's generator is suspended at its
+     * `yield` for exactly this long, so its own `latencyMs` silently
+     * includes it — subtracting it back out is what makes
+     * `llmGenerationMs` a real generation measurement.
+     */
+    let ttsBlockedDuringStreamMs = 0;
+    /** Wall clock at which the LLM stream finished producing. */
+    let llmStreamEndedAtMs: number | undefined;
     // Set once contamination is detected mid-stream: stops speaking any
     // further sentences from this turn. See the contamination check
     // below for why this exists — the batch path's isContaminatedOutput
@@ -849,7 +973,10 @@ await this.drainPlayback(speakingSignal);
         if (thinkingSignal.aborted) break;
 
         if (event.type === "token") {
-          if (fullText.length === 0) this.markTiming("llm-first-token");
+          if (fullText.length === 0) {
+            llmFirstTokenMs ??= Date.now() - startedAt;
+            this.markTiming("llm-first-token");
+          }
           fullText += event.delta;
           const readySentences = chunker.push(event.delta);
           for (const sentence of readySentences) {
@@ -873,13 +1000,16 @@ await this.drainPlayback(speakingSignal);
 
             speakingSignal ??= this.enterSpeaking();
             if (speakingSignal.aborted) break;
+            const synthesisStartedAt = Date.now();
             const spoken = await this.synthesizeAndPlay(cleaned, speakingSignal);
-            ttsMs += spoken.ttsMs;
+            ttsBlockedDuringStreamMs += Date.now() - synthesisStartedAt;
+            ttsFirstChunkMs ??= spoken.firstChunkMs;
+            ttsSynthesisMs += spoken.ttsMs;
             ttsCostUsd += spoken.ttsCostUsd;
           }
         } else {
           finalText = event.turn.content;
-          llmMs = event.latencyMs;
+          llmStreamEndedAtMs = Date.now();
         }
 
         if (contaminated || speakingSignal?.aborted) break;
@@ -889,7 +1019,14 @@ await this.drainPlayback(speakingSignal);
       // was generated so far rather than losing the turn entirely.
     }
 
-    if (llmMs === 0) llmMs = Date.now() - startedAt;
+    // The stream may end without a final event (abort, dropped
+    // connection); fall back to "now" so generation time is still
+    // bounded by something real.
+    llmStreamEndedAtMs ??= Date.now();
+    const llmGenerationMs = Math.max(
+      0,
+      llmStreamEndedAtMs - startedAt - ttsBlockedDuringStreamMs,
+    );
 
     if (contaminated) {
       // eslint-disable-next-line no-console
@@ -901,19 +1038,22 @@ await this.drainPlayback(speakingSignal);
         speakingSignal ??= this.enterSpeaking();
         if (!speakingSignal.aborted) {
           const spoken = await this.synthesizeAndPlay(fallback, speakingSignal);
-          ttsMs += spoken.ttsMs;
+          ttsFirstChunkMs ??= spoken.firstChunkMs;
+          ttsSynthesisMs += spoken.ttsMs;
           ttsCostUsd += spoken.ttsCostUsd;
         }
       }
       // Stay in SPEAKING until the queued audio has actually played.
-      // `ttsMs`/`ttsCostUsd` are already fixed above, so the drain
-      // never leaks into the TTS latency metric.
+      // The TTS metrics are already fixed above, so the drain never
+      // leaks into them.
       if (speakingSignal) await this.drainPlayback(speakingSignal);
       return {
         assistantText: fallback,
-        llmMs,
-        llmCostUsd: estimateLlmCost(llmProviderId, estimateTokenCount(userText) + estimateTokenCount(fallback)),
-        ttsMs,
+        llmMs: llmFirstTokenMs,
+        llmGenerationMs,
+        llmCostUsd: estimateLlmCost(llmProviderId, promptTokens + estimateTokenCount(fallback)),
+        ttsMs: ttsFirstChunkMs,
+        ttsSynthesisMs,
         ttsCostUsd,
       };
     }
@@ -924,14 +1064,15 @@ await this.drainPlayback(speakingSignal);
       speakingSignal ??= this.enterSpeaking();
       if (!speakingSignal.aborted) {
         const spoken = await this.synthesizeAndPlay(remainder, speakingSignal);
-        ttsMs += spoken.ttsMs;
+        ttsFirstChunkMs ??= spoken.firstChunkMs;
+        ttsSynthesisMs += spoken.ttsMs;
         ttsCostUsd += spoken.ttsCostUsd;
       }
     }
 
     // Hold SPEAKING open for the audio still queued on the transport.
-    // Aborts instantly on barge-in; `ttsMs` was already accumulated
-    // from generation time only, so the metric is unaffected.
+    // Aborts instantly on barge-in; the TTS metrics were accumulated
+    // from generation time only, so they are unaffected.
     if (speakingSignal) await this.drainPlayback(speakingSignal);
 
     const assistantText = toSpokenText(finalText ?? fullText);
@@ -944,9 +1085,11 @@ await this.drainPlayback(speakingSignal);
 
     return {
       assistantText,
-      llmMs,
-      llmCostUsd: estimateLlmCost(llmProviderId, estimateTokenCount(userText) + estimateTokenCount(assistantText)),
-      ttsMs,
+      llmMs: llmFirstTokenMs,
+      llmGenerationMs,
+      llmCostUsd: estimateLlmCost(llmProviderId, promptTokens + estimateTokenCount(assistantText)),
+      ttsMs: ttsFirstChunkMs,
+      ttsSynthesisMs,
       ttsCostUsd,
     };
   }
@@ -1010,7 +1153,10 @@ await this.drainPlayback(speakingSignal);
     await abortableSleep(remainingMs, signal);
   }
 
-  private async synthesizeAndPlay(text: string, speakingSignal: AbortSignal): Promise<{ ttsMs: number; ttsCostUsd: number }> {
+  private async synthesizeAndPlay(
+    text: string,
+    speakingSignal: AbortSignal,
+  ): Promise<{ ttsMs: number; ttsCostUsd: number; firstChunkMs?: number }> {
     const sid = this.record.id;
     if (speakingSignal.aborted || text.trim().length === 0) {
       // eslint-disable-next-line no-console
@@ -1029,12 +1175,19 @@ await this.drainPlayback(speakingSignal);
 
     if (this.providers.tts.synthesizeStream) {
       let chunkCount = 0;
+      // Synthesis time-to-first-chunk for THIS utterance. Independent
+      // of `markedTtsThisTurn`, which fires once per turn and so
+      // cannot measure the second and later sentences.
+      let firstChunkMs: number | undefined;
       this.transportBackpressureMs = 0;
       try {
        for await (const chunk of this.providers.tts.synthesizeStream(task, speakingSignal)) {
-   if (chunkCount === 0 && !this.markedTtsThisTurn) {
-    this.markedTtsThisTurn = true;
-    this.markTiming("tts-first-chunk");
+   if (chunkCount === 0) {
+    firstChunkMs = Date.now() - startedAt;
+    if (!this.markedTtsThisTurn) {
+      this.markedTtsThisTurn = true;
+      this.markTiming("tts-first-chunk");
+    }
 }
   if (speakingSignal.aborted) {
     console.log(`[TTS:${sid}] Barge-in detected, interrupting playback`);
@@ -1059,7 +1212,11 @@ await this.drainPlayback(speakingSignal);
       console.log(
         `[TTS:${sid}] streaming TTS done: ${chunkCount} chunks, ${ttsMs}ms (paced ${this.transportBackpressureMs}ms on transport backpressure)`,
       );
-      return { ttsMs, ttsCostUsd: estimateTtsCost(ttsProviderId, text.length) };
+      return {
+        ttsMs,
+        ttsCostUsd: estimateTtsCost(ttsProviderId, text.length),
+        ...(firstChunkMs !== undefined ? { firstChunkMs } : {}),
+      };
     }
 
     return withGracefulRetry("TEXT_TO_SPEECH", async () => {
@@ -1081,7 +1238,13 @@ await this.drainPlayback(speakingSignal);
         await this.record.mediaStream?.interruptPlayback();
       }
 
-      return { ttsMs: ttsCallMs, ttsCostUsd: estimateTtsCost(ttsProviderId, text.length) };
+      // Batch synthesis returns the whole utterance in one piece, so
+      // first-audio and full-synthesis are the same measurement.
+      return {
+        ttsMs: ttsCallMs,
+        ttsCostUsd: estimateTtsCost(ttsProviderId, text.length),
+        firstChunkMs: ttsCallMs,
+      };
     });
   }
 
@@ -1155,6 +1318,10 @@ await this.drainPlayback(speakingSignal);
         this.markedAudioThisTurn = true;
         // First frame handed to the transport. The caller hears it one
         // bridge pre-roll later (~100ms on the Plivo/Vobiz pumps).
+        // This is the t1 of the end-to-end latency metric — the same
+        // instant the `audio-queued` trace has always logged, now also
+        // retained as a number instead of only reaching the console.
+        this.firstAudioQueuedAtMs = Date.now();
         this.markTiming("audio-queued");
       }
       this.outboundQueuedMs += estimateAudioSeconds(audio) * 1000;

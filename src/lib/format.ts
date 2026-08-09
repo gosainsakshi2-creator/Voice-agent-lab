@@ -56,3 +56,28 @@ export function average(values: readonly number[]): number {
   if (values.length === 0) return 0;
   return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
+
+/** Placeholder for a metric that genuinely has no measurement behind it. */
+export const NOT_MEASURED = "N/A";
+
+export function formatOptionalMs(milliseconds: number | undefined): string {
+  return milliseconds === undefined ? NOT_MEASURED : formatMs(milliseconds);
+}
+
+export function formatOptionalDurationSeconds(totalSeconds: number | undefined): string {
+  return totalSeconds === undefined ? NOT_MEASURED : formatDurationSeconds(totalSeconds);
+}
+
+/**
+ * Mean of the samples that were actually measured, or `undefined` when
+ * none were.
+ *
+ * Unmeasured turns are SKIPPED rather than counted as zero: a turn
+ * that produced no audio has no latency, and averaging a 0 into the
+ * result would quietly drag every displayed figure down.
+ */
+export function averageDefined(values: readonly (number | undefined)[]): number | undefined {
+  const measured = values.filter((value): value is number => value !== undefined);
+  if (measured.length === 0) return undefined;
+  return measured.reduce((sum, value) => sum + value, 0) / measured.length;
+}

@@ -194,6 +194,16 @@ export class DefaultVoiceSessionManager implements VoiceSessionManager, Pipeline
   }
 
   private beginConversation(record: SessionRecord): void {
+    // Benchmark clock origin. This is the single point every
+    // telephony path converges on once the callee has actually picked
+    // up — Plivo and Vobiz both arrive here via `confirmCallAnswered`
+    // from their media-stream "start" event, and a provider that can
+    // hand back a live stream from startCall() arrives here directly.
+    // Anchoring here (rather than at createSession, where the metrics
+    // collector is constructed) is what keeps dial and ring time out
+    // of Call Duration, identically for both providers.
+    record.metrics.markCallAnswered();
+
     // eslint-disable-next-line no-console
     console.log(
       `[session-mgr:${record.id}] beginConversation() — resolving providers: telephony=${record.providerStack.telephony.id} stt=${record.providerStack.speechToText.id} llm=${record.providerStack.languageModel.id} tts=${record.providerStack.textToSpeech.id}`,

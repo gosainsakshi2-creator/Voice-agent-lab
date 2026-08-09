@@ -2,7 +2,12 @@ import { Cable, Captions, Cpu, Volume2 } from "lucide-react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { MetricRow } from "@/components/dashboard/metric-row";
-import { average, formatCurrency, formatDurationSeconds, formatMs } from "@/lib/format";
+import {
+  averageDefined,
+  formatCurrency,
+  formatOptionalDurationSeconds,
+  formatOptionalMs,
+} from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { BenchmarkMetrics } from "@/types/benchmark.types";
 import type { ProviderDescriptor, ProviderHealthStatus } from "@/types/provider.types";
@@ -18,7 +23,8 @@ interface InsightsPanelProps {
   readonly stackEntries: readonly StackEntry[];
   readonly health: readonly ProviderHealthStatus[];
   readonly metrics: BenchmarkMetrics;
-  readonly liveCallDurationSeconds: number;
+  /** Locally-ticked connected duration, or `undefined` before the call is answered. */
+  readonly liveCallDurationSeconds: number | undefined;
   readonly isCallActive: boolean;
 }
 
@@ -36,10 +42,13 @@ export function InsightsPanel({
   liveCallDurationSeconds,
   isCallActive,
 }: InsightsPanelProps) {
-  const sttAvg = average(metrics.turnLatencies.map((t) => t.stt.milliseconds));
-  const llmAvg = average(metrics.turnLatencies.map((t) => t.llm.milliseconds));
-  const ttsAvg = average(metrics.turnLatencies.map((t) => t.tts.milliseconds));
-  const totalAvg = average(metrics.turnLatencies.map((t) => t.total.milliseconds));
+  const sttAvg = averageDefined(metrics.turnLatencies.map((t) => t.stt?.milliseconds));
+  const llmAvg = averageDefined(metrics.turnLatencies.map((t) => t.llm?.milliseconds));
+  const ttsAvg = averageDefined(metrics.turnLatencies.map((t) => t.tts?.milliseconds));
+  const totalAvg = averageDefined(metrics.turnLatencies.map((t) => t.total?.milliseconds));
+  // While connected, tick locally off the server's answered-anchored
+  // clock; once the call is over the server's final figure is
+  // authoritative. Both are `undefined` until the call is answered.
   const durationSeconds = isCallActive ? liveCallDurationSeconds : metrics.callDuration.seconds;
 
   return (
@@ -111,17 +120,26 @@ export function InsightsPanel({
         </CardHeader>
         <CardContent className="flex flex-col gap-1">
           <div className="grid grid-cols-2 gap-x-4 gap-y-0 border-b border-border pb-1">
-            <MetricRow label="STT Latency" value={formatMs(sttAvg)} hint="avg" />
-            <MetricRow label="LLM Latency" value={formatMs(llmAvg)} hint="avg" />
-            <MetricRow label="TTS Latency" value={formatMs(ttsAvg)} hint="avg" />
-            <MetricRow label="Total Latency" value={formatMs(totalAvg)} hint="avg" />
+            <MetricRow label="STT Recognition" value={formatOptionalMs(sttAvg)} hint="avg" />
+            <MetricRow label="LLM First Token" value={formatOptionalMs(llmAvg)} hint="avg" />
+            <MetricRow label="TTS First Audio" value={formatOptionalMs(ttsAvg)} hint="avg" />
+            <MetricRow label="Response Latency" value={formatOptionalMs(totalAvg)} hint="avg" />
           </div>
+          <p className="pt-1 text-[11px] leading-snug text-subtle-foreground">
+            Response = caller stops speaking → first AI audio on the wire. Measured
+            end-to-end, not the sum of the stages above.
+          </p>
           <div className="grid grid-cols-2 gap-x-4 pt-1">
             <MetricRow
               label="Estimated Cost"
               value={formatCurrency(metrics.estimatedCost.amount, metrics.estimatedCost.currency)}
+              hint="estimate"
             />
-            <MetricRow label="Call Duration" value={formatDurationSeconds(durationSeconds)} />
+            <MetricRow
+              label="Call Duration"
+              value={formatOptionalDurationSeconds(durationSeconds)}
+              hint="connected"
+            />
           </div>
         </CardContent>
       </Card>

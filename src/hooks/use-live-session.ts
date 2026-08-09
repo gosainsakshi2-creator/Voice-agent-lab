@@ -30,8 +30,10 @@ const EMPTY_METRICS_FOR = (sessionId: string): BenchmarkMetrics => ({
     textToSpeech: { category: ProviderCategory.TEXT_TO_SPEECH, id: "" },
   },
   timestamp: new Date(),
-  callDuration: { seconds: 0, startedAt: new Date() },
-  estimatedCost: { amount: 0, currency: "USD" },
+  // No `seconds` and no turns: nothing has been measured yet, and the
+  // panel renders that as N/A rather than as a zero.
+  callDuration: { createdAt: new Date() },
+  estimatedCost: { amount: 0, currency: "USD", isEstimate: true },
   turnLatencies: [],
 });
 
@@ -45,7 +47,8 @@ export interface ProviderCatalog {
 export interface LiveSession {
   readonly sessionState: SessionState;
   readonly transcript: readonly ConversationTurn[];
-  readonly callDurationSeconds: number;
+  /** Connected duration, or `undefined` until the call is answered. */
+  readonly callDurationSeconds: number | undefined;
   readonly isCallActive: boolean;
   readonly startCall: () => void;
   readonly endCall: () => void;
@@ -76,12 +79,20 @@ export function useLiveSession(
   const [metrics, setMetrics] = useState<BenchmarkMetrics>(EMPTY_METRICS_FOR(""));
   const [health, setHealth] = useState<readonly ProviderHealthStatus[]>([]);
   const [providers, setProviders] = useState<ProviderCatalog | undefined>(undefined);
-  const [callDurationSeconds, setCallDurationSeconds] = useState(0);
+  const [callDurationSeconds, setCallDurationSeconds] = useState<number | undefined>(undefined);
   const [errorMessage, setErrorMessage] = useState<string | undefined>(undefined);
 
   const sessionIdRef = useRef<SessionId | undefined>(undefined);
   const eventSourceRef = useRef<EventSource | undefined>(undefined);
   const durationInterval = useRef<ReturnType<typeof setInterval> | null>(null);
+  /**
+   * Browser-clock instant corresponding to the server's answer
+   * timestamp, re-derived from the server's own elapsed seconds on
+   * every snapshot. Anchoring this way keeps the smooth local tick
+   * without ever trusting the two clocks to agree. `undefined` while
+   * the call is unanswered — there is nothing to count yet.
+   */
+  const durationAnchorRef = useRef<number | undefined>(undefined);
 
   // Load the provider catalog + baseline health once on mount so the
   // ConfigPanel can offer real registered providers instead of mocks.
@@ -138,17 +149,35 @@ export function useLiveSession(
         setSessionState(data.session.state);
         setTranscript(data.transcript);
         setMetrics(data.metrics);
+
+        // Call duration is owned by the server, which anchors it to the
+        // telephony-confirmed answer. Re-anchor the local ticker to it
+        // on every frame; before the call is answered there is no
+        // measurement and the panel shows N/A.
+        const seconds = data.metrics.callDuration?.seconds;
+        if (seconds === undefined) {
+          durationAnchorRef.current = undefined;
+          setCallDurationSeconds(undefined);
+        } else {
+          durationAnchorRef.current = Date.now() - seconds * 1000;
+          setCallDurationSeconds(seconds);
+        }
+        // The far end can hang up without the dashboard initiating it;
+        // once the server has stamped an end there is nothing left to tick.
+        if (data.metrics.callDuration?.endedAt !== undefined) stopDurationTimer();
+
         if (data.session.lastError) setErrorMessage(data.session.lastError.message);
       } catch {
         // malformed/heartbeat frame — ignore
       }
     };
-  }, [closeStream]);
+  }, [closeStream, stopDurationTimer]);
 
   const startCall = useCallback(() => {
     setErrorMessage(undefined);
     setTranscript([]);
-    setCallDurationSeconds(0);
+    setCallDurationSeconds(undefined);
+    durationAnchorRef.current = undefined;
 
     void (async () => {
       try {
@@ -168,8 +197,12 @@ export function useLiveSession(
         setSessionState(session.state);
         subscribeToEvents(session.id);
 
+        // Ticks off the server-derived anchor rather than accumulating
+        // +1 per interval, so it neither drifts nor starts counting
+        // during warm-up, dialling and ringing.
         durationInterval.current = setInterval(() => {
-          setCallDurationSeconds((s) => s + 1);
+          const anchor = durationAnchorRef.current;
+          setCallDurationSeconds(anchor === undefined ? undefined : (Date.now() - anchor) / 1000);
         }, 1000);
 
         await postJson(`/api/sessions/${session.id}/warmup`);

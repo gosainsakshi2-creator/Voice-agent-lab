@@ -26,7 +26,7 @@
 
 import type { TranscriptSegment } from "../../types/provider.types";
 
-const DEFAULT_SILENCE_TIMEOUT_MS = 650;
+const DEFAULT_SILENCE_TIMEOUT_MS = 1100;
 const MIN_SILENCE_TIMEOUT_MS = 400;
 const MAX_SILENCE_TIMEOUT_MS = 1600;
 /** How strongly a single observed gap nudges the running estimate DOWN (0..1). */
@@ -53,7 +53,7 @@ const MIN_OBSERVABLE_PAUSE_MS = 300;
  */
 const PAUSE_SAFETY_MARGIN_MS = 250;
 /** Extra wait granted when the pending text is clearly an unfinished thought. */
-const CONTINUATION_GRACE_MS = 550;
+const CONTINUATION_GRACE_MS = 800;
 /**
  * Hard cap on consecutive grace windows. Without it, a caller who
  * trails off on "and..." and then goes quiet would never get a reply.

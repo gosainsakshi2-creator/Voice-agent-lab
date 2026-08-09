@@ -1252,10 +1252,39 @@ await this.drainPlayback(speakingSignal);
       );
       await this.playAudioChunk(audio);
 
+      // ── Do NOT wait out this clip's playback here ──────────────────
+      //
+      // This branch runs for every TTS provider that exposes only
+      // `synthesize()` — Cartesia, Sarvam and Smallest AI. ElevenLabs
+      // is the sole provider with `synthesizeStream`, so it takes the
+      // streaming branch above, which enqueues and returns immediately.
+      // That difference was the entire dead-air problem:
+      //
+      //   `runStreamingCompletion` awaits `synthesizeAndPlay` once per
+      //   sentence chunk. `playAudioChunk` has already handed the whole
+      //   clip to the transport and parked on the bridge's outbound
+      //   backpressure until the queue drained back to its low-water
+      //   mark (~0.8s still buffered). Sleeping the FULL clip duration
+      //   on top of that waited for the same audio a second time, so
+      //   the pump ran dry — and only then did the next sentence's
+      //   synthesis round trip start, with nothing queued to cover it.
+      //   Measured silence per chunk boundary: (clipDuration - 0.8s) +
+      //   the next request's latency, i.e. the reported 1-3s pauses,
+      //   landing on exactly the `.`/`,` boundaries the chunker cuts at.
+      //
+      // Dropping the sleep makes this branch behave like the streaming
+      // one: the next sentence is synthesized while the current one is
+      // still playing out of the transport queue, so the queue stays
+      // fed across the boundary. Nothing is lost — SPEAKING is still
+      // held open for queued-but-unplayed audio by `drainPlayback`,
+      // which accounts for it from `outboundQueuedMs` (incremented in
+      // `playAudioChunk` whether or not a transport is attached) and
+      // aborts instantly on barge-in.
       const playbackMs = estimateAudioSeconds(audio) * 1000;
       // eslint-disable-next-line no-console
-      console.log(`[PLAYBACK:${sid}] Playback started: estimated ${Math.round(playbackMs)}ms`);
-      await abortableSleep(playbackMs, speakingSignal);
+      console.log(
+        `[PLAYBACK:${sid}] Queued ${Math.round(playbackMs)}ms of audio (playback paced by transport, drained at end of utterance)`,
+      );
       if (speakingSignal.aborted) {
         await this.record.mediaStream?.interruptPlayback();
       }

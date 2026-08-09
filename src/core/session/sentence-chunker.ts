@@ -31,7 +31,28 @@ const SENTENCE_BOUNDARY = /([.!?।]+)(\s+|$)/u;
 /** Clause-level boundary — only used to cut the first chunk sooner. */
 const CLAUSE_BOUNDARY = /([,;:—–]|।)(\s+)/u;
 
-const MIN_CHUNK_LENGTH = 12;
+/**
+ * Minimum length of a NON-first chunk.
+ *
+ * 12 characters is two or three words, and a chunk is one whole TTS
+ * request. For a provider with no streaming endpoint (Cartesia, Sarvam,
+ * Smallest AI all expose only `synthesize()`), a two-word request buys
+ * ~0.5s of audio for a full round trip of request latency — not enough
+ * to keep the transport's outbound queue fed across the boundary, so
+ * the caller hears a gap after every short sentence even though the
+ * pipeline is already synthesizing the next one.
+ *
+ * 60 characters is a natural clause-to-sentence span (~10 words) and
+ * merges runs of very short sentences ("Yes. No problem.") into one
+ * continuous request. Sentence boundaries are still the only cut
+ * points, so nothing is spliced mid-phrase and pronunciation is
+ * unchanged; `MAX_BUFFER_BEFORE_FORCED_CUT` still bounds the wait.
+ *
+ * Time-to-first-audio is untouched — the first chunk uses
+ * `MIN_FIRST_CHUNK_LENGTH` / `MIN_FIRST_CLAUSE_LENGTH` below, which
+ * are deliberately left as they were.
+ */
+const MIN_CHUNK_LENGTH = 60;
 /** The first chunk may be shorter: getting audio started beats chunk size. */
 const MIN_FIRST_CHUNK_LENGTH = 8;
 /** Only cut the first chunk at a clause boundary once it reads as a real phrase. */

@@ -29,7 +29,20 @@ interface ElevenLabsEnvConfig {
 function loadEnvConfig(): ElevenLabsEnvConfig {
   return {
     apiKey: requireEnv("ELEVENLABS_API_KEY", TEXT_TO_SPEECH_PROVIDER_IDS.ELEVENLABS),
-    modelId: optionalEnv("ELEVENLABS_MODEL_ID", "eleven_multilingual_v2"),
+    // `eleven_flash_v2_5` — the low-latency model, and the single
+    // largest cross-cutting latency win in the stack. Measured against
+    // this account, same voice, same text, same pcm_8000 output, time
+    // to FIRST audio byte:
+    //   eleven_multilingual_v2  1467ms
+    //   eleven_turbo_v2_5        445ms
+    //   eleven_flash_v2_5        412ms
+    // That ~1.05s is paid on the greeting AND on every single reply,
+    // for every LLM, so it dominates everything downstream of the
+    // model. Flash covers the same 32 languages (English, Hindi and
+    // the Hinglish mix included). Set ELEVENLABS_MODEL_ID to override
+    // if a specific call needs multilingual_v2's extra fidelity more
+    // than it needs a second of latency.
+    modelId: optionalEnv("ELEVENLABS_MODEL_ID", "eleven_flash_v2_5"),
     defaultVoiceId: requireEnv("ELEVENLABS_DEFAULT_VOICE_ID", TEXT_TO_SPEECH_PROVIDER_IDS.ELEVENLABS),
     // Default to 8 kHz — the native rate of both telephony transports
     // (Plivo and Vobiz are fixed at 8 kHz G.711 mu-law). Requesting

@@ -42,7 +42,7 @@ import type { TelephonyProvider } from "../../interfaces/providers/telephony-pro
 
 import type { SessionRecord } from "./session-record";
 import { detectLanguage, type LanguageDetectionResult } from "./language-detector";
-import { languageHintFor } from "./system-prompt";
+import { languageHintFor, openingLineFor } from "./system-prompt";
 import { SentenceChunker } from "./sentence-chunker";
 import { combineSignals, abortableSleep } from "./abort-utils";
 import { estimateAudioSeconds, withByteCounter } from "./audio-utils";
@@ -178,6 +178,46 @@ const MAX_GREETING_CHARS = 200;
  */
 const PLAYBACK_PREROLL_ALLOWANCE_MS = 150;
 
+/**
+ * One end-to-end latency trace per turn.
+ *
+ * The pipeline's stages run across three different async contexts
+ * (the STT listener, the LLM stream, the TTS stream), so "where did
+ * the time go" was previously only answerable by diffing wall-clock
+ * timestamps across unrelated log lines. This emits every stage of a
+ * single turn on a shared clock instead:
+ *
+ *   greeting:     call-connected -> tts-first-chunk -> audio-queued
+ *   normal turn:  turn-detected -> llm-request -> llm-first-token
+ *                 -> tts-first-chunk -> audio-queued
+ *
+ * `audio-queued` is the moment the first frame reaches the transport;
+ * the caller hears it one bridge pre-roll (~100ms) later.
+ */
+class TurnTimer {
+  private readonly startedAt = Date.now();
+  private readonly marks: string[] = [];
+
+  constructor(
+    private readonly sessionId: string,
+    private readonly label: string,
+  ) {}
+
+  mark(stage: string): void {
+    const at = Date.now() - this.startedAt;
+    this.marks.push(`${stage}=${at}ms`);
+    // eslint-disable-next-line no-console
+    console.log(`[TIMING:${this.sessionId}] ${this.label} ${stage} +${at}ms`);
+  }
+
+  summarize(): void {
+    // eslint-disable-next-line no-console
+    console.log(
+      `[TIMING:${this.sessionId}] ${this.label} SUMMARY total=${Date.now() - this.startedAt}ms ${this.marks.join(" ")}`,
+    );
+  }
+}
+
 export class ConversationPipeline {
   private readonly usesStreamingStt: boolean;
   private sinceLastTurnBytes = 0;
@@ -188,6 +228,11 @@ export class ConversationPipeline {
   private inboundStreamMs = 0;
   /** Value of `inboundStreamMs` when the current SPEAKING phase began. */
   private speakingStartedAtStreamMs = 0;
+  /** Latency trace for the turn currently in flight, if any. */
+  private activeTimer: TurnTimer | undefined;
+  /** Guards `tts-first-chunk` / `audio-queued` so they mark the FIRST occurrence of each per turn. */
+  private markedTtsThisTurn = false;
+  private markedAudioThisTurn = false;
 
   constructor(
     private readonly record: SessionRecord,
@@ -239,37 +284,42 @@ export class ConversationPipeline {
     // the caller said during the greeting still becomes their first
     // turn — it just can no longer abort the greeting.
     if (!loopSignal.aborted) {
+      // --- The greeting is spoken, not generated ---
+      //
+      // The system prompt mandates ONE fixed opening line per language
+      // ("Use one opening line only ... then stop and let them
+      // answer"), so an LLM round trip here only regenerates a line
+      // that is already decided — at a measured cost of ~2.0s on
+      // GPT-5.1 and ~5.7s on Gemma 4 before a single audio frame can
+      // exist. Speaking `openingLineFor` directly removes the entire
+      // LLM leg from call-connect, which is the only way time-to-first-
+      // audio can reach the ~1s target: even the fastest configured
+      // model's time-to-first-token exceeds that budget on its own.
+      //
+      // Everything downstream is unchanged — the greeting is still
+      // recorded in memory as the assistant's first turn, so the
+      // model has full context from the caller's very first reply.
+      // Benchmark metrics are unaffected: `metrics.recordTurn` was
+      // never called for the greeting (it is a startup action, not a
+      // turn), and every LLM-served turn is still measured.
+      const timer = new TurnTimer(sid, "GREETING");
       // eslint-disable-next-line no-console
-      console.log(`[PIPELINE:${sid}] Conversation started — generating greeting, state=${this.record.state}`);
+      console.log(`[PIPELINE:${sid}] Conversation started — speaking fixed greeting, state=${this.record.state}`);
       try {
-        // Inject a synthetic user turn so the LLM sees an explicit
-        // instruction to greet the caller. Phrased as natural speech
-        // (not a bracketed meta-instruction) because models like
-        // Gemma that fold system prompts into the user turn can
-        // misinterpret bracket syntax and echo the prompt back.
-        this.record.memory.recordUserTurn(
-          "The Caller has just joined the call. Please greet them in a friendly and natural way.",
-          this.record.memory.currentLanguage,
-        );
+        const greetingText = openingLineFor(this.record.memory.currentLanguage, this.record.voiceGender);
+        timer.mark("greeting-text-ready");
 
-        const detected = detectLanguage("", this.record.memory.currentLanguage);
-        const greetingStartedAt = Date.now();
-console.log("[GREETING] Started");
-        const greeting = await this.runThinkingAndSpeaking("", detected, loopSignal);
-        console.log(
-  "[GREETING] Finished in",
-  Date.now() - greetingStartedAt,
-  "ms",
-);
+        this.beginTurnTiming(timer);
+        await this.speakFixedUtterance(greetingText, loopSignal);
+        this.activeTimer = undefined;
+        timer.summarize();
+
         // eslint-disable-next-line no-console
-        console.log(
-          `[PIPELINE:${sid}] Greeting succeeded: text="${greeting.assistantText.slice(0, 80)}${greeting.assistantText.length > 80 ? "..." : ""}" llmMs=${greeting.llmMs} ttsMs=${greeting.ttsMs} state=${this.record.state}`,
-        );
-        if (greeting.assistantText.length > 0) {
-          this.record.memory.recordAssistantTurn(greeting.assistantText);
-          this.record.bargeIn.reset();
-        }
+        console.log(`[PIPELINE:${sid}] Greeting spoken: text="${greetingText}" state=${this.record.state}`);
+        this.record.memory.recordAssistantTurn(greetingText);
+        this.record.bargeIn.reset();
       } catch (error) {
+        this.activeTimer = undefined;
         if (!(error instanceof RecoverableTurnError)) {
           // eslint-disable-next-line no-console
           console.error(
@@ -334,11 +384,20 @@ console.log("[GREETING] Started");
         // eslint-disable-next-line no-console
         console.log(`[STT:${sid}] Transcript received: "${turn.text.slice(0, 80)}${turn.text.length > 80 ? "..." : ""}" sttMs=${turn.sttMs}`);
 
+        // t0 for this turn's latency trace: the turn detector has just
+        // endpointed, i.e. the caller has stopped speaking as far as
+        // the pipeline is concerned. Everything after this is ours.
+        const timer = new TurnTimer(sid, `TURN#${this.record.turnIndex}`);
+        timer.mark("turn-detected");
+        this.beginTurnTiming(timer);
+
         const detected = detectLanguage(turn.text, this.record.memory.currentLanguage);
         this.record.memory.recordUserTurn(turn.text, detected.language);
 
         const turnStartedAt = Date.now();
         const result = await this.runThinkingAndSpeaking(turn.text, detected, loopSignal);
+        timer.summarize();
+        this.activeTimer = undefined;
         // eslint-disable-next-line no-console
         console.log(`[PIPELINE:${sid}] Turn complete: assistant="${result.assistantText.slice(0, 80)}${result.assistantText.length > 80 ? "..." : ""}" llmMs=${result.llmMs} ttsMs=${result.ttsMs}`);
         this.record.memory.recordAssistantTurn(result.assistantText);
@@ -380,6 +439,18 @@ console.log("[GREETING] Started");
 
     // eslint-disable-next-line no-console
     console.log(`[PIPELINE:${sid}] run() exiting — state=${this.record.state} aborted=${loopSignal.aborted}`);
+  }
+
+  /** Installs `timer` as the trace for the turn now starting. */
+  private beginTurnTiming(timer: TurnTimer): void {
+    this.activeTimer = timer;
+    this.markedTtsThisTurn = false;
+    this.markedAudioThisTurn = false;
+  }
+
+  /** Records a stage on the in-flight turn's trace, if one is active. */
+  private markTiming(stage: string): void {
+    this.activeTimer?.mark(stage);
   }
 
   /** Externally-triggered barge-in (e.g. from a future real-time transport, or a test harness). */
@@ -613,6 +684,26 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
   return turns;
 }
 
+  /**
+   * Speaks a known utterance with no LLM call in the path — used for
+   * the greeting, whose text the system prompt already fixes.
+   *
+   * Goes through the same THINKING -> SPEAKING -> drain sequence as a
+   * generated reply so state transitions, barge-in and playback
+   * accounting behave identically; only the token-generation stage is
+   * absent. THINKING is entered because the state machine has no
+   * LISTENING -> SPEAKING edge, and skipping it would also hide the
+   * greeting from the dashboard's state stepper.
+   */
+  private async speakFixedUtterance(text: string, loopSignal: AbortSignal): Promise<void> {
+    this.host.transition(this.record, SessionState.THINKING, "preparing the greeting");
+    const speakingSignal = this.enterSpeaking();
+    if (speakingSignal.aborted || loopSignal.aborted) return;
+
+    await this.synthesizeAndPlay(toSpokenText(text), speakingSignal);
+    await this.drainPlayback(speakingSignal);
+  }
+
   private async runThinkingAndSpeaking(
     userText: string,
     detected: LanguageDetectionResult,
@@ -620,10 +711,6 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
   ): Promise<ThinkingAndSpeakingResult> {
     const sid = this.record.id;
     const isGreeting = userText === "";
-    // eslint-disable-next-line no-console
-  console.log(
-  `[LLM START] ${Date.now()} state=${this.record.state} user="${userText.slice(0, 60)}"`
-);
 
     this.host.transition(this.record, SessionState.THINKING, "generating a reply");
     const thinkingSignal = combineSignals([this.record.bargeIn.beginThinking(), loopSignal]);
@@ -634,6 +721,7 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
     console.log(
       `[LLM:${sid}] Sending to ${llmProviderId}: historyLength=${request.history.length} roles=[${request.history.map((t) => t.role).join(",")}] streaming=${typeof this.providers.llm.generateCompletionStream === "function"}`,
     );
+    this.markTiming("llm-request");
 
     if (this.providers.llm.generateCompletionStream) {
       return this.runStreamingCompletion(request, thinkingSignal, loopSignal, userText, llmProviderId);
@@ -748,6 +836,7 @@ await this.drainPlayback(speakingSignal);
         if (thinkingSignal.aborted) break;
 
         if (event.type === "token") {
+          if (fullText.length === 0) this.markTiming("llm-first-token");
           fullText += event.delta;
           const readySentences = chunker.push(event.delta);
           for (const sentence of readySentences) {
@@ -929,8 +1018,9 @@ await this.drainPlayback(speakingSignal);
       let chunkCount = 0;
       try {
        for await (const chunk of this.providers.tts.synthesizeStream(task, speakingSignal)) {
-   if (chunkCount === 0) {
-    console.log(`[FIRST TTS CHUNK] ${Date.now()}`);
+   if (chunkCount === 0 && !this.markedTtsThisTurn) {
+    this.markedTtsThisTurn = true;
+    this.markTiming("tts-first-chunk");
 }
   if (speakingSignal.aborted) {
     console.log(`[TTS:${sid}] Barge-in detected, interrupting playback`);
@@ -1036,6 +1126,12 @@ await this.drainPlayback(speakingSignal);
     if (audio.data.byteLength > 0) {
       if (this.outboundPlaybackStartedAt === 0) {
         this.outboundPlaybackStartedAt = Date.now();
+      }
+      if (!this.markedAudioThisTurn) {
+        this.markedAudioThisTurn = true;
+        // First frame handed to the transport. The caller hears it one
+        // bridge pre-roll later (~100ms on the Plivo/Vobiz pumps).
+        this.markTiming("audio-queued");
       }
       this.outboundQueuedMs += estimateAudioSeconds(audio) * 1000;
     }

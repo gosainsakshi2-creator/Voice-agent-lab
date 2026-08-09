@@ -53,6 +53,8 @@ export class SessionRecord {
 
   readonly memory: ConversationMemory;
   readonly metrics: SessionMetricsCollector;
+  /** Grammatical gender of the selected TTS voice — also drives the deterministic Hindi greeting. */
+  readonly voiceGender: "male" | "female";
   readonly bargeIn = new BargeInController();
   readonly turnDetector = new AdaptiveTurnDetector();
 
@@ -63,7 +65,8 @@ export class SessionRecord {
     readonly providerStack: ProviderStackSelection,
   ) {
     const providerId = request.providerStack.textToSpeech.id;
-    const voiceGender =TTS_VOICE_METADATA.get(request.providerStack.textToSpeech.id) ?? "female";
+    const voiceGender = TTS_VOICE_METADATA.get(request.providerStack.textToSpeech.id) ?? "female";
+    this.voiceGender = voiceGender;
 
     this.memory = new ConversationMemory(
     request.language,

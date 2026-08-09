@@ -24,6 +24,36 @@ const LANGUAGE_INSTRUCTION: Readonly<Record<SupportedLanguage, string>> = {
     "The caller is naturally mixing Hindi and English. Reply naturally in Hinglish, the way people actually speak.",
 };
 
+const ENGLISH_OPENING_LINE = "Hello! I'm calling from FlexiFunnels. Is this a good time to talk?";
+
+function hindiOpeningLine(isFemale: boolean): string {
+  return isFemale
+    ? "हैलो! मैं FlexiFunnels की तरफ़ से बात कर रही हूँ। क्या अभी बात करने के लिए दो मिनट हैं?"
+    : "हैलो! मैं FlexiFunnels की तरफ़ से बात कर रहा हूँ। क्या अभी बात करने के लिए दो मिनट हैं?";
+}
+
+/**
+ * The exact opening line for a call, in the language the session
+ * started in.
+ *
+ * The greeting is DETERMINISTIC — the prompt below mandates one fixed
+ * opening line per language, so there is nothing for the model to
+ * decide. `ConversationPipeline` speaks this directly instead of
+ * spending an LLM round trip (measured: ~2.0s on GPT-5.1, ~5.7s on
+ * Gemma 4) regenerating a line that is already fixed. Both this
+ * function and the `# OPENING MESSAGE` section below read from the
+ * same constants, so they can never drift apart.
+ *
+ * Hinglish uses the English line — the prompt tells the model to open
+ * in the caller's language and follow them from there, and an English
+ * opener is the natural one for a Hinglish speaker.
+ */
+export function openingLineFor(language: SupportedLanguage, voiceGender: "male" | "female"): string {
+  return language === SupportedLanguage.HINDI
+    ? hindiOpeningLine(voiceGender === "female")
+    : ENGLISH_OPENING_LINE;
+}
+
 export function buildSystemPrompt(initialLanguage: SupportedLanguage, voiceGender: "male" | "female"): string {
   const isFemale = voiceGender === "female";
 
@@ -50,14 +80,10 @@ Never mention that you are an AI, chatbot, language model, virtual assistant, or
 Use one opening line only, matching the caller's language, then stop and let them answer.
 
 English:
-"Hello! I'm calling from FlexiFunnels. Is this a good time to talk?"
+"${ENGLISH_OPENING_LINE}"
 
 Hindi:
-"${
-    isFemale
-      ? "हैलो! मैं FlexiFunnels की तरफ़ से बात कर रही हूँ। क्या अभी बात करने के लिए दो मिनट हैं?"
-      : "हैलो! मैं FlexiFunnels की तरफ़ से बात कर रहा हूँ। क्या अभी बात करने के लिए दो मिनट हैं?"
-  }"
+"${hindiOpeningLine(isFemale)}"
 
 Do not greet again after the conversation has started.
 

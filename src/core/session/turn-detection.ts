@@ -14,15 +14,82 @@
  * at a sensible default and nudges its threshold toward the user's
  * own observed inter-utterance pause length as the call progresses,
  * within safe bounds — the "adaptive turn detection" requirement.
+ *
+ * On top of the silence timer it also looks at WHAT was said, not
+ * just how long the caller has been quiet. A short pause after
+ * "...aur mujhe" or "...because" is a caller mid-thought, not a
+ * finished turn, and replying there is the most common way a voice
+ * agent ends up talking over the user. Those pauses get a bounded
+ * extra grace window; a pause after a complete clause endpoints at
+ * the normal threshold, so finished turns still get a fast reply.
  */
 
 import type { TranscriptSegment } from "../../types/provider.types";
 
-const DEFAULT_SILENCE_TIMEOUT_MS = 500;
-const MIN_SILENCE_TIMEOUT_MS = 250;
-const MAX_SILENCE_TIMEOUT_MS = 1200;
+const DEFAULT_SILENCE_TIMEOUT_MS = 650;
+const MIN_SILENCE_TIMEOUT_MS = 400;
+const MAX_SILENCE_TIMEOUT_MS = 1600;
 /** How strongly a single observed gap nudges the running estimate (0..1). */
 const ADAPTATION_RATE = 0.25;
+/** Extra wait granted when the pending text is clearly an unfinished thought. */
+const CONTINUATION_GRACE_MS = 550;
+/**
+ * Hard cap on consecutive grace windows. Without it, a caller who
+ * trails off on "and..." and then goes quiet would never get a reply.
+ */
+const MAX_CONTINUATION_GRACES = 2;
+
+/**
+ * Words that cannot end a finished thought — conjunctions, particles,
+ * determiners, and dangling subjects/possessives, in English, Hindi,
+ * and Hinglish transliteration.
+ *
+ * Deliberately EXCLUDES words that legitimately end an Indian-English
+ * or Hinglish utterance ("hai", "hain", "theek hai", "haan", "nahi"),
+ * which would otherwise add grace latency to every short confirmation.
+ */
+const CONTINUATION_WORDS = [
+  // English
+  "and", "but", "so", "or", "because", "that", "if", "which", "while",
+  "the", "a", "an", "to", "of", "for", "with", "about",
+  "my", "our", "your", "i", "we", "you",
+  "is", "are", "was", "were", "like", "means", "maybe",
+  "want", "need", "think",
+  // Hinglish (transliterated)
+  "aur", "ya", "toh", "par", "lekin", "kyunki", "kyonki", "matlab",
+  "agar", "jo", "jab", "tab", "ki", "ke", "ka",
+  "mera", "meri", "mere", "mujhe", "hamara", "apna", "apne",
+  "main", "hum", "woh", "yeh", "ye", "bas", "phir", "fir",
+  "karke", "liye",
+  // Devanagari
+  "और", "या", "तो", "पर", "लेकिन", "क्योंकि", "मतलब", "अगर",
+  "कि", "जो", "जब", "तब", "मेरा", "मेरी", "मुझे", "मैं", "हम",
+  "फिर", "बस", "लिये", "लिए",
+];
+
+/** Matches a trailing continuation word at the very end of the text. */
+const TRAILING_CONTINUATION = new RegExp(
+  `(?:^|[\\s,;:-])(?:${CONTINUATION_WORDS.join("|")})\\s*$`,
+  "iu",
+);
+
+/** Non-lexical hesitation sounds — never a complete turn on their own. */
+const FILLER_ONLY = new RegExp(
+  `^(?:(?:u+m+h?|u+h+|h+m+|m+h*|e+r+m?|a+h+|a+a+|हम्म|अं|उम्म)[\\s,.!?…।-]*)+$`,
+  "iu",
+);
+
+/** Sentence-final punctuation (Latin + Devanagari danda) marks a complete thought. */
+const TERMINAL_PUNCTUATION = /[.!?।]["')\]]?$/u;
+
+/**
+ * True when the accumulated turn text reads as a thought still in
+ * progress, so the detector should keep listening a little longer.
+ */
+function looksIncomplete(text: string): boolean {
+  if (TERMINAL_PUNCTUATION.test(text)) return false;
+  return TRAILING_CONTINUATION.test(text);
+}
 
 export interface TurnDetectionEvent {
   /** The accumulated final transcript text for the completed turn. */
@@ -44,6 +111,8 @@ export class AdaptiveTurnDetector {
   private lastSegmentAtMs: number | null = null;
   private lastFinalEndedAtMs: number | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
+  /** Consecutive continuation graces spent on the current turn. */
+  private continuationGraces = 0;
   private readonly listeners = new Set<(event: TurnDetectionEvent) => void>();
   /**
    * A turn that ended while nobody was subscribed. The pipeline only
@@ -56,10 +125,9 @@ export class AdaptiveTurnDetector {
    */
   private pendingEvent: TurnDetectionEvent | null = null;
   constructor(
-  private readonly now: () => number = Date.now,
-  private readonly immediateOnFinal = false,
-) {}
-  
+    private readonly now: () => number = Date.now,
+    private readonly immediateOnFinal = false,
+  ) {}
 
   onTurnEnd(listener: (event: TurnDetectionEvent) => void): () => void {
     this.listeners.add(listener);
@@ -83,35 +151,41 @@ export class AdaptiveTurnDetector {
     }
     this.lastSegmentAtMs = nowMs;
 
- if (segment.isFinal) {
-  this.pendingFinalText = this.pendingFinalText.length > 0
-    ? `${this.pendingFinalText} ${segment.text}`.trim()
-    : segment.text;
+    if (segment.isFinal) {
+      this.pendingFinalText =
+        this.pendingFinalText.length > 0
+          ? `${this.pendingFinalText} ${segment.text}`.trim()
+          : segment.text;
 
-  if (this.lastFinalEndedAtMs !== null) {
-    const observedGapMs = segment.startedAtMs - this.lastFinalEndedAtMs;
-    if (observedGapMs > 0) {
-      this.adaptTimeout(observedGapMs);
+      if (this.lastFinalEndedAtMs !== null) {
+        const observedGapMs = segment.startedAtMs - this.lastFinalEndedAtMs;
+        if (observedGapMs > 0) {
+          this.adaptTimeout(observedGapMs);
+        }
+      }
+
+      this.lastFinalEndedAtMs = segment.endedAtMs;
+      // The thought is still progressing, so previously-spent graces
+      // shouldn't count against the words that come next.
+      this.continuationGraces = 0;
+
+      // Deepgram already decides when the user has finished speaking.
+      // Don't wait for another full silence window — but still let
+      // `emitTurnEnd` hold the turn open if the text is mid-thought.
+      if (this.immediateOnFinal) {
+        this.clearTimer();
+        this.emitTurnEnd();
+        return;
+      }
     }
-  }
 
-  this.lastFinalEndedAtMs = segment.endedAtMs;
-
-  // Deepgram already decides when the user has finished speaking.
-  // Don't wait for another silence timer.
-  if (this.immediateOnFinal) {
-    this.emitTurnEnd();
-    return;
-  }
-}
-
-this.rearmTimer();
+    this.rearmTimer();
   }
 
   /** Force an immediate end-of-turn (e.g. the caller detected hard silence via another signal). */
   forceEndTurn(): void {
     this.clearTimer();
-    this.emitTurnEnd();
+    this.emitTurnEnd(true);
   }
 
   /** Discards any in-progress turn without emitting — used when a session ends mid-utterance. */
@@ -120,15 +194,16 @@ this.rearmTimer();
     this.pendingFinalText = "";
     this.turnStartedAtMs = null;
     this.lastSegmentAtMs = null;
+    this.continuationGraces = 0;
   }
 
   getCurrentSilenceTimeoutMs(): number {
     return this.silenceTimeoutMs;
   }
 
-  private rearmTimer(): void {
+  private rearmTimer(delayMs: number = this.silenceTimeoutMs): void {
     this.clearTimer();
-    this.timer = setTimeout(() => this.emitTurnEnd(), this.silenceTimeoutMs);
+    this.timer = setTimeout(() => this.emitTurnEnd(), delayMs);
   }
 
   private clearTimer(): void {
@@ -138,10 +213,34 @@ this.rearmTimer();
     }
   }
 
-  private emitTurnEnd(): void {
-    if (this.pendingFinalText.trim().length === 0) {
+  /**
+   * @param force Skip the "is this thought finished?" check — used by
+   *   `forceEndTurn`, where an external signal has already decided.
+   */
+  private emitTurnEnd(force = false): void {
+    const text = this.pendingFinalText.trim();
+
+    if (text.length === 0) {
       this.reset();
       return;
+    }
+
+    if (!force) {
+      // A hesitation sound is not a turn. Drop it and keep listening;
+      // if the caller stays silent the next timer fires with empty
+      // text and the turn is discarded, so this can't hang.
+      if (FILLER_ONLY.test(text)) {
+        this.pendingFinalText = "";
+        this.rearmTimer();
+        return;
+      }
+
+      // Mid-thought pause — give the caller room to finish.
+      if (looksIncomplete(text) && this.continuationGraces < MAX_CONTINUATION_GRACES) {
+        this.continuationGraces += 1;
+        this.rearmTimer(CONTINUATION_GRACE_MS);
+        return;
+      }
     }
 
     const turnDurationMs =
@@ -149,7 +248,7 @@ this.rearmTimer();
         ? this.lastSegmentAtMs - this.turnStartedAtMs
         : 0;
 
-    const event: TurnDetectionEvent = { text: this.pendingFinalText.trim(), turnDurationMs };
+    const event: TurnDetectionEvent = { text, turnDurationMs };
     this.reset();
     if (this.listeners.size === 0) {
       this.pendingEvent = event;

@@ -48,6 +48,7 @@ import { combineSignals, abortableSleep } from "./abort-utils";
 import { estimateAudioSeconds, withByteCounter } from "./audio-utils";
 import { estimateLlmCost, estimateSttCost, estimateTtsCost, estimateTokenCount } from "./cost-estimator";
 import { withGracefulRetry, RecoverableTurnError, toSessionErrorInfo } from "./error-recovery";
+import { formatForSpeech } from "../../utils/speech-formatter";
 
 export interface ResolvedProviderStack {
   readonly telephony: TelephonyProvider;
@@ -113,6 +114,17 @@ function stripMarkdown(raw: string): string {
   text = text.replace(/ {2,}/g, " ");
 
   return text.trim();
+}
+
+/**
+ * The full text -> speech conversion applied to everything the caller
+ * hears: strip formatting TTS would read aloud, then enforce the
+ * conversational rules the system prompt only asks for (no hesitation
+ * openers, no stacked acknowledgements, no textbook Hindi, no ellipsis
+ * dead air).
+ */
+function toSpokenText(raw: string): string {
+  return formatForSpeech(stripMarkdown(raw));
 }
 
 /**
@@ -605,7 +617,7 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
       const completion = await this.providers.llm.generateCompletion(request);
       let llmMs = Date.now() - startedAt;
 
-      let spokenContent = stripMarkdown(completion.turn.content);
+      let spokenContent = toSpokenText(completion.turn.content);
 
       // --- Contamination check: if the output echoes system-prompt
       // markers, retry ONCE with a simplified prompt. Never speak
@@ -628,7 +640,7 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
         try {
           const retryCompletion = await this.providers.llm.generateCompletion(retryRequest);
           llmMs += Date.now() - retryStart;
-          const retryContent = stripMarkdown(retryCompletion.turn.content);
+          const retryContent = toSpokenText(retryCompletion.turn.content);
           if (!isContaminatedOutput(retryContent) && retryContent.length > 0) {
             spokenContent = retryContent;
             // eslint-disable-next-line no-console
@@ -710,7 +722,7 @@ await this.drainPlayback(speakingSignal);
           fullText += event.delta;
           const readySentences = chunker.push(event.delta);
           for (const sentence of readySentences) {
-            const cleaned = stripMarkdown(sentence);
+            const cleaned = toSpokenText(sentence);
             if (cleaned.length === 0) continue;
 
             // Check the ACCUMULATED text so far, not just this sentence
@@ -776,7 +788,7 @@ await this.drainPlayback(speakingSignal);
     }
 
     const rawRemainder = chunker.flush();
-    const remainder = rawRemainder ? stripMarkdown(rawRemainder) : "";
+    const remainder = rawRemainder ? toSpokenText(rawRemainder) : "";
     if (remainder.length > 0 && !(speakingSignal?.aborted ?? false)) {
       speakingSignal ??= this.enterSpeaking();
       if (!speakingSignal.aborted) {
@@ -791,7 +803,7 @@ await this.drainPlayback(speakingSignal);
     // from generation time only, so the metric is unaffected.
     if (speakingSignal) await this.drainPlayback(speakingSignal);
 
-    const assistantText = stripMarkdown((finalText ?? fullText));
+    const assistantText = toSpokenText(finalText ?? fullText);
 
     // If nothing was ever spoken (e.g. immediate barge-in), still
     // make sure we transitioned through SPEAKING at least nominally

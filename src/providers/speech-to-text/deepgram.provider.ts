@@ -151,7 +151,14 @@ const connection = await this.client.listen.v1.connect({
   punctuate: "true",
   smart_format: "true",
   interim_results: "true",
-  endpointing: "300",
+  // Deepgram's own endpointing only controls when IT finalises a
+  // chunk; `AdaptiveTurnDetector` owns the actual reply decision. 300ms
+  // finalises so eagerly that a caller drawing breath mid-sentence
+  // arrives as several separate finals, which pushed the detector's
+  // adaptive estimate down toward its floor. 400ms keeps the detector's
+  // gap observations closer to real inter-utterance pauses without
+  // adding meaningful latency.
+  endpointing: "400",
 });
 
 connection.connect();

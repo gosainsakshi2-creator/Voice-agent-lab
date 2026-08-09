@@ -64,6 +64,28 @@ const MAX_FRAMES_PER_TICK = 3;
 const PREROLL_FRAMES = 5;
 /** Never hold the pre-roll longer than this (short utterances may never reach PREROLL_FRAMES). */
 const PREROLL_MAX_WAIT_MS = 120;
+/**
+ * Barge-in onset gate. These only affect `onSpeechStart` (the VAD's
+ * utterance callback here is diagnostic-only), i.e. they decide what
+ * counts as "the caller started talking over us".
+ *
+ * The segmenter's default threshold of RMS 150 is ~-47 dBFS — inside
+ * the band occupied by G.711 comfort noise, mobile background noise,
+ * and the acoustic echo of our own audio out of the caller's earpiece.
+ * Combined with a 40ms onset it meant any stray noise burst during a
+ * reply fired a barge-in, which clears the whole outbound queue. Since
+ * streaming TTS enqueues far faster than real time, that queue holds
+ * most of the remaining reply — so a single blip truncated the
+ * assistant mid-sentence even though nobody had interrupted.
+ *
+ * Real speech on a phone line sits around RMS 2000-8000 and lasts far
+ * longer than 120ms, so genuine barge-in still fires promptly. Soft or
+ * marginal interruptions are still caught by the pipeline's
+ * independent, Deepgram-transcript-confirmed barge-in path.
+ */
+const BARGE_IN_SPEECH_THRESHOLD_RMS = 700;
+/** 6 frames = 120ms of continuous speech energy. */
+const BARGE_IN_SPEECH_START_FRAMES = 6;
 
 export function attachPlivoMediaBridge(
   socket: BridgeSocket,
@@ -100,9 +122,12 @@ export function attachPlivoMediaBridge(
       );
     },
     () => onCallerSpeechStart(),
-    // 2 frames = 40ms of continuous speech energy: fast enough to feel
-    // instant, enough to reject a single click or line-noise frame.
-    { speechStartFrames: 2 },
+    // See BARGE_IN_* above: the onset must look like actual speech, not
+    // a noise/echo blip, or it truncates the assistant mid-reply.
+    {
+      speechStartFrames: BARGE_IN_SPEECH_START_FRAMES,
+      speechThreshold: BARGE_IN_SPEECH_THRESHOLD_RMS,
+    },
   );
 
   /**

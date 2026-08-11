@@ -943,7 +943,7 @@ await this.drainPlayback(speakingSignal);
         assistantText: spokenContent,
         llmMs,
         llmGenerationMs: llmMs,
-        llmCostUsd: estimateLlmCost(llmProviderId, promptTokens + estimateTokenCount(spokenContent)),
+        llmCostUsd: estimateLlmCost(llmProviderId, promptTokens, estimateTokenCount(spokenContent)),
         ttsMs: firstChunkMs,
         ttsSynthesisMs: ttsMs,
         ttsCostUsd,
@@ -1073,7 +1073,7 @@ await this.drainPlayback(speakingSignal);
         assistantText: fallback,
         llmMs: llmFirstTokenMs,
         llmGenerationMs,
-        llmCostUsd: estimateLlmCost(llmProviderId, promptTokens + estimateTokenCount(fallback)),
+        llmCostUsd: estimateLlmCost(llmProviderId, promptTokens, estimateTokenCount(fallback)),
         ttsMs: ttsFirstChunkMs,
         ttsSynthesisMs,
         ttsCostUsd,
@@ -1109,7 +1109,7 @@ await this.drainPlayback(speakingSignal);
       assistantText,
       llmMs: llmFirstTokenMs,
       llmGenerationMs,
-      llmCostUsd: estimateLlmCost(llmProviderId, promptTokens + estimateTokenCount(assistantText)),
+      llmCostUsd: estimateLlmCost(llmProviderId, promptTokens, estimateTokenCount(assistantText)),
       ttsMs: ttsFirstChunkMs,
       ttsSynthesisMs,
       ttsCostUsd,
@@ -1234,6 +1234,12 @@ await this.drainPlayback(speakingSignal);
       console.log(
         `[TTS:${sid}] streaming TTS done: ${chunkCount} chunks, ${ttsMs}ms (paced ${this.transportBackpressureMs}ms on transport backpressure)`,
       );
+      // Charged once for this utterance's text, not per chunk. No
+      // generated duration is passed: ElevenLabs is the only provider
+      // with `synthesizeStream`, and it bills per character. Should a
+      // duration-billed vendor ever gain a streaming path, this is the
+      // call site that must supply its generated audio duration —
+      // `estimateTtsCost` warns rather than silently mispricing.
       return {
         ttsMs,
         ttsCostUsd: estimateTtsCost(ttsProviderId, text.length),
@@ -1291,9 +1297,15 @@ await this.drainPlayback(speakingSignal);
 
       // Batch synthesis returns the whole utterance in one piece, so
       // first-audio and full-synthesis are the same measurement.
+      //
+      // Both billing units are handed over and the provider's own rate
+      // table picks the one it actually bills in: characters for Sarvam
+      // and Smallest AI, generated audio minutes for Cartesia. The
+      // duration is `playbackMs` — the length of the synthesized audio
+      // — NOT `ttsCallMs`, which is synthesis latency.
       return {
         ttsMs: ttsCallMs,
-        ttsCostUsd: estimateTtsCost(ttsProviderId, text.length),
+        ttsCostUsd: estimateTtsCost(ttsProviderId, text.length, playbackMs / 1000),
         firstChunkMs: ttsCallMs,
       };
     });

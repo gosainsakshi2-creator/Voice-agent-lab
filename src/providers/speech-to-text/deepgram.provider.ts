@@ -190,7 +190,7 @@ console.log(
   segment.isFinal,
 );
   queue.push(segment);
-});
+});                          
 void (async () => {
   let sentFrames = 0;
   try {
@@ -245,5 +245,4 @@ async checkHealth(): Promise<ProviderHealthStatus> {
     latencyMs: 0,
   };
 }
-
 }

@@ -67,7 +67,7 @@ export class SarvamTextToSpeechProvider implements TextToSpeechProvider {
     id: TEXT_TO_SPEECH_PROVIDER_IDS.SARVAM,
     displayName: "Sarvam",
     supportedLanguages: [SupportedLanguage.HINDI, SupportedLanguage.HINGLISH],
-    version: "bulbul-v2",
+    version: "bulbul-v3",
   };
 
   private readonly config: SarvamEnvConfig;

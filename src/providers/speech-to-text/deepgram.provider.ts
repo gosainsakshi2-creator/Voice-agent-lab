@@ -145,7 +145,7 @@ async *transcribeStream(
 const queue = new AsyncQueue<TranscriptSegment>();
 const connection = await this.client.listen.v1.connect({
   model: this.config.model,
-  language: LANGUAGE_METADATA[request.language].bcp47Tag,
+  language: "multi",
   encoding: "mulaw",
   sample_rate: 8000,
   punctuate: "true",

@@ -260,6 +260,31 @@ export class ConversationPipeline {
    */
   private greetingDone = false;
   /**
+   * ---------------- Assistant response lifecycle ----------------
+   *
+   * PENDING/SPEAKING -> COMPLETED -> committed to `memory`
+   * PENDING/SPEAKING -> CANCELLED -> discarded, never committed
+   *
+   * `runThinkingAndSpeaking` returns NORMALLY on barge-in (the LLM
+   * stream breaks, `drainPlayback` resolves early) and hands back
+   * whatever text had accumulated — including the complete reply when
+   * the model finished streaming while its audio was still queued on
+   * the transport. Nothing in that result says "this was cut off", so
+   * the commit site had no way to tell an interrupted reply from a
+   * finished one and committed both.
+   *
+   * An id rather than a boolean flag: the cancellation is recorded
+   * against the specific response that was in flight, so a stream that
+   * produces its last chunk (or its `final` event) after the barge-in
+   * handler has already run cannot commit itself, and — equally — a
+   * barge-in that lands when no response is pending cannot cancel the
+   * NEXT one, which takes a fresh id.
+   */
+  /** Id of the assistant response currently PENDING/SPEAKING. */
+  private currentResponseId = 0;
+  /** Id of the response a barge-in cancelled, if any. */
+  private cancelledResponseId: number | undefined;
+  /**
    * ---------------- Metrics bookkeeping (read-only observers) ----------------
    * Everything below is written from points that already exist in the
    * flow and is read only by `recordTurn`. Nothing here feeds turn
@@ -447,12 +472,33 @@ export class ConversationPipeline {
         // display-only preview so it is not rendered twice.
         this.record.liveUserTranscript = "";
 
+        // The reply about to be generated is PENDING from here until it
+        // either completes normally (committed below) or is cancelled by
+        // a barge-in (discarded below). Taken BEFORE generation starts so
+        // the id belongs to this response and no other.
+        const responseId = this.beginAssistantResponse();
         const result = await this.runThinkingAndSpeaking(turn.text, detected, loopSignal);
         timer.summarize();
         this.activeTimer = undefined;
         // eslint-disable-next-line no-console
         console.log(`[PIPELINE:${sid}] Turn complete: assistant="${result.assistantText.slice(0, 80)}${result.assistantText.length > 80 ? "..." : ""}" llmMs=${result.llmMs} ttsMs=${result.ttsMs}`);
-        this.record.memory.recordAssistantTurn(result.assistantText);
+        // An interrupted reply is CANCELLED, not a completed assistant
+        // turn: the caller talked over it, so committing it would put a
+        // sentence the caller never let us finish between their own two
+        // utterances and feed it to the next LLM request as if it had
+        // been a real exchange. Their words are not lost — the turn
+        // detector holds the interrupting utterance (see
+        // `AdaptiveTurnDetector.pendingEvent`) and it becomes the next
+        // user turn on the following iteration, so the model sees the
+        // caller's latest thought as the live conversational state.
+        if (this.isResponseCancelled(responseId)) {
+          // eslint-disable-next-line no-console
+          console.log(
+            `[PIPELINE:${sid}] Response #${responseId} CANCELLED by barge-in — discarding "${result.assistantText.slice(0, 80)}${result.assistantText.length > 80 ? "..." : ""}" (not committed to conversation history)`,
+          );
+        } else {
+          this.record.memory.recordAssistantTurn(result.assistantText);
+        }
         this.record.bargeIn.reset();
 
         // TRUE end-to-end response latency: the caller stopped talking
@@ -524,8 +570,29 @@ export class ConversationPipeline {
     this.activeTimer?.mark(stage);
   }
 
+  /**
+   * Marks a new assistant response as PENDING and returns its id. The
+   * id is what the commit site checks against `cancelledResponseId`.
+   */
+  private beginAssistantResponse(): number {
+    this.currentResponseId += 1;
+    return this.currentResponseId;
+  }
+
+  /** True if `responseId` was cancelled by a barge-in while in flight. */
+  private isResponseCancelled(responseId: number): boolean {
+    return this.cancelledResponseId === responseId;
+  }
+
   /** Externally-triggered barge-in (e.g. from a future real-time transport, or a test harness). */
   triggerExternalBargeIn(): void {
+    // Recorded FIRST, before anything can observe the aborts below:
+    // whichever response is in flight is now CANCELLED and stays
+    // cancelled, so a chunk or `final` event that arrives after this
+    // handler has run cannot commit it. Marking the id of an already
+    // committed response (a barge-in signalled with nothing pending) is
+    // harmless — the next response takes a fresh id.
+    this.cancelledResponseId = this.currentResponseId;
     this.record.bargeIn.triggerBargeIn();
     if (this.record.state === SessionState.SPEAKING) {
       this.host.transition(this.record, SessionState.LISTENING, "external barge-in signal");

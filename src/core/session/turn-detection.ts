@@ -62,37 +62,71 @@ const MAX_CONTINUATION_GRACES = 2;
 
 /**
  * Words that cannot end a finished thought — conjunctions, particles,
- * determiners, and dangling subjects/possessives, in English, Hindi,
- * and Hinglish transliteration.
+ * prepositions, determiners, and dangling possessives, in English,
+ * Hindi, and Hinglish transliteration.
  *
- * Deliberately EXCLUDES words that legitimately end an Indian-English
- * or Hinglish utterance ("hai", "hain", "theek hai", "haan", "nahi"),
- * which would otherwise add grace latency to every short confirmation.
+ * Split into HARD and SOFT because Deepgram is asked for `punctuate`
+ * + `smart_format`, and it routinely closes a mid-thought `is_final`
+ * chunk with a full stop ("...it was something around."). Terminal
+ * punctuation therefore is NOT evidence the caller finished, so the
+ * HARD set is checked ahead of it; only the ambiguous SOFT set defers
+ * to punctuation.
+ *
+ * Both sets deliberately EXCLUDE words that legitimately end an
+ * Indian-English or Hinglish utterance ("hai", "hain", "theek hai",
+ * "haan", "nahi"), which would otherwise add grace latency to every
+ * short confirmation.
  */
-const CONTINUATION_WORDS = [
-  // English
-  "and", "but", "so", "or", "because", "that", "if", "which", "while",
-  "the", "a", "an", "to", "of", "for", "with", "about",
-  "my", "our", "your", "i", "we", "you",
-  "is", "are", "was", "were", "like", "means", "maybe",
-  "want", "need", "think",
+
+/**
+ * Closed-class words that essentially never end a spoken utterance.
+ * A trailing one of these means the caller is mid-thought whatever the
+ * punctuation says.
+ */
+const HARD_CONTINUATION_WORDS = [
+  // English — conjunctions, prepositions, determiners, possessives
+  "and", "but", "so", "or", "because", "if",
+  "the", "a", "an", "to", "of", "for", "with",
+  "about", "around", "at", "on", "from", "into", "than", "like",
+  "such as", "kind of", "sort of",
+  "my", "our", "your", "their",
   // Hinglish (transliterated)
   "aur", "ya", "toh", "par", "lekin", "kyunki", "kyonki", "matlab",
-  "agar", "jo", "jab", "tab", "ki", "ke", "ka",
+  "agar", "jo", "jab", "ki", "ke", "ka",
   "mera", "meri", "mere", "mujhe", "hamara", "apna", "apne",
-  "main", "hum", "woh", "yeh", "ye", "bas", "phir", "fir",
   "karke", "liye",
   // Devanagari
   "और", "या", "तो", "पर", "लेकिन", "क्योंकि", "मतलब", "अगर",
-  "कि", "जो", "जब", "तब", "मेरा", "मेरी", "मुझे", "मैं", "हम",
-  "फिर", "बस", "लिये", "लिए",
+  "कि", "जो", "जब", "मेरा", "मेरी", "मुझे", "लिये", "लिए",
 ];
 
-/** Matches a trailing continuation word at the very end of the text. */
-const TRAILING_CONTINUATION = new RegExp(
-  `(?:^|[\\s,;:-])(?:${CONTINUATION_WORDS.join("|")})\\s*$`,
-  "iu",
-);
+/**
+ * Words that USUALLY dangle but can legitimately close an utterance
+ * ("I already told you that.", "Tell me when.", "Yes, I think so."),
+ * so these only signal an unfinished thought when the recognized text
+ * carries no sentence-final punctuation.
+ */
+const SOFT_CONTINUATION_WORDS = [
+  // English
+  "that", "which", "while", "when",
+  "i", "we", "you", "is", "are", "was", "were",
+  "means", "maybe", "want", "need", "think",
+  // Hinglish (transliterated)
+  "main", "hum", "woh", "yeh", "ye", "bas", "phir", "fir", "tab",
+  // Devanagari
+  "तब", "मैं", "हम", "फिर", "बस",
+];
+
+/** Characters that may sit between the last word and the end of the text. */
+const TRAILING_NOISE = /[\s.,;:!?…।"'’)\]\-—–]+$/u;
+
+/** Builds a matcher for "the final word of the text is one of these". */
+function trailingWordMatcher(words: readonly string[]): RegExp {
+  return new RegExp(`(?:^|[\\s,;:"'’(\\[\\-—–])(?:${words.join("|")})$`, "iu");
+}
+
+const HARD_TRAILING = trailingWordMatcher(HARD_CONTINUATION_WORDS);
+const SOFT_TRAILING = trailingWordMatcher(SOFT_CONTINUATION_WORDS);
 
 /** Non-lexical hesitation sounds — never a complete turn on their own. */
 const FILLER_ONLY = new RegExp(
@@ -106,10 +140,21 @@ const TERMINAL_PUNCTUATION = /[.!?।]["')\]]?$/u;
 /**
  * True when the accumulated turn text reads as a thought still in
  * progress, so the detector should keep listening a little longer.
+ *
+ * Order matters. The HARD set is tested FIRST, on the text with its
+ * trailing punctuation stripped, because Deepgram's punctuation is a
+ * formatting decision about the chunk it just finalised — not a
+ * judgement that the caller is done. "...it was something around."
+ * arrives fully punctuated and is still obviously mid-sentence.
+ * Punctuation only gets the final say for the ambiguous SOFT set,
+ * where a full stop really does distinguish "I told you that." from
+ * "the transaction that".
  */
 function looksIncomplete(text: string): boolean {
+  const lastWordText = text.replace(TRAILING_NOISE, "");
+  if (HARD_TRAILING.test(lastWordText)) return true;
   if (TERMINAL_PUNCTUATION.test(text)) return false;
-  return TRAILING_CONTINUATION.test(text);
+  return SOFT_TRAILING.test(lastWordText);
 }
 
 export interface TurnDetectionEvent {
@@ -229,6 +274,16 @@ export class AdaptiveTurnDetector {
 
   getCurrentSilenceTimeoutMs(): number {
     return this.silenceTimeoutMs;
+  }
+
+  /**
+   * DISPLAY ONLY: the final segments accumulated for the turn still in
+   * progress, so a caller whose utterance spans several Deepgram finals
+   * can be shown as the one growing utterance it is. Read by nothing
+   * that makes a turn, barge-in or LLM decision.
+   */
+  getPendingTurnText(): string {
+    return this.pendingFinalText;
   }
 
   private rearmTimer(delayMs: number = this.silenceTimeoutMs): void {

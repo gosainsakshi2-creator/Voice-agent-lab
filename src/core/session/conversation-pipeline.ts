@@ -580,7 +580,15 @@ export class ConversationPipeline {
           // LLM continue to work off `segment` / the turn detector
           // exactly as before.
           if (segment.text.trim().length > 0) {
-            this.record.liveUserTranscript = segment.text;
+            // Prefix the finals already accumulated for this turn. A
+            // Deepgram interim/final is only the tail since the last
+            // final, so without this the preview snaps back to the
+            // latest fragment ("50,000 rupees") halfway through an
+            // utterance the detector is correctly still buffering.
+            // Still one field, so still one bubble — display only.
+            const buffered = this.record.turnDetector.getPendingTurnText();
+            this.record.liveUserTranscript =
+              buffered.length > 0 ? `${buffered} ${segment.text}`.trim() : segment.text;
           }
 
           // METRICS ONLY — pure observation, no control flow. Records

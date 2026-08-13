@@ -22,12 +22,32 @@
  * agent ends up talking over the user. Those pauses get a bounded
  * extra grace window; a pause after a complete clause endpoints at
  * the normal threshold, so finished turns still get a fast reply.
+ *
+ * Finalisation itself is two-stage. The silence window expiring is
+ * evidence the caller finished, not proof: transcripts trail the audio,
+ * so the caller may already have resumed speaking when it expires. The
+ * turn is therefore held for a short confirmation window before it is
+ * released to the LLM, and any segment arriving in that window cancels
+ * the release and returns to listening. Nothing in this file is part of
+ * barge-in — that path only exists once the assistant is SPEAKING, and
+ * is untouched by everything here.
  */
 
 import type { TranscriptSegment } from "../../types/provider.types";
 
 const DEFAULT_SILENCE_TIMEOUT_MS = 1100;
-const MIN_SILENCE_TIMEOUT_MS = 400;
+/**
+ * Floor for the adaptive threshold.
+ *
+ * `adaptTimeout` only ever eases DOWN toward a gap the caller paused
+ * for and then talked through, but a run of short chunk-boundary gaps
+ * still dragged the threshold toward this floor over the course of a
+ * call — and a 400ms threshold cuts off anyone drawing breath in the
+ * middle of a sentence. 700ms is the shortest pause that is still
+ * plausibly an end of turn rather than a breath; the post-speech
+ * confirmation window below covers the rest.
+ */
+const MIN_SILENCE_TIMEOUT_MS = 700;
 const MAX_SILENCE_TIMEOUT_MS = 1600;
 /** How strongly a single observed gap nudges the running estimate DOWN (0..1). */
 const ADAPTATION_RATE = 0.25;
@@ -59,6 +79,42 @@ const CONTINUATION_GRACE_MS = 800;
  * trails off on "and..." and then goes quiet would never get a reply.
  */
 const MAX_CONTINUATION_GRACES = 2;
+
+/**
+ * ---------------- Post-speech confirmation ----------------
+ *
+ * The silence window expiring is EVIDENCE that the caller finished,
+ * not proof of it. Transcripts trail the audio by a few hundred ms, so
+ * at the moment the window expires the caller may already have resumed
+ * speaking and Deepgram simply hasn't reported it yet — which is
+ * exactly how a reply lands on top of "...ask the necessary".
+ *
+ * So finalisation is two-stage: the silence window expires, then the
+ * turn is held for one short confirmation window before it is released
+ * to the LLM. Any segment arriving in that window — interim or final —
+ * cancels the pending finalisation and returns to plain listening (see
+ * `feed`). Nothing here touches barge-in: this stage only runs while
+ * the caller has the turn, and the assistant is not speaking.
+ */
+const CONFIRMATION_WINDOW_MS = 300;
+/**
+ * A turn with no sentence-final punctuation is the likelier mid-thought
+ * pause, so it gets the longer hold. Still bounded — this is a
+ * confirmation, not another silence window.
+ */
+const OPEN_ENDED_CONFIRMATION_WINDOW_MS = 550;
+/**
+ * A short, fully-punctuated utterance ("Haan.", "Yes, that's right.")
+ * is released with NO confirmation hold, so quick confirmations keep
+ * exactly the latency they have today.
+ */
+const SHORT_COMPLETE_TURN_MAX_WORDS = 4;
+/**
+ * Bounded re-waits while Deepgram still owes a final for words it has
+ * already shown as interim. Without the bound, an interim that never
+ * finalises (dropped socket, noise) would hold the turn forever.
+ */
+const MAX_INTERIM_CONFIRMATIONS = 2;
 
 /**
  * Words that cannot end a finished thought — conjunctions, particles,
@@ -179,6 +235,20 @@ export class AdaptiveTurnDetector {
   private timer: ReturnType<typeof setTimeout> | null = null;
   /** Consecutive continuation graces spent on the current turn. */
   private continuationGraces = 0;
+  /**
+   * Which window the armed timer belongs to: the adaptive silence
+   * window, or the short post-speech confirmation that follows it.
+   */
+  private stage: "silence" | "confirming" = "silence";
+  /**
+   * True while Deepgram has shown interim words it has not finalised
+   * yet. Those words belong to this turn — a turn is NEVER built from
+   * interim text, so finalising with one outstanding would drop them
+   * and reply to half a sentence.
+   */
+  private pendingInterim = false;
+  /** Consecutive confirmation re-waits spent on an outstanding interim. */
+  private interimConfirmations = 0;
   private readonly listeners = new Set<(event: TurnDetectionEvent) => void>();
   /**
    * A turn that ended while nobody was subscribed. The pipeline only
@@ -216,6 +286,16 @@ export class AdaptiveTurnDetector {
       this.turnStartedAtMs = nowMs;
     }
     this.lastSegmentAtMs = nowMs;
+
+    // New speech — of ANY kind — cancels a pending turn-finalisation
+    // and puts the detector back to plain listening. This is the whole
+    // point of the confirmation stage: the caller carried on, so the
+    // turn that was about to be released is not a turn.
+    this.stage = "silence";
+    this.interimConfirmations = 0;
+    // A final covers every interim that preceded it; an interim means
+    // Deepgram now owes us one.
+    this.pendingInterim = !segment.isFinal;
 
     if (segment.isFinal) {
       this.pendingFinalText =
@@ -270,6 +350,9 @@ export class AdaptiveTurnDetector {
     // adapts as if the caller had paused for that whole time.
     this.lastFinalEndedAtMs = null;
     this.continuationGraces = 0;
+    this.stage = "silence";
+    this.pendingInterim = false;
+    this.interimConfirmations = 0;
   }
 
   getCurrentSilenceTimeoutMs(): number {
@@ -316,6 +399,7 @@ export class AdaptiveTurnDetector {
       // text and the turn is discarded, so this can't hang.
       if (FILLER_ONLY.test(text)) {
         this.pendingFinalText = "";
+        this.stage = "silence";
         this.rearmTimer();
         return;
       }
@@ -324,6 +408,29 @@ export class AdaptiveTurnDetector {
       if (looksIncomplete(text) && this.continuationGraces < MAX_CONTINUATION_GRACES) {
         this.continuationGraces += 1;
         this.rearmTimer(CONTINUATION_GRACE_MS);
+        return;
+      }
+
+      // Post-speech confirmation. The silence window says the caller
+      // stopped; hold the turn for one short window before releasing it
+      // so speech already in flight can still arrive and cancel it (see
+      // `feed`). `confirmationWindowMs` returns 0 for the cases that
+      // should keep today's latency, and one expired window releases the
+      // turn — this is a confirmation, not a second silence window.
+      if (this.stage === "silence") {
+        const confirmationMs = this.confirmationWindowMs(text);
+        if (confirmationMs > 0) {
+          this.stage = "confirming";
+          this.rearmTimer(confirmationMs);
+          return;
+        }
+      } else if (this.pendingInterim && this.interimConfirmations < MAX_INTERIM_CONFIRMATIONS) {
+        // The confirmation window passed quietly, but Deepgram still
+        // owes a final for words it has already shown as interim — it
+        // has recognized more of this turn than we hold. Wait for it
+        // rather than sending a partial turn to the LLM.
+        this.interimConfirmations += 1;
+        this.rearmTimer(CONFIRMATION_WINDOW_MS);
         return;
       }
     }
@@ -340,6 +447,27 @@ export class AdaptiveTurnDetector {
       return;
     }
     for (const listener of this.listeners) listener(event);
+  }
+
+  /**
+   * How long to hold a turn the silence window has already declared
+   * over. `0` releases it immediately — i.e. exactly the behaviour
+   * this detector had before the confirmation stage existed.
+   */
+  private confirmationWindowMs(text: string): number {
+    // Words the caller has already spoken are still awaiting their
+    // final. Always wait — this is never a finished turn.
+    if (this.pendingInterim) return CONFIRMATION_WINDOW_MS;
+    // A turn that already spent a continuation grace has had its extra
+    // listening time (and then some); don't stack another window on it.
+    if (this.continuationGraces > 0) return 0;
+
+    const endsCompletely = TERMINAL_PUNCTUATION.test(text);
+    const wordCount = text.split(/\s+/).length;
+    // Genuinely completed short turns — "Haan.", "Yes, that's right." —
+    // are released with no added latency, as before.
+    if (endsCompletely && wordCount <= SHORT_COMPLETE_TURN_MAX_WORDS) return 0;
+    return endsCompletely ? CONFIRMATION_WINDOW_MS : OPEN_ENDED_CONFIRMATION_WINDOW_MS;
   }
 
   /**

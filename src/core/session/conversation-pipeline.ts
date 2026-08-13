@@ -42,7 +42,7 @@ import type { TelephonyProvider } from "../../interfaces/providers/telephony-pro
 
 import type { SessionRecord } from "./session-record";
 import { detectLanguage, type LanguageDetectionResult } from "./language-detector";
-import { languageHintFor, openingLineFor } from "./system-prompt";
+import { currentTurnNote, languageHintFor, openingLineFor } from "./system-prompt";
 import { SentenceChunker } from "./sentence-chunker";
 import { combineSignals, abortableSleep } from "./abort-utils";
 import { estimateAudioSeconds, withByteCounter } from "./audio-utils";
@@ -852,8 +852,9 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
    *
    * Rules:
    *   1. Exactly ONE system turn — the leading prompt from ConversationMemory.
-   *   2. Language hints are folded into the latest user message,
-   *      never added as a separate system turn (doing so caused
+   *   2. The language hint and the current-turn marker are folded into
+   *      the latest user message, never added as separate system turns
+   *      (doing so caused
    *      Gemma's `toGoogleContents` to merge ALL system turns into
    *      the first user message, growing it each turn and triggering
    *      prompt-echo).
@@ -875,7 +876,13 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
 
       if (turn.role === "user") {
 
-          turn.content = `${hint}\n${turn.content}`;
+          // Marked as well as language-hinted. History has no "this one
+          // is now" signal of its own, and a barge-in leaves two user
+          // turns in a row with no assistant turn between them (the
+          // interrupted reply is never committed) — which is exactly
+          // when a reply comes back continuing the previous topic
+          // instead of answering what was just asked.
+          turn.content = `${currentTurnNote()}\n${hint}\n${turn.content}`;
 
           break;
       }

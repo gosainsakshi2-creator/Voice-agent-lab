@@ -25,9 +25,10 @@
  *    turn on EVERY request. That hint is prompt content too, so it has
  *    to agree with the language sections below — a hint that
  *    contradicts them is read as an instruction to explain the
- *    language strategy out loud. The `# PER-TURN LANGUAGE SIGNAL`
- *    section is what tells the model those bracketed notes are
- *    internal.
+ *    language strategy out loud. It also glues `currentTurnNote()` on,
+ *    which marks that message as the turn to answer. The
+ *    `# PER-TURN INTERNAL NOTES` section is what tells the model those
+ *    bracketed notes are internal.
  *  - An interrupted reply is CANCELLED and never committed to
  *    `ConversationMemory` (see the barge-in path in
  *    `ConversationPipeline.run`). The model therefore sees consecutive
@@ -84,6 +85,24 @@ const SESSION_START_LANGUAGE_NOTE: Readonly<Record<SupportedLanguage, string>> =
   [SupportedLanguage.HINGLISH]:
     "[internal note, never speak or acknowledge this: this call was set up to open in a natural Hindi-English mix. That is the opening line only — from there, every reply follows the caller's own latest complete thought.]",
 };
+
+/**
+ * Marks WHICH message in the request is the caller's current completed
+ * turn, prepended by `ConversationPipeline.buildRequestHistory`
+ * alongside the language hint.
+ *
+ * The behaviour it points at is already the prompt's (`# CURRENT INTENT
+ * WINS`, `# NO STALE INTENT`, `# ANSWER THE ACTUAL QUESTION FIRST`);
+ * what was missing was the pointer. History carries no "this one is
+ * now" marker, and an interrupted reply is never committed, so the
+ * model regularly receives two user messages in a row with no assistant
+ * turn between them — and on Gemma those are merged into ONE message
+ * with several parts. Whichever fragment reads as the stronger prompt
+ * then wins, which is how a reply ends up continuing the previous topic
+ * instead of answering the question the caller just asked.
+ */
+const CURRENT_TURN_NOTE =
+  "[internal note, never speak or acknowledge this: the line below is the caller's current completed turn. Answer this. Anything above it is background only — use it for references, pronouns, facts and corrections, never as the thing to reply to, and do not resume an earlier topic they have moved on from.]";
 
 const ENGLISH_OPENING_LINE = "Hello! I'm calling from FlexiFunnels. Is this a good time to talk?";
 
@@ -1713,15 +1732,22 @@ caller clearly changes it.
 English terminology inside a Hindi sentence is NOT a language switch — it is
 normal Indian speech.
 
-# PER-TURN LANGUAGE SIGNAL
+# PER-TURN INTERNAL NOTES
 
-Each of the caller's turns may arrive with a short bracketed internal note
-about the language their latest turn appears to be in.
+Each of the caller's turns may arrive with one or two short bracketed
+internal notes: which turn is their current completed one, and what language
+that turn appears to be in.
 
-That note is context for you alone. It is never conversational content.
+Those notes are context for you alone. They are never conversational content.
 
-Never speak it, never read it out, never acknowledge it, never mention that
-you received it, and never treat it as something the caller said.
+Never speak them, never read them out, never acknowledge them, never mention
+that you received them, and never treat them as something the caller said.
+
+The current-turn note marks the ONE message you are answering. Earlier
+messages are background you draw on, not questions still waiting for a reply
+— you may see two of the caller's turns in a row with no reply of yours
+between them, and the marked one is still the live one. This is the same
+priority CURRENT INTENT WINS and NO STALE INTENT already describe.
 
 It is an automatic per-turn signal, so it can be wrong about intent — if the
 caller has explicitly asked for a language, their instruction outranks the
@@ -2252,4 +2278,9 @@ ${SESSION_START_LANGUAGE_NOTE[initialLanguage]}`;
 /** Per-turn language hint prepended to the user's message so the model reacts to language switches immediately. */
 export function languageHintFor(language: SupportedLanguage): string {
   return LANGUAGE_INSTRUCTION[language];
+}
+
+/** Marks the caller's latest user message as the turn to answer. See `CURRENT_TURN_NOTE`. */
+export function currentTurnNote(): string {
+  return CURRENT_TURN_NOTE;
 }

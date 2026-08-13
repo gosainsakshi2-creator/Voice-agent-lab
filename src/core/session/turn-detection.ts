@@ -109,6 +109,8 @@ const OPEN_ENDED_CONFIRMATION_WINDOW_MS = 550;
  * exactly the latency they have today.
  */
 const SHORT_COMPLETE_TURN_MAX_WORDS = 4;
+/** Same fast path for a short, explicitly-marked question. */
+const SHORT_QUESTION_MAX_WORDS = 8;
 /**
  * Bounded re-waits while Deepgram still owes a final for words it has
  * already shown as interim. Without the bound, an interim that never
@@ -146,6 +148,10 @@ const HARD_CONTINUATION_WORDS = [
   "about", "around", "at", "on", "from", "into", "than", "like",
   "such as", "kind of", "sort of",
   "my", "our", "your", "their",
+  // Subordinators that open a clause the caller has not closed yet.
+  // "Can you tell me whether..." is the canonical one: it reads as a
+  // finished sentence to a silence timer and is obviously not.
+  "whether", "unless", "until", "till", "although", "though",
   // Hinglish (transliterated)
   "aur", "ya", "toh", "par", "lekin", "kyunki", "kyonki", "matlab",
   "agar", "jo", "jab", "ki", "ke", "ka",
@@ -173,6 +179,47 @@ const SOFT_CONTINUATION_WORDS = [
   "तब", "मैं", "हम", "फिर", "बस",
 ];
 
+/**
+ * Phrases that are a caller ASKING FOR TIME, not taking a turn.
+ *
+ * "Wait", "actually", "hold on", "let me think" spoken on their own are
+ * the caller announcing that more is coming — replying to one of them
+ * is the most literal possible way to talk over someone. Matched only
+ * when the phrase is the WHOLE pending turn: "Actually, will there be
+ * any charges?" is a complete question and must still get a fast reply.
+ *
+ * They also get a longer grace than an ordinary dangling word, because
+ * the caller has explicitly said they need a moment.
+ */
+const HOLD_PHRASES = [
+  "wait", "wait a (?:second|minute|sec|moment)", "hold on", "hang on",
+  "one (?:second|minute|sec|moment)", "just a (?:second|minute|sec|moment)",
+  "give me a (?:second|minute|sec|moment)",
+  "let me think", "let me check", "let me see", "i mean", "actually",
+  "the thing is", "so basically", "how do i say (?:it|this)",
+  // Hinglish / Devanagari
+  "ruko", "ruk(?:iye|o) zara", "thoda ruko", "ek (?:minute|second|sec|min)",
+  "sochne do", "matlab ki",
+  "रुको", "रुकिए", "एक मिनट", "एक सेकंड", "मतलब",
+];
+
+/** The whole pending turn is one of `HOLD_PHRASES`. */
+const HOLD_PHRASE_ONLY = new RegExp(
+  `^(?:${HOLD_PHRASES.join("|")})[\\s,.!?…।-]*$`,
+  "iu",
+);
+
+/** Extra wait granted when the caller has asked for a moment. */
+const HOLD_GRACE_MS = 1200;
+
+/**
+ * Punctuation that ends a FRAGMENT rather than a sentence. Deepgram
+ * emits these when the caller trailed off or is still listing details
+ * ("The transaction happened around,"), and a comma is never the end of
+ * a thought.
+ */
+const MID_THOUGHT_PUNCTUATION = /(?:[,;:]|\.\.\.|…|[-–—])["')\]]?$/u;
+
 /** Characters that may sit between the last word and the end of the text. */
 const TRAILING_NOISE = /[\s.,;:!?…।"'’)\]\-—–]+$/u;
 
@@ -193,6 +240,9 @@ const FILLER_ONLY = new RegExp(
 /** Sentence-final punctuation (Latin + Devanagari danda) marks a complete thought. */
 const TERMINAL_PUNCTUATION = /[.!?।]["')\]]?$/u;
 
+/** A finished question — stronger completion evidence than a full stop. */
+const QUESTION_ENDING = /\?["')\]]?$/u;
+
 /**
  * True when the accumulated turn text reads as a thought still in
  * progress, so the detector should keep listening a little longer.
@@ -207,6 +257,9 @@ const TERMINAL_PUNCTUATION = /[.!?।]["')\]]?$/u;
  * "the transaction that".
  */
 function looksIncomplete(text: string): boolean {
+  // A comma, a dash or a trailing ellipsis ends a fragment, never a
+  // thought — the caller is still adding to it.
+  if (MID_THOUGHT_PUNCTUATION.test(text)) return true;
   const lastWordText = text.replace(TRAILING_NOISE, "");
   if (HARD_TRAILING.test(lastWordText)) return true;
   if (TERMINAL_PUNCTUATION.test(text)) return false;
@@ -404,10 +457,16 @@ export class AdaptiveTurnDetector {
         return;
       }
 
-      // Mid-thought pause — give the caller room to finish.
-      if (looksIncomplete(text) && this.continuationGraces < MAX_CONTINUATION_GRACES) {
+      // Mid-thought pause — give the caller room to finish. A caller
+      // who has explicitly asked for a moment ("wait", "let me think")
+      // gets the longer of the two windows.
+      const askedForAMoment = HOLD_PHRASE_ONLY.test(text);
+      if (
+        (askedForAMoment || looksIncomplete(text)) &&
+        this.continuationGraces < MAX_CONTINUATION_GRACES
+      ) {
         this.continuationGraces += 1;
-        this.rearmTimer(CONTINUATION_GRACE_MS);
+        this.rearmTimer(askedForAMoment ? HOLD_GRACE_MS : CONTINUATION_GRACE_MS);
         return;
       }
 
@@ -443,7 +502,17 @@ export class AdaptiveTurnDetector {
     const event: TurnDetectionEvent = { text, turnDurationMs };
     this.reset();
     if (this.listeners.size === 0) {
-      this.pendingEvent = event;
+      // A second turn endpointing before anyone subscribed is the same
+      // caller still talking, so it is MERGED into the buffered one
+      // rather than replacing it — otherwise the first half of what
+      // they said is dropped and the reply answers half a thought.
+      this.pendingEvent =
+        this.pendingEvent === null
+          ? event
+          : {
+              text: `${this.pendingEvent.text} ${event.text}`.trim(),
+              turnDurationMs: this.pendingEvent.turnDurationMs + turnDurationMs,
+            };
       return;
     }
     for (const listener of this.listeners) listener(event);
@@ -467,6 +536,11 @@ export class AdaptiveTurnDetector {
     // Genuinely completed short turns — "Haan.", "Yes, that's right." —
     // are released with no added latency, as before.
     if (endsCompletely && wordCount <= SHORT_COMPLETE_TURN_MAX_WORDS) return 0;
+    // A question mark is much stronger evidence than the full stop
+    // Deepgram sprinkles on mid-thought chunks: a short question really
+    // is a finished question. "What should I do now?" answers at the
+    // same speed it always has.
+    if (QUESTION_ENDING.test(text) && wordCount <= SHORT_QUESTION_MAX_WORDS) return 0;
     return endsCompletely ? CONFIRMATION_WINDOW_MS : OPEN_ENDED_CONFIRMATION_WINDOW_MS;
   }
 

@@ -1534,6 +1534,68 @@ Examples:
 ₹1,50,000
 → "one lakh fifty thousand rupees"
 
+## NUMERIC & SYMBOL PRONUNCIATION
+
+When generating speech, interpret numbers and symbols according to their
+meaning and context rather than reading punctuation literally.
+
+DECIMALS:
+Read "." as "point" when it represents a decimal.
+10.5 → "ten point five"
+
+PERCENTAGES:
+Read "%" as "percent".
+10.5% → "ten point five percent"
+
+INDIAN CURRENCY:
+Read ₹ using natural Indian currency terminology.
+₹1,00,000 → "one lakh rupees"
+₹1,00,00,000 → "one crore rupees"
+
+PHONE NUMBERS / OTPs:
+Read each digit individually.
+9876543210 → "nine eight seven six five four three two one zero"
+482913 → "four eight two nine one three"
+
+DATES:
+Convert numeric dates into natural spoken dates.
+13/08/2026 → "thirteenth August twenty twenty-six"
+
+TIME:
+Interpret ":" contextually as time when appropriate.
+10:30 AM → "ten thirty AM"
+
+RANGES:
+Interpret "-" or "–" as "to" when expressing a range.
+5–7 years → "five to seven years"
+
+EMAILS:
+@ → "at"
+. → "dot"
+_ → "underscore"
+- → "hyphen"
+
+SYMBOLS:
+Interpret symbols semantically rather than literally whenever possible.
+~ → around/about
+≈ → approximately
+> → more than
+< → less than
+≥ → or above
+≤ → or below
+/ → per when expressing rates
+× → times
+÷ → divided by
+
+GENERAL:
+- Never change the numerical value.
+- Never round unless explicitly requested.
+- Never omit decimal digits.
+- Never pronounce a phone number, OTP, or reference number as a whole quantity.
+- Preserve the user's intended meaning.
+- Prefer natural spoken Indian English/Hinglish pronunciation over
+  mathematical or computer-style reading.
+
 # LANGUAGE-AWARE PRONUNCIATION
 
 Pronounce numbers and units in the language you are currently speaking.

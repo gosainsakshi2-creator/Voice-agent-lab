@@ -119,6 +119,31 @@ const SHORT_QUESTION_MAX_WORDS = 8;
 const MAX_INTERIM_CONFIRMATIONS = 2;
 
 /**
+ * ---------------- Chunk-boundary finals ----------------
+ *
+ * `is_final` and `speech_final` are different claims. Deepgram sets
+ * `is_final` the moment it will no longer revise a run of words — a
+ * CHUNK BOUNDARY, emitted repeatedly while the caller is still
+ * talking. It sets `speech_final` only when its own endpointer decides
+ * speech has actually stopped.
+ *
+ * Treating the two alike is what let "I'm going to..." be released as
+ * a finished turn: a chunk boundary landed, the silence window ran,
+ * and the caller's next breath arrived to find their thought already
+ * answered. So a final that is NOT endpointed does not release a turn;
+ * it buys one more bounded window for the endpointed final to arrive.
+ *
+ * This costs a genuinely finished turn NOTHING, because a finished
+ * turn ends with `speech_final: true` and never reaches this branch.
+ * The bound covers the pathological case — constant background noise
+ * or a dropped socket, where the endpointer may never fire — so the
+ * caller still gets a reply, just one window later.
+ */
+const CHUNK_BOUNDARY_GRACE_MS = 700;
+/** Deliberately ONE: caps added latency when `speech_final` never comes. */
+const MAX_CHUNK_BOUNDARY_GRACES = 1;
+
+/**
  * Words that cannot end a finished thought — conjunctions, particles,
  * prepositions, determiners, and dangling possessives, in English,
  * Hindi, and Hinglish transliteration.
@@ -302,6 +327,16 @@ export class AdaptiveTurnDetector {
   private pendingInterim = false;
   /** Consecutive confirmation re-waits spent on an outstanding interim. */
   private interimConfirmations = 0;
+  /**
+   * Whether the most recent final was Deepgram's endpointer reporting
+   * end-of-speech, or merely a chunk boundary mid-utterance.
+   *
+   * Starts `true` so a provider that reports no such signal behaves
+   * exactly as this detector always has.
+   */
+  private lastFinalWasEndpoint = true;
+  /** Consecutive waits spent on a chunk-boundary final for this turn. */
+  private chunkBoundaryGraces = 0;
   private readonly listeners = new Set<(event: TurnDetectionEvent) => void>();
   /**
    * A turn that ended while nobody was subscribed. The pipeline only
@@ -371,6 +406,10 @@ export class AdaptiveTurnDetector {
       // The thought is still progressing, so previously-spent graces
       // shouldn't count against the words that come next.
       this.continuationGraces = 0;
+      this.chunkBoundaryGraces = 0;
+      // Absent means "assume endpointed", so batch STT and providers
+      // with no equivalent signal keep their existing behaviour.
+      this.lastFinalWasEndpoint = segment.isSpeechFinal ?? true;
 
       // Deepgram already decides when the user has finished speaking.
       // Don't wait for another full silence window — but still let
@@ -406,6 +445,10 @@ export class AdaptiveTurnDetector {
     this.stage = "silence";
     this.pendingInterim = false;
     this.interimConfirmations = 0;
+    this.chunkBoundaryGraces = 0;
+    // Back to the permissive default: the next turn has produced no
+    // finals yet, so nothing is known about its endpointing.
+    this.lastFinalWasEndpoint = true;
   }
 
   getCurrentSilenceTimeoutMs(): number {
@@ -470,6 +513,29 @@ export class AdaptiveTurnDetector {
         return;
       }
 
+      // Deepgram never declared end-of-speech for the words we hold.
+      // The last final it sent was a CHUNK BOUNDARY (`speech_final`
+      // absent) — a claim about not revising those words, emitted
+      // while the caller is still talking, not a claim that they
+      // stopped. Releasing here is precisely how "I'm going to..."
+      // becomes a turn of its own and gets answered before "...Manali
+      // last week" has been said.
+      //
+      // A genuinely finished turn ends with `speech_final: true` and
+      // never reaches this branch, so finished turns keep exactly the
+      // latency they have today. Bounded, so a caller whose endpointer
+      // never fires (background noise, dropped socket) still gets a
+      // reply one window later rather than never.
+      if (
+        !this.lastFinalWasEndpoint &&
+        this.chunkBoundaryGraces < MAX_CHUNK_BOUNDARY_GRACES
+      ) {
+        this.chunkBoundaryGraces += 1;
+        this.stage = "silence";
+        this.rearmTimer(CHUNK_BOUNDARY_GRACE_MS);
+        return;
+      }
+
       // Post-speech confirmation. The silence window says the caller
       // stopped; hold the turn for one short window before releasing it
       // so speech already in flight can still arrive and cancel it (see
@@ -527,11 +593,21 @@ export class AdaptiveTurnDetector {
     // Words the caller has already spoken are still awaiting their
     // final. Always wait — this is never a finished turn.
     if (this.pendingInterim) return CONFIRMATION_WINDOW_MS;
-    // A turn that already spent a continuation grace has had its extra
-    // listening time (and then some); don't stack another window on it.
-    if (this.continuationGraces > 0) return 0;
-
     const endsCompletely = TERMINAL_PUNCTUATION.test(text);
+
+    // A turn that already spent a continuation grace has had its extra
+    // listening time (and then some); don't stack another window on it
+    // — UNLESS the text still has no sentence-final punctuation. That
+    // case is the one that most needs the hold and was the only one
+    // being denied it: the caller paused mid-thought (hence the
+    // grace), resumed, and stopped again on words Deepgram's own
+    // formatter declined to close a sentence on. Releasing there
+    // answers a fragment. Still just one short window, so a turn that
+    // really did end open-ended is only marginally slower.
+    if (this.continuationGraces > 0) {
+      return endsCompletely ? 0 : CONFIRMATION_WINDOW_MS;
+    }
+
     const wordCount = text.split(/\s+/).length;
     // Genuinely completed short turns — "Haan.", "Yes, that's right." —
     // are released with no added latency, as before.

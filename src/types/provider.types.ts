@@ -69,6 +69,21 @@ export type AudioEncoding = "PCM_16" | "MULAW" | "OPUS";
 export interface TranscriptSegment {
   readonly text: string;
   readonly isFinal: boolean;
+  /**
+   * Whether the provider's own endpointer declared END OF SPEECH for
+   * this segment, as opposed to merely closing a chunk it will not
+   * revise (Deepgram's `speech_final` vs `is_final`).
+   *
+   * `isFinal` alone says "these words are settled" — a streaming
+   * recognizer emits it repeatedly WHILE the caller is still talking,
+   * at chunk boundaries. Treating that as the end of the caller's
+   * thought is what makes an agent reply to half a sentence.
+   *
+   * OPTIONAL, and absence means "assume endpointed". Batch
+   * transcription and providers with no equivalent signal therefore
+   * keep their existing turn-detection behaviour unchanged.
+   */
+  readonly isSpeechFinal?: boolean;
   readonly confidence: number;
   readonly language: SupportedLanguage;
   readonly startedAtMs: number;

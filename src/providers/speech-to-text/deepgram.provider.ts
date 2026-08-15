@@ -131,6 +131,9 @@ export class DeepgramSpeechToTextProvider implements SpeechToTextProvider {
     const segment: TranscriptSegment = {
       text: alternative.transcript,
       isFinal: true,
+      // Batch transcription is handed one already-segmented utterance,
+      // so its single result IS the endpoint — never a chunk boundary.
+      isSpeechFinal: true,
       confidence: alternative.confidence ?? 0,
       language: request.language,
       startedAtMs,
@@ -177,9 +180,18 @@ connection.on("message", (message) => {
     const segment: TranscriptSegment = {
     text: alternative.transcript,
     isFinal: message.is_final ?? false,
+    // `is_final` and `speech_final` are DIFFERENT claims and only the
+    // second one is about the caller having stopped talking:
+    //   is_final     — "I will not revise these words" (chunk boundary,
+    //                  emitted repeatedly mid-utterance)
+    //   speech_final — "my endpointer detected end of speech"
+    // Passing only `is_final` downstream left the turn detector unable
+    // to tell a mid-sentence chunk boundary from an actual endpoint, so
+    // every chunk boundary started a full end-of-turn countdown.
+    isSpeechFinal: message.speech_final ?? false,
     confidence: alternative.confidence ?? 0,
     language: request.language,
-  
+
     startedAtMs: firstWord ? (firstWord.start ?? 0) * 1000 : 0,
     endedAtMs: lastWord ? (lastWord.end ?? 0) * 1000 : 0,
   };
@@ -188,6 +200,8 @@ console.log(
   segment.text,
   "Final:",
   segment.isFinal,
+  "SpeechFinal:",
+  segment.isSpeechFinal,
 );
   queue.push(segment);
 });                          

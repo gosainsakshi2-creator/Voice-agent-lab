@@ -37,7 +37,6 @@ export class BargeInController {
    * second call while nothing is active is a harmless no-op.
    */
   triggerBargeIn(): void {
-     console.log("🔥 BARGE-IN TRIGGERED");
     this.speakingAbort?.abort();
     this.thinkingAbort?.abort();
     for (const listener of this.listeners) listener();

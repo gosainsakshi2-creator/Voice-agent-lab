@@ -149,11 +149,7 @@ export function attachPlivoMediaBridge(
   const segmenter = new MulawVadSegmenter(
     (mulawBytes) => {
       utteranceCount += 1;
-      const durationMs = Math.round((mulawBytes.length / 160) * 20);
-      // eslint-disable-next-line no-console
-      console.log(
-        `[plivo-bridge:${sessionId}] VAD utterance #${utteranceCount} boundary: ${mulawBytes.length} bytes (~${durationMs}ms) — diagnostic only, audio already streamed`,
-      );
+      void mulawBytes;
     },
     () => onCallerSpeechStart(),
     // See BARGE_IN_* above: the onset must look like actual speech, not
@@ -247,10 +243,6 @@ export function attachPlivoMediaBridge(
 
   function enqueueOutbound(chunk: AudioPayload): void | Promise<void> {
     outboundChunkCount += 1;
-    // eslint-disable-next-line no-console
-    console.log(
-      `[plivo-bridge:${sessionId}] enqueueOutbound #${outboundChunkCount}: encoding=${chunk.encoding} sampleRate=${chunk.sampleRateHz} bytes=${chunk.data.byteLength}`,
-    );
 
     if (chunk.encoding !== "PCM_16") {
       // eslint-disable-next-line no-console
@@ -273,10 +265,6 @@ export function attachPlivoMediaBridge(
     const frames = framer.push(mulawBytes);
     outboundFrameTotal += frames.length;
     for (const frame of frames) outboundQueue.push(frame);
-    // eslint-disable-next-line no-console
-    console.log(
-      `[plivo-bridge:${sessionId}] enqueued ${frames.length} frames (${frames.length * OUTBOUND_FRAME_MS}ms), queue depth=${outboundQueue.length}, lifetime frames=${outboundFrameTotal}`,
-    );
     startPump();
     return awaitQueueRoom();
   }
@@ -314,8 +302,6 @@ export function attachPlivoMediaBridge(
 
   function beginPump(): void {
     if (pumpTimer) return;
-    // eslint-disable-next-line no-console
-    console.log(`[plivo-bridge:${sessionId}] pump started (buffered ${outboundQueue.length} frames)`);
     const startedAt = Date.now();
     let framesSent = 0;
     pumpTimer = setInterval(() => {
@@ -336,18 +322,12 @@ export function attachPlivoMediaBridge(
       for (let i = 0; i < framesDue; i += 1) {
         const frame = outboundQueue.shift();
         if (!frame) {
-          // eslint-disable-next-line no-console
-          console.log(`[plivo-bridge:${sessionId}] pump exhausted after ${framesSent} frames (${framesSent * OUTBOUND_FRAME_MS}ms of audio)`);
           clearInterval(pumpTimer);
           pumpTimer = undefined;
           return;
         }
         framesSent += 1;
         if (outboundQueue.length <= OUTBOUND_LOW_WATER_FRAMES) releaseBackpressure();
-        if (framesSent === 1 || framesSent % 50 === 0) {
-          // eslint-disable-next-line no-console
-          console.log(`[plivo-bridge:${sessionId}] pump sending frame #${framesSent}, remaining=${outboundQueue.length}`);
-        }
         sendJson({
           event: "playAudio",
           // `streamId` is a TOP-LEVEL sibling of `event`/`media` — not
@@ -473,10 +453,6 @@ export function attachPlivoMediaBridge(
         const b64 = event.media?.payload;
         if (!b64) return;
         inboundFrameCount += 1;
-        if (inboundFrameCount === 1 || inboundFrameCount % 100 === 0) {
-          // eslint-disable-next-line no-console
-          console.log(`[plivo-bridge:${sessionId}] inbound media frame #${inboundFrameCount}`);
-        }
         const frame = new Uint8Array(Buffer.from(b64, "base64"));
 
         // 1) Detection first, so barge-in fires with the least possible

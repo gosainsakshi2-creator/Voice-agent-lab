@@ -191,11 +191,6 @@ export class ElevenLabsTextToSpeechProvider implements TextToSpeechProvider {
     const voiceId = task.request.voiceId ?? this.config.defaultVoiceId;
     const languageCode = languageToIsoCode(task.request.language);
 
-    // eslint-disable-next-line no-console
-    console.log(
-      `[TTS:elevenlabs] synthesize: voiceId=${voiceId} model=${this.config.modelId} outputFormat=${toPcmOutputFormat(this.config.sampleRateHz)} language=${languageCode ?? "auto"} textLen=${task.request.text.length}`,
-    );
-
     const stream = await this.client.textToSpeech.convert(voiceId, {
       text: task.request.text,
       modelId: this.config.modelId,
@@ -210,15 +205,7 @@ export class ElevenLabsTextToSpeechProvider implements TextToSpeechProvider {
       ...(languageCode ? { languageCode } : {}),
     });
 
-    // eslint-disable-next-line no-console
-    console.log(
-      `[TTS:elevenlabs] convert() returned: type=${typeof stream} constructor=${(stream as object)?.constructor?.name} hasGetReader=${typeof (stream as ReadableStream)?.getReader === "function"} hasAsyncIterator=${typeof stream === "object" && stream !== null && Symbol.asyncIterator in (stream as object)}`,
-    );
-
     const data = await collectStream(stream);
-
-    // eslint-disable-next-line no-console
-    console.log(`[TTS:elevenlabs] collectStream done: ${data.byteLength} bytes of PCM_16 audio`);
 
     return {
       data,
@@ -233,11 +220,6 @@ export class ElevenLabsTextToSpeechProvider implements TextToSpeechProvider {
   ): AsyncIterable<TtsAudioChunk> {
     const voiceId = task.request.voiceId ?? this.config.defaultVoiceId;
     const languageCode = languageToIsoCode(task.request.language);
-
-    // eslint-disable-next-line no-console
-    console.log(
-      `[TTS:elevenlabs] synthesizeStream: voiceId=${voiceId} model=${this.config.modelId} textLen=${task.request.text.length}`,
-    );
 
     // ── Must be `stream()`, NOT `convert()` ─────────────────────────
     //

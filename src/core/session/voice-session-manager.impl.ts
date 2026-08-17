@@ -89,10 +89,6 @@ export class DefaultVoiceSessionManager implements VoiceSessionManager, Pipeline
       targets.map(async (target) => {
         const provider = this.registry.resolve(target.category, target.id);
         const health = await provider.checkHealth();
-        console.log(
-  `[HEALTH] ${target.category}/${target.id}`,
-  health
-);
         return {
           category: target.category,
           identifier: { category: target.category, id: target.id },
@@ -359,13 +355,6 @@ export class DefaultVoiceSessionManager implements VoiceSessionManager, Pipeline
     const record = this.getRecordOrThrow(sessionId);
     const count = (this.inboundAudioPushCount.get(sessionId) ?? 0) + 1;
     this.inboundAudioPushCount.set(sessionId, count);
-
-    if (count === 1 || count % 50 === 0) {
-      // eslint-disable-next-line no-console
-      console.log(
-        `[session-mgr:${sessionId}] pushInboundAudio #${count}: encoding=${chunk.encoding} bytes=${chunk.data.byteLength} state=${record.state} hasMediaStream=${!!record.mediaStream}`,
-      );
-    }
 
     if (!record.mediaStream) {
       record.inboundAudioFallback.push(chunk);

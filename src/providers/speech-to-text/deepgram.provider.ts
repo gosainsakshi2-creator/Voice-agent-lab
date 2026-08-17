@@ -58,12 +58,6 @@ export class DeepgramSpeechToTextProvider implements SpeechToTextProvider {
   private readonly config: DeepgramEnvConfig;
 
   constructor(config: DeepgramEnvConfig = loadEnvConfig()) {
-     console.log(
-    "[Deepgram] API Key:",
-    config.apiKey
-      ? config.apiKey.slice(0,8) + "..."
-      : "MISSING"
-  );
     this.config = config;
     this.client = new DeepgramClient({ apiKey: config.apiKey });
   }
@@ -168,7 +162,6 @@ connection.connect();
 await connection.waitForOpen();
 console.log("[Deepgram] Live connection opened");
 connection.on("message", (message) => {
-  console.log("[Deepgram] Event:", message.type);
   if (message.type !== "Results") return;
 
   const alternative = message.channel?.alternatives?.[0];
@@ -213,14 +206,11 @@ for await (const audio of request.audio) {
     connection.socket.close();
     break;
   }
-  // Inbound audio is now a continuous 20ms frame stream (50/sec), not
-  // one buffered utterance. Logging every frame would issue ~100
-  // synchronous stdout writes per second and stall the event loop the
-  // outbound 20ms playback pump runs on. Sample instead.
+  // Inbound audio is a continuous 20ms frame stream (50/sec). Nothing
+  // is logged here: even a sampled log on this path issues synchronous
+  // stdout writes that stall the event loop the outbound 20ms playback
+  // pump runs on.
   sentFrames += 1;
-  if (sentFrames === 1 || sentFrames % 50 === 0) {
-    console.log("[DG SEND]", Date.now(), `frame #${sentFrames}`, audio.data.byteLength);
-  }
   connection.socket.send(
     Buffer.from(
       audio.data.buffer,

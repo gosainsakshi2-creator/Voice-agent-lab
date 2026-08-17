@@ -122,10 +122,33 @@ export class OpenAiGptLanguageModelProvider implements LanguageModelProvider {
     let tokenIndex = 0;
     let fullContent = "";
 
+    // ── DIAGNOSTIC ONLY — read by nothing, logged once per stream ──────
+    //
+    // Real token counts from OpenAI, so "where is LLM First Token going"
+    // can be answered with measurements instead of the character-count
+    // heuristic in cost-estimator.ts. `reasoningTokens` is the one that
+    // matters: on a reasoning model those tokens are emitted BEFORE the
+    // first visible content token, so they land entirely inside the
+    // llm-first-token span. `cachedTokens` says whether the large system
+    // prompt is being served from OpenAI's prefix cache or prefilled in
+    // full every turn.
+    //
+    // All four stay `undefined` when the stream is interrupted (barge-in):
+    // the usage chunk is the last thing sent, so an aborted stream never
+    // reaches it. That is reported as "n/a", never as 0.
+    let promptTokens: number | undefined;
+    let cachedTokens: number | undefined;
+    let completionTokens: number | undefined;
+    let reasoningTokens: number | undefined;
+
     const stream = await this.client.chat.completions.create({
       model: this.config.model,
       messages,
       stream: true,
+      // Asks for ONE extra chunk before `[DONE]` carrying `usage`, with
+      // an empty `choices` array. Adds no tokens, changes no generation
+      // parameter, and cannot produce a token event (see the loop below).
+      stream_options: { include_usage: true },
     });
 
     for await (const chunk of stream) {
@@ -137,14 +160,32 @@ export class OpenAiGptLanguageModelProvider implements LanguageModelProvider {
         yield { type: "token" as const, delta, index: tokenIndex++ };
       }
 
-      if (chunk.choices[0]?.finish_reason) break;
+      // ── Why the `finish_reason` break is gone ─────────────────────────
+      //
+      // The usage chunk arrives AFTER the chunk carrying `finish_reason`,
+      // so `if (chunk.choices[0]?.finish_reason) break;` exited one chunk
+      // early and made `stream_options.include_usage` inert. Draining to
+      // the stream's natural end instead changes nothing that is emitted:
+      // no content deltas arrive after `finish_reason`, and the usage
+      // chunk has `choices: []` so `chunk.choices[0]?.delta?.content` is
+      // undefined and the token branch above cannot fire for it. The
+      // `signal?.aborted` check still runs every iteration, so barge-in
+      // remains as responsive as before.
+      if (chunk.usage) {
+        promptTokens = chunk.usage.prompt_tokens;
+        cachedTokens = chunk.usage.prompt_tokens_details?.cached_tokens;
+        completionTokens = chunk.usage.completion_tokens;
+        reasoningTokens = chunk.usage.completion_tokens_details?.reasoning_tokens;
+      }
     }
 
     const latencyMs = Date.now() - startedAt;
 
     // eslint-disable-next-line no-console
     console.log(
-      `[LLM:openai] Stream complete: ${latencyMs}ms tokens=${tokenIndex} contentLen=${fullContent.length}`,
+      `[LLM:openai] Stream complete: ${latencyMs}ms tokens=${tokenIndex} contentLen=${fullContent.length}` +
+        ` | USAGE promptTokens=${promptTokens ?? "n/a"} cachedTokens=${cachedTokens ?? "n/a"}` +
+        ` completionTokens=${completionTokens ?? "n/a"} reasoningTokens=${reasoningTokens ?? "n/a"}`,
     );
 
     yield {

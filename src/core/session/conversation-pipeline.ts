@@ -324,7 +324,6 @@ export class ConversationPipeline {
     console.log(
       `[PIPELINE:${sid}] run() started — state=${this.record.state} streamingSTT=${this.usesStreamingStt} llm=${this.providers.llm.descriptor.id} tts=${this.providers.tts.descriptor.id} stt=${this.providers.stt.descriptor.id}`,
     );
-    console.log("[PIPELINE] usesStreamingStt =", this.usesStreamingStt);
 
     // --- Start the continuous listener BEFORE the greeting ---
     //
@@ -440,15 +439,9 @@ export class ConversationPipeline {
     while (!loopSignal.aborted) {
       try {
         if (this.record.state !== SessionState.LISTENING) {
-          // eslint-disable-next-line no-console
-          console.log(
-            `[PIPELINE:${sid}] Main loop: state=${this.record.state}, transitioning to LISTENING`,
-          );
           this.host.transition(this.record, SessionState.LISTENING, "awaiting user speech");
         }
 
-        // eslint-disable-next-line no-console
-        console.log(`[PIPELINE:${sid}] Waiting for user speech...`);
         const turn = await this.acquireNextUserTurn(loopSignal);
         if (!turn || loopSignal.aborted) {
           // eslint-disable-next-line no-console
@@ -608,7 +601,6 @@ export class ConversationPipeline {
   }
 
   private startContinuousStt(loopSignal: AbortSignal): void {
-    console.log("[PIPELINE] startContinuousStt() called");
     const wrapped = withByteCounter(this.inboundAudioSource(), (chunk) => {
       this.sinceLastTurnBytes += chunk.data.byteLength;
       this.sinceLastTurnEncoding ??= chunk.encoding;
@@ -633,13 +625,6 @@ export class ConversationPipeline {
 
         for await (const segment of stream) {
           if (loopSignal.aborted) break;
-         console.log(
-  "[PIPELINE GOT]",
-  Date.now(),
-  segment.text,
-  segment.isFinal,
-  this.record.state
-);
           // DISPLAY ONLY: surface what the caller is saying as soon
           // as Deepgram reports it (interim segments included) so the
           // Dashboard transcript no longer lags turn-end. Nothing
@@ -1269,8 +1254,6 @@ await this.drainPlayback(speakingSignal);
     }
 
     const ttsProviderId = this.providers.tts.descriptor.id;
-    // eslint-disable-next-line no-console
-    console.log(`[TTS:${sid}] Synthesis started: provider=${ttsProviderId} textLen=${text.length} text="${text.slice(0, 60)}${text.length > 60 ? "..." : ""}" streaming=${typeof this.providers.tts.synthesizeStream === "function"}`);
     const task: SynthesisTaskRequest = {
       sessionId: this.record.id,
       request: { text, language: this.record.memory.currentLanguage },
@@ -1312,10 +1295,6 @@ await this.drainPlayback(speakingSignal);
         }
       }
       const ttsMs = Math.max(0, Date.now() - startedAt - this.transportBackpressureMs);
-      // eslint-disable-next-line no-console
-      console.log(
-        `[TTS:${sid}] streaming TTS done: ${chunkCount} chunks, ${ttsMs}ms (paced ${this.transportBackpressureMs}ms on transport backpressure)`,
-      );
       // Charged once for this utterance's text, not per chunk. No
       // generated duration is passed: ElevenLabs is the only provider
       // with `synthesizeStream`, and it bills per character. Should a
@@ -1330,14 +1309,8 @@ await this.drainPlayback(speakingSignal);
     }
 
     return withGracefulRetry("TEXT_TO_SPEECH", async () => {
-      // eslint-disable-next-line no-console
-      console.log(`[TTS:${sid}] Calling synthesize() (batch mode)...`);
       const audio = await this.providers.tts.synthesize(task);
       const ttsCallMs = Date.now() - startedAt;
-      // eslint-disable-next-line no-console
-      console.log(
-        `[TTS:${sid}] Audio chunks generated: ${ttsCallMs}ms encoding=${audio.encoding} sampleRate=${audio.sampleRateHz} bytes=${audio.data.byteLength}`,
-      );
       await this.playAudioChunk(audio);
 
       // ── Do NOT wait out this clip's playback here ──────────────────
@@ -1369,10 +1342,6 @@ await this.drainPlayback(speakingSignal);
       // `playAudioChunk` whether or not a transport is attached) and
       // aborts instantly on barge-in.
       const playbackMs = estimateAudioSeconds(audio) * 1000;
-      // eslint-disable-next-line no-console
-      console.log(
-        `[PLAYBACK:${sid}] Queued ${Math.round(playbackMs)}ms of audio (playback paced by transport, drained at end of utterance)`,
-      );
       if (speakingSignal.aborted) {
         await this.record.mediaStream?.interruptPlayback();
       }
@@ -1441,17 +1410,12 @@ await this.drainPlayback(speakingSignal);
 
   private async playAudioChunk(audio: AudioPayload): Promise<void> {
     this.playAudioChunkCount += 1;
-    const sid = this.record.id;
 
     // On the first chunk, wait for the bridge to register its listener.
     if (this.playAudioChunkCount === 1) {
       await this.waitForOutboundReady(500, this.record.loopAbortController?.signal ?? AbortSignal.abort());
     }
 
-    // eslint-disable-next-line no-console
-    console.log(
-      `[PLAYBACK:${sid}] playAudioChunk #${this.playAudioChunkCount}: encoding=${audio.encoding} sampleRate=${audio.sampleRateHz} bytes=${audio.data.byteLength} hasMediaStream=${!!this.record.mediaStream} listenerCount=${this.record.outboundAudioListeners.size}`,
-    );
     // Account for the real-time duration handed to the transport so
     // `drainPlayback` can hold SPEAKING open until it has actually
     // played. Zero-byte chunks are stream-end markers, not audio.

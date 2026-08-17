@@ -145,6 +145,7 @@ export class OpenAiGptLanguageModelProvider implements LanguageModelProvider {
       model: this.config.model,
       messages,
       stream: true,
+      verbosity: "low",
       // Asks for ONE extra chunk before `[DONE]` carrying `usage`, with
       // an empty `choices` array. Adds no tokens, changes no generation
       // parameter, and cannot produce a token event (see the loop below).

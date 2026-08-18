@@ -176,7 +176,7 @@ export class ElevenLabsTextToSpeechProvider implements TextToSpeechProvider {
     id: TEXT_TO_SPEECH_PROVIDER_IDS.ELEVENLABS,
     displayName: "ElevenLabs",
     supportedLanguages: [SupportedLanguage.ENGLISH, SupportedLanguage.HINDI, SupportedLanguage.HINGLISH],
-    version: "v3",
+    version: "v2",
   };
 
   private readonly client: ElevenLabsClient;

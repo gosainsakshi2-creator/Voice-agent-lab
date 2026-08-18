@@ -196,7 +196,8 @@ export class ElevenLabsTextToSpeechProvider implements TextToSpeechProvider {
       modelId: this.config.modelId,
       outputFormat: toPcmOutputFormat(this.config.sampleRateHz),
       voiceSettings: {
-  stability: 0.42,
+   stability: 0.5,
+  similarityBoost: 0.9,
 },
       ...(languageCode ? { languageCode } : {}),
     });

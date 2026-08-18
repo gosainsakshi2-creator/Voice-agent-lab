@@ -176,7 +176,7 @@ export class ElevenLabsTextToSpeechProvider implements TextToSpeechProvider {
     id: TEXT_TO_SPEECH_PROVIDER_IDS.ELEVENLABS,
     displayName: "ElevenLabs",
     supportedLanguages: [SupportedLanguage.ENGLISH, SupportedLanguage.HINDI, SupportedLanguage.HINGLISH],
-    version: "v2",
+    version: "v3",
   };
 
   private readonly client: ElevenLabsClient;
@@ -197,10 +197,6 @@ export class ElevenLabsTextToSpeechProvider implements TextToSpeechProvider {
       outputFormat: toPcmOutputFormat(this.config.sampleRateHz),
       voiceSettings: {
   stability: 0.42,
-  similarityBoost: 0.88,
-  style: 0,
-  useSpeakerBoost: true,
-  speed: 0.94,
 },
       ...(languageCode ? { languageCode } : {}),
     });

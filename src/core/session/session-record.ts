@@ -73,6 +73,12 @@ export class SessionRecord {
   readonly metrics: SessionMetricsCollector;
   /** Grammatical gender of the selected TTS voice — also drives the deterministic Hindi greeting. */
   readonly voiceGender: "male" | "female";
+  /**
+   * Campaign greeting for this call, already interpolated. `undefined`
+   * for every non-campaign session, which then uses the existing
+   * `openingLineFor` line exactly as before.
+   */
+  readonly campaignOpeningLine: string | undefined;
   readonly bargeIn = new BargeInController();
   readonly turnDetector = new AdaptiveTurnDetector();
 
@@ -86,11 +92,17 @@ export class SessionRecord {
     const voiceGender = TTS_VOICE_METADATA.get(request.providerStack.textToSpeech.id) ?? "female";
     this.voiceGender = voiceGender;
 
+    // Campaign scenario, when this session belongs to a campaign. The
+    // master prompt is unchanged either way — `buildSystemPrompt`
+    // appends this after it rather than replacing anything.
+    this.campaignOpeningLine = request.campaign?.openingLine;
+
     this.memory = new ConversationMemory(
     request.language,
     buildSystemPrompt(
         request.language,
-        voiceGender
+        voiceGender,
+        request.campaign?.systemPromptAppendix
     )
 );
     this.metrics = new SessionMetricsCollector(id, providerStack);

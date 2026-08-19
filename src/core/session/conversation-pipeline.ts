@@ -381,7 +381,7 @@ export class ConversationPipeline {
       // eslint-disable-next-line no-console
       console.log(`[PIPELINE:${sid}] Conversation started — speaking fixed greeting, state=${this.record.state}`);
       try {
-        const greetingText = openingLineFor(this.record.memory.currentLanguage, this.record.voiceGender);
+        const greetingText = openingLineFor(this.record.memory.currentLanguage, this.record.voiceGender, this.record.campaignOpeningLine);
         timer.mark("greeting-text-ready");
 
         this.beginTurnTiming(timer);

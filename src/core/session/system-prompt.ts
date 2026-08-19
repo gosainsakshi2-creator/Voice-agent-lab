@@ -128,16 +128,41 @@ function hindiOpeningLine(isFemale: boolean): string {
  * in the caller's language and follow them from there, and an English
  * opener is the natural one for a Hinglish speaker.
  */
-export function openingLineFor(language: SupportedLanguage, voiceGender: "male" | "female"): string {
+/**
+ * @param campaignOpeningLine ADDITIVE, OPTIONAL. When a campaign
+ *   supplies its own greeting it is spoken verbatim in place of the
+ *   default line. Omitted for every non-campaign session, which then
+ *   returns exactly what it returned before this parameter existed.
+ */
+export function openingLineFor(
+  language: SupportedLanguage,
+  voiceGender: "male" | "female",
+  campaignOpeningLine?: string,
+): string {
+  if (campaignOpeningLine !== undefined && campaignOpeningLine.trim().length > 0) {
+    return campaignOpeningLine;
+  }
   return language === SupportedLanguage.HINDI
     ? hindiOpeningLine(voiceGender === "female")
     : ENGLISH_OPENING_LINE;
 }
 
-export function buildSystemPrompt(initialLanguage: SupportedLanguage, voiceGender: "male" | "female"): string {
+/**
+ * @param campaignAppendix ADDITIVE, OPTIONAL. Campaign scenario text,
+ *   appended AFTER the entire master prompt below so every existing
+ *   rule keeps its position and precedence. Nothing above is edited,
+ *   reordered, or removed. With this argument absent the function
+ *   returns a byte-identical string to the one it returned before the
+ *   parameter existed.
+ */
+export function buildSystemPrompt(
+  initialLanguage: SupportedLanguage,
+  voiceGender: "male" | "female",
+  campaignAppendix?: string,
+): string {
   const isFemale = voiceGender === "female";
 
-  return `# ROLE
+  const masterPrompt = `# ROLE
 
 You are a professional voice agent on a live phone call.
 
@@ -2273,6 +2298,17 @@ Do not optimize for completeness.
 Optimize for natural human conversation.
 
 ${SESSION_START_LANGUAGE_NOTE[initialLanguage]}`;
+
+  // Campaign scenario goes AFTER everything above, so no existing rule
+  // loses its position or its precedence. When no campaign supplies
+  // one, `masterPrompt` is returned untouched and this function is
+  // byte-for-byte what it was before the parameter existed.
+  if (campaignAppendix === undefined || campaignAppendix.trim().length === 0) {
+    return masterPrompt;
+  }
+  return `${masterPrompt}
+
+${campaignAppendix.trim()}`;
 }
 
 /** Per-turn language hint prepended to the user's message so the model reacts to language switches immediately. */

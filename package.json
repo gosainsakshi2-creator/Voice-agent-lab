@@ -11,7 +11,16 @@
     "dev": "tsx server.ts",
     "build": "next build",
     "start": "NODE_ENV=production tsx server.ts",
-    "lint": "next lint"
+    "lint": "next lint",
+    "db:migrate": "tsx src/campaign/db/migrate.ts",
+    "db:verify": "tsx src/campaign/db/verify-constraints.ts",
+    "test:campaign": "tsx src/campaign/tests/phase2-tests.ts",
+    "test:phase3a": "tsx src/campaign/tests/phase3a-tests.ts",
+    "test:phase4": "tsx src/campaign/tests/phase4-tests.ts",
+    "test:phase5": "tsx src/campaign/tests/phase5-tests.ts",
+    "test:phase6": "tsx src/campaign/tests/phase6-tests.ts",
+    "preflight:prod": "tsx src/campaign/production-readiness-cli.ts",
+    "campaign:audit": "tsx src/campaign/audit-cli.ts"
   },
   "engines": {
     "node": ">=20"
@@ -30,12 +39,15 @@
     "@radix-ui/react-tooltip": "^1.1.4",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "csv-parse": "^5.6.0",
     "dotenv": "^17.4.2",
     "geist": "^1.7.2",
+    "libphonenumber-js": "^1.13.11",
     "lightningcss": "^1.33.0",
     "lucide-react": "^0.460.0",
     "next": "^16.2.12",
     "openai": "^7.3.0",
+    "pg": "^8.23.0",
     "plivo": "^4.75.1",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
@@ -45,6 +57,7 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4.0.0",
     "@types/node": "^22.20.1",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@types/ws": "^8.5.12",

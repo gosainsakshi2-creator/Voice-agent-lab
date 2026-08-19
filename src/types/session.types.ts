@@ -49,7 +49,36 @@ export interface SessionCreationRequest {
   /** Required for CallDirection.OUTBOUND; irrelevant for INBOUND. */
   readonly destinationNumber?: string;
   readonly metadata?: Readonly<Record<string, string>>;
-  
+  /**
+   * ADDITIVE, OPTIONAL. Present only for outbound campaign calls.
+   * Absent for every existing caller, which is what keeps their
+   * behavior byte-for-byte identical.
+   */
+  readonly campaign?: CampaignSessionContext;
+}
+
+/**
+ * ADDITIVE, OPTIONAL. Everything an outbound campaign supplies to a
+ * session: who the agent is, who is being called, and the two pieces
+ * of already-interpolated text the campaign wants used.
+ *
+ * A session created WITHOUT this field behaves exactly as it did
+ * before campaigns existed — same system prompt, same opening line.
+ * Nothing in the conversation pipeline branches on the campaign; the
+ * only difference is which strings it is handed.
+ */
+export interface CampaignSessionContext {
+  readonly campaignId: string;
+  readonly campaignType: string;
+  readonly scriptId: string;
+  readonly scriptVersion: string;
+  readonly scriptHash: string;
+  readonly agent: { readonly gender: "male" | "female"; readonly name: string };
+  readonly customer: { readonly name: string };
+  /** Appended AFTER the master system prompt. Placeholders already resolved. */
+  readonly systemPromptAppendix: string;
+  /** Spoken verbatim in place of the default greeting. Placeholders already resolved. */
+  readonly openingLine: string;
 }
 
 /**

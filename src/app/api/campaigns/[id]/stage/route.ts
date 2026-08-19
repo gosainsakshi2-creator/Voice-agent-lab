@@ -31,6 +31,10 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
         campaignControlMax: control.maxCallsThisRun,
       }),
       control,
+      // The kill switch as configured, independent of whether a
+      // dispatcher happens to be running right now. /progress can only
+      // report it while a run is in flight; this is the resting truth.
+      dialingEnabled: config.dialingEnabled,
     });
   } catch (error) {
     return NextResponse.json({ error: messageOf(error) }, { status: 500 });

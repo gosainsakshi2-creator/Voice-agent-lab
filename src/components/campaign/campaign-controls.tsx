@@ -70,6 +70,7 @@ interface StagePayload {
   pilotStage: number;
   ceiling: Ceiling;
   control: Control;
+  dialingEnabled: boolean;
 }
 
 const BOUND_BY_LABEL: Record<Ceiling["boundBy"], string> = {
@@ -182,7 +183,11 @@ export function CampaignControls({ campaignId }: { campaignId: string }) {
     [campaignId, load],
   );
 
-  const dialingEnabled = progress?.dispatcher?.dialingEnabled ?? false;
+  // A live dispatcher is the most direct witness, but it only exists
+  // while a run is in flight. Falling straight to `false` when it is
+  // absent reported "dialing is disabled" for an idle campaign whose
+  // kill switch was on, so /stage supplies the resting value.
+  const dialingEnabled = progress?.dispatcher?.dialingEnabled ?? stage?.dialingEnabled ?? false;
   const running = progress?.running ?? false;
   const control = stage?.control;
   const ceiling = stage?.ceiling;

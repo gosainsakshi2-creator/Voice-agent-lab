@@ -21,6 +21,7 @@
     "test:phase6": "tsx src/campaign/tests/phase6-tests.ts",
     "test:phase7": "tsx src/campaign/tests/phase7-tests.ts",
     "test:phase7b": "tsx src/campaign/tests/phase7b-tests.ts",
+    "test:phase8": "tsx src/campaign/tests/phase8-sheet-tests.ts",
     "preflight:prod": "tsx src/campaign/production-readiness-cli.ts",
     "campaign:audit": "tsx src/campaign/audit-cli.ts"
   },

@@ -45,6 +45,7 @@ import {
 } from "../db/repositories/call-attempt.repo";
 import { recordClassifyMs, saveOutcome } from "../db/repositories/outcome.repo";
 import { classifyOutcome } from "../outcome/classifier";
+import { syncFinalYesToSheet } from "../integrations/final-yes-sheet";
 import { dispositionFor } from "../outcome/disposition";
 import type { OutcomeClassification } from "../outcome/outcome-types";
 import { toStoredTranscript, type StoredTranscript } from "../outcome/transcript";
@@ -211,6 +212,25 @@ export async function runCall(
       campaignId: campaign.id,
       classification,
       transcript,
+    });
+
+    // ── 6. Mirror a definitive FINAL_YES to the registrations sheet ─
+    // LAST, deliberately. The outcome is already persisted by step 5
+    // and the contact already moved by step 4, so the sheet is a
+    // downstream copy of a decision that is final either way. The call
+    // never throws and never rejects (see `final-yes-sheet.ts`), so no
+    // sheet, credential or Google failure can reach the retry planner,
+    // the disposition, the attempt row or the campaign's state.
+    //
+    // It decides nothing: it reads the `confirmed_at_gate` verdict the
+    // classifier already produced and the FINAL_YES disposition already
+    // written above, and writes a row only when both agree.
+    await syncFinalYesToSheet({
+      campaignId: campaign.id,
+      contactId: contact.id,
+      attemptId: attempt.id,
+      classification,
+      ...(disposition ? { disposition: disposition.disposition } : { disposition: undefined }),
     });
 
     return { dialled: true, attemptId: attempt.id, failureClass, reason };

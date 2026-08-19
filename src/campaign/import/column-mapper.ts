@@ -25,8 +25,16 @@ export interface MappingSuggestion {
   readonly metadataColumns: readonly string[];
 }
 
-/** "Mobile Number " and "mobile_number" must compare equal. */
-function canonical(header: string): string {
+/**
+ * "Mobile Number " and "mobile_number" must compare equal.
+ *
+ * Exported because anything reading a column back out of
+ * `contacts.metadata` faces the same problem in reverse: the keys there
+ * are the source file's headers VERBATIM, so a reader looking for the
+ * email column has to canonicalise them the same way this file does
+ * rather than guess at a spelling.
+ */
+export function canonical(header: string): string {
   return header.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 

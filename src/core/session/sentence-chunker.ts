@@ -78,8 +78,28 @@ const CLAUSE_BOUNDARY = /([,;:—–]|।)(\s+)/u;
  * `MIN_FIRST_CHUNK_LENGTH` / `MIN_FIRST_CLAUSE_LENGTH` below.
  */
 const MIN_CHUNK_LENGTH = 60;
-/** The first chunk may be shorter: getting audio started beats chunk size. */
-const MIN_FIRST_CHUNK_LENGTH = 8;
+/**
+ * Minimum length of the FIRST chunk.
+ *
+ * The first chunk may be shorter than the rest — getting audio started
+ * beats chunk size — but not arbitrarily short. At 8 characters a
+ * one-word interjection became its own TTS request: the approved
+ * script opens its YES branch with "Perfect!", and the model opens
+ * most branch replies the same way ("Awesome!", "Sure!"). Each one was
+ * synthesized as a complete utterance with its own falling intonation,
+ * its own trailing silence, its own round trip, and its own leading
+ * silence on the sentence that followed — a fragmented micro-response
+ * at the top of the reply, immediately followed by an audible seam.
+ *
+ * 40 characters is the same threshold, for the same reason, as
+ * `MIN_FIRST_CLAUSE_LENGTH` below: at roughly 22 characters per second
+ * of speech it is ~1.8s of audio, which is what it takes to cover the
+ * synthesis round trip for whatever comes next. Below that the "cheap"
+ * early cut costs more silence than it saves. An interjection now
+ * simply rides along with the sentence after it, as one continuous
+ * request — which is also how a person says it.
+ */
+const MIN_FIRST_CHUNK_LENGTH = 40;
 /**
  * Only cut the first chunk at a clause boundary once the clause is
  * long enough to pay for the cut.
@@ -93,8 +113,26 @@ const MIN_FIRST_CHUNK_LENGTH = 8;
  * 40 characters (~1.9s) covers a normal round trip; anything shorter
  * now simply waits for the sentence to finish, which is both smoother
  * and, once the gap it used to cause is counted, no slower.
+ *
+ * 40 turned out to cover the round trip and nothing else. A comma is
+ * not a place a speaker stops, and at 40 characters the FIRST comma of
+ * an ordinary answer is always inside the opening phrase: "It's a live
+ * online demo where we show Flexi Genie," / "our AI Funnel Builder
+ * Agent, actually building things in real time." — one sentence cut in
+ * half, the two halves synthesized as separate utterances with a seam
+ * between them. That happened on the first chunk of essentially every
+ * answer, which is the most audible position on the call.
+ *
+ * 90 characters (~4s) is long enough that taking a clause instead of
+ * waiting is a real saving rather than a reflex. Below it the sentence
+ * is close enough to finishing that waiting costs a few hundred
+ * milliseconds once, against a mid-phrase seam heard every turn. Above
+ * it the reply is long enough that the caller would otherwise be
+ * sitting in silence, and a clause is the honest place to breathe.
+ * Short first sentences are unaffected either way — they are cut by
+ * `MIN_FIRST_CHUNK_LENGTH` on their own full stop, not by this.
  */
-const MIN_FIRST_CLAUSE_LENGTH = 40;
+const MIN_FIRST_CLAUSE_LENGTH = 90;
 /**
  * Beyond this, cut without waiting for a sentence to end.
  *
@@ -106,8 +144,28 @@ const MIN_FIRST_CLAUSE_LENGTH = 40;
  * belongs well clear of normal sentence lengths. Audio is already
  * playing by the time a non-first chunk is buffering, so the extra
  * headroom costs the caller no latency at all.
+ *
+ * 240 then proved too tight for the same reason, one revision later.
+ * Once the conversation policy stopped the model handing a paragraph
+ * over one sentence at a time, its sentences got longer — a measured,
+ * perfectly grammatical single sentence from the approved pitch runs
+ * 289 characters — and the valve fired on ordinary prose again, cutting
+ * at the last comma before the cap: "...and even automate your
+ * business," / "without learning any tool." Mid-phrase, and heard. 300
+ * clears a long real sentence while still bounding a genuine run-on,
+ * and the valve prefers a clause boundary inside the window over a bare
+ * word boundary, so even when it does fire the cut lands somewhere a
+ * speaker could plausibly breathe.
+ *
+ * It is deliberately not raised further. A chunk is one synthesis call,
+ * and for the batch providers (Cartesia, Smallest AI) time-to-first-
+ * audio grows with the text: measured at roughly 12ms and 19ms per
+ * character respectively, a 300-character request already sits near the
+ * ~2.2s of audio the transport keeps buffered ahead of it. Past that
+ * the pump runs dry waiting for the request, which trades a seam for a
+ * silence.
  */
-const MAX_BUFFER_BEFORE_FORCED_CUT = 240;
+const MAX_BUFFER_BEFORE_FORCED_CUT = 300;
 /**
  * The same safety valve for the first chunk, where the caller IS
  * waiting.
@@ -163,14 +221,29 @@ export class SentenceChunker {
   private nextCutIndex(): number | null {
     const minLength = this.isFirstChunk ? MIN_FIRST_CHUNK_LENGTH : MIN_CHUNK_LENGTH;
 
-    const sentence = SENTENCE_BOUNDARY.exec(this.buffer);
-    if (sentence) {
-      const end = sentence.index + sentence[0].length;
-      // Long enough to be worth its own synthesis call — cut here.
-      if (this.buffer.slice(0, end).trim().length >= minLength) return end;
-      // Otherwise fall through: this was an abbreviation or stray
-      // punctuation, so keep accumulating (unless we're over the cap).
-    }
+    // The EARLIEST sentence boundary whose prefix is long enough to be
+    // worth its own synthesis call.
+    //
+    // Testing only the FIRST boundary in the buffer — which is what
+    // this did — silently gave up on the whole reply as soon as its
+    // opening sentence was shorter than the minimum. "I've registered
+    // you for the session." is 36 characters, so the scan stopped
+    // there, ignored the perfectly good boundary 90 characters later,
+    // and kept accumulating until `MAX_BUFFER_BEFORE_FORCED_CUT`
+    // guillotined the buffer at the last comma inside the window:
+    // "...join today at 7:30 PM," / "ideally 5 minutes early...".
+    // That cut lands INSIDE one sentence, and every chunk boundary is
+    // heard — so a run of short sentences, which is exactly what this
+    // script's confirmation block is made of, reliably produced an
+    // artificial pause in the middle of a phrase.
+    //
+    // Scanning past a too-short boundary to the next one cuts on whole
+    // sentences instead, and merges the short ones ahead of it into a
+    // single continuous request. It can still only cut at a sentence
+    // end, so pronunciation and phrasing are unchanged; the forced-cut
+    // valve below still bounds how long it may wait.
+    const sentenceEnd = this.firstQualifyingSentenceEnd(minLength);
+    if (sentenceEnd !== null) return sentenceEnd;
 
     // Latency guard for the very first chunk: a clause boundary is a
     // natural enough place to breathe, and it gets audio to the caller
@@ -201,6 +274,28 @@ export class SentenceChunker {
     }
 
     return null;
+  }
+
+  /**
+   * End index of the earliest sentence boundary whose preceding text
+   * reaches `minLength`, or null when the buffer holds none yet.
+   *
+   * A fresh global regex is built per scan so the shared
+   * `SENTENCE_BOUNDARY` literal never carries `lastIndex` state
+   * between calls.
+   */
+  private firstQualifyingSentenceEnd(minLength: number): number | null {
+    const scanner = new RegExp(SENTENCE_BOUNDARY.source, "gu");
+    for (;;) {
+      const match = scanner.exec(this.buffer);
+      if (match === null) return null;
+      const end = match.index + match[0].length;
+      if (this.buffer.slice(0, end).trim().length >= minLength) return end;
+      // Too short to be worth a synthesis call of its own — an
+      // abbreviation, a stray "...", or a genuine but very short
+      // sentence. Keep scanning: the next boundary merges it with what
+      // follows rather than stranding the whole buffer.
+    }
   }
 
   /**

@@ -21,9 +21,21 @@ const LEADING_HESITATION = /^(?:(?:u+m+h?|u+h+|h+m+|e+r+m?|erm)\b[\s,.…-]*)+/i
  * Filler openers that are also real words ("so the price is...", "well
  * within budget"). Only stripped when punctuated as a standalone
  * discourse marker, which is the form the prompt bans.
+ *
+ * "actually" is deliberately NOT in this list, and must not be added
+ * back. The approved registration script opens its second block with
+ * "Actually, I'm calling you with a very interesting invitation." —
+ * that is signed-off copy, not hesitation, and stripping it shortened
+ * an approved line on every single call while leaving no trace that
+ * anything had been changed. A campaign script is pinned by content
+ * hash precisely so the words that were approved are the words that
+ * are spoken; a last-mile regex that quietly edits one of them defeats
+ * the entire mechanism. The model inventing its own "actually" is
+ * handled where the rest of the padding is — by the conversation
+ * policy, which can tell an approved word from an invented one.
  */
 const LEADING_DISCOURSE_FILLER =
-  /^(?:(?:so basically|let me think|you know|basically|actually|well|so|now)\s*[,–—]\s*)+/iu;
+  /^(?:(?:so basically|let me think|you know|basically|well|so|now)\s*[,–—]\s*)+/iu;
 
 /**
  * Two acknowledgements stacked into one turn — "Okay, thank you." The

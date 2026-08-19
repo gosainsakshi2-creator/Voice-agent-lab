@@ -24,61 +24,32 @@ import type { CampaignScript } from "../script-types";
 const SCRIPT_BODY = `REGISTRATION CALL — TEAM FLEXIFUNNELS
 
 Caller:
-Hi {{customer_name}}, this is {{agent_name}} from Team FlexiFunnels.
 
-Actually, I'm calling you with a very interesting invitation.
+Hi, am I speaking with {{customer_name}}?
 
-What if I tell you that you can build your funnel, website, product, course and even automate parts of your business—just by chatting with AI?
+Hi {{customer_name}}, this is {{agent_name}} calling from the FlexiFunnels team.
 
-No complicated builder. No learning dozens of tools.
+Actually, I am calling to invite you to a special LIVE session with Saurabh Sir happening TODAY at 7:30 PM.
 
-You simply tell the AI what you want… and the Agent does the work.
+In this session, Saurabh Sir is going to reveal FlexiFunnels new Funnel Builder Agent — an AI-powered agent that can help you build funnels, create pages, and set up different things for your online business simply by giving it commands.
 
-We're doing a LIVE reveal of this Funnel Builder Agent, where you'll actually see it building things live.
+Yes, you just tell the AI what you want to build, and it helps build it for you.
 
-Can I tell you in 20 seconds why I think you should attend?
+And the best part is, Saurabh Sir will give you a LIVE demo and show you exactly how the Funnel Builder Agent works in real-time.
 
-[YES]
+It is a FREE LIVE session, and LIVE attendees will also get ₹1.5 lakh+ worth of exclusive bonuses.
 
-Great.
-
-Normally, creating a funnel can involve designers, developers, copywriters, multiple tools and a lot of back-and-forth.
-
-But in this event, you'll see the “Say it, it's done” workflow—where a complete online business can be built through a conversation with the Agent.
-
-We'll demonstrate things like:
-
-• Funnel
-• Landing pages
-• Products
-• Checkout & payments
-• Courses
-• Emails
-• Split tests
-
-—all from simple commands.
-
-And the best part is the registration is completely FREE.
-
-So, {{customer_name}}, should I reserve your free seat for the live event?
+So, would you like me to register you for this special LIVE session?
 
 [YES]
 
-Perfect!
+Awesome! I have registered you for the session.
 
-I'll get your registration done and send the details to you on WhatsApp.
+You will receive the joining link on your Email and on WhatsApp within 10 min.
 
-One important thing: don't just register and forget about it.
+Please make sure to join TODAY at 7:30 PM, preferably 5 minutes before the session, so you don’t miss the LIVE demo and the special bonuses.
 
-The biggest reveal is happening LIVE, and the page says the live attendees also get access to an attendee-only bonus bundle worth ₹1,50,000+, along with a live Q&A and a surprise reveal.
-
-Can I count on you to attend live?
-
-[YES]
-
-Perfect. I'll mark you as confirmed.
-
-See you inside!`;
+Alright? Thank you so much! See you today at 7:30 PM.`;
 
 export const REGISTRATION_V1: CampaignScript = {
   id: "registration",

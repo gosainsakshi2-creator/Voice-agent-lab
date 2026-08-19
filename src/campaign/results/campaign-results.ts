@@ -20,16 +20,25 @@ import { getCampaign } from "../db/repositories/campaign.repo";
 import { isSuccessOutcome, type OutcomeType } from "../outcome/outcome-types";
 import {
   attemptAggregates,
+  attemptsPerContact,
   classifierCounts,
+  contactDispositionAggregates,
+  contactStateCounts,
   contactStatusCounts,
   coverage,
   dispatchAggregates,
   outcomeAggregates,
+  suspectedVoicemailAttempts,
   voiceAggregates,
+  type ContactDispositionAggregateRow,
+  type ContactStateCounts,
 } from "./results.repo";
 import type {
   CampaignResults,
+  ContactDispositionCounts,
+  ContactOutcomes,
   ProviderAttemptRow,
+  ProviderContactRow,
   ProviderDispatchRow,
   ProviderOutcomeRow,
   ProviderVoiceRow,
@@ -58,7 +67,19 @@ export async function buildCampaignResults(campaignId: string): Promise<Campaign
   const campaign = await getCampaign(campaignId);
   if (!campaign) return undefined;
 
-  const [attempts, outcomes, classifiers, voice, dispatch, contacts, health] = await Promise.all([
+  const [
+    attempts,
+    outcomes,
+    classifiers,
+    voice,
+    dispatch,
+    contacts,
+    health,
+    dispositions,
+    contactState,
+    attemptDistribution,
+    voicemailAttempts,
+  ] = await Promise.all([
     attemptAggregates(campaignId),
     outcomeAggregates(campaignId),
     classifierCounts(campaignId),
@@ -66,6 +87,10 @@ export async function buildCampaignResults(campaignId: string): Promise<Campaign
     dispatchAggregates(campaignId),
     contactStatusCounts(campaignId),
     coverage(campaignId),
+    contactDispositionAggregates(campaignId),
+    contactStateCounts(campaignId),
+    attemptsPerContact(campaignId),
+    suspectedVoicemailAttempts(campaignId),
   ]);
 
   const providers: readonly ProviderAttemptRow[] = attempts.map((row) => ({
@@ -134,6 +159,8 @@ export async function buildCampaignResults(campaignId: string): Promise<Campaign
     classifyMs: row.classifyMs,
   }));
 
+  const contactOutcomes = buildContactOutcomes(dispositions, contactState, attemptDistribution);
+
   const dialingEnabled = isDialingEnabled();
 
   return {
@@ -172,22 +199,110 @@ export async function buildCampaignResults(campaignId: string): Promise<Campaign
     },
     providers,
     outcomes: { perProvider: outcomeRows, byType: byOutcomeType, classifiers },
+    contactOutcomes,
     voice: { perProvider: voiceRows, note: VOICE_NOTE },
     orchestration: { perProvider: dispatchRows, note: ORCHESTRATION_NOTE },
     dataHealth: {
       attemptsMissingVoiceMetrics: health.missingVoiceMetrics,
       attemptsMissingOutcome: health.missingOutcome,
       inferredTerminalStatuses: health.inferredTerminal,
+      suspectedVoicemailAttempts: voicemailAttempts,
       warnings: buildWarnings({
         dialingEnabled,
         totals,
         classified,
         health,
         providerCount: providers.length,
+        contactOutcomes,
+        voicemailAttempts,
       }),
     },
     generatedAt: new Date(),
   };
+}
+
+const CONTACT_NOTE =
+  "Counted in PEOPLE, not calls. One contact may have several attempts, so every rate here uses " +
+  "unique contacts as its denominator — a registration conversion of 3/10 contacts is not 3/20 " +
+  "attempts, and the two must never be quoted interchangeably.";
+
+const EMPTY_DISPOSITIONS: ContactDispositionCounts = {
+  FINAL_YES: 0,
+  FINAL_NO: 0,
+  RETRYABLE: 0,
+  UNRESOLVED: 0,
+  TECHNICAL_FAILURE: 0,
+  UNCLASSIFIED: 0,
+};
+
+/**
+ * Folds the per-provider disposition rows into the contact-level view.
+ *
+ * The denominator throughout is `state.total` — every contact imported,
+ * including those never called. A conversion rate that quietly excludes
+ * the contacts the dispatcher has not reached yet climbs as a campaign
+ * runs and is worthless for deciding whether to run the next stage.
+ */
+function buildContactOutcomes(
+  rows: readonly ContactDispositionAggregateRow[],
+  state: ContactStateCounts,
+  attemptDistribution: Readonly<Record<string, number>>,
+): ContactOutcomes {
+  const overall: Record<keyof ContactDispositionCounts, number> = { ...EMPTY_DISPOSITIONS };
+  const byProvider = new Map<string, { contacts: number; counts: Record<keyof ContactDispositionCounts, number> }>();
+
+  for (const row of rows) {
+    const key = dispositionKey(row.disposition);
+    overall[key] += row.contacts;
+
+    const lane = byProvider.get(row.provider) ?? { contacts: 0, counts: { ...EMPTY_DISPOSITIONS } };
+    lane.contacts += row.contacts;
+    lane.counts[key] += row.contacts;
+    byProvider.set(row.provider, lane);
+  }
+
+  const perProvider: readonly ProviderContactRow[] = [...byProvider.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([provider, lane]) => ({
+      provider,
+      contacts: lane.contacts,
+      byDisposition: { ...lane.counts },
+      stillOpen: lane.contacts - lane.counts.FINAL_YES - lane.counts.FINAL_NO,
+      conversionRate: rate(lane.counts.FINAL_YES, lane.contacts),
+    }));
+
+  return {
+    total: state.total,
+    byDisposition: { ...overall },
+    callbackRequested: state.callbackRequested,
+    stillEligible: state.stillEligible,
+    permanentlyClosed: state.permanentlyClosed,
+    neverAttempted: state.neverAttempted,
+    attemptsPerContact: attemptDistribution,
+    totalAttempts: state.totalAttempts,
+    conversionRate: rate(overall.FINAL_YES, state.total),
+    finalYesRate: rate(overall.FINAL_YES, state.total),
+    finalNoRate: rate(overall.FINAL_NO, state.total),
+    perProvider,
+    note: CONTACT_NOTE,
+  };
+}
+
+/** Maps a stored disposition string onto the report's fixed set. */
+function dispositionKey(value: string): keyof ContactDispositionCounts {
+  switch (value) {
+    case "FINAL_YES":
+    case "FINAL_NO":
+    case "RETRYABLE":
+    case "UNRESOLVED":
+    case "TECHNICAL_FAILURE":
+      return value;
+    default:
+      // Includes 'UNCLASSIFIED' and anything a future writer stores that
+      // this report does not know. Counted as "no verdict", never
+      // silently dropped from the total.
+      return "UNCLASSIFIED";
+  }
 }
 
 function buildOutcomeRows(
@@ -249,8 +364,39 @@ function buildWarnings(input: {
   classified: number;
   health: { missingVoiceMetrics: number; missingOutcome: number; inferredTerminal: number };
   providerCount: number;
+  contactOutcomes: ContactOutcomes;
+  voicemailAttempts: number;
 }): readonly string[] {
   const warnings: string[] = [];
+
+  // Said first and on every report that has connected a call: there is
+  // no answering-machine detection, so "answered" means "the media
+  // stream opened" and nothing more. The transcript heuristic catches
+  // greetings it recognises; it cannot catch a machine that says
+  // something it does not know, and it is not a carrier verdict.
+  if (input.totals.connected > 0) {
+    warnings.push(
+      `No answering-machine detection exists (no carrier AMD or status callback). "Connected" means the ` +
+        `media stream opened, which a human, a voicemail and an IVR all do. ` +
+        (input.voicemailAttempts > 0
+          ? `${input.voicemailAttempts} attempt(s) were identified as voicemail from the TRANSCRIPT alone — a floor, not a count.`
+          : `No transcript matched a known voicemail greeting, which is not evidence that none were machines.`),
+    );
+  }
+  if (input.contactOutcomes.total > 0 && input.contactOutcomes.totalAttempts > input.contactOutcomes.total) {
+    warnings.push(
+      `${input.contactOutcomes.totalAttempts} attempt(s) across ${input.contactOutcomes.total} contact(s): ` +
+        `read conversion from the contact-level figures. An attempt-level success rate counts the same ` +
+        `person more than once.`,
+    );
+  }
+  if (input.contactOutcomes.byDisposition.UNCLASSIFIED > 0 && input.contactOutcomes.neverAttempted === 0) {
+    warnings.push(
+      `${input.contactOutcomes.byDisposition.UNCLASSIFIED} contact(s) have attempts but no business ` +
+        `disposition recorded, so they are absent from the conversion numerator and present in its ` +
+        `denominator. Rows written before the contact-level outcome existed look like this.`,
+    );
+  }
 
   if (!input.dialingEnabled) {
     warnings.push(

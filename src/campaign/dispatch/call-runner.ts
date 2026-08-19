@@ -18,8 +18,15 @@
  *      rehearsal cannot reach the telephony provider.
  *   3. campaign context built and validated before dialling, so a
  *      contact with no name fails without ringing anyone.
- *   4. every exit path goes through `finalize`, which closes the
- *      attempt and moves the contact in one transaction.
+ *   4. every exit path goes through `finalize`, which classifies the
+ *      call, derives the contact's disposition, decides the retry, and
+ *      then closes the attempt and moves the contact in one
+ *      transaction.
+ *
+ * Step 4's internal order changed in Phase 7 and the order is the
+ * point: the call is INTERPRETED before its fate is decided. Deciding
+ * first and interpreting afterwards is what made "call me later" and
+ * "no, never" the same outcome for a contact.
  */
 
 import { CallDirection, ProviderCategory, SupportedLanguage } from "../../types/enums";
@@ -38,6 +45,8 @@ import {
 } from "../db/repositories/call-attempt.repo";
 import { recordClassifyMs, saveOutcome } from "../db/repositories/outcome.repo";
 import { classifyOutcome } from "../outcome/classifier";
+import { dispositionFor } from "../outcome/disposition";
+import type { OutcomeClassification } from "../outcome/outcome-types";
 import { toStoredTranscript, type StoredTranscript } from "../outcome/transcript";
 import type { ConversationTurn } from "../../types/provider.types";
 import { buildCampaignContext, CampaignContextError } from "../domain/campaign-context";
@@ -125,30 +134,78 @@ export async function runCall(
     statusSource: "observed" | "inferred",
     hangupReason?: string,
   ): Promise<CallOutcome> => {
-    const decision = planRetry(failureClass, contact.nextAttemptNumber, config.retry);
-    const status = decision.retry ? statusForAttempt(failureClass) : decision.contactStatus;
+    // The attempt's own status does not depend on the retry decision:
+    // it is the mechanical result of this call. Computing it first is
+    // what lets the call be interpreted before its fate is decided.
+    const status = statusForAttempt(failureClass);
+
+    // ── 1. What did this call MEAN? ───────────────────────────────
+    // Before the retry decision, not after it. A conversation that
+    // ended is not the same thing as a person who decided, and the
+    // planner cannot tell the difference without being told.
+    //
+    // Never throws: a classifier fault yields `undefined`, and the
+    // planner then behaves exactly as it did before this existed.
+    const classification = classifySafely({
+      campaign,
+      status,
+      failureClass,
+      failureReason: reason,
+      answered,
+      transcript,
+    });
+
+    // ── 2. Project onto the contact-level disposition ─────────────
+    const disposition = classification
+      ? dispositionFor({ outcomeType: classification.outcomeType, failureClass })
+      : undefined;
+
+    // ── 3. Decide retry vs terminal, with the outcome in hand ─────
+    const decision = planRetry(
+      failureClass,
+      contact.nextAttemptNumber,
+      config.retry,
+      new Date(),
+      classification && disposition
+        ? {
+            campaignType: campaign.campaignType,
+            disposition: disposition.disposition,
+            outcomeType: classification.outcomeType,
+          }
+        : undefined,
+    );
+
+    // ── 4. Close the attempt and move the contact, atomically ─────
+    // Unchanged from before: a terminal decision names the attempt's
+    // status, a retry falls back to the mechanical one.
+    const attemptStatus = decision.retry ? status : decision.contactStatus;
     await finalizeAttempt({
       attemptId: attempt.id,
       contactId: contact.id,
-      status,
+      status: attemptStatus,
       failureClass,
       failureReason: reason,
       ...(hangupReason !== undefined ? { hangupReason } : {}),
       statusSource,
       nextAttemptAfter: decision.nextAttemptAfter,
       contactStatus: decision.contactStatus,
+      ...(disposition
+        ? {
+            disposition: disposition.disposition,
+            closureReason: `${disposition.reason} — ${decision.reason}`,
+          }
+        : {}),
+      ...(classification ? { lastOutcomeType: classification.outcomeType } : {}),
+      closed: !decision.retry,
     });
 
-    // The business result, written after the attempt is closed. A
-    // classification failure must never change what happened to the
-    // call, so it is contained here rather than allowed to escape.
-    await classifyAndSave({
+    // ── 5. Store the interpretation ──────────────────────────────
+    // After the attempt is closed, and contained: a failure to persist
+    // an outcome must never change what happened to the call.
+    await saveClassification({
       attemptId: attempt.id,
-      campaign,
-      status,
-      failureClass,
-      failureReason: reason,
-      answered,
+      campaignId: campaign.id,
+      classification,
       transcript,
     });
 
@@ -396,27 +453,28 @@ function captureTranscript(manager: ManagerLike, sessionId: SessionId): StoredTr
 }
 
 /**
- * Classifies the finished call and stores the result.
+ * Reads the finished call, in memory, with no database access.
  *
- * Deliberately swallows its own errors. An outcome is an
- * interpretation of a call that has already happened; a classifier
- * that could fail a call, or worse, cause a retry — a second call to a
- * real person because a JSON write failed — would be a far more
- * expensive bug than a missing label. Anything unclassified is
- * recoverable later from the stored transcript.
+ * Separated from persistence because the retry decision now depends on
+ * it: the classification has to exist BEFORE the contact is moved, and
+ * a write is not something to do inside that window.
+ *
+ * Returns `undefined` rather than throwing. That is the safety property
+ * the whole reordering rests on — an unreadable call falls back to the
+ * pre-Phase-7 telephony retry policy, so the worst case of a classifier
+ * bug is the behaviour this system already had, never a lost contact or
+ * an extra call to a real person.
  */
-async function classifyAndSave(input: {
-  attemptId: string;
+function classifySafely(input: {
   campaign: CampaignRecord;
   status: CallStatus;
   failureClass: FailureClass;
   failureReason: string;
   answered: boolean;
   transcript: StoredTranscript | undefined;
-}): Promise<void> {
-  const startedAt = Date.now();
+}): OutcomeClassification | undefined {
   try {
-    const classification = classifyOutcome({
+    return classifyOutcome({
       campaignType: input.campaign.campaignType,
       status: input.status,
       failureClass: input.failureClass,
@@ -424,10 +482,32 @@ async function classifyAndSave(input: {
       transcript: input.transcript?.turns ?? [],
       failureReason: input.failureReason,
     });
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Stores the interpretation, and the transcript it was made from.
+ *
+ * Deliberately swallows its own errors. An outcome row is a record of a
+ * call that has already happened and whose contact has already been
+ * moved; a failed JSON write must not be able to fail the call. Anything
+ * unstored here is recoverable from `findUnclassifiedAttempts`.
+ */
+async function saveClassification(input: {
+  attemptId: string;
+  campaignId: string;
+  classification: OutcomeClassification | undefined;
+  transcript: StoredTranscript | undefined;
+}): Promise<void> {
+  if (!input.classification) return;
+  const startedAt = Date.now();
+  try {
     await saveOutcome({
       attemptId: input.attemptId,
-      campaignId: input.campaign.id,
-      classification,
+      campaignId: input.campaignId,
+      classification: input.classification,
       ...(input.transcript ? { transcript: input.transcript } : {}),
     });
     await recordClassifyMs(input.attemptId, Date.now() - startedAt);

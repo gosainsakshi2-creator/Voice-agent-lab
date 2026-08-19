@@ -87,6 +87,39 @@ interface ProviderDispatchRow {
   classifyMs: Percentiles;
 }
 
+interface ContactDispositionCounts {
+  FINAL_YES: number;
+  FINAL_NO: number;
+  RETRYABLE: number;
+  UNRESOLVED: number;
+  TECHNICAL_FAILURE: number;
+  UNCLASSIFIED: number;
+}
+
+interface ProviderContactRow {
+  provider: string;
+  contacts: number;
+  byDisposition: ContactDispositionCounts;
+  stillOpen: number;
+  conversionRate: Rate;
+}
+
+interface ContactOutcomes {
+  total: number;
+  byDisposition: ContactDispositionCounts;
+  callbackRequested: number;
+  stillEligible: number;
+  permanentlyClosed: number;
+  neverAttempted: number;
+  attemptsPerContact: Record<string, number>;
+  totalAttempts: number;
+  conversionRate: Rate;
+  finalYesRate: Rate;
+  finalNoRate: Rate;
+  perProvider: ProviderContactRow[];
+  note: string;
+}
+
 interface Results {
   campaign: { id: string; name: string; type: string; status: string; script: string; pilotStage: number };
   dialing: { enabled: boolean; callsPlaced: number; note: string };
@@ -103,12 +136,14 @@ interface Results {
   };
   providers: ProviderAttemptRow[];
   outcomes: { perProvider: ProviderOutcomeRow[]; byType: Record<string, number>; classifiers: Record<string, number> };
+  contactOutcomes: ContactOutcomes;
   voice: { perProvider: ProviderVoiceRow[]; note: string };
   orchestration: { perProvider: ProviderDispatchRow[]; note: string };
   dataHealth: {
     attemptsMissingVoiceMetrics: number;
     attemptsMissingOutcome: number;
     inferredTerminalStatuses: number;
+    suspectedVoicemailAttempts: number;
     warnings: string[];
   };
   generatedAt: string;
@@ -243,7 +278,7 @@ export function CampaignResults({ campaignId }: { campaignId: string }) {
     );
   }
 
-  const { funnel, dataHealth } = results;
+  const { funnel, dataHealth, contactOutcomes } = results;
 
   return (
     <div className="flex flex-col gap-6">
@@ -306,6 +341,99 @@ export function CampaignResults({ campaignId }: { campaignId: string }) {
               hint={`${funnel.successRateOfConnected.numerator}/${funnel.successRateOfConnected.denominator}`}
             />
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-[15px]">Contacts — final outcome</CardTitle>
+          <CardDescription className="text-[12px]">
+            People, not calls. One contact can have several attempts, so conversion here is measured over unique
+            contacts — never over attempts.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-5">
+          <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
+            <Tile
+              label="Contacts"
+              value={String(contactOutcomes.total)}
+              hint={`${contactOutcomes.totalAttempts} attempt(s)`}
+            />
+            <Tile
+              label="Conversion"
+              value={percent(contactOutcomes.conversionRate)}
+              hint={`${contactOutcomes.conversionRate.numerator}/${contactOutcomes.conversionRate.denominator} contacts`}
+            />
+            <Tile label="Final yes" value={String(contactOutcomes.byDisposition.FINAL_YES)} hint="closed, registered" />
+            <Tile label="Final no" value={String(contactOutcomes.byDisposition.FINAL_NO)} hint="closed, declined" />
+            <Tile
+              label="Still eligible"
+              value={String(contactOutcomes.stillEligible)}
+              hint="the dispatcher can claim these"
+            />
+            <Tile
+              label="Permanently closed"
+              value={String(contactOutcomes.permanentlyClosed)}
+              hint="no further attempt"
+            />
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[11px] uppercase tracking-[0.04em] text-muted-foreground">Disposition</span>
+            {(
+              [
+                ["Final yes", contactOutcomes.byDisposition.FINAL_YES],
+                ["Final no", contactOutcomes.byDisposition.FINAL_NO],
+                ["Retryable", contactOutcomes.byDisposition.RETRYABLE],
+                ["Unresolved", contactOutcomes.byDisposition.UNRESOLVED],
+                ["Technical failure", contactOutcomes.byDisposition.TECHNICAL_FAILURE],
+                ["No verdict yet", contactOutcomes.byDisposition.UNCLASSIFIED],
+              ] as const
+            ).map(([label, count]) => (
+              <Badge key={label} variant="outline" className="text-[11px]">
+                {label} · {count}
+              </Badge>
+            ))}
+            <Badge variant="outline" className="text-[11px]">
+              Callback requested · {contactOutcomes.callbackRequested}
+            </Badge>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[11px] uppercase tracking-[0.04em] text-muted-foreground">Attempts per contact</span>
+            {Object.keys(contactOutcomes.attemptsPerContact).length === 0 ? (
+              <span className="text-[12px] text-muted-foreground">No contacts imported yet.</span>
+            ) : (
+              Object.entries(contactOutcomes.attemptsPerContact).map(([attempts, count]) => (
+                <Badge key={attempts} variant="outline" className="text-[11px]">
+                  {attempts} attempt{attempts === "1" ? "" : "s"} · {count} contact{count === 1 ? "" : "s"}
+                </Badge>
+              ))
+            )}
+          </div>
+
+          <Separator />
+
+          <Table
+            headers={[
+              "Provider", "Contacts", "Final yes", "Final no", "Retryable",
+              "Unresolved", "Technical", "No verdict", "Still open", "Conversion",
+            ]}
+            rows={contactOutcomes.perProvider.map((row) => [
+              <span key="p" className="font-medium">{row.provider}</span>,
+              row.contacts,
+              row.byDisposition.FINAL_YES,
+              row.byDisposition.FINAL_NO,
+              row.byDisposition.RETRYABLE,
+              row.byDisposition.UNRESOLVED,
+              row.byDisposition.TECHNICAL_FAILURE,
+              row.byDisposition.UNCLASSIFIED,
+              row.stillOpen,
+              <RateCell key="conv" rate={row.conversionRate} />,
+            ])}
+          />
+
+          <p className="text-[11px] leading-relaxed text-muted-foreground">{contactOutcomes.note}</p>
         </CardContent>
       </Card>
 

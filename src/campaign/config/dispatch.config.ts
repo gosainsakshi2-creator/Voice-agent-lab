@@ -33,12 +33,37 @@ export interface DispatchConfig {
 }
 
 export interface RetryConfig {
+  /**
+   * The attempt ceiling for every campaign type that has no more
+   * specific one. Unchanged, and still what the telephony-only retry
+   * path uses.
+   */
   readonly maxAttempts: number;
   readonly noAnswerDelayMinutes: number;
   readonly busyDelayMinutes: number;
   readonly temporaryBackoffMinutes: readonly number[];
   readonly retryOnRejected: boolean;
   readonly retryOnUserHangup: boolean;
+
+  // ── Registration-only policy (Phase 7) ──────────────────────────
+  // A registration contact is retryable until the person actually
+  // decides, so the policy that bounds that lives here as data rather
+  // than as conditionals in the planner. Reminder campaigns do not
+  // read any of these.
+
+  /** Total attempts allowed per REGISTRATION contact, definitive outcomes aside. */
+  readonly registrationMaxAttempts: number;
+  /** Wait after the person asked to be called at another time. */
+  readonly callbackDelayMinutes: number;
+  /** Wait after a call that connected and decided nothing. */
+  readonly unresolvedDelayMinutes: number;
+  /**
+   * Whether an UNRESOLVED registration call (unclear, interrupted,
+   * positive-but-not-committed, no engagement) is redialled at all.
+   * On by default: for a registration campaign, "we never found out"
+   * is a reason to call back, not a result.
+   */
+  readonly retryOnUnresolvedRegistration: boolean;
 }
 
 /** Env key suffix for a provider id: "smallest-ai" -> "SMALLEST_AI". */
@@ -82,6 +107,17 @@ export function getDispatchConfig(): DispatchConfig {
         .filter((value) => Number.isFinite(value) && value >= 0),
       retryOnRejected: optionalEnv("CAMPAIGN_RETRY_ON_REJECTED", "false") === "true",
       retryOnUserHangup: optionalEnv("CAMPAIGN_RETRY_ON_USER_HANGUP", "false") === "true",
+      // Defaults to the existing ceiling, so registration behaviour
+      // changes in KIND (what is retryable) and not in VOLUME (how
+      // many times) unless this is set deliberately.
+      registrationMaxAttempts: optionalEnvNumber(
+        "CAMPAIGN_RETRY_REGISTRATION_MAX_ATTEMPTS",
+        optionalEnvNumber("CAMPAIGN_RETRY_MAX_ATTEMPTS", 3),
+      ),
+      callbackDelayMinutes: optionalEnvNumber("CAMPAIGN_RETRY_CALLBACK_DELAY_MINUTES", 30),
+      unresolvedDelayMinutes: optionalEnvNumber("CAMPAIGN_RETRY_UNRESOLVED_DELAY_MINUTES", 30),
+      retryOnUnresolvedRegistration:
+        optionalEnv("CAMPAIGN_RETRY_ON_UNRESOLVED_REGISTRATION", "true") === "true",
     },
     dispatcherId: optionalEnv("CAMPAIGN_DISPATCHER_ID", `pid-${process.pid}`),
     lockStaleSeconds: optionalEnvNumber("CAMPAIGN_LOCK_STALE_SECONDS", 90),

@@ -110,6 +110,60 @@ export interface ProviderDispatchRow {
   readonly classifyMs: Percentiles;
 }
 
+// ── CONTACT-level outcomes ────────────────────────────────────────
+// Everything above counts attempts. Everything here counts people, and
+// the two are kept as separate structures so no template can put an
+// attempt count and a contact count in the same row and derive a rate
+// across them.
+
+/** Contacts per disposition. `UNCLASSIFIED` is a real state, not a zero. */
+export interface ContactDispositionCounts {
+  readonly FINAL_YES: number;
+  readonly FINAL_NO: number;
+  readonly RETRYABLE: number;
+  readonly UNRESOLVED: number;
+  readonly TECHNICAL_FAILURE: number;
+  /** No business outcome recorded yet: never called, or never classified. */
+  readonly UNCLASSIFIED: number;
+}
+
+/** One provider's lane, counted in PEOPLE rather than calls. */
+export interface ProviderContactRow {
+  readonly provider: string;
+  readonly contacts: number;
+  readonly byDisposition: ContactDispositionCounts;
+  readonly stillOpen: number;
+  /** FINAL_YES over this lane's contacts. Comparable across lanes; attempts are not. */
+  readonly conversionRate: Rate;
+}
+
+export interface ContactOutcomes {
+  /** Unique people, which is the denominator of every rate in this block. */
+  readonly total: number;
+  readonly byDisposition: ContactDispositionCounts;
+  /** Contacts whose most recent call ended in a callback request. */
+  readonly callbackRequested: number;
+  /** Contacts the dispatcher can still claim — the claim query's own predicate. */
+  readonly stillEligible: number;
+  /** Contacts that will never be called again. */
+  readonly permanentlyClosed: number;
+  readonly neverAttempted: number;
+  /** attempt count -> how many contacts have had exactly that many. */
+  readonly attemptsPerContact: Readonly<Record<string, number>>;
+  /** Sum of every contact's attempts. Equals the attempt-level total. */
+  readonly totalAttempts: number;
+  /**
+   * THE conversion figure: FINAL_YES over unique contacts. Never over
+   * attempts — one person called three times is one chance to convert,
+   * not three.
+   */
+  readonly conversionRate: Rate;
+  readonly finalYesRate: Rate;
+  readonly finalNoRate: Rate;
+  readonly perProvider: readonly ProviderContactRow[];
+  readonly note: string;
+}
+
 export interface CampaignResults {
   readonly campaign: {
     readonly id: string;
@@ -151,6 +205,13 @@ export interface CampaignResults {
     readonly byType: Readonly<Record<string, number>>;
     readonly classifiers: Readonly<Record<string, number>>;
   };
+  /**
+   * PEOPLE, not calls. Sits alongside `funnel` and `outcomes` rather
+   * than replacing them: the attempt-level view answers "how is the
+   * dialler doing", and this one answers "how many of these ten people
+   * registered".
+   */
+  readonly contactOutcomes: ContactOutcomes;
   /** Sourced from `call_metrics` alone. */
   readonly voice: {
     readonly perProvider: readonly ProviderVoiceRow[];
@@ -166,6 +227,13 @@ export interface CampaignResults {
     readonly attemptsMissingVoiceMetrics: number;
     readonly attemptsMissingOutcome: number;
     readonly inferredTerminalStatuses: number;
+    /**
+     * Attempts whose TRANSCRIPT matched a voicemail greeting. A floor,
+     * not a count: the platform has no answering-machine detection, so
+     * every "connected" figure in this report includes an unknown
+     * number of machines that said nothing recognisable.
+     */
+    readonly suspectedVoicemailAttempts: number;
     readonly warnings: readonly string[];
   };
   readonly generatedAt: Date;

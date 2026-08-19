@@ -338,6 +338,122 @@ export async function coverage(campaignId: string): Promise<CoverageCounts> {
   };
 }
 
+// ── CONTACT-level outcomes ────────────────────────────────────────
+// A separate family of reads from everything above, and the separation
+// is the point. Every aggregate before this line counts ATTEMPTS: one
+// contact called three times appears three times. These count PEOPLE.
+// A conversion rate computed over attempts is not a conversion rate at
+// all — three registrations out of twenty attempts across ten contacts
+// is 30% of the people, not 15% of anything a business cares about.
+
+export interface ContactDispositionAggregateRow {
+  readonly provider: string;
+  /** NULL disposition (a contact never called, or never classified) reports as 'UNCLASSIFIED'. */
+  readonly disposition: string;
+  readonly contacts: number;
+}
+
+export async function contactDispositionAggregates(
+  campaignId: string,
+): Promise<readonly ContactDispositionAggregateRow[]> {
+  const result = await query(
+    `SELECT assigned_provider AS provider,
+            COALESCE(final_disposition, 'UNCLASSIFIED') AS disposition,
+            count(*)::int AS n
+       FROM contacts
+      WHERE campaign_id = $1
+      GROUP BY 1, 2
+      ORDER BY 1, 2`,
+    [campaignId],
+  );
+  return result.rows.map((row) => ({
+    provider: String(row["provider"]),
+    disposition: String(row["disposition"]),
+    contacts: int(row["n"]),
+  }));
+}
+
+export interface ContactStateCounts {
+  readonly total: number;
+  readonly callbackRequested: number;
+  /** Contacts the claim query could still pick up — the same predicate, deliberately. */
+  readonly stillEligible: number;
+  readonly permanentlyClosed: number;
+  readonly neverAttempted: number;
+  readonly totalAttempts: number;
+}
+
+/**
+ * Contact-level state counts.
+ *
+ * `stillEligible` repeats the claim query's predicate rather than
+ * approximating it. A dashboard that says "4 contacts still to call"
+ * while the dispatcher can only see 2 is worse than no figure, so the
+ * two must be the same condition — status, disposition and all.
+ */
+export async function contactStateCounts(campaignId: string): Promise<ContactStateCounts> {
+  const result = await query(
+    `SELECT count(*)::int AS total,
+            count(*) FILTER (WHERE last_outcome_type = 'callback_requested')::int AS callback,
+            count(*) FILTER (WHERE status IN ('PENDING','ASSIGNED')
+                               AND (final_disposition IS NULL
+                                    OR final_disposition NOT IN ('FINAL_YES','FINAL_NO')))::int AS eligible,
+            count(*) FILTER (WHERE closed_at IS NOT NULL)::int AS closed,
+            count(*) FILTER (WHERE attempt_count = 0)::int AS never_attempted,
+            COALESCE(sum(attempt_count), 0)::int AS total_attempts
+       FROM contacts
+      WHERE campaign_id = $1`,
+    [campaignId],
+  );
+  const row = result.rows[0];
+  return {
+    total: int(row?.["total"]),
+    callbackRequested: int(row?.["callback"]),
+    stillEligible: int(row?.["eligible"]),
+    permanentlyClosed: int(row?.["closed"]),
+    neverAttempted: int(row?.["never_attempted"]),
+    totalAttempts: int(row?.["total_attempts"]),
+  };
+}
+
+/**
+ * How many attempts each contact has had, as a distribution.
+ *
+ * The figure that makes the attempt/contact distinction visible instead
+ * of merely correct: "10 contacts, 20 attempts" says nothing about
+ * whether one contact was called eleven times.
+ */
+export async function attemptsPerContact(
+  campaignId: string,
+): Promise<Readonly<Record<string, number>>> {
+  const result = await query(
+    `SELECT attempt_count AS attempts, count(*)::int AS n
+       FROM contacts WHERE campaign_id = $1
+      GROUP BY 1 ORDER BY 1`,
+    [campaignId],
+  );
+  const distribution: Record<string, number> = {};
+  for (const row of result.rows) distribution[String(int(row["attempts"]))] = int(row["n"]);
+  return distribution;
+}
+
+/**
+ * Attempts whose transcript matched a voicemail greeting.
+ *
+ * Reported so the report can say out loud that an unknown number of its
+ * "answered" calls were machines. This counts only the ones the phrase
+ * heuristic caught; it is a floor, not a measurement, because no
+ * answering-machine detection exists.
+ */
+export async function suspectedVoicemailAttempts(campaignId: string): Promise<number> {
+  const result = await query(
+    `SELECT count(*)::int AS n FROM call_outcomes
+      WHERE campaign_id = $1 AND primary_reason = 'suspected_voicemail'`,
+    [campaignId],
+  );
+  return int(result.rows[0]?.["n"]);
+}
+
 export async function contactStatusCounts(
   campaignId: string,
 ): Promise<{ total: number; byStatus: Record<string, number> }> {

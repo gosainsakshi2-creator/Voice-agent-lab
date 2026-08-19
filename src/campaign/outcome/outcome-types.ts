@@ -67,6 +67,14 @@ export const PRIMARY_REASONS = [
   "system_error",
   "no_transcript",
   "no_customer_speech",
+  /**
+   * A voicemail greeting was RECOGNISED IN THE TRANSCRIPT. This is a
+   * phrase heuristic over words the STT produced, not a carrier
+   * answering-machine verdict — no AMD signal exists (see
+   * external-limits.ts). Treated as "we do not know", never as a
+   * human decision.
+   */
+  "suspected_voicemail",
   "confirmed_at_gate",
   "affirmative_not_at_gate",
   "explicit_no",
@@ -83,7 +91,7 @@ export type OutcomeConfidence = "high" | "medium" | "low";
 
 /** One phrase the classifier matched, kept so a human can audit the label. */
 export interface OutcomeSignal {
-  readonly kind: "affirmation" | "negation" | "callback" | "wrong_number" | "opt_out";
+  readonly kind: "affirmation" | "negation" | "callback" | "wrong_number" | "opt_out" | "voicemail";
   readonly phrase: string;
   readonly turnIndex: number;
   /** True when the phrase answered an assistant question that commits the person. */
@@ -106,6 +114,13 @@ export interface OutcomeClassification {
     readonly signals: readonly OutcomeSignal[];
     /** One sentence a human can read next to the label. */
     readonly explanation: string;
+    /**
+     * True when a voicemail greeting was matched in the transcript.
+     * A HEURISTIC over transcribed words — the platform has no
+     * answering-machine detection, so this is never proof of a machine
+     * and its absence is never proof of a human.
+     */
+    readonly suspectedVoicemail?: boolean;
   };
 }
 

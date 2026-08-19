@@ -34,6 +34,12 @@ export interface ClaimedContact {
  * contact assigned to Cartesia is invisible to the Sarvam lane's
  * claim, so a cross-provider dial cannot even be attempted — and the
  * Phase 1 trigger would refuse the attempt row if it somehow were.
+ *
+ * The `final_disposition` predicate is the Phase 7 backstop. A contact
+ * whose person has actually decided — registered, refused, opted out —
+ * is unclaimable here even if some other code path put its status back
+ * to PENDING. "Never call a registered person again" is then a property
+ * of the query rather than of every writer that touches the row.
  */
 export async function claimContacts(
   campaignId: string,
@@ -58,6 +64,8 @@ export async function claimContacts(
            AND assigned_provider = $2
            AND status IN ('PENDING', 'ASSIGNED')
            AND (next_attempt_after IS NULL OR next_attempt_after <= now())
+           AND (final_disposition IS NULL
+                OR final_disposition NOT IN ('FINAL_YES', 'FINAL_NO'))
          ORDER BY next_attempt_after NULLS FIRST, csv_row_number
          FOR UPDATE SKIP LOCKED
          LIMIT $3
@@ -145,12 +153,32 @@ export interface FinalizeInput {
   readonly statusSource: "observed" | "inferred";
   readonly nextAttemptAfter: Date | null;
   readonly contactStatus: CallStatus;
+
+  // ── Contact-level business outcome (Phase 7) ───────────────────────
+  // Optional. Omitted when the outcome could not be classified, in
+  // which case the existing columns are written exactly as before and
+  // whatever disposition the contact already carried is left alone.
+
+  /** FINAL_YES | FINAL_NO | RETRYABLE | UNRESOLVED | TECHNICAL_FAILURE. */
+  readonly disposition?: string;
+  /** The attempt-level outcome_type the disposition was projected from. */
+  readonly lastOutcomeType?: string;
+  /** True when no further attempt will be made for this contact. */
+  readonly closed?: boolean;
+  readonly closureReason?: string;
 }
 
 /**
  * Closes an attempt and moves the contact, in one transaction, so a
  * crash between the two cannot leave a contact permanently claimed
  * with a finished attempt.
+ *
+ * The contact's business disposition is written HERE, in that same
+ * transaction, rather than by a later update. A contact that is closed
+ * as a registration and a contact whose attempt says it registered must
+ * become true together or not at all; two statements would leave a
+ * window in which a crash produces a registered person who is still
+ * dialable.
  */
 export async function finalizeAttempt(input: FinalizeInput): Promise<void> {
   await withTransaction(async (client) => {
@@ -174,9 +202,25 @@ export async function finalizeAttempt(input: FinalizeInput): Promise<void> {
       `UPDATE contacts
           SET status = $2, attempt_count = attempt_count + 1,
               next_attempt_after = $3, claimed_by = NULL, claimed_at = NULL,
-              last_status_at = now()
+              last_status_at = now(),
+              -- COALESCE, so an unclassified call leaves the contact's
+              -- existing verdict standing rather than erasing it.
+              final_disposition = COALESCE($4, final_disposition),
+              last_outcome_type = COALESCE($5, last_outcome_type),
+              closure_reason    = CASE WHEN $6 THEN COALESCE($7, closure_reason) ELSE closure_reason END,
+              -- The open/closed flag. Cleared on a retry so "closed"
+              -- always means "nothing further will be attempted".
+              closed_at         = CASE WHEN $6 THEN COALESCE(closed_at, now()) ELSE NULL END
         WHERE id = $1`,
-      [input.contactId, input.contactStatus, input.nextAttemptAfter],
+      [
+        input.contactId,
+        input.contactStatus,
+        input.nextAttemptAfter,
+        input.disposition ?? null,
+        input.lastOutcomeType ?? null,
+        input.closed ?? false,
+        input.closureReason ?? null,
+      ],
     );
   });
 }
@@ -304,6 +348,16 @@ export async function releaseDispatcherLock(campaignId: string, owner: string): 
  * are closed as SYSTEM failures and the retry planner decides what
  * happens next. Contacts stuck in QUEUED with no live attempt go back
  * to PENDING. Nothing is re-dialled blind.
+ *
+ * `attempt_count` is re-synchronised from the attempt rows, and that is
+ * not cosmetic. It is only ever incremented by `finalizeAttempt`, so a
+ * crash mid-call left the counter behind the highest attempt_number
+ * that exists. The contact then came back as PENDING, was claimed,
+ * derived the SAME attempt number, and lost the unique constraint — so
+ * it was released, re-claimed and released again, consuming a slot of
+ * the pilot ceiling on every pass and never actually being retried.
+ * Taking the counter from the rows themselves makes the next attempt
+ * number correct by construction.
  */
 export async function recoverOrphans(campaignId: string): Promise<{ attempts: number; contacts: number }> {
   return withTransaction(async (client: PoolClient) => {
@@ -317,9 +371,14 @@ export async function recoverOrphans(campaignId: string): Promise<{ attempts: nu
       [campaignId],
     );
     const contacts = await client.query(
-      `UPDATE contacts
-          SET status = 'PENDING', claimed_by = NULL, claimed_at = NULL, last_status_at = now()
-        WHERE campaign_id = $1 AND status IN ('QUEUED','DIALING','RINGING','ANSWERED','IN_PROGRESS')`,
+      `UPDATE contacts c
+          SET status = 'PENDING', claimed_by = NULL, claimed_at = NULL, last_status_at = now(),
+              attempt_count = GREATEST(
+                c.attempt_count,
+                COALESCE((SELECT max(a.attempt_number) FROM call_attempts a WHERE a.contact_id = c.id), 0)
+              )
+        WHERE c.campaign_id = $1
+          AND c.status IN ('QUEUED','DIALING','RINGING','ANSWERED','IN_PROGRESS')`,
       [campaignId],
     );
     return { attempts: attempts.rowCount ?? 0, contacts: contacts.rowCount ?? 0 };
@@ -335,12 +394,16 @@ export async function countPendingContacts(
         `SELECT count(*)::int AS n FROM contacts
           WHERE campaign_id = $1 AND assigned_provider = $2
             AND status IN ('PENDING','ASSIGNED')
-            AND (next_attempt_after IS NULL OR next_attempt_after <= now())`,
+            AND (next_attempt_after IS NULL OR next_attempt_after <= now())
+            AND (final_disposition IS NULL
+                 OR final_disposition NOT IN ('FINAL_YES','FINAL_NO'))`,
         [campaignId, provider],
       )
     : await query<{ n: number }>(
         `SELECT count(*)::int AS n FROM contacts
-          WHERE campaign_id = $1 AND status IN ('PENDING','ASSIGNED')`,
+          WHERE campaign_id = $1 AND status IN ('PENDING','ASSIGNED')
+            AND (final_disposition IS NULL
+                 OR final_disposition NOT IN ('FINAL_YES','FINAL_NO'))`,
         [campaignId],
       );
   return result.rows[0]?.n ?? 0;

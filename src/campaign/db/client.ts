@@ -55,13 +55,34 @@ function resolveSslConfig(): PoolConfig["ssl"] {
 function createPool(): Pool {
   const pool = new Pool({
     connectionString: requireEnv("DATABASE_URL", CONFIG_SCOPE),
-    // Sized to the dispatcher's global concurrency plus headroom for
-    // API reads. Deliberately modest: Supabase's pooler has its own
-    // upstream limit, and a large client-side pool just moves the
-    // queue rather than shortening it.
-    max: optionalEnvNumber("DATABASE_POOL_MAX", 10),
+    // Sized against the *pooler's* ceiling, not this process's appetite.
+    //
+    // Supabase's Supavisor in session mode (port 5432) hands every
+    // client connection a dedicated upstream slot for the whole
+    // session — no multiplexing — and the tenant ceiling is
+    // `pool_size` (15 here). Exceeding it is refused outright with
+    // `EMAXCONNSESSION`, which surfaces as a hard startup failure
+    // rather than as queueing.
+    //
+    // A single deploy therefore has to fit *twice* under that ceiling:
+    // Render keeps the outgoing instance serving until the incoming one
+    // is healthy, so both pools are live at once. 6 keeps 2 instances at
+    // 12/15 and still leaves room for `db:migrate` and the CLIs.
+    //
+    // No production path checks out a client for longer than one query
+    // or one transaction (only the migrate/verify CLIs hold a client),
+    // so 6 connections comfortably serve the dispatcher's global
+    // concurrency — a larger pool would just move the queue.
+    max: optionalEnvNumber("DATABASE_POOL_MAX", 6),
     idleTimeoutMillis: optionalEnvNumber("DATABASE_IDLE_TIMEOUT_MS", 30_000),
     connectionTimeoutMillis: optionalEnvNumber("DATABASE_CONNECT_TIMEOUT_MS", 15_000),
+    // Without keepalives, a container killed abruptly leaves its
+    // sockets half-open: the pooler still counts those sessions against
+    // `pool_size` until its own TCP timeout, so a restart appears not to
+    // free anything. Keepalives let both ends notice the death and
+    // release the slot.
+    keepAlive: true,
+    keepAliveInitialDelayMillis: optionalEnvNumber("DATABASE_KEEPALIVE_DELAY_MS", 10_000),
     ssl: resolveSslConfig(),
     application_name: "voice-agent-lab-campaign",
   });
@@ -81,7 +102,16 @@ function createPool(): Pool {
 
 /** The process-wide pool. Constructed on first use, never twice. */
 export function getDbPool(): Pool {
-  globalThis.__campaignDbPool ??= createPool();
+  if (!globalThis.__campaignDbPool) {
+    globalThis.__campaignDbPool = createPool();
+    // One line per process. If this ever appears twice in a single
+    // deploy's logs, something has defeated the `globalThis` pin and
+    // the pooler's client budget is being spent twice over.
+    // eslint-disable-next-line no-console
+    console.log(
+      `[campaign-db] connection pool created (max=${globalThis.__campaignDbPool.options.max}, pid=${process.pid})`,
+    );
+  }
   return globalThis.__campaignDbPool;
 }
 

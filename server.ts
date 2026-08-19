@@ -84,6 +84,45 @@ async function main(): Promise<void> {
     });
   });
 
+  // Graceful shutdown.
+  //
+  // Node's default SIGTERM behaviour kills the process outright, which
+  // leaves this instance's database sessions half-open. Supabase's
+  // pooler keeps counting those against its per-tenant client limit
+  // until its own TCP timeout, so the *next* instance can be refused
+  // with `EMAXCONNSESSION` even though this one is already gone —
+  // which is why a plain restart does not clear the condition.
+  //
+  // Closing the listeners and then the pool releases the slots
+  // deterministically. Nothing about session, campaign or telephony
+  // behaviour changes: the process was terminating either way.
+  let shuttingDown = false;
+  const shutdown = async (signal: string): Promise<void> => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    // eslint-disable-next-line no-console
+    console.log(`> ${signal} received — closing listeners and database pool`);
+
+    server.close();
+    wss.close();
+
+    try {
+      const { closeDbPool } = await import("./src/campaign/db/client");
+      await closeDbPool();
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.error(`> database pool close failed: ${(error as Error).message}`);
+    }
+
+    process.exit(0);
+  };
+
+  for (const signal of ["SIGTERM", "SIGINT"] as const) {
+    process.on(signal, () => {
+      void shutdown(signal);
+    });
+  }
+
   server.listen(port, () => {
     // eslint-disable-next-line no-console
     console.log(`> Voice Agent Lab ready on http://localhost:${port} (dev=${dev})`);

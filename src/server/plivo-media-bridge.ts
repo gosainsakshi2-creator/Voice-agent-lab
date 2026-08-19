@@ -80,21 +80,41 @@ const PREROLL_MAX_WAIT_MS = 120;
  * returns a promise instead of `void`, which the pipeline awaits
  * before reading the next TTS chunk (TCP backpressure then propagates
  * to the provider). The pump releases the waiters as it drains past
- * the low-water mark, so the queue oscillates between ~0.8s and ~1.2s
+ * the low-water mark, so the queue oscillates between the two marks
  * instead of climbing to 8s+.
  *
  * This changes NOTHING about pump timing, frame size, barge-in
  * decisions, or the order bytes are sent in — only how far ahead of
  * the pump the producer is allowed to run. The first chunk is never
  * delayed: the queue is empty at the start of an utterance, so the
- * gate does not engage until ~1.2s of audio is already buffered.
+ * gate does not engage until the low-water cushion is already buffered.
+ *
+ * ── Why the low-water mark is 2.2s and not 0.8s ──────────────────
+ *
+ * The low-water mark IS the pipeline's lead time. `synthesizeAndPlay`
+ * is awaited once per sentence chunk, so the next TTS request only
+ * starts when the pump has drained back to this mark — the queue then
+ * holds exactly this much audio to cover that request's round trip.
+ * Two of the three campaign TTS providers (Cartesia, Smallest AI)
+ * expose only `synthesize()`, whose time-to-first-audio is the FULL
+ * synthesis of the sentence: 0.8-2.5s for the 60-160 character chunks
+ * the chunker emits. Against an 0.8s cushion the pump therefore ran
+ * dry at essentially every sentence boundary, and the caller heard the
+ * shortfall as silence between sentences.
+ *
+ * 2.2s covers a slow batch synthesis outright. The cost is bounded and
+ * one-sided: barge-in and socket close still discard the queue
+ * instantly (`clearOutboundPlayback` / `cleanup`), so the only thing
+ * risked by holding more is already-paid TTS characters, never
+ * responsiveness — `clearAudio` goes out on the same tick regardless
+ * of queue depth.
  */
-const OUTBOUND_HIGH_WATER_FRAMES = 60; // 1200ms
-const OUTBOUND_LOW_WATER_FRAMES = 40; // 800ms
+const OUTBOUND_HIGH_WATER_FRAMES = 140; // 2800ms
+const OUTBOUND_LOW_WATER_FRAMES = 110; // 2200ms
 /**
  * Safety net so a wedged pump can never deadlock the pipeline (and
  * therefore `end()`, which awaits the loop promise). Comfortably longer
- * than the ~400ms it takes the pump to drain high-water down to
+ * than the ~600ms it takes the pump to drain high-water down to
  * low-water, so it never fires in normal operation.
  */
 const OUTBOUND_BACKPRESSURE_TIMEOUT_MS = 5000;

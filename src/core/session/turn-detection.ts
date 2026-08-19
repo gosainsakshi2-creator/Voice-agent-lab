@@ -419,9 +419,40 @@ export class AdaptiveTurnDetector {
         this.emitTurnEnd();
         return;
       }
+
+      // A short, fully-punctuated utterance that Deepgram's OWN
+      // endpointer has closed ("Yes.", "Haan.", "Yes, that's right.")
+      // does not need a full adaptive silence window on top of that
+      // decision: `confirmationWindowMs` already grants this exact
+      // class zero hold once the window expires, so the window is pure
+      // re-confirmation of something already confirmed — ~1.1s of it by
+      // default, and up to 1.6s once the threshold has adapted upward.
+      // It is the single largest fixed cost between the caller's first
+      // "yes" and the reply they wait for.
+      //
+      // Only the WAIT shortens. `emitTurnEnd` still runs every release
+      // guard it runs today — filler, mid-thought continuation, hold
+      // phrases, chunk-boundary grace, the pending-interim re-wait —
+      // and speech already in flight still gets a window to arrive and
+      // cancel the turn, which is what CONFIRMATION_WINDOW_MS is for.
+      // Anything that is not an endpointed, short, complete thought
+      // (including "yes, but…", which carries no sentence-final
+      // punctuation) keeps exactly the timing it has today.
+      if (this.lastFinalWasEndpoint && !this.pendingInterim && this.isShortCompleteTurn()) {
+        this.rearmTimer(CONFIRMATION_WINDOW_MS);
+        return;
+      }
     }
 
     this.rearmTimer();
+  }
+
+  /** The held text is a short, sentence-final, non-hesitation thought. */
+  private isShortCompleteTurn(): boolean {
+    const text = this.pendingFinalText.trim();
+    if (text.length === 0 || FILLER_ONLY.test(text) || HOLD_PHRASE_ONLY.test(text)) return false;
+    if (!TERMINAL_PUNCTUATION.test(text) || looksIncomplete(text)) return false;
+    return text.split(/\s+/).length <= SHORT_COMPLETE_TURN_MAX_WORDS;
   }
 
   /** Force an immediate end-of-turn (e.g. the caller detected hard silence via another signal). */

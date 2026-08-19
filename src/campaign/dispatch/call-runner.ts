@@ -53,7 +53,7 @@ import { recordClassifyMs, saveOutcome } from "../db/repositories/outcome.repo";
 import { classifyOutcome } from "../outcome/classifier";
 import { isFinalYes, syncFinalYesToSheet } from "../integrations/final-yes-sheet";
 import { dispositionFor } from "../outcome/disposition";
-import { hasExplicitRefusal, normaliseText } from "../outcome/conversation-events";
+import { containsPhrase, hasExplicitRefusal, normaliseText } from "../outcome/conversation-events";
 import type { OutcomeClassification } from "../outcome/outcome-types";
 import { toStoredTranscript, type StoredTranscript } from "../outcome/transcript";
 import type { ConversationTurn } from "../../types/provider.types";
@@ -546,6 +546,22 @@ function classifySafely(input: {
 }
 
 /**
+ * Wrong-number phrases that cannot mean anything else, in the words of
+ * the person themselves.
+ *
+ * A strict subset of the classifier's own WRONG_NUMBER table, and
+ * deliberately NOT an import of it: this list exists to be narrower.
+ * Nothing here is a fragment of a longer innocent sentence, so a live
+ * call is only cut on a phrase that has one reading.
+ */
+const UNMISTAKABLE_WRONG_NUMBER = [
+  "wrong number", "wrong person", "no such person", "you have the wrong",
+  "he does not live here", "she does not live here",
+  "galat number", "koi aur hai",
+  "गलत नंबर",
+] as const;
+
+/**
  * Has the person given a FINAL answer, with the agent's reply to it
  * already spoken?
  *
@@ -570,10 +586,22 @@ function classifySafely(input: {
  *      post-call classifier, but mid-call it is just as often "no, I
  *      hadn't heard of it" — and the classifier itself lets a yes at the
  *      gate override an earlier no, so hanging up on one would throw
- *      away registrations that were still coming. `opt_out` and
- *      `wrong_person` are final the moment they are said; an
+ *      away registrations that were still coming. `opt_out` is final the
+ *      moment it is said — every phrase in that table is a compliance
+ *      signal and none of them has an innocent reading. An
  *      `explicit_no` counts only when the person's own last words match
- *      the existing explicit-refusal table.
+ *      the existing explicit-refusal table, and a `wrong_person` only
+ *      when those same last words match UNMISTAKABLE_WRONG_NUMBER.
+ *      `wrong_person` needs that second test because the classifier's
+ *      wrong-number table carries the partials "this is not" and bare
+ *      "galat" for a FINISHED transcript, where they are read together
+ *      with everything else that was said. Mid-call they also match
+ *      "no, this is not what I asked", "this is not clear" and "galat
+ *      samajh gaye" — questions and objections, matched without the
+ *      answer-readability guard affirmations and negations get, and
+ *      ranked above the gate. The classifier itself calls this reason
+ *      `confidence: "medium"`; a medium-confidence signal may label a
+ *      call afterwards, but it may not cut one short.
  *
  * Never throws, for the same reason `classifySafely` does not: an
  * unreadable conversation must cost the early hangup and nothing else.
@@ -601,14 +629,21 @@ export function definitiveAnswerIn(
 
   if (isFinalYes(classification, disposition)) return "FINAL_YES";
   if (disposition !== "FINAL_NO") return undefined;
-  if (classification.primaryReason === "opt_out" || classification.primaryReason === "wrong_person") {
-    return "FINAL_NO";
+  if (classification.primaryReason === "opt_out") return "FINAL_NO";
+  if (
+    classification.primaryReason !== "explicit_no" &&
+    classification.primaryReason !== "wrong_person"
+  ) {
+    return undefined;
   }
-  if (classification.primaryReason !== "explicit_no") return undefined;
 
   const lastCustomerTurn = [...stored.turns].reverse().find((turn) => turn.role === "user");
   if (!lastCustomerTurn) return undefined;
-  return hasExplicitRefusal(normaliseText(lastCustomerTurn.text)) ? "FINAL_NO" : undefined;
+  const lastWords = normaliseText(lastCustomerTurn.text);
+  if (classification.primaryReason === "wrong_person") {
+    return containsPhrase(lastWords, UNMISTAKABLE_WRONG_NUMBER) ? "FINAL_NO" : undefined;
+  }
+  return hasExplicitRefusal(lastWords) ? "FINAL_NO" : undefined;
 }
 
 /** The same reading, against a live session, contained. */

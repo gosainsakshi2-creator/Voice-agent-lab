@@ -23,6 +23,12 @@
  *      then closes the attempt and moves the contact in one
  *      transaction.
  *
+ * The watchdog that runs before step 4 also ends a call the moment the
+ * customer has given a FINAL answer and the agent has finished replying
+ * to it. That is a HANGUP, not a verdict: the answer is read from the
+ * existing classifier and `disposition.ts`, and the call then takes the
+ * same `finalize` path a remote hangup takes.
+ *
  * Step 4's internal order changed in Phase 7 and the order is the
  * point: the call is INTERPRETED before its fate is decided. Deciding
  * first and interpreting afterwards is what made "call me later" and
@@ -45,8 +51,9 @@ import {
 } from "../db/repositories/call-attempt.repo";
 import { recordClassifyMs, saveOutcome } from "../db/repositories/outcome.repo";
 import { classifyOutcome } from "../outcome/classifier";
-import { syncFinalYesToSheet } from "../integrations/final-yes-sheet";
+import { isFinalYes, syncFinalYesToSheet } from "../integrations/final-yes-sheet";
 import { dispositionFor } from "../outcome/disposition";
+import { hasExplicitRefusal, normaliseText } from "../outcome/conversation-events";
 import type { OutcomeClassification } from "../outcome/outcome-types";
 import { toStoredTranscript, type StoredTranscript } from "../outcome/transcript";
 import type { ConversationTurn } from "../../types/provider.types";
@@ -307,6 +314,9 @@ export async function runCall(
     let errored = false;
     let lastActivityAt = Date.now();
     let answeredAt = 0;
+    // Set by the watchdog when the conversation has reached a final
+    // answer, and read once below to name the hangup.
+    let finalAnswer: "FINAL_YES" | "FINAL_NO" | undefined;
 
     const finished = new Promise<void>((resolve) => {
       unwatch = observer.watch(sessionId as string, (event) => {
@@ -332,7 +342,8 @@ export async function runCall(
     await manager.start(sessionId);
     timings["dialRequestMs"] = Date.now() - dialStartedAt;
 
-    // ── 5. Watchdog: ring timeout, max duration, max silence ──────
+    // ── 5. Watchdog: ring timeout, max duration, max silence, and a
+    //      conversation that has reached a final answer ────────────
     // Enforced entirely from here, using the existing public `end()`.
     // No hangup logic is added to the pipeline.
     const watchdog = (async () => {
@@ -344,6 +355,12 @@ export async function runCall(
         if (answered) {
           if (now - answeredAt > config.maxCallSeconds * 1000) return "MAX_DURATION" as const;
           if (now - lastActivityAt > config.maxSilenceSeconds * 1000) return "MAX_SILENCE" as const;
+          // The person has decided, and has already heard the agent's
+          // reply to it. Nothing is left on this call, so it ends here
+          // instead of holding the line open until the silence timeout.
+          // Read-only — see `definitiveAnswerSoFar`.
+          finalAnswer = definitiveAnswerSoFar(manager, sessionId as SessionId, campaign);
+          if (finalAnswer) return "FINAL_ANSWER" as const;
         }
       }
       return undefined;
@@ -374,6 +391,21 @@ export async function runCall(
     }
     if (verdict === "MAX_SILENCE") {
       return finalize("COMPLETED", "ended by the watchdog after silence", "observed", "watchdog:max_silence");
+    }
+    if (verdict === "FINAL_ANSWER") {
+      // A completed conversation, and the most completed kind there is.
+      // `finalize` re-reads the finished transcript exactly as it does
+      // for every other completed call, so the stored outcome, the
+      // disposition, the retry decision and the sheet row are produced
+      // by the same code that produced them before this early hangup
+      // existed. All this changed is that the line is no longer held
+      // open after the conversation is over.
+      return finalize(
+        "COMPLETED",
+        `the person gave a definitive answer (${finalAnswer}) and the call was ended`,
+        "observed",
+        `agent_hangup:${String(finalAnswer).toLowerCase()}`,
+      );
     }
     if (errored) {
       return finalize("TEMPORARY", "the conversation pipeline reported an error", "observed");
@@ -508,6 +540,86 @@ function classifySafely(input: {
       failureReason: input.failureReason,
       ...(input.scriptText !== undefined ? { scriptText: input.scriptText } : {}),
     });
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Has the person given a FINAL answer, with the agent's reply to it
+ * already spoken?
+ *
+ * Introduces no verdict of its own. The label comes from
+ * `classifyOutcome`, its contact-level meaning from `dispositionFor`,
+ * and the FINAL_YES test is `isFinalYes` — the same conjunction the
+ * registrations-sheet mirror uses, so a call that hangs up on a yes is
+ * by construction a call that produces a sheet row.
+ *
+ * Two deliberate narrowings, both about never cutting a live call
+ * short:
+ *
+ *   1. The last turn must be the AGENT's. The pipeline commits an
+ *      assistant turn only after that reply's audio has drained (see
+ *      `drainPlayback`), so this is the moment the confirmation the
+ *      person just heard finished — not the moment they said yes. It
+ *      also means the live partial utterance `getTranscript` appends
+ *      while somebody is still speaking is never read as an answer, and
+ *      that a person who keeps talking is never hung up on mid-sentence.
+ *
+ *   2. A FINAL_NO must be UNMISTAKABLE. A bare "no" is a refusal to the
+ *      post-call classifier, but mid-call it is just as often "no, I
+ *      hadn't heard of it" — and the classifier itself lets a yes at the
+ *      gate override an earlier no, so hanging up on one would throw
+ *      away registrations that were still coming. `opt_out` and
+ *      `wrong_person` are final the moment they are said; an
+ *      `explicit_no` counts only when the person's own last words match
+ *      the existing explicit-refusal table.
+ *
+ * Never throws, for the same reason `classifySafely` does not: an
+ * unreadable conversation must cost the early hangup and nothing else.
+ */
+export function definitiveAnswerIn(
+  turns: readonly ConversationTurn[],
+  campaignType: string,
+): "FINAL_YES" | "FINAL_NO" | undefined {
+  if (turns.length === 0 || turns[turns.length - 1]?.role !== "assistant") return undefined;
+
+  const stored = toStoredTranscript(turns);
+  const classification = classifyOutcome({
+    campaignType,
+    // The conversation is over as far as this reading is concerned: the
+    // same two values `finalize` passes for a completed call.
+    status: "COMPLETED",
+    failureClass: "COMPLETED",
+    answered: true,
+    transcript: stored.turns,
+  });
+  const { disposition } = dispositionFor({
+    outcomeType: classification.outcomeType,
+    failureClass: "COMPLETED",
+  });
+
+  if (isFinalYes(classification, disposition)) return "FINAL_YES";
+  if (disposition !== "FINAL_NO") return undefined;
+  if (classification.primaryReason === "opt_out" || classification.primaryReason === "wrong_person") {
+    return "FINAL_NO";
+  }
+  if (classification.primaryReason !== "explicit_no") return undefined;
+
+  const lastCustomerTurn = [...stored.turns].reverse().find((turn) => turn.role === "user");
+  if (!lastCustomerTurn) return undefined;
+  return hasExplicitRefusal(normaliseText(lastCustomerTurn.text)) ? "FINAL_NO" : undefined;
+}
+
+/** The same reading, against a live session, contained. */
+function definitiveAnswerSoFar(
+  manager: ManagerLike,
+  sessionId: SessionId,
+  campaign: CampaignRecord,
+): "FINAL_YES" | "FINAL_NO" | undefined {
+  if (typeof manager.getTranscript !== "function") return undefined;
+  try {
+    return definitiveAnswerIn(manager.getTranscript(sessionId), campaign.campaignType);
   } catch {
     return undefined;
   }

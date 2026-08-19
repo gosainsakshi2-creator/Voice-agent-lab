@@ -754,7 +754,11 @@ export async function buildProductionReadiness(
     "max-silence",
     "Maximum silence",
     ["silence"],
-    `${config.maxSilenceSeconds}s of no session activity ends the call, recorded as hangup_reason "watchdog:max_silence".`,
+    `${config.maxSilenceSeconds}s of no session activity ends the call, recorded as hangup_reason "watchdog:max_silence". ` +
+      `A conversation that reaches a definitive answer ends before that: the runner hangs up once the person has ` +
+      `decided and the agent has finished replying, recorded as hangup_reason "agent_hangup:final_yes" or ` +
+      `"agent_hangup:final_no". The verdict is the classifier's own, so this closes no contact the classifier ` +
+      `would not have closed anyway.`,
   );
   loadCheck(
     20,

@@ -153,6 +153,10 @@ export async function runCall(
       failureReason: reason,
       answered,
       transcript,
+      // The approved script, so the classifier can also record whether
+      // the AGENT stayed on it. Diagnostic only: it changes no label,
+      // no disposition and no retry.
+      scriptText: script.systemPromptAppendix,
     });
 
     // ── 2. Project onto the contact-level disposition ─────────────
@@ -472,6 +476,7 @@ function classifySafely(input: {
   failureReason: string;
   answered: boolean;
   transcript: StoredTranscript | undefined;
+  scriptText?: string;
 }): OutcomeClassification | undefined {
   try {
     return classifyOutcome({
@@ -481,6 +486,7 @@ function classifySafely(input: {
       answered: input.answered,
       transcript: input.transcript?.turns ?? [],
       failureReason: input.failureReason,
+      ...(input.scriptText !== undefined ? { scriptText: input.scriptText } : {}),
     });
   } catch {
     return undefined;

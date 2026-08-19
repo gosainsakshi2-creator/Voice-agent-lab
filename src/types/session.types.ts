@@ -75,6 +75,13 @@ export interface CampaignSessionContext {
   readonly scriptHash: string;
   readonly agent: { readonly gender: "male" | "female"; readonly name: string };
   readonly customer: { readonly name: string };
+  /**
+   * ADDITIVE, OPTIONAL. Which version of the campaign layer's
+   * conversational-handling policy is baked into `systemPromptAppendix`
+   * below. Recorded so a call can be attributed to the handling rules
+   * that were in force, the same way `scriptHash` attributes its words.
+   */
+  readonly conversationPolicyId?: string;
   /** Appended AFTER the master system prompt. Placeholders already resolved. */
   readonly systemPromptAppendix: string;
   /** Spoken verbatim in place of the default greeting. Placeholders already resolved. */

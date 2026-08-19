@@ -24,6 +24,7 @@ import {
   classifierCounts,
   contactDispositionAggregates,
   contactStateCounts,
+  conversationEventAggregates,
   contactStatusCounts,
   coverage,
   dispatchAggregates,
@@ -32,11 +33,13 @@ import {
   voiceAggregates,
   type ContactDispositionAggregateRow,
   type ContactStateCounts,
+  type ConversationEventAggregates,
 } from "./results.repo";
 import type {
   CampaignResults,
   ContactDispositionCounts,
   ContactOutcomes,
+  ConversationAnalytics,
   ProviderAttemptRow,
   ProviderContactRow,
   ProviderDispatchRow,
@@ -79,6 +82,7 @@ export async function buildCampaignResults(campaignId: string): Promise<Campaign
     contactState,
     attemptDistribution,
     voicemailAttempts,
+    conversationEvents,
   ] = await Promise.all([
     attemptAggregates(campaignId),
     outcomeAggregates(campaignId),
@@ -91,6 +95,7 @@ export async function buildCampaignResults(campaignId: string): Promise<Campaign
     contactStateCounts(campaignId),
     attemptsPerContact(campaignId),
     suspectedVoicemailAttempts(campaignId),
+    conversationEventAggregates(campaignId),
   ]);
 
   const providers: readonly ProviderAttemptRow[] = attempts.map((row) => ({
@@ -160,6 +165,7 @@ export async function buildCampaignResults(campaignId: string): Promise<Campaign
   }));
 
   const contactOutcomes = buildContactOutcomes(dispositions, contactState, attemptDistribution);
+  const conversation = buildConversationAnalytics(conversationEvents);
 
   const dialingEnabled = isDialingEnabled();
 
@@ -200,6 +206,7 @@ export async function buildCampaignResults(campaignId: string): Promise<Campaign
     providers,
     outcomes: { perProvider: outcomeRows, byType: byOutcomeType, classifiers },
     contactOutcomes,
+    conversation,
     voice: { perProvider: voiceRows, note: VOICE_NOTE },
     orchestration: { perProvider: dispatchRows, note: ORCHESTRATION_NOTE },
     dataHealth: {
@@ -215,6 +222,7 @@ export async function buildCampaignResults(campaignId: string): Promise<Campaign
         providerCount: providers.length,
         contactOutcomes,
         voicemailAttempts,
+        conversation,
       }),
     },
     generatedAt: new Date(),
@@ -285,6 +293,31 @@ function buildContactOutcomes(
     finalNoRate: rate(overall.FINAL_NO, state.total),
     perProvider,
     note: CONTACT_NOTE,
+  };
+}
+
+const CONVERSATION_NOTE =
+  "Conversational events, counted in ATTEMPTS. None of these is a verdict: a customer question, an " +
+  "objection and an interrupted call are all still open business, and registration conversion is " +
+  "measured only over contacts whose final disposition is FINAL_YES. Nothing in this block belongs in " +
+  "that numerator.";
+
+function buildConversationAnalytics(events: ConversationEventAggregates): ConversationAnalytics {
+  return {
+    attemptsRead: events.attemptsRead,
+    attemptsWithQuestions: events.attemptsWithQuestions,
+    customerQuestions: events.customerQuestions,
+    attemptsWithObjections: events.attemptsWithObjections,
+    objections: events.objections,
+    interruptedOnQuestion: events.interruptedOnQuestion,
+    callbackRequests: events.callbackAttempts,
+    adherence: {
+      attemptsChecked: events.adherenceChecked,
+      scriptRestarts: events.scriptRestarts,
+      offScriptQuestionAttempts: events.offScriptQuestionAttempts,
+      unsupportedFigureAttempts: events.unsupportedFigureAttempts,
+    },
+    registrationNote: CONVERSATION_NOTE,
   };
 }
 
@@ -366,6 +399,7 @@ function buildWarnings(input: {
   providerCount: number;
   contactOutcomes: ContactOutcomes;
   voicemailAttempts: number;
+  conversation: ConversationAnalytics;
 }): readonly string[] {
   const warnings: string[] = [];
 
@@ -395,6 +429,36 @@ function buildWarnings(input: {
       `${input.contactOutcomes.byDisposition.UNCLASSIFIED} contact(s) have attempts but no business ` +
         `disposition recorded, so they are absent from the conversion numerator and present in its ` +
         `denominator. Rows written before the contact-level outcome existed look like this.`,
+    );
+  }
+
+  // Said next to the conversion figure, because this is the number
+  // people are most tempted to read as interest-that-nearly-converted.
+  if (input.conversation.attemptsWithQuestions > 0) {
+    warnings.push(
+      `${input.conversation.attemptsWithQuestions} attempt(s) contained ${input.conversation.customerQuestions} ` +
+        `customer question(s). A question is not a registration and not a refusal: those calls are counted ` +
+        `by their disposition, and conversion counts only contacts that finally said yes.`,
+    );
+  }
+  if (input.conversation.interruptedOnQuestion > 0) {
+    warnings.push(
+      `${input.conversation.interruptedOnQuestion} call(s) ended while the person was still asking ` +
+        `something. Those are unresolved and remain eligible for a retry under the campaign's policy — ` +
+        `they are not decisions in either direction.`,
+    );
+  }
+  const drift =
+    input.conversation.adherence.scriptRestarts +
+    input.conversation.adherence.offScriptQuestionAttempts +
+    input.conversation.adherence.unsupportedFigureAttempts;
+  if (drift > 0) {
+    warnings.push(
+      `Script adherence: ${input.conversation.adherence.scriptRestarts} call(s) restarted the script, ` +
+        `${input.conversation.adherence.offScriptQuestionAttempts} asked a question the approved script does ` +
+        `not ask, and ${input.conversation.adherence.unsupportedFigureAttempts} stated a figure the script ` +
+        `never supplied. These are transcript heuristics over ${input.conversation.adherence.attemptsChecked} ` +
+        `checked call(s) — a floor on off-script behaviour, not a measurement of it.`,
     );
   }
 

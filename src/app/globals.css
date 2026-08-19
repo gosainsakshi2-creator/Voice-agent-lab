@@ -30,6 +30,11 @@
   --warning: #eab308;
   --danger: #f2545b;
 
+  /* Alias so semantic "destructive" utilities resolve to the same
+     danger hue the buttons and badges already use. */
+  --destructive: #f2545b;
+  --destructive-foreground: #fff1f2;
+
   --radius: 0.625rem;
 
   --shadow-color: 0deg 0% 0%;
@@ -70,6 +75,8 @@
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-danger: var(--danger);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
 
   --color-state-idle: var(--state-idle);
   --color-state-initializing: var(--state-initializing);

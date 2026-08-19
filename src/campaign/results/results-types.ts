@@ -164,6 +164,45 @@ export interface ContactOutcomes {
   readonly note: string;
 }
 
+/**
+ * WHAT HAPPENED IN THE CONVERSATIONS, counted in attempts.
+ *
+ * Separate from `outcomes` and from `contactOutcomes` for the same
+ * reason those two are separate from each other: these are not verdicts
+ * and must never be read as any. A customer question, an objection and
+ * an interrupted call are conversational events — they say how the
+ * script is landing, and a campaign that cannot see them can only tell
+ * that a call did not convert, never why.
+ *
+ * `registrationNote` is part of the structure rather than the prose
+ * around it, because the one mistake this block invites is exactly the
+ * one it exists to prevent: adding "interested-sounding" attempts to a
+ * conversion figure.
+ */
+export interface ConversationAnalytics {
+  /** Attempts whose stored outcome carries conversational detail. */
+  readonly attemptsRead: number;
+  readonly attemptsWithQuestions: number;
+  readonly customerQuestions: number;
+  readonly attemptsWithObjections: number;
+  readonly objections: number;
+  /** Attempts that ended while the person was still asking something. */
+  readonly interruptedOnQuestion: number;
+  /** Attempts whose outcome was a callback request. */
+  readonly callbackRequests: number;
+  /** SCRIPT ADHERENCE, from the same stored detail. */
+  readonly adherence: {
+    readonly attemptsChecked: number;
+    /** Calls where the agent went back to the top of the script. */
+    readonly scriptRestarts: number;
+    /** Calls where the agent asked something the script does not ask. */
+    readonly offScriptQuestionAttempts: number;
+    /** Calls where the agent stated a figure the script never supplied. */
+    readonly unsupportedFigureAttempts: number;
+  };
+  readonly registrationNote: string;
+}
+
 export interface CampaignResults {
   readonly campaign: {
     readonly id: string;
@@ -212,6 +251,12 @@ export interface CampaignResults {
    * registered".
    */
   readonly contactOutcomes: ContactOutcomes;
+  /**
+   * Conversational events, in attempts. Sits beside the two blocks
+   * above and feeds neither: no figure here is a success, a failure, or
+   * a denominator for one.
+   */
+  readonly conversation: ConversationAnalytics;
   /** Sourced from `call_metrics` alone. */
   readonly voice: {
     readonly perProvider: readonly ProviderVoiceRow[];

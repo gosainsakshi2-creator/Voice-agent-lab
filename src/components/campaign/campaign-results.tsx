@@ -17,15 +17,30 @@
  *     with their sources named. They are never placed in one table,
  *     because a reader who can put them side by side in a single row
  *     will eventually add them together.
+ *
+ * A fourth rule is about attention rather than truth: the qualifying
+ * prose that used to sit under every table is folded into a "how to
+ * read this" disclosure. Every word of it is still on the page — it
+ * just no longer outweighs the figure it qualifies.
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, Download, Loader2, RefreshCw } from "lucide-react";
+import { BarChart3, Download, Loader2, RefreshCw, Users } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
+import {
+  Callout,
+  DataTable,
+  EmptyState,
+  GroupLabel,
+  Note,
+  ProviderCell,
+  StatCard,
+  StatGrid,
+  type Column,
+  type Tone,
+} from "@/components/campaign/ui";
 
 interface Percentiles {
   p50: number | null;
@@ -120,6 +135,24 @@ interface ContactOutcomes {
   note: string;
 }
 
+/** Conversational events, in attempts. Never a conversion figure. */
+interface ConversationAnalytics {
+  attemptsRead: number;
+  attemptsWithQuestions: number;
+  customerQuestions: number;
+  attemptsWithObjections: number;
+  objections: number;
+  interruptedOnQuestion: number;
+  callbackRequests: number;
+  adherence: {
+    attemptsChecked: number;
+    scriptRestarts: number;
+    offScriptQuestionAttempts: number;
+    unsupportedFigureAttempts: number;
+  };
+  registrationNote: string;
+}
+
 interface Results {
   campaign: { id: string; name: string; type: string; status: string; script: string; pilotStage: number };
   dialing: { enabled: boolean; callsPlaced: number; note: string };
@@ -137,6 +170,7 @@ interface Results {
   providers: ProviderAttemptRow[];
   outcomes: { perProvider: ProviderOutcomeRow[]; byType: Record<string, number>; classifiers: Record<string, number> };
   contactOutcomes: ContactOutcomes;
+  conversation: ConversationAnalytics;
   voice: { perProvider: ProviderVoiceRow[]; note: string };
   orchestration: { perProvider: ProviderDispatchRow[]; note: string };
   dataHealth: {
@@ -185,52 +219,105 @@ function Metric({ value, samples }: { value: number | null; samples: number }) {
   return (
     <span className="whitespace-nowrap">
       {ms(value)}
-      {samples > 0 ? <span className="ml-1 text-muted-foreground">(n={samples})</span> : null}
+      {samples > 0 ? <span className="ml-1 text-subtle-foreground">n={samples}</span> : null}
     </span>
   );
 }
 
-function Tile({ label, value, hint }: { label: string; value: string; hint?: string }) {
+/**
+ * One contact disposition, in operator language: what it means on the
+ * left, how many people are in it on the right.
+ */
+function DispositionRow({
+  label,
+  meaning,
+  count,
+  tone = "neutral",
+}: {
+  label: string;
+  meaning: string;
+  count: number;
+  tone?: Tone;
+}) {
+  const dot: Record<Tone, string> = {
+    neutral: "bg-subtle-foreground",
+    success: "bg-success",
+    warning: "bg-warning",
+    danger: "bg-danger",
+    info: "bg-accent",
+  };
   return (
-    <div className="rounded-lg border px-3 py-2">
-      <p className="text-[11px] uppercase tracking-[0.04em] text-muted-foreground">{label}</p>
-      <p className="text-[18px] font-semibold tabular-nums">{value}</p>
-      {hint ? <p className="text-[11px] text-muted-foreground">{hint}</p> : null}
+    <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-surface-hover/30 px-3.5 py-2.5">
+      <div className="flex min-w-0 items-start gap-2.5">
+        <span className={`mt-1.5 size-1.5 shrink-0 rounded-full ${dot[tone]}`} aria-hidden />
+        <div className="flex min-w-0 flex-col">
+          <span className="text-[12.5px] font-medium text-foreground">{label}</span>
+          <span className="truncate text-[11px] text-muted-foreground">{meaning}</span>
+        </div>
+      </div>
+      <span className="font-mono text-[16px] font-semibold tabular-nums text-foreground">{count}</span>
     </div>
   );
 }
 
-function Table({ headers, rows }: { headers: readonly string[]; rows: readonly React.ReactNode[][] }) {
-  if (rows.length === 0) {
-    return <p className="text-[12px] text-muted-foreground">No data yet.</p>;
-  }
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-[12px]">
-        <thead>
-          <tr className="border-b text-left text-muted-foreground">
-            {headers.map((header) => (
-              <th key={header} className="px-2 py-1.5 font-medium whitespace-nowrap">
-                {header}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, index) => (
-            <tr key={index} className="border-b last:border-0">
-              {row.map((cell, cellIndex) => (
-                <td key={cellIndex} className="px-2 py-1.5 tabular-nums">
-                  {cell}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
+const NO_DATA = (
+  <EmptyState
+    icon={BarChart3}
+    title="No call data yet"
+    hint="Run the campaign to start collecting results."
+  />
+);
+
+const CONTACT_COLUMNS: readonly Column[] = [
+  { key: "provider", header: "Provider" },
+  { key: "contacts", header: "Contacts", align: "right" },
+  { key: "yes", header: "Final yes", align: "right" },
+  { key: "no", header: "Final no", align: "right" },
+  { key: "retryable", header: "Retryable", align: "right" },
+  { key: "unresolved", header: "Unresolved", align: "right" },
+  { key: "technical", header: "Technical", align: "right" },
+  { key: "noverdict", header: "No verdict", align: "right" },
+  { key: "open", header: "Still open", align: "right" },
+  { key: "conversion", header: "Conversion", align: "right" },
+];
+
+const PROVIDER_COLUMNS: readonly Column[] = [
+  { key: "provider", header: "Provider" },
+  { key: "attempts", header: "Attempts", align: "right" },
+  { key: "rehearsed", header: "Rehearsed", align: "right", hint: "Rehearsed, not dialled" },
+  { key: "dialled", header: "Dialled", align: "right" },
+  { key: "connected", header: "Connected", align: "right" },
+  { key: "connectRate", header: "Connect rate", align: "right" },
+  { key: "median", header: "Median call", align: "right" },
+  { key: "successes", header: "Successes", align: "right" },
+  { key: "successRate", header: "Success / connected", align: "right" },
+  { key: "undetermined", header: "Undetermined", align: "right" },
+];
+
+const VOICE_COLUMNS: readonly Column[] = [
+  { key: "provider", header: "Provider" },
+  { key: "calls", header: "Calls", align: "right" },
+  { key: "stt", header: "Speech-to-text", align: "right", hint: "Median per call" },
+  { key: "llm", header: "Model", align: "right", hint: "Median per call" },
+  { key: "tts", header: "Speech synthesis", align: "right", hint: "Median per call" },
+  { key: "e2e50", header: "Reply time p50", align: "right" },
+  { key: "e2e90", header: "Reply time p90", align: "right" },
+  { key: "first", header: "First reply p50", align: "right" },
+  { key: "length", header: "Median length", align: "right" },
+  { key: "cost", header: "Cost", align: "right" },
+  { key: "costPer", header: "Cost / call", align: "right" },
+];
+
+const EXECUTION_COLUMNS: readonly Column[] = [
+  { key: "provider", header: "Provider" },
+  { key: "calls", header: "Calls", align: "right" },
+  { key: "queue", header: "Queue wait", align: "right" },
+  { key: "claim", header: "Claim → dial", align: "right" },
+  { key: "dial", header: "Dial request", align: "right" },
+  { key: "ring", header: "Ring → answer", align: "right" },
+  { key: "persist", header: "Save result", align: "right" },
+  { key: "classify", header: "Classify", align: "right" },
+];
 
 export function CampaignResults({ campaignId }: { campaignId: string }) {
   const [results, setResults] = useState<Results | undefined>();
@@ -258,7 +345,7 @@ export function CampaignResults({ campaignId }: { campaignId: string }) {
   if (loading) {
     return (
       <Card>
-        <CardContent className="flex items-center gap-2 py-6 text-[13px] text-muted-foreground">
+        <CardContent className="flex items-center gap-2 py-8 text-[13px] text-muted-foreground">
           <Loader2 className="size-4 animate-spin" aria-hidden />
           Loading results…
         </CardContent>
@@ -278,18 +365,18 @@ export function CampaignResults({ campaignId }: { campaignId: string }) {
     );
   }
 
-  const { funnel, dataHealth, contactOutcomes } = results;
+  const { funnel, dataHealth, contactOutcomes, conversation } = results;
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-5">
+      {/* ── Headline numbers ─────────────────────────────────────── */}
       <Card>
-        <CardHeader>
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="flex flex-col gap-1">
-              <CardTitle className="text-[15px]">Results</CardTitle>
-              <CardDescription className="text-[12px]">
-                {results.campaign.name} · {results.campaign.type} · script {results.campaign.script} · status{" "}
-                {results.campaign.status}
+        <CardHeader className="gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+            <div className="flex flex-col gap-0.5">
+              <CardTitle className="text-[13.5px]">Campaign performance</CardTitle>
+              <CardDescription>
+                Attempt-level reach and contact-level outcome, kept separate.
               </CardDescription>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -314,146 +401,287 @@ export function CampaignResults({ campaignId }: { campaignId: string }) {
         </CardHeader>
 
         <CardContent className="flex flex-col gap-5">
-          <p className="text-[12px] leading-relaxed text-muted-foreground">{results.dialing.note}</p>
-
           {dataHealth.warnings.length > 0 ? (
-            <div className="flex items-start gap-3 rounded-lg border border-amber-600/30 bg-amber-500/10 px-4 py-3">
-              <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600" aria-hidden />
+            <Callout tone="warning" title="Read these numbers with care">
               <ul className="flex flex-col gap-1">
                 {dataHealth.warnings.map((warning) => (
-                  <li key={warning} className="text-[12px] leading-relaxed text-muted-foreground">
-                    {warning}
-                  </li>
+                  <li key={warning}>{warning}</li>
                 ))}
               </ul>
-            </div>
+            </Callout>
           ) : null}
 
-          <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
-            <Tile label="Contacts" value={String(results.contacts.total)} />
-            <Tile label="Attempts" value={String(funnel.attempts)} hint={`${funnel.dialled} dialled`} />
-            <Tile label="Connected" value={String(funnel.connected)} />
-            <Tile label="Connect rate" value={percent(funnel.connectRate)} hint={`${funnel.connectRate.numerator}/${funnel.connectRate.denominator}`} />
-            <Tile label="Successes" value={String(funnel.successes)} hint={`${funnel.classified} classified`} />
-            <Tile
-              label="Success / connected"
-              value={percent(funnel.successRateOfConnected)}
-              hint={`${funnel.successRateOfConnected.numerator}/${funnel.successRateOfConnected.denominator}`}
-            />
+          <div className="flex flex-col gap-2.5">
+            <GroupLabel>People — contacts</GroupLabel>
+            <StatGrid>
+              <StatCard
+                label="Contacts"
+                value={contactOutcomes.total}
+                hint={`${contactOutcomes.totalAttempts} attempt(s)`}
+              />
+              <StatCard
+                label="Conversion"
+                value={percent(contactOutcomes.conversionRate)}
+                hint={`${contactOutcomes.conversionRate.numerator}/${contactOutcomes.conversionRate.denominator} contacts`}
+                tone={contactOutcomes.conversionRate.numerator > 0 ? "success" : "neutral"}
+              />
+              <StatCard
+                label="Final yes"
+                value={contactOutcomes.byDisposition.FINAL_YES}
+                hint="closed, registered"
+                tone={contactOutcomes.byDisposition.FINAL_YES > 0 ? "success" : "neutral"}
+              />
+              <StatCard label="Final no" value={contactOutcomes.byDisposition.FINAL_NO} hint="closed, declined" />
+              <StatCard
+                label="Still eligible"
+                value={contactOutcomes.stillEligible}
+                hint="can be claimed again"
+              />
+              <StatCard
+                label="Permanently closed"
+                value={contactOutcomes.permanentlyClosed}
+                hint="no further attempt"
+              />
+            </StatGrid>
           </div>
+
+          <div className="flex flex-col gap-2.5">
+            <GroupLabel>Reach — call attempts</GroupLabel>
+            <StatGrid>
+              <StatCard label="Attempts" value={funnel.attempts} hint={`${funnel.dialled} dialled`} />
+              <StatCard label="Connected" value={funnel.connected} hint={`${funnel.completed} completed`} />
+              <StatCard
+                label="Connect rate"
+                value={percent(funnel.connectRate)}
+                hint={`${funnel.connectRate.numerator}/${funnel.connectRate.denominator}`}
+              />
+              <StatCard label="Successes" value={funnel.successes} hint={`${funnel.classified} classified`} />
+              <StatCard
+                label="Success / connected"
+                value={percent(funnel.successRateOfConnected)}
+                hint={`${funnel.successRateOfConnected.numerator}/${funnel.successRateOfConnected.denominator}`}
+              />
+              <StatCard
+                label="Calls placed"
+                value={results.dialing.callsPlaced}
+                hint={results.dialing.enabled ? "dialing enabled" : "dialing disabled"}
+                tone={results.dialing.enabled ? "neutral" : "warning"}
+              />
+            </StatGrid>
+          </div>
+
+          <Note summary="How to read these numbers">
+            <p>{results.dialing.note}</p>
+            <p>
+              Conversion is measured over unique contacts, never over attempts — one person with three attempts is
+              one contact. Every rate is shown with the counts behind it, and a figure with no measurement reads as
+              N/A rather than as zero.
+            </p>
+          </Note>
         </CardContent>
       </Card>
 
+      {/* ── Contact-level outcome ────────────────────────────────── */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-[15px]">Contacts — final outcome</CardTitle>
-          <CardDescription className="text-[12px]">
-            People, not calls. One contact can have several attempts, so conversion here is measured over unique
-            contacts — never over attempts.
+          <CardTitle className="text-[13.5px]">Contact outcomes</CardTitle>
+          <CardDescription>
+            Where every person on the list currently stands. One contact, one row of the total — never double
+            counted.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-5">
-          <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
-            <Tile
-              label="Contacts"
-              value={String(contactOutcomes.total)}
-              hint={`${contactOutcomes.totalAttempts} attempt(s)`}
+          {contactOutcomes.total === 0 ? (
+            <EmptyState
+              icon={Users}
+              title="No contacts yet"
+              hint="Import a CSV below to build the call list. Outcomes appear here once the campaign runs."
             />
-            <Tile
-              label="Conversion"
-              value={percent(contactOutcomes.conversionRate)}
-              hint={`${contactOutcomes.conversionRate.numerator}/${contactOutcomes.conversionRate.denominator} contacts`}
-            />
-            <Tile label="Final yes" value={String(contactOutcomes.byDisposition.FINAL_YES)} hint="closed, registered" />
-            <Tile label="Final no" value={String(contactOutcomes.byDisposition.FINAL_NO)} hint="closed, declined" />
-            <Tile
-              label="Still eligible"
-              value={String(contactOutcomes.stillEligible)}
-              hint="the dispatcher can claim these"
-            />
-            <Tile
-              label="Permanently closed"
-              value={String(contactOutcomes.permanentlyClosed)}
-              hint="no further attempt"
-            />
-          </div>
+          ) : (
+            <>
+              <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+                <DispositionRow
+                  label="Final yes"
+                  meaning="Agreed — closed, will not be called again"
+                  count={contactOutcomes.byDisposition.FINAL_YES}
+                  tone="success"
+                />
+                <DispositionRow
+                  label="Final no"
+                  meaning="Declined — closed, will not be called again"
+                  count={contactOutcomes.byDisposition.FINAL_NO}
+                />
+                <DispositionRow
+                  label="Retryable"
+                  meaning="No answer or cut short — still to be called"
+                  count={contactOutcomes.byDisposition.RETRYABLE}
+                  tone="info"
+                />
+                <DispositionRow
+                  label="Unresolved"
+                  meaning="Spoke, but nothing was decided"
+                  count={contactOutcomes.byDisposition.UNRESOLVED}
+                  tone="warning"
+                />
+                <DispositionRow
+                  label="Technical failure"
+                  meaning="The call itself failed — not the person's answer"
+                  count={contactOutcomes.byDisposition.TECHNICAL_FAILURE}
+                  tone="danger"
+                />
+                <DispositionRow
+                  label="No verdict yet"
+                  meaning="Awaiting classification"
+                  count={contactOutcomes.byDisposition.UNCLASSIFIED}
+                />
+                <DispositionRow
+                  label="Callback requested"
+                  meaning="Asked to be called back — not a refusal"
+                  count={contactOutcomes.callbackRequested}
+                  tone="info"
+                />
+              </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[11px] uppercase tracking-[0.04em] text-muted-foreground">Disposition</span>
-            {(
-              [
-                ["Final yes", contactOutcomes.byDisposition.FINAL_YES],
-                ["Final no", contactOutcomes.byDisposition.FINAL_NO],
-                ["Retryable", contactOutcomes.byDisposition.RETRYABLE],
-                ["Unresolved", contactOutcomes.byDisposition.UNRESOLVED],
-                ["Technical failure", contactOutcomes.byDisposition.TECHNICAL_FAILURE],
-                ["No verdict yet", contactOutcomes.byDisposition.UNCLASSIFIED],
-              ] as const
-            ).map(([label, count]) => (
-              <Badge key={label} variant="outline" className="text-[11px]">
-                {label} · {count}
-              </Badge>
-            ))}
-            <Badge variant="outline" className="text-[11px]">
-              Callback requested · {contactOutcomes.callbackRequested}
-            </Badge>
-          </div>
+              <div className="flex flex-col gap-2">
+                <GroupLabel>Attempts per contact</GroupLabel>
+                {Object.keys(contactOutcomes.attemptsPerContact).length === 0 ? (
+                  <p className="text-[12px] text-muted-foreground">
+                    No attempts recorded yet — every contact is still on its first call.
+                  </p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {Object.entries(contactOutcomes.attemptsPerContact).map(([attempts, count]) => (
+                      <span
+                        key={attempts}
+                        className="inline-flex items-baseline gap-1.5 rounded-md border border-border bg-surface-hover/40 px-2.5 py-1 text-[11px] text-muted-foreground"
+                      >
+                        <span className="font-mono font-semibold tabular-nums text-foreground">{count}</span>
+                        contact{count === 1 ? "" : "s"} · {attempts} attempt{attempts === "1" ? "" : "s"}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[11px] uppercase tracking-[0.04em] text-muted-foreground">Attempts per contact</span>
-            {Object.keys(contactOutcomes.attemptsPerContact).length === 0 ? (
-              <span className="text-[12px] text-muted-foreground">No contacts imported yet.</span>
-            ) : (
-              Object.entries(contactOutcomes.attemptsPerContact).map(([attempts, count]) => (
-                <Badge key={attempts} variant="outline" className="text-[11px]">
-                  {attempts} attempt{attempts === "1" ? "" : "s"} · {count} contact{count === 1 ? "" : "s"}
-                </Badge>
-              ))
-            )}
-          </div>
+              <div className="flex flex-col gap-2">
+                <GroupLabel>By provider</GroupLabel>
+                <DataTable
+                  columns={CONTACT_COLUMNS}
+                  empty={NO_DATA}
+                  rows={contactOutcomes.perProvider.map((row) => [
+                    <ProviderCell key="p" provider={row.provider} />,
+                    row.contacts,
+                    row.byDisposition.FINAL_YES,
+                    row.byDisposition.FINAL_NO,
+                    row.byDisposition.RETRYABLE,
+                    row.byDisposition.UNRESOLVED,
+                    row.byDisposition.TECHNICAL_FAILURE,
+                    row.byDisposition.UNCLASSIFIED,
+                    row.stillOpen,
+                    <RateCell key="conv" rate={row.conversionRate} />,
+                  ])}
+                />
+              </div>
 
-          <Separator />
-
-          <Table
-            headers={[
-              "Provider", "Contacts", "Final yes", "Final no", "Retryable",
-              "Unresolved", "Technical", "No verdict", "Still open", "Conversion",
-            ]}
-            rows={contactOutcomes.perProvider.map((row) => [
-              <span key="p" className="font-medium">{row.provider}</span>,
-              row.contacts,
-              row.byDisposition.FINAL_YES,
-              row.byDisposition.FINAL_NO,
-              row.byDisposition.RETRYABLE,
-              row.byDisposition.UNRESOLVED,
-              row.byDisposition.TECHNICAL_FAILURE,
-              row.byDisposition.UNCLASSIFIED,
-              row.stillOpen,
-              <RateCell key="conv" rate={row.conversionRate} />,
-            ])}
-          />
-
-          <p className="text-[11px] leading-relaxed text-muted-foreground">{contactOutcomes.note}</p>
+              <Note>
+                <p>{contactOutcomes.note}</p>
+              </Note>
+            </>
+          )}
         </CardContent>
       </Card>
 
+      {/* ── What happened inside the calls ───────────────────────── */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-[15px]">Per provider</CardTitle>
-          <CardDescription className="text-[12px]">
-            Same script, same telephony, same model — the provider is the only thing that differs.
+          <CardTitle className="text-[13.5px]">Conversation quality</CardTitle>
+          <CardDescription>
+            What happened inside the calls, counted in attempts. None of these is a yes or a no.
           </CardDescription>
         </CardHeader>
+        <CardContent className="flex flex-col gap-5">
+          <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
+            <StatCard
+              label="Calls with questions"
+              value={conversation.attemptsWithQuestions}
+              hint={`${conversation.customerQuestions} question(s) asked`}
+            />
+            <StatCard
+              label="Calls with objections"
+              value={conversation.attemptsWithObjections}
+              hint={`${conversation.objections} objection(s) raised`}
+            />
+            <StatCard
+              label="Ended mid-question"
+              value={conversation.interruptedOnQuestion}
+              hint="interrupted, still retryable"
+              tone={conversation.interruptedOnQuestion > 0 ? "warning" : "neutral"}
+            />
+            <StatCard
+              label="Callback requested"
+              value={conversation.callbackRequests}
+              hint="attempts, not refusals"
+            />
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <GroupLabel>Script adherence</GroupLabel>
+            <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
+              <StatCard label="Checked" value={conversation.adherence.attemptsChecked} hint="attempts reviewed" />
+              <StatCard
+                label="Restarted script"
+                value={conversation.adherence.scriptRestarts}
+                tone={conversation.adherence.scriptRestarts > 0 ? "warning" : "neutral"}
+              />
+              <StatCard
+                label="Off-script questions"
+                value={conversation.adherence.offScriptQuestionAttempts}
+                tone={conversation.adherence.offScriptQuestionAttempts > 0 ? "warning" : "neutral"}
+              />
+              <StatCard
+                label="Unsupported figures"
+                value={conversation.adherence.unsupportedFigureAttempts}
+                tone={conversation.adherence.unsupportedFigureAttempts > 0 ? "danger" : "neutral"}
+              />
+            </div>
+          </div>
+
+          <Note>
+            <p>{conversation.registrationNote}</p>
+          </Note>
+        </CardContent>
+      </Card>
+
+      {/* ── Provider comparison ──────────────────────────────────── */}
+      <Card>
+        <CardHeader className="gap-2">
+          <CardTitle className="text-[13.5px]">Provider comparison</CardTitle>
+          <CardDescription>
+            The provider is the only variable — script, telephony and model are held constant across every row.
+          </CardDescription>
+          <div className="flex flex-wrap gap-1.5 pt-1">
+            {[
+              `Script ${results.campaign.script}`,
+              `Type ${results.campaign.type}`,
+              `Stage ${results.campaign.pilotStage}`,
+            ].map((held) => (
+              <span
+                key={held}
+                className="rounded-md border border-border bg-surface-hover/40 px-2 py-0.5 font-mono text-[10.5px] text-muted-foreground"
+              >
+                held constant · {held}
+              </span>
+            ))}
+          </div>
+        </CardHeader>
         <CardContent className="flex flex-col gap-4">
-          <Table
-            headers={[
-              "Provider", "Attempts", "Rehearsed", "Dialled", "Connected", "Connect rate",
-              "Median call", "Successes", "Success / connected", "Undetermined",
-            ]}
+          <DataTable
+            columns={PROVIDER_COLUMNS}
+            empty={NO_DATA}
             rows={results.providers.map((row) => {
               const outcome = results.outcomes.perProvider.find((o) => o.provider === row.provider);
               return [
-                <span key="p" className="font-medium">{row.provider}</span>,
+                <ProviderCell key="p" provider={row.provider} />,
                 row.attempts,
                 row.rehearsedNotDialled,
                 row.dialled,
@@ -466,37 +694,59 @@ export function CampaignResults({ campaignId }: { campaignId: string }) {
               ];
             })}
           />
-          <Separator />
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[11px] uppercase tracking-[0.04em] text-muted-foreground">Outcomes</span>
+
+          <div className="flex flex-col gap-2">
+            <GroupLabel>Outcomes recorded</GroupLabel>
             {Object.entries(results.outcomes.byType).length === 0 ? (
-              <span className="text-[12px] text-muted-foreground">Nothing classified yet.</span>
+              <p className="text-[12px] text-muted-foreground">
+                Nothing classified yet — outcomes appear once calls complete.
+              </p>
             ) : (
-              Object.entries(results.outcomes.byType).map(([type, count]) => (
-                <Badge key={type} variant="outline" className="text-[11px]">
-                  {type.replace(/_/g, " ")} · {count}
-                </Badge>
-              ))
+              <div className="flex flex-wrap gap-2">
+                {Object.entries(results.outcomes.byType).map(([type, count]) => (
+                  <span
+                    key={type}
+                    className="inline-flex items-baseline gap-1.5 rounded-md border border-border bg-surface-hover/40 px-2.5 py-1 text-[11px] text-muted-foreground"
+                  >
+                    <span className="font-mono font-semibold tabular-nums text-foreground">{count}</span>
+                    {type.replace(/_/g, " ").toLowerCase()}
+                  </span>
+                ))}
+              </div>
             )}
           </div>
-          <p className="text-[11px] leading-relaxed text-muted-foreground">
-            Classified by {Object.keys(results.outcomes.classifiers).join(", ") || "nothing yet"}. An outcome the
-            rules could not read is stored as undetermined rather than counted as a failure, and every label keeps
-            the phrases it was derived from so a disputed one can be checked.
-          </p>
+
+          <Note summary="How outcomes are decided">
+            <p>
+              Classified by {Object.keys(results.outcomes.classifiers).join(", ") || "nothing yet"}. An outcome the
+              rules could not read is stored as undetermined rather than counted as a failure, and every label
+              keeps the phrases it was derived from so a disputed one can be checked.
+            </p>
+          </Note>
         </CardContent>
       </Card>
 
+      {/* ── Voice conversation performance ───────────────────────── */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-[15px]">Voice conversation</CardTitle>
-          <CardDescription className="text-[12px]">{results.voice.note}</CardDescription>
+          <CardTitle className="text-[13.5px]">Voice conversation performance</CardTitle>
+          <CardDescription>
+            How quickly each provider held the conversation — listening, thinking and speaking — with estimated
+            cost.
+          </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-col gap-3">
-          <Table
-            headers={["Provider", "Calls", "STT p50", "LLM p50", "TTS p50", "End-to-end p50", "End-to-end p90", "First turn p50", "Median length", "Cost", "Cost / call"]}
+        <CardContent className="flex flex-col gap-4">
+          <DataTable
+            columns={VOICE_COLUMNS}
+            empty={
+              <EmptyState
+                icon={BarChart3}
+                title="No voice metrics yet"
+                hint="Latency and cost appear once calls connect and a conversation is recorded."
+              />
+            }
             rows={results.voice.perProvider.map((row) => [
-              <span key="p" className="font-medium">{row.provider}</span>,
+              <ProviderCell key="p" provider={row.provider} />,
               row.calls,
               <Metric key="stt" value={row.sttMs.p50} samples={row.sttMs.samples} />,
               <Metric key="llm" value={row.llmMs.p50} samples={row.llmMs.samples} />,
@@ -509,24 +759,38 @@ export function CampaignResults({ campaignId }: { campaignId: string }) {
               usd(row.costUsd.perCall),
             ])}
           />
-          <p className="text-[11px] leading-relaxed text-muted-foreground">
-            Each sample is one call&apos;s own median for that stage, so these are medians of medians — the right
-            figure for &ldquo;which provider is typically faster&rdquo;, and the wrong one for &ldquo;the worst turn
-            we saw&rdquo;. Costs are estimates from published list prices, never invoiced spend.
-          </p>
+          <Note summary="What these timings measure">
+            <p>{results.voice.note}</p>
+            <p>
+              Each sample is one call&apos;s own median for that stage, so these are medians of medians — the right
+              figure for &ldquo;which provider is typically faster&rdquo;, and the wrong one for &ldquo;the worst
+              turn we saw&rdquo;. Costs are estimates from published list prices, never invoiced spend.
+            </p>
+          </Note>
         </CardContent>
       </Card>
 
+      {/* ── Campaign execution performance ───────────────────────── */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-[15px]">Campaign orchestration</CardTitle>
-          <CardDescription className="text-[12px]">{results.orchestration.note}</CardDescription>
+          <CardTitle className="text-[13.5px]">Campaign execution performance</CardTitle>
+          <CardDescription>
+            The platform&apos;s own timings — queueing, dialing and saving results. Deliberately kept apart from
+            the voice figures above, so a slow database write can never look like a slow voice provider.
+          </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-col gap-3">
-          <Table
-            headers={["Provider", "Calls", "Queue wait p50", "Claim → dial p50", "Dial request p50", "Ring → answer p50", "Persist p50", "Classify p50"]}
+        <CardContent className="flex flex-col gap-4">
+          <DataTable
+            columns={EXECUTION_COLUMNS}
+            empty={
+              <EmptyState
+                icon={BarChart3}
+                title="No execution metrics yet"
+                hint="These timings are recorded while the dispatcher places calls."
+              />
+            }
             rows={results.orchestration.perProvider.map((row) => [
-              <span key="p" className="font-medium">{row.provider}</span>,
+              <ProviderCell key="p" provider={row.provider} />,
               row.calls,
               <Metric key="q" value={row.queueWaitMs.p50} samples={row.queueWaitMs.samples} />,
               ms(row.claimToDialMs.p50),
@@ -536,19 +800,24 @@ export function CampaignResults({ campaignId }: { campaignId: string }) {
               ms(row.classifyMs.p50),
             ])}
           />
-          <p className="text-[11px] leading-relaxed text-muted-foreground">
-            This is the platform&apos;s own overhead. It is deliberately never added to, averaged with, or compared
-            against the voice latencies above — a slow database write must not be able to look like a slow TTS
-            provider.
-          </p>
+          <Note summary="Why these are separate">
+            <p>{results.orchestration.note}</p>
+            <p>
+              These figures are never added to, averaged with, or compared against the voice latencies above.
+            </p>
+          </Note>
         </CardContent>
       </Card>
 
-      <p className="text-[11px] text-muted-foreground">
-        Generated {new Date(results.generatedAt).toLocaleString()} · {dataHealth.attemptsMissingVoiceMetrics}{" "}
-        connected call(s) without voice metrics · {dataHealth.attemptsMissingOutcome} finished call(s) without an
-        outcome · {dataHealth.inferredTerminalStatuses} deduced terminal status(es).
-      </p>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1 text-[11px] text-subtle-foreground">
+        <span>Generated {new Date(results.generatedAt).toLocaleString()}</span>
+        <span aria-hidden>·</span>
+        <span>{dataHealth.attemptsMissingVoiceMetrics} connected call(s) without voice metrics</span>
+        <span aria-hidden>·</span>
+        <span>{dataHealth.attemptsMissingOutcome} finished call(s) without an outcome</span>
+        <span aria-hidden>·</span>
+        <span>{dataHealth.inferredTerminalStatuses} deduced terminal status(es)</span>
+      </div>
     </div>
   );
 }

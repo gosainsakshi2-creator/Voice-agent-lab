@@ -454,6 +454,80 @@ export async function suspectedVoicemailAttempts(campaignId: string): Promise<nu
   return int(result.rows[0]?.["n"]);
 }
 
+/**
+ * The conversational shape of a campaign's calls.
+ *
+ * Read from `call_outcomes.detail`, which is JSONB and GIN-indexed
+ * precisely so a field the classifier started recording is queryable
+ * without a migration.
+ *
+ * These are ATTEMPT counts and they are deliberately kept out of every
+ * rate in this file. A question is not a conversion event: a person who
+ * asked four things and never decided belongs in UNRESOLVED, and the
+ * only reason to count their questions is so the report can show that
+ * the call was engaged rather than dead. Nothing here may ever end up
+ * in a numerator over contacts.
+ */
+export interface ConversationEventAggregates {
+  readonly attemptsRead: number;
+  readonly attemptsWithQuestions: number;
+  readonly customerQuestions: number;
+  readonly attemptsWithObjections: number;
+  readonly objections: number;
+  /** Calls that ended while the person was still asking something. */
+  readonly interruptedOnQuestion: number;
+  readonly callbackAttempts: number;
+  /** Attempts whose transcript was checked against the approved script. */
+  readonly adherenceChecked: number;
+  readonly scriptRestarts: number;
+  readonly offScriptQuestionAttempts: number;
+  readonly unsupportedFigureAttempts: number;
+}
+
+export async function conversationEventAggregates(
+  campaignId: string,
+): Promise<ConversationEventAggregates> {
+  const result = await query(
+    `SELECT count(*) FILTER (WHERE detail ? 'conversation')::int AS attempts_read,
+            count(*) FILTER (WHERE (detail->'conversation'->>'customerQuestions')::int > 0)::int
+              AS attempts_with_questions,
+            COALESCE(sum((detail->'conversation'->>'customerQuestions')::int), 0)::int
+              AS customer_questions,
+            count(*) FILTER (WHERE (detail->'conversation'->>'objections')::int > 0)::int
+              AS attempts_with_objections,
+            COALESCE(sum((detail->'conversation'->>'objections')::int), 0)::int AS objections,
+            count(*) FILTER (WHERE (detail->'conversation'->>'endedOnCustomerQuestion')::boolean)::int
+              AS interrupted_on_question,
+            count(*) FILTER (WHERE outcome_type = 'callback_requested')::int AS callback_attempts,
+            count(*) FILTER (WHERE detail ? 'adherence')::int AS adherence_checked,
+            count(*) FILTER (WHERE (detail->'adherence'->>'restartedScript')::boolean)::int
+              AS script_restarts,
+            count(*) FILTER (
+              WHERE jsonb_array_length(COALESCE(detail->'adherence'->'offScriptQuestions', '[]'::jsonb)) > 0
+            )::int AS off_script_question_attempts,
+            count(*) FILTER (
+              WHERE jsonb_array_length(COALESCE(detail->'adherence'->'unsupportedFigures', '[]'::jsonb)) > 0
+            )::int AS unsupported_figure_attempts
+       FROM call_outcomes
+      WHERE campaign_id = $1`,
+    [campaignId],
+  );
+  const row = result.rows[0];
+  return {
+    attemptsRead: int(row?.["attempts_read"]),
+    attemptsWithQuestions: int(row?.["attempts_with_questions"]),
+    customerQuestions: int(row?.["customer_questions"]),
+    attemptsWithObjections: int(row?.["attempts_with_objections"]),
+    objections: int(row?.["objections"]),
+    interruptedOnQuestion: int(row?.["interrupted_on_question"]),
+    callbackAttempts: int(row?.["callback_attempts"]),
+    adherenceChecked: int(row?.["adherence_checked"]),
+    scriptRestarts: int(row?.["script_restarts"]),
+    offScriptQuestionAttempts: int(row?.["off_script_question_attempts"]),
+    unsupportedFigureAttempts: int(row?.["unsupported_figure_attempts"]),
+  };
+}
+
 export async function contactStatusCounts(
   campaignId: string,
 ): Promise<{ total: number; byStatus: Record<string, number> }> {

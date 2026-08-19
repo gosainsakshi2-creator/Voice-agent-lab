@@ -17,6 +17,7 @@
 
 import type { CampaignSessionContext } from "../../types/session.types";
 import { resolveAgentForProvider } from "../script/agent-identity";
+import { composeCampaignAppendix, CONVERSATION_POLICY_ID } from "../script/conversation-policy";
 import { hashScript, type CampaignScript } from "../script/script-registry";
 import { interpolate, ScriptVariableError } from "../script/variables";
 
@@ -87,7 +88,15 @@ export function buildCampaignContext(input: BuildCampaignContextInput): Campaign
       scriptHash: currentHash,
       agent: { gender: agent.gender, name: agent.name },
       customer: { name: customerName },
-      systemPromptAppendix: interpolate(script.systemPromptAppendix, variables),
+      conversationPolicyId: CONVERSATION_POLICY_ID,
+      // The approved script, then the standing rules for running it.
+      // The script text is interpolated and otherwise untouched; the
+      // policy is appended after it and is not part of the pinned hash,
+      // which is why an improvement to conversational handling never
+      // re-words an approved script or invalidates a live campaign.
+      systemPromptAppendix: composeCampaignAppendix(
+        interpolate(script.systemPromptAppendix, variables),
+      ),
       openingLine: interpolate(script.openingLineTemplate, variables),
     };
   } catch (error) {

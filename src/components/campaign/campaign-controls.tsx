@@ -11,17 +11,19 @@
  * the resolved call ceiling AND which of the three limits produced it,
  * the stored control state (which survives a restart, unlike the
  * dispatcher), and the last few events — before any button is pressed.
+ *
+ * The presentation puts the plain-language state first and the
+ * environment-variable-level detail one fold down; the facts are the
+ * same, but "dialing is disabled" is a state, not a headline to shout.
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { CircleStop, Loader2, Pause, Play, RotateCcw, ShieldAlert, ShieldCheck } from "lucide-react";
+import { CircleStop, Loader2, Pause, Play, RotateCcw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
 import {
   Select,
   SelectContent,
@@ -29,6 +31,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Callout, GroupLabel, Note, StatCard, StatusPill, type Tone } from "@/components/campaign/ui";
 
 interface Ceiling {
   effective: number;
@@ -75,10 +78,23 @@ const BOUND_BY_LABEL: Record<Ceiling["boundBy"], string> = {
   "campaign-control": "this campaign's ceiling",
 };
 
-const CONTROL_TONE: Record<Control["desiredState"], string> = {
-  RUN: "border-emerald-600/30 text-emerald-700 dark:text-emerald-400",
-  PAUSE: "border-amber-600/30 text-amber-700 dark:text-amber-400",
-  STOP: "border-destructive/40 text-destructive",
+/** The same three limits, named the way an operator would name them. */
+const BOUND_BY_SHORT: Record<Ceiling["boundBy"], string> = {
+  environment: "Environment",
+  "pilot-stage": "Pilot stage",
+  "campaign-control": "Campaign ceiling",
+};
+
+const CONTROL_TONE: Record<Control["desiredState"], Tone> = {
+  RUN: "success",
+  PAUSE: "warning",
+  STOP: "danger",
+};
+
+const CONTROL_LABEL: Record<Control["desiredState"], string> = {
+  RUN: "Run",
+  PAUSE: "Paused",
+  STOP: "Stopped",
 };
 
 export function CampaignControls({ campaignId }: { campaignId: string }) {
@@ -173,59 +189,36 @@ export function CampaignControls({ campaignId }: { campaignId: string }) {
 
   return (
     <Card>
-      <CardHeader>
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="flex flex-col gap-1">
-            <CardTitle className="text-[15px]">Campaign controls</CardTitle>
-            <CardDescription className="text-[12px]">
-              Pause and stop are stored in the database, so they hold even if the process running the
-              campaign is not the one that received the request.
-            </CardDescription>
-          </div>
-          <div className="flex items-center gap-2">
+      <CardHeader className="gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+          <CardTitle className="text-[13.5px]">Run controls</CardTitle>
+          <div className="flex flex-wrap items-center gap-2">
             {control ? (
-              <Badge variant="outline" className={`text-[11px] ${CONTROL_TONE[control.desiredState]}`}>
-                {control.desiredState}
-                {control.revision > 0 ? ` · rev ${control.revision}` : " · default"}
-              </Badge>
+              <StatusPill tone={CONTROL_TONE[control.desiredState]}>
+                {CONTROL_LABEL[control.desiredState]}
+                <span className="text-subtle-foreground">
+                  {control.revision > 0 ? `rev ${control.revision}` : "default"}
+                </span>
+              </StatusPill>
             ) : null}
-            <Badge variant={running ? "default" : "outline"} className="text-[11px]">
-              {running ? `Dispatcher ${progress?.dispatcher?.state ?? "RUNNING"}` : "No dispatcher running"}
-            </Badge>
+            <StatusPill tone={running ? "info" : "neutral"} pulse={running}>
+              {running ? `Dispatcher ${progress?.dispatcher?.state ?? "RUNNING"}` : "Dispatcher idle"}
+            </StatusPill>
           </div>
         </div>
       </CardHeader>
 
-      <CardContent className="flex flex-col gap-5">
-        {/* The kill switch, stated before any button. */}
-        <div
-          role="status"
-          className={`flex items-start gap-3 rounded-lg border px-4 py-3 ${
-            dialingEnabled
-              ? "border-destructive/40 bg-destructive/10"
-              : "border-emerald-600/30 bg-emerald-500/10"
-          }`}
-        >
-          {dialingEnabled ? (
-            <ShieldAlert className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden />
-          ) : (
-            <ShieldCheck className="mt-0.5 size-4 shrink-0 text-emerald-600" aria-hidden />
-          )}
-          <div className="flex flex-col gap-0.5">
-            <p
-              className={`text-[13px] font-semibold tracking-tight ${
-                dialingEnabled ? "text-destructive" : "text-emerald-700 dark:text-emerald-400"
-              }`}
-            >
-              {dialingEnabled ? "DIALING IS ENABLED — STARTING PLACES REAL CALLS" : "DIALING IS DISABLED"}
-            </p>
-            <p className="text-[12px] leading-relaxed text-muted-foreground">
-              {dialingEnabled
-                ? `At most ${ceiling?.effective ?? "?"} call(s) may be placed in the next run.`
-                : "CAMPAIGN_DIALING_ENABLED is not true. Starting rehearses every step — claiming, attempt rows, script and agent resolution — and stops before any session is created, so no telephony provider is contacted."}
-            </p>
-          </div>
-        </div>
+      <CardContent className="flex flex-col gap-4">
+        {/* The kill switch, stated before any button — as a state, not a banner. */}
+        {dialingEnabled ? (
+          <Callout tone="danger" title="Dialing is live — starting places real calls">
+            At most {ceiling?.effective ?? "?"} call(s) may be placed in the next run.
+          </Callout>
+        ) : (
+          <Callout tone="warning" title="Dialing is currently disabled">
+            Enable campaign dialing to place real calls.
+          </Callout>
+        )}
 
         <div className="flex flex-wrap gap-2">
           <Button size="sm" disabled={busy !== undefined || running} onClick={() => void act("start")}>
@@ -246,10 +239,6 @@ export function CampaignControls({ campaignId }: { campaignId: string }) {
           </Button>
         </div>
 
-        <p className="text-[12px] text-muted-foreground">
-          Pause and stop never cut off a call that is already connected — they stop new ones being claimed.
-        </p>
-
         {note ? <p className="text-[12px] text-muted-foreground">{note}</p> : null}
         {error ? (
           <p className="whitespace-pre-line text-[12px] text-destructive" role="alert">
@@ -257,18 +246,33 @@ export function CampaignControls({ campaignId }: { campaignId: string }) {
           </p>
         ) : null}
 
-        <Separator />
+        <Note summary="How the controls behave">
+          <p>
+            Pause and stop are stored in the database, so they hold even if the process running the campaign is
+            not the one that received the request, and they never cut off a call that is already connected — they
+            stop new ones being claimed.
+          </p>
+          {dialingEnabled ? null : (
+            <p>
+              <span className="font-mono text-[11px] text-foreground">CAMPAIGN_DIALING_ENABLED</span> is not true.
+              Starting rehearses every step — claiming, attempt rows, script and agent resolution — and stops
+              before any session is created, so no telephony provider is contacted.
+            </p>
+          )}
+        </Note>
 
         {/* The ceiling, and which limit produced it. */}
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-3 border-t border-border pt-4">
+          <GroupLabel>Run limits</GroupLabel>
+
           <div className="flex flex-wrap items-end gap-4">
             <div className="flex flex-col gap-1.5">
-              <Label className="text-[12px]">Pilot stage</Label>
+              <Label className="text-[11px] text-muted-foreground">Pilot stage</Label>
               <Select
                 value={String(stage?.pilotStage ?? 0)}
                 onValueChange={(value) => void saveLimits({ stage: Number(value) })}
               >
-                <SelectTrigger className="w-[180px]">
+                <SelectTrigger className="w-[200px]">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -282,7 +286,7 @@ export function CampaignControls({ campaignId }: { campaignId: string }) {
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <Label className="text-[12px]" htmlFor="campaign-ceiling">
+              <Label className="text-[11px] text-muted-foreground" htmlFor="campaign-ceiling">
                 This campaign&apos;s ceiling
               </Label>
               <div className="flex items-center gap-2">
@@ -311,39 +315,68 @@ export function CampaignControls({ campaignId }: { campaignId: string }) {
           </div>
 
           {ceiling ? (
-            <p className="text-[12px] leading-relaxed text-muted-foreground">
-              The next run may place at most{" "}
-              <span className="font-semibold text-foreground">{ceiling.effective}</span> call(s), bound by{" "}
-              <span className="font-medium text-foreground">{BOUND_BY_LABEL[ceiling.boundBy]}</span>. Environment
-              ceiling {ceiling.environmentMax}; stage {ceiling.pilotStage} allows{" "}
-              {ceiling.pilotStageMax === null ? "the full list" : ceiling.pilotStageMax}; campaign ceiling{" "}
-              {ceiling.campaignControlMax ?? "none"}. The smallest always wins, and a limit changed now applies to
-              the next run rather than one already in progress.
-            </p>
+            <>
+              <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+                <StatCard
+                  label="Next run ceiling"
+                  value={ceiling.effective}
+                  hint={`bound by ${BOUND_BY_SHORT[ceiling.boundBy].toLowerCase()}`}
+                  tone="info"
+                />
+                <StatCard label="Environment max" value={ceiling.environmentMax} />
+                <StatCard
+                  label={`Stage ${ceiling.pilotStage} allows`}
+                  value={ceiling.pilotStageMax === null ? "Full list" : ceiling.pilotStageMax}
+                />
+                <StatCard
+                  label="Campaign ceiling"
+                  value={ceiling.campaignControlMax ?? "None"}
+                />
+              </div>
+              <Note summary="How the ceiling is resolved">
+                <p>
+                  The next run may place at most{" "}
+                  <span className="font-semibold text-foreground">{ceiling.effective}</span> call(s), bound by{" "}
+                  <span className="font-medium text-foreground">{BOUND_BY_LABEL[ceiling.boundBy]}</span>.
+                  Environment ceiling {ceiling.environmentMax}; stage {ceiling.pilotStage} allows{" "}
+                  {ceiling.pilotStageMax === null ? "the full list" : ceiling.pilotStageMax}; campaign ceiling{" "}
+                  {ceiling.campaignControlMax ?? "none"}. The smallest always wins, and a limit changed now
+                  applies to the next run rather than one already in progress.
+                </p>
+              </Note>
+            </>
           ) : null}
         </div>
 
         {progress?.dispatcher ? (
-          <>
-            <Separator />
-            <div className="flex flex-col gap-2">
-              <p className="text-[11px] uppercase tracking-[0.04em] text-muted-foreground">Lanes this run</p>
-              <div className="grid gap-2 sm:grid-cols-3">
-                {Object.entries(progress.dispatcher.lanes).map(([provider, lane]) => (
-                  <div key={provider} className="rounded-lg border px-3 py-2">
-                    <p className="text-[12px] font-medium">{provider}</p>
-                    <p className="text-[12px] text-muted-foreground">
-                      {lane.active} active · {lane.placed} placed · {lane.available} slots free
-                    </p>
-                  </div>
-                ))}
-              </div>
-              <p className="text-[12px] text-muted-foreground">
-                {progress.dispatcher.callsPlacedThisRun} of at most {progress.dispatcher.stageMaxCalls} call(s)
-                started this run.
-              </p>
+          <div className="flex flex-col gap-3 border-t border-border pt-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <GroupLabel>Lanes this run</GroupLabel>
+              <span className="text-[11px] text-muted-foreground">
+                <span className="font-mono font-medium tabular-nums text-foreground">
+                  {progress.dispatcher.callsPlacedThisRun}
+                </span>{" "}
+                of at most{" "}
+                <span className="font-mono font-medium tabular-nums text-foreground">
+                  {progress.dispatcher.stageMaxCalls}
+                </span>{" "}
+                call(s) started
+              </span>
             </div>
-          </>
+            <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+              {Object.entries(progress.dispatcher.lanes).map(([provider, lane]) => (
+                <div
+                  key={provider}
+                  className="flex items-center justify-between gap-3 rounded-lg border border-border bg-surface-hover/40 px-3.5 py-2.5"
+                >
+                  <p className="text-[12.5px] font-medium text-foreground">{provider}</p>
+                  <p className="font-mono text-[11px] tabular-nums text-muted-foreground">
+                    {lane.active} active · {lane.placed} placed · {lane.available} free
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
         ) : null}
       </CardContent>
     </Card>

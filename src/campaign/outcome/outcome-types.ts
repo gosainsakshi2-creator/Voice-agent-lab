@@ -24,12 +24,23 @@
  */
 
 import type { CampaignType } from "../domain/campaign-types";
+import type { ConversationEvents } from "./conversation-events";
+import type { ScriptAdherenceReport } from "./script-adherence";
 
 /** Bumped when the meaning of a stored field changes, never for an added one. */
 export const OUTCOME_SCHEMA_VERSION = 1;
 
-/** Recorded in `call_outcomes.classifier` on every row this produces. */
-export const RULES_CLASSIFIER_ID = "rules.v1";
+/**
+ * Recorded in `call_outcomes.classifier` on every row this produces.
+ *
+ * `rules.v2` reads a turn's SPEECH ACT before its keywords: a question
+ * or an unfinished sentence is no longer allowed to supply the yes that
+ * closes a contact. Rows written by `rules.v1` are still there and
+ * still readable — that is what this field is for — and re-running the
+ * current rubric over their stored transcripts is a query, not a round
+ * of calls.
+ */
+export const RULES_CLASSIFIER_ID = "rules.v2";
 
 export const OUTCOME_TYPES = [
   /** Never connected: no answer, busy, failed, cancelled. */
@@ -96,6 +107,13 @@ export interface OutcomeSignal {
   readonly turnIndex: number;
   /** True when the phrase answered an assistant question that commits the person. */
   readonly atGate: boolean;
+  /**
+   * `false` when the phrase was matched but must NOT be read as an
+   * answer — a "yes" inside a question, a "no" inside a sentence that
+   * was cut off. Absent means decisive, which keeps every row written
+   * before this field existed readable exactly as it was.
+   */
+  readonly decisive?: boolean;
 }
 
 export interface OutcomeClassification {
@@ -121,6 +139,24 @@ export interface OutcomeClassification {
      * and its absence is never proof of a human.
      */
     readonly suspectedVoicemail?: boolean;
+    /**
+     * What KIND of conversation this was: how often the person asked
+     * something, objected, or was cut off mid-thought, and whether the
+     * call ended on a question nobody answered.
+     *
+     * Reported so a campaign can tell an engaged caller from a decided
+     * one. None of it is a verdict — a question is not a registration
+     * and not a refusal, and these counts exist precisely so that
+     * distinction is visible in the report instead of being smoothed
+     * into the conversion rate.
+     */
+    readonly conversation?: ConversationEvents;
+    /**
+     * Whether the agent stayed on the approved script: no restart, no
+     * invented question, no figure the script never gave it. Present
+     * only when the caller supplied the script text.
+     */
+    readonly adherence?: ScriptAdherenceReport;
   };
 }
 

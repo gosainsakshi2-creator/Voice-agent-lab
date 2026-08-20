@@ -15,6 +15,7 @@
  * XML returned:
  *   <Response>
  *     <Stream bidirectional="true"
+ *            record="true"
  *            contentType="audio/x-mulaw;rate=8000"
  *            keepCallAlive="true">
  *       wss://{APP_PUBLIC_BASE_URL}/api/voice/vobiz/stream?sessionId={sessionId}
@@ -51,7 +52,7 @@ function buildStreamXml(sessionId: string): string {
   return [
     '<?xml version="1.0" encoding="UTF-8"?>',
     "<Response>",
-    `  <Stream bidirectional="true" contentType="audio/x-mulaw;rate=8000" keepCallAlive="true">`,
+    `  <Stream bidirectional="true" record="true" contentType="audio/x-mulaw;rate=8000" keepCallAlive="true">`,
     `    ${streamUrl}`,
     "  </Stream>",
     "</Response>",

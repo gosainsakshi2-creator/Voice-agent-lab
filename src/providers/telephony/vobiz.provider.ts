@@ -61,7 +61,36 @@ interface VobizCallResponse {
   readonly error?: string;
   readonly message?: string;
 }
+private async startRecording(callUuid: string): Promise<void> {
+  const { authId, authToken, baseUrl } = this.config;
 
+  const url = `${baseUrl}/api/v1/Account/${authId}/Call/${callUuid}/Record/`;
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Auth-ID": authId,
+      "X-Auth-Token": authToken,
+    },
+    body: JSON.stringify({
+      file_format: "mp3",
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => "(no body)");
+    throw new Error(
+      `[Vobiz] startRecording failed: HTTP ${response.status} — ${body}`,
+    );
+  }
+
+  const result = await response.json();
+
+  console.log(
+    `[Vobiz] recording started: call_uuid=${callUuid} recording_id=${result.recording_id ?? "n/a"}`,
+  );
+}
 export class VobizTelephonyProvider implements TelephonyProvider {
   readonly descriptor: ProviderDescriptor = {
     category: ProviderCategory.TELEPHONY,

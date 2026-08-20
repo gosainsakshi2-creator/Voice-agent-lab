@@ -76,38 +76,50 @@ export class VobizTelephonyProvider implements TelephonyProvider {
   };
 
   private readonly config: VobizEnvConfig;
- private async startRecording(callUuid: string): Promise<void> {
-  const { authId, authToken, baseUrl } = this.config;
 
-  const url = `${baseUrl}/api/v1/Account/${authId}/Call/${callUuid}/Record/`;
-
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Auth-ID": authId,
-      "X-Auth-Token": authToken,
-    },
-    body: JSON.stringify({
-      file_format: "mp3",
-    }),
-  });
-
-  if (!response.ok) {
-    const body = await response.text().catch(() => "(no body)");
-    throw new Error(
-      `[Vobiz] startRecording failed: HTTP ${response.status} — ${body}`,
-    );
-  }
-
-  const result = await response.json();
-
-  console.log(
-    `[Vobiz] recording started: call_uuid=${callUuid} recording_id=${result.recording_id ?? "n/a"}`,
-  );
-}
   constructor(config: VobizEnvConfig = loadEnvConfig()) {
     this.config = config;
+  }
+
+  /**
+   * Starts server-side recording for an ALREADY-ANSWERED call.
+   *
+   * IMPORTANT: this needs the call_uuid, NOT the request_uuid that
+   * `startCall()` returns. The two are different identifiers — the
+   * call_uuid only exists once the callee actually answers, so it is
+   * only available from the Answer-URL webhook payload. That webhook
+   * (`/api/voice/vobiz/answer`) is what calls this method.
+   */
+  async startRecording(callUuid: string): Promise<void> {
+    const { authId, authToken, baseUrl } = this.config;
+
+    const url = `${baseUrl}/api/v1/Account/${authId}/Call/${callUuid}/Record/`;
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Auth-ID": authId,
+        "X-Auth-Token": authToken,
+      },
+      body: JSON.stringify({
+        file_format: "mp3",
+      }),
+    });
+
+    if (!response.ok) {
+      const body = await response.text().catch(() => "(no body)");
+      throw new Error(
+        `[Vobiz] startRecording failed: HTTP ${response.status} — ${body}`,
+      );
+    }
+
+    const result = await response.json();
+
+    // eslint-disable-next-line no-console
+    console.log(
+      `[Vobiz] recording started: call_uuid=${callUuid} recording_id=${result.recording_id ?? "n/a"} url=${result.url ?? "n/a"}`,
+    );
   }
 
   async startCall(params: TelephonyCallParams): Promise<TelephonyCallHandle> {

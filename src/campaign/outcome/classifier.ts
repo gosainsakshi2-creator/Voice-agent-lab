@@ -191,6 +191,19 @@ const COMMIT_ANCHORS: Readonly<Record<string, readonly string[]>> = {
     "reserve karu", "seat reserve", "book your seat",
     "your registration done", "register you", "registration done", "shall i register",
     "count on you to attend", "attend live", "mark you as confirmed",
+    // The approved registration v3 script's actual commitment question
+    // is "Would you be interested to attend?" — the [YES] branch right
+    // after it is "I'll get your registration done". v1 and v2 asked
+    // "would you like me to register you...", which "register you"
+    // already matched; v3 re-worded that line and nothing here matched
+    // it, so a real "Yes." to the gate landed as
+    // `affirmative_not_at_gate` / `interested_not_confirmed`. That is
+    // one label short of FINAL_YES, which is what the sheet mirror and
+    // the end-of-call check both read — so on v3 a confirmed
+    // registration could reach neither. Same fix, and same reason, as
+    // the three reminder anchors above.
+    "interested to attend", "interested in attending",
+    "like to attend", "want to attend",
   ],
   reminder: [
     "will you attend", "are you attending", "will you join", "are you joining",

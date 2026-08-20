@@ -385,6 +385,11 @@ export class ConversationPipeline {
         timer.mark("greeting-text-ready");
 
         this.beginTurnTiming(timer);
+        // Runs WHILE the greeting is being spoken, and is never awaited
+        // — see `primeLlmPrefixCache`. It is started here rather than
+        // after the greeting so the prefill overlaps greeting playback
+        // instead of the caller's first reply.
+        this.primeLlmPrefixCache(loopSignal);
         await this.speakFixedUtterance(greetingText, loopSignal);
         this.activeTimer = undefined;
         timer.summarize();
@@ -556,6 +561,69 @@ export class ConversationPipeline {
     this.markedTtsThisTurn = false;
     this.markedAudioThisTurn = false;
     this.firstAudioQueuedAtMs = undefined;
+  }
+
+  /**
+   * Sends the system prompt to the LLM once, while the greeting is
+   * still playing, so the caller's FIRST reply is answered from the
+   * provider's prompt-prefix cache instead of a cold prefill.
+   *
+   * WHY THE SECOND RESPONSE IS THE SLOW ONE. The greeting is fixed text
+   * and deliberately makes no LLM request (see the greeting block
+   * above), so the reply to the caller's first "Yes." is this call's
+   * FIRST LLM request — and it is the one request that cannot hit the
+   * prefix cache. Measured against the live prompt stack on gpt-5.1
+   * (12,411 prompt tokens, `verbosity: "low"`, 0 reasoning tokens):
+   *
+   *   cold  `cached_tokens: 0`      first visible token 2726ms
+   *   warm  `cached_tokens: 12288`  first visible token 1326ms
+   *
+   * Turn detection for a short endpointed "Yes." already releases in
+   * ~300ms and TTS is warm from the greeting, so that ~1.4s prefill is
+   * the bottleneck on this exact transition, and it is the only turn
+   * that pays it.
+   *
+   * COSTS NOTHING IT DOES NOT ALREADY COST. The prefill happens once
+   * per call either way — this only moves it off the caller's clock and
+   * onto greeting playback. The stream is abandoned at its first event,
+   * so it generates no reply.
+   *
+   * TOUCHES NOTHING. Not awaited, so no path waits on it; sends only
+   * the system turn, so it cannot alter what the model is later told;
+   * writes nothing to `memory`, records no metrics, and swallows every
+   * error — a provider that refuses this leaves the call exactly as it
+   * behaves today.
+   */
+  private primeLlmPrefixCache(loopSignal: AbortSignal): void {
+    const generate = this.providers.llm.generateCompletionStream;
+    if (!generate) return;
+    // The shared prefix of every later request, and nothing else.
+    const prefix = this.record.memory.recentHistory().filter(turn => turn.role === "system");
+    if (prefix.length === 0) return;
+
+    void (async () => {
+      const abort = new AbortController();
+      const signal = combineSignals([abort.signal, loopSignal]);
+      try {
+        const stream = generate.call(
+          this.providers.llm,
+          { sessionId: this.record.id, history: prefix },
+          signal,
+        );
+        if (!stream) return;
+        // The prefill — the part being cached — is complete before the
+        // first event can arrive, so there is nothing to gain by
+        // reading further.
+        for await (const _event of stream) {
+          void _event;
+          break;
+        }
+      } catch {
+        // A cold cache is the current behaviour, not a failure.
+      } finally {
+        abort.abort();
+      }
+    })();
   }
 
   /** Records a stage on the in-flight turn's trace, if one is active. */

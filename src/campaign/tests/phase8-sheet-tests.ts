@@ -118,6 +118,55 @@ await test("A1. a yes at the commitment question is a FINAL_YES and is written",
   assert.equal(isFinalYes(classification, disposition), true);
 });
 
+await test("A1b. the APPROVED v3 script's own gate line is a gate", () => {
+  // The regression this covers: v1/v2 asked "would you like me to
+  // register you...", which COMMIT_ANCHORS matched on "register you".
+  // v3 re-worded that line to "Would you be interested to attend?" and
+  // no anchor matched it, so a real "Yes." to the approved gate settled
+  // as `affirmative_not_at_gate` / UNRESOLVED — one label short of the
+  // FINAL_YES that the registrations sheet and the end-of-call check
+  // both read. Taken from the v3 script itself, so a future re-wording
+  // of the gate fails here rather than in production.
+  const v3 = findScript("registration", "v3");
+  assert.ok(v3, "the approved registration v3 script must be registered");
+  const V3_GATE = "Would you be interested to attend?";
+  assert.ok(
+    v3.systemPromptAppendix.includes(V3_GATE),
+    "this test's gate line must be the one in the approved v3 script",
+  );
+
+  const { classification, disposition } = settle([
+    agent(GREETING),
+    agent(
+      "We're doing a LIVE demo of this Funnel Builder Agent today at 7:30 pm, where you'll actually " +
+        `see it building things live. ${V3_GATE} The registration is completely FREE.`,
+    ),
+    caller("Yes."),
+    agent("Perfect! I'll get your registration done and send the details to you on WhatsApp."),
+  ]);
+
+  assert.equal(classification.outcomeType, "registered_confirmed");
+  assert.equal(classification.primaryReason, "confirmed_at_gate");
+  assert.equal(disposition, "FINAL_YES");
+  assert.equal(isFinalYes(classification, disposition), true);
+});
+
+await test("A1c. an INTEREST question with the same words is still not a gate", () => {
+  // The anchor added for A1b is a commitment question, not the word
+  // "attend": a yes to "can I tell you why you should attend" commits
+  // to nothing and must stay unresolved.
+  const { classification, disposition } = settle([
+    agent(GREETING),
+    agent("Can I tell you in 20 seconds why I think you should attend?"),
+    caller("Yes."),
+    agent("Great — it's a live demo of the Funnel Builder Agent."),
+  ]);
+
+  assert.notEqual(classification.primaryReason, "confirmed_at_gate");
+  assert.notEqual(disposition, "FINAL_YES");
+  assert.equal(isFinalYes(classification, disposition), false);
+});
+
 await test("A2. an explicit no is FINAL_NO and is not written", () => {
   const { classification, disposition } = settle([
     agent(GREETING),

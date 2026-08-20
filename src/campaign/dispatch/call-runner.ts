@@ -35,7 +35,7 @@
  * "no, never" the same outcome for a contact.
  */
 
-import { CallDirection, ProviderCategory, SupportedLanguage } from "../../types/enums";
+import { CallDirection, ProviderCategory, SessionState, SupportedLanguage } from "../../types/enums";
 import type { SessionCreationRequest, SessionId } from "../../types/session.types";
 import type { BenchmarkMetrics } from "../../types/benchmark.types";
 import {
@@ -321,6 +321,12 @@ export async function runCall(
     let errored = false;
     let lastActivityAt = Date.now();
     let answeredAt = 0;
+    // The session's own current state, taken from the transition every
+    // observer event already carries. Read by the silence clock below
+    // and by nothing else: no new manager API, no extra polling, and no
+    // second source of truth — this is the same transition stream that
+    // already stamps `lastActivityAt` one line down.
+    let sessionState: string = SessionState.CALLING;
     // Set by the watchdog when the conversation has reached a final
     // answer, and read once below to name the hangup.
     let finalAnswer: "FINAL_YES" | "FINAL_NO" | undefined;
@@ -328,6 +334,7 @@ export async function runCall(
     const finished = new Promise<void>((resolve) => {
       unwatch = observer.watch(sessionId as string, (event) => {
         lastActivityAt = Date.now();
+        sessionState = String(event.transition.to);
         if (event.phase === "answered" && !answered) {
           answered = true;
           answeredAt = Date.now();
@@ -369,7 +376,24 @@ export async function runCall(
           // genuinely silent call produces neither, so real silence
           // still ends the call at exactly the same deadline.
           const heardAt = pipelineActivityAt(manager, sessionId as SessionId);
-          if (now - Math.max(lastActivityAt, heardAt) > config.maxSilenceSeconds * 1000) {
+          // ...but both of those clocks measure the CALLER, and a caller
+          // is SUPPOSED to be silent while the agent is THINKING or
+          // SPEAKING. Neither clock advances during a reply, so a reply
+          // longer than the window read as a dead line and hung up on
+          // the person mid-sentence. Silence is therefore only counted
+          // in LISTENING, the one state in which the agent is waiting to
+          // be spoken to and hearing nothing genuinely means nothing is
+          // there. The window is unchanged and re-arms by itself: the
+          // pipeline holds SPEAKING until playback has drained (see
+          // `drainPlayback`) and only then transitions back to
+          // LISTENING, and that transition stamps `lastActivityAt`
+          // above — so the deadline runs from the moment the agent
+          // stopped talking. MAX_DURATION still bounds a call that never
+          // leaves THINKING or SPEAKING.
+          if (
+            sessionState === SessionState.LISTENING &&
+            now - Math.max(lastActivityAt, heardAt) > config.maxSilenceSeconds * 1000
+          ) {
             return "MAX_SILENCE" as const;
           }
           // The person has decided, and has already heard the agent's

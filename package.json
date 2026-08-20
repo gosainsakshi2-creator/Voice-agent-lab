@@ -25,6 +25,7 @@
     "test:phase9": "tsx src/campaign/tests/phase9-final-answer-tests.ts",
     "test:phase10": "tsx src/campaign/tests/phase10-disconnect-tests.ts",
     "test:turn-release": "tsx src/campaign/tests/turn-release-tests.ts",
+    "test:speaking-watchdog": "tsx src/campaign/tests/speaking-watchdog-tests.ts",
     "preflight:prod": "tsx src/campaign/production-readiness-cli.ts",
     "campaign:audit": "tsx src/campaign/audit-cli.ts"
   },

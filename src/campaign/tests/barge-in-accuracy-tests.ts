@@ -52,8 +52,10 @@
  *    script was delivered to a recording. Sections G and H are the live
  *    gate: the same phrase table the outcome classifier has always used
  *    to keep a voicemail from becoming a registration, read DURING the
- *    call, and bounded so it can never silence somebody who has already
- *    spoken with the agent.
+ *    call. The agent stops mid-word and the call is HUNG UP — there is
+ *    nothing on the other end to talk to and no reason to hold the line
+ *    open — and the window is bounded so it can never fire on somebody
+ *    who has already spoken with the agent.
  *
  * NOTHING HERE PLACES A CALL, OPENS A SOCKET, CONTACTS A VENDOR, READS
  * THE DATABASE OR TOUCHES GOOGLE. Every provider is a local fake; the
@@ -312,6 +314,8 @@ interface Harness {
   readonly pipeline: InstanceType<typeof ConversationPipeline>;
   readonly requests: Array<readonly ConversationTurn[]>;
   readonly synthesized: string[];
+  /** How many times the pipeline asked the manager to hang up. */
+  hangupCount(): number;
   say(text: string, opts?: SayOptions): void;
   waitFor(what: string, predicate: () => boolean, timeoutMs?: number): Promise<void>;
   waitForReplies(n: number, timeoutMs?: number): Promise<void>;
@@ -332,6 +336,8 @@ function startHarness(input: {
   let closed = false;
   let clockMs = 0;
   let replyIndex = 0;
+  /** How many times the pipeline asked the manager to end the call. */
+  let hangups = 0;
 
   const stt = {
     descriptor: descriptor(ProviderCategory.SPEECH_TO_TEXT, "fake-stt"),
@@ -435,6 +441,15 @@ function startHarness(input: {
       r.state = to;
     },
     markError: () => undefined,
+    // The real manager's `end`, reduced to what a test can observe: the
+    // loop is aborted and the hangup is counted.
+    end: async () => {
+      hangups += 1;
+      closed = true;
+      for (const waiter of waiters.splice(0)) waiter();
+      record.loopAbortController?.abort();
+      return undefined;
+    },
   };
 
   const pipeline = new ConversationPipeline(
@@ -449,6 +464,9 @@ function startHarness(input: {
     pipeline,
     requests,
     synthesized,
+    hangupCount() {
+      return hangups;
+    },
     say(text, opts) {
       const isFinal = opts?.isFinal ?? true;
       const startedAtMs = clockMs;
@@ -825,12 +843,12 @@ await test("ordinary human speech is NOT a machine", () => {
 });
 
 // ═════════════════════════════════════════════════════════════════
-section("SECTION H — the agent does not speak to a machine");
+section("SECTION H — the agent does not speak to a machine, it hangs up");
 // ═════════════════════════════════════════════════════════════════
 
 const MUST_NOT_BE_SPOKEN = "This is the pitch and a machine must never hear it.";
 
-await test("a voicemail greeting stops the agent before it says anything", async () => {
+await test("a voicemail greeting stops the agent AND hangs the call up", async () => {
   const h = startHarness({ openingLine: OPENING, replies: [MUST_NOT_BE_SPOKEN] });
   try {
     // The machine's greeting is the first thing on the line — which is
@@ -852,6 +870,7 @@ await test("a voicemail greeting stops the agent before it says anything", async
       [],
       "no assistant turn may be committed — a machine heard no line of ours to record",
     );
+    assert.ok(h.hangupCount() >= 1, "the call must be hung up, not held open in silence");
   } finally {
     await h.stop();
   }
@@ -860,11 +879,11 @@ await test("a voicemail greeting stops the agent before it says anything", async
 await test("the machine's greeting IS recorded — it is what labels the call", async () => {
   const h = startHarness({ openingLine: OPENING, replies: [MUST_NOT_BE_SPOKEN] });
   try {
-    const greeting = "Please leave a message after the beep.";
-    h.say(greeting);
-    // The turn detector still releases it; the loop records it and
-    // answers nothing. Without this the outcome classifier would see an
-    // empty transcript and could not report `suspected_voicemail`.
+    h.say("Please leave a message after the beep.");
+    // Committed at the moment of detection, BEFORE the hangup: the
+    // outcome classifier reads this transcript and the phrase is the
+    // whole evidence for `suspected_voicemail`. Hanging up without it
+    // would file the call as an ordinary silent one.
     await h.waitFor(
       "the machine's words to reach the transcript",
       () =>
@@ -874,12 +893,13 @@ await test("the machine's greeting IS recorded — it is what labels the call", 
       8000,
     );
     assert.equal(h.requests.length, 0, "recording it must not mean answering it");
+    assert.ok(h.hangupCount() >= 1, "and the call is ended once the evidence is recorded");
   } finally {
     await h.stop();
   }
 });
 
-await test("a voicemail greeting mid-way through our opening line cuts it off", async () => {
+await test("a voicemail greeting mid-way through our opening line cuts it off and ends the call", async () => {
   const h = startHarness({ openingLine: OPENING, replies: [MUST_NOT_BE_SPOKEN] });
   try {
     await h.waitFor("the opening line to start", () => h.record.state === SessionState.SPEAKING);
@@ -891,6 +911,7 @@ await test("a voicemail greeting mid-way through our opening line cuts it off", 
       "a line a machine cut short must not be committed as spoken",
     );
     assert.equal(h.requests.length, 0, "and nothing may be generated after it");
+    assert.ok(h.hangupCount() >= 1, "and the line is released rather than held open");
   } finally {
     await h.stop();
   }
@@ -917,6 +938,7 @@ await test("a marker AFTER a real exchange can never silence a person", async ()
       "Sure, I will send the details.",
       "a person who has already spoken with the agent must still be answered",
     );
+    assert.equal(h.hangupCount(), 0, "and must never be hung up on");
   } finally {
     await h.stop();
   }

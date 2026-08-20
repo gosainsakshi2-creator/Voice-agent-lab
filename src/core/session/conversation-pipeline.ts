@@ -68,6 +68,18 @@ export interface ResolvedProviderStack {
 export interface PipelineHost {
   transition(record: SessionRecord, to: SessionState, reason?: string): void;
   markError(record: SessionRecord, sourceCategory: string, error: unknown): void;
+  /**
+   * The manager's existing public `end` — the one path that stops
+   * playback, aborts the loop, closes the media stream AND tells the
+   * telephony provider to hang up the carrier leg. Declared here so the
+   * pipeline can end a call it has established there is no point
+   * continuing: a voicemail or any other machine that answered.
+   *
+   * `DefaultVoiceSessionManager` already satisfies this — no new method
+   * was added to it, and this is the same call the Dashboard's End Call
+   * and the campaign watchdog already make.
+   */
+  end(sessionId: SessionRecord["id"]): Promise<unknown>;
 }
 
 interface AcquiredTurn {
@@ -1483,29 +1495,45 @@ export class ConversationPipeline {
       if (segment.isFinal) this.earlyTranscript = heard.slice(-VOICEMAIL_TRANSCRIPT_CAP);
       return;
     }
-    this.stopSpeakingForVoicemail(phrase);
+    this.hangUpOnVoicemail(phrase, heard);
   }
 
   /**
-   * Silence the agent for the rest of the call.
+   * We reached a machine: stop talking and HANG UP.
    *
-   * `synthesizeAndPlay` is the gate that makes that a guarantee rather
-   * than an intention — every spoken word on every path goes through
-   * it. What happens here is only the immediate stop: cancel whatever
-   * is mid-sentence and get it off the line.
+   * Three things, in this order, and the order matters.
    *
-   * The transition reason says "barge-in" because that is precisely
-   * what the transports have to do with it: their existing
-   * SPEAKING -> LISTENING handler reads the reason and clears both our
-   * outbound queue and the carrier's playback buffer, so the machine
-   * stops hearing us in the same tick. Reusing that path is why no new
-   * transport message is needed.
+   *   1. Stop mid-sentence. `voicemailDetected` closes
+   *      `synthesizeAndPlay` — the one choke point every spoken word on
+   *      every path goes through — so nothing further can be
+   *      synthesized even while the hangup is in flight. The transition
+   *      reason says "barge-in" because that is exactly what the
+   *      transports must do with it: their existing
+   *      SPEAKING -> LISTENING handler reads the reason and clears both
+   *      our outbound queue and the carrier's playback buffer, so the
+   *      machine stops hearing us in the same tick. That is why no new
+   *      transport message is needed.
+   *
+   *   2. Record what the machine said. The outcome classifier reads the
+   *      transcript, and this phrase is the whole evidence for the
+   *      `suspected_voicemail` label. Hanging up before the turn
+   *      detector had released a turn would leave an empty transcript
+   *      and the call would be filed as an ordinary silent one.
+   *
+   *   3. End the call, through the manager's existing public `end` —
+   *      the same one the Dashboard's End Call and the campaign
+   *      watchdog use. It aborts the loop, closes the media stream and
+   *      tells the telephony provider to hang up the carrier leg, so
+   *      the line is released immediately rather than held open for the
+   *      silence watchdog to time out on. Not awaited: this runs on the
+   *      STT listener task, and `end` itself awaits the conversation
+   *      loop it is aborting.
    */
-  private stopSpeakingForVoicemail(phrase: string): void {
+  private hangUpOnVoicemail(phrase: string, heard: string): void {
     this.voicemailDetected = true;
     // eslint-disable-next-line no-console
     console.warn(
-      `[PIPELINE:${this.record.id}] VOICEMAIL DETECTED ("${phrase}") — the agent will not speak for the rest of this call`,
+      `[PIPELINE:${this.record.id}] VOICEMAIL DETECTED ("${phrase}") — stopping the agent and hanging up`,
     );
     // Whatever reply is in flight is cancelled and must never be
     // committed as something a person heard.
@@ -1519,6 +1547,21 @@ export class ConversationPipeline {
         "voicemail detected — barge-in to stop the agent speaking",
       );
     }
+
+    // See (2) above: the evidence, committed before the call ends.
+    const machineText = heard.trim();
+    if (machineText.length > 0) {
+      this.record.memory.recordUserTurn(
+        machineText,
+        detectLanguage(machineText, this.record.memory.currentLanguage).language,
+      );
+      this.record.liveUserTranscript = "";
+    }
+
+    void Promise.resolve(this.host.end(this.record.id)).catch(() => {
+      // Already ending, or ended by the transport dropping first —
+      // `end` is idempotent and there is nothing left to do here.
+    });
   }
 
   private async acquireNextUserTurn(loopSignal: AbortSignal): Promise<AcquiredTurn | null> {

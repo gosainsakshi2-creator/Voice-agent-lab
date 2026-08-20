@@ -462,6 +462,21 @@ export class ConversationPipeline {
         // the pipeline is concerned. Everything after this is ours.
         const timer = new TurnTimer(sid, `TURN#${this.record.turnIndex}`);
         timer.mark("turn-detected");
+        // The trace above starts at turn RELEASE, so everything the
+        // caller actually waited through before that — Deepgram's
+        // endpointing window, its delivery lag, and the detector's
+        // confirmation hold — was invisible in the logs while being a
+        // real part of the "why is the reply 2-3s late" question. This
+        // is that span, from the wall clock at which the caller stopped
+        // talking (`userSpeechEndedAtMs`, already computed for the
+        // end-to-end metric) to the release this trace begins at.
+        // Diagnostic only: read by nothing, changes no timing.
+        if (turn.userSpeechEndedAtMs !== undefined) {
+          // eslint-disable-next-line no-console
+          console.log(
+            `[TIMING:${sid}] TURN#${this.record.turnIndex} stt-to-release=${Date.now() - turn.userSpeechEndedAtMs}ms (sttLag=${turn.sttLagMs ?? "n/a"}ms)`,
+          );
+        }
         this.beginTurnTiming(timer);
 
         const detected = detectLanguage(turn.text, this.record.memory.currentLanguage);

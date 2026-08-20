@@ -23,6 +23,7 @@
     "test:phase7b": "tsx src/campaign/tests/phase7b-tests.ts",
     "test:phase8": "tsx src/campaign/tests/phase8-sheet-tests.ts",
     "test:phase9": "tsx src/campaign/tests/phase9-final-answer-tests.ts",
+    "test:phase10": "tsx src/campaign/tests/phase10-disconnect-tests.ts",
     "preflight:prod": "tsx src/campaign/production-readiness-cli.ts",
     "campaign:audit": "tsx src/campaign/audit-cli.ts"
   },

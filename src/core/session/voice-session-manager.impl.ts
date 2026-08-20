@@ -427,6 +427,30 @@ getTranscript(sessionId: SessionId): readonly import("../../types/provider.types
     return this.getRecordOrThrow(sessionId).lastConversationActivityAt;
   }
 
+  /**
+   * ADDITIVE, NOT PART OF `VoiceSessionManager`. The transport reporting
+   * that the CALLER is audibly speaking right now, from its own energy
+   * VAD rather than from a transcript.
+   *
+   * `lastConversationActivityAt` was previously written from STT
+   * segments alone, which made the campaign silence watchdog's notion
+   * of a live call depend on one provider socket staying up: a stalled
+   * or dead STT stream reported an actively talking caller as silence,
+   * and the watchdog hung up on them. The bridges already compute this
+   * signal for barge-in, so this is the same observation written to the
+   * same field — an OR, never a replacement, so a caller who says
+   * nothing still produces no activity and genuine silence still ends
+   * the call at exactly the same deadline.
+   *
+   * Writes one timestamp and nothing else: no state transition, no
+   * effect on turn detection, barge-in, the LLM or playback.
+   */
+  noteCallerSpeech(sessionId: SessionId): void {
+    const record = this.sessions.get(sessionId);
+    if (!record) return;
+    record.lastConversationActivityAt = Date.now();
+  }
+
   // ---------------------------------------------------------------
 
   private getRecordOrThrow(sessionId: SessionId): SessionRecord {

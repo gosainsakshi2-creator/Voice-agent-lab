@@ -171,6 +171,21 @@ export function attachVobizMediaBridge(
    * interrupting becomes the next user turn.
    */
   function onCallerSpeechStart(): void {
+    // The caller is audibly speaking, on the transport's own energy VAD
+    // (RMS >= 700 for 120ms — see BARGE_IN_* above), independent of
+    // Deepgram. Stamped BEFORE the barge-in early-return below, because
+    // this is true whether or not the assistant happened to be talking:
+    // it is the one liveness signal that survives an STT outage, and
+    // without it the campaign silence watchdog can read a talking
+    // caller as a silent line and hang up on them. Comfort noise and a
+    // quiet line never reach this threshold, so genuine silence still
+    // ends the call at exactly the same deadline.
+    try {
+      manager.noteCallerSpeech(sessionId);
+    } catch {
+      // Session already ended — nothing to stamp.
+    }
+
     if (!wasSpeaking && outboundQueue.length === 0) return;
 
     // eslint-disable-next-line no-console

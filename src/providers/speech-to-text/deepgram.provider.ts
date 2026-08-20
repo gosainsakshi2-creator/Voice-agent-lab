@@ -33,6 +33,16 @@ function loadEnvConfig(): DeepgramEnvConfig {
   };
 }
 
+/**
+ * How often the live stream checks whether it owes Deepgram a
+ * KeepAlive, and how long the socket must have gone without audio
+ * before one is sent. Deepgram drops a live stream that has received
+ * no audio for ~10s, so a 3s check against a 4s idle threshold cannot
+ * arrive late. Neither value is a recognition parameter.
+ */
+const KEEPALIVE_INTERVAL_MS = 3_000;
+const KEEPALIVE_IDLE_MS = 4_000;
+
 /** Maps our closed `AudioEncoding` set to Deepgram's request encoding literal. */
 function toDeepgramEncoding(encoding: TranscriptionRequest["audio"]["encoding"]): string {
   switch (encoding) {
@@ -161,6 +171,52 @@ const connection = await this.client.listen.v1.connect({
 connection.connect();
 await connection.waitForOpen();
 console.log("[Deepgram] Live connection opened");
+
+// ── Why the transcript stream outlives the socket ────────────────────
+//
+// `client.listen.v1.connect()` hands back a RECONNECTING socket: on any
+// close that is not code 1000 it dials again by itself, re-attaches the
+// same message handler, and flushes the audio it queued while it was
+// down. Every frame `send()` receives in the gap is buffered, so the
+// caller's speech during a reconnect is transcribed late, not lost.
+//
+// The bug this replaces closed `queue` from the socket's `close` and
+// `error` handlers. Those fire on the FIRST blip — the exact event the
+// transport is built to recover from — so a recoverable close ended the
+// segment stream for the rest of the call. The pipeline's listener loop
+// then fell out silently, `lastConversationActivityAt` froze, the turn
+// detector never fired again, and the campaign silence watchdog hung up
+// a live conversation ~20s later, mid-sentence. One transient socket
+// event was enough to drop a call.
+//
+// So the segment stream is now ended by exactly one thing: THIS
+// generator deciding the call is over (audio source exhausted, or the
+// session aborted). `finished` is that decision. Anything else is a
+// transport event the transport itself is already handling.
+let finished = false;
+const finish = (): void => {
+  finished = true;
+  if (keepAlive !== undefined) clearInterval(keepAlive);
+  queue.close();
+};
+
+// Deepgram closes a live stream that has received no audio for ~10s.
+// Inbound telephony frames normally arrive continuously, but a carrier
+// that suppresses silence (or a stalled media bridge) can starve the
+// socket into exactly that close. A KeepAlive costs nothing, is sent
+// only when no audio has gone out recently, and alters no recognition
+// parameter — the request above is untouched.
+let lastMediaSentAt = Date.now();
+const keepAlive: ReturnType<typeof setInterval> = setInterval(() => {
+  if (finished || Date.now() - lastMediaSentAt < KEEPALIVE_IDLE_MS) return;
+  try {
+    connection.socket.send(JSON.stringify({ type: "KeepAlive" }));
+  } catch {
+    // `send()` enqueues rather than throwing while the socket is down;
+    // a throw here is nothing the stream needs to act on.
+  }
+}, KEEPALIVE_INTERVAL_MS);
+
 connection.on("message", (message) => {
   if (message.type !== "Results") return;
 
@@ -203,7 +259,6 @@ void (async () => {
   try {
 for await (const audio of request.audio) {
   if (request.signal?.aborted) {
-    connection.socket.close();
     break;
   }
   // Inbound audio is a continuous 20ms frame stream (50/sec). Nothing
@@ -211,6 +266,7 @@ for await (const audio of request.audio) {
   // stdout writes that stall the event loop the outbound 20ms playback
   // pump runs on.
   sentFrames += 1;
+  lastMediaSentAt = Date.now();
   connection.socket.send(
     Buffer.from(
       audio.data.buffer,
@@ -220,20 +276,44 @@ for await (const audio of request.audio) {
   );
 }
 
+// The audio source is exhausted or the session aborted: this is the
+// one place that decides the call is over. `finish()` before closing
+// the socket, so the close event it provokes is recognised as ours.
+console.log(`[Deepgram] Audio source ended after ${sentFrames} frames — closing live stream`);
+finish();
 connection.socket.close();
-queue.close();
   } catch (error) {
     console.error("[Deepgram] Streaming error:", error);
-    queue.close();
+    finish();
+    connection.socket.close();
   }
 })();
-connection.on("close", () => {
-  console.log("[Deepgram] Connection closed");
-  queue.close();
+connection.on("close", (event) => {
+  const code = (event as { code?: number } | undefined)?.code;
+  if (finished) {
+    // Our own teardown, already finished above.
+    console.log(`[Deepgram] Connection closed (code=${code ?? "n/a"})`);
+    queue.close();
+    return;
+  }
+  if (code === 1000) {
+    // A clean close is the only one the reconnecting socket will not
+    // retry, so this genuinely is the end of transcription.
+    console.log("[Deepgram] Connection closed cleanly by the server — ending transcript stream");
+    finish();
+    return;
+  }
+  // Recoverable. The socket reconnects itself and keeps delivering
+  // Results on the same handler, so the transcript stream stays open —
+  // ending it here is what used to kill the rest of the call.
+  console.warn(
+    `[Deepgram] Connection closed unexpectedly (code=${code ?? "n/a"}) — transport is reconnecting, transcription continues`,
+  );
 });
 connection.on("error", (error) => {
-  console.error("[Deepgram] Connection error:", error);
-  queue.close();
+  // A socket error precedes an abnormal close, which the branch above
+  // recovers from. Diagnostic only: it must not end the stream.
+  console.error("[Deepgram] Connection error (recoverable):", error);
 });
 for await (const segment of queue) {
   yield segment;

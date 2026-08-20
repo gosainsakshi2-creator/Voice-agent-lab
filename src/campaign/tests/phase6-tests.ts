@@ -316,11 +316,14 @@ section("THROUGHPUT ARITHMETIC (pure)");
 
 await test("22. throughput is the lower of the CPS limit and concurrency ÷ call length", () => {
   const estimate = estimateThroughput(baseConfig, 120);
-  // 15 live calls at 120s each is 450/hour; 3 CPS is 10,800/hour.
+  // The default global ceiling is now the Vobiz account's confirmed 3
+  // live calls, not the old guess of 15: 3 live calls at 120s each is
+  // 90/hour, and 3 CPS is still 10,800/hour. The arithmetic under test
+  // is unchanged — only the configured ceiling it reads.
   assert.equal(estimate.boundBy, "concurrency");
-  assert.equal(Math.round(estimate.callsPerHourByConcurrency), 450);
+  assert.equal(Math.round(estimate.callsPerHourByConcurrency), 90);
   assert.equal(estimate.callsPerHourByCps, 10_800);
-  assert.equal(Math.round(estimate.callsPerHour), 450);
+  assert.equal(Math.round(estimate.callsPerHour), 90);
 });
 
 await test("23. a tight CPS becomes the binding limit instead", () => {
@@ -330,7 +333,14 @@ await test("23. a tight CPS becomes the binding limit instead", () => {
     [SMALLEST]: { maxConcurrent: 5, callsPerSecond: 0.02 },
   };
   const estimate = estimateThroughput(
-    configWith({ globalCallsPerSecond: 0.06, lanes: lanes as typeof baseConfig.lanes }),
+    // The global ceiling is raised here on purpose: with the shipped
+    // ceiling of 3 the concurrency bound is the tighter one, and this
+    // test is about the case where CPS binds instead.
+    configWith({
+      globalMaxConcurrent: 15,
+      globalCallsPerSecond: 0.06,
+      lanes: lanes as typeof baseConfig.lanes,
+    }),
     120,
   );
   assert.equal(estimate.boundBy, "cps");
@@ -340,8 +350,9 @@ await test("23. a tight CPS becomes the binding limit instead", () => {
 await test("24. the hours-per-volume table follows from the rate", () => {
   const estimate = estimateThroughput(baseConfig, 120);
   assert.ok(estimate.hoursFor["2000"] !== undefined);
-  assert.equal(Math.round((estimate.hoursFor["2000"] ?? 0) * 100) / 100, 4.44);
-  assert.equal(Math.round((estimate.hoursFor["10000"] ?? 0) * 100) / 100, 22.22);
+  // 90 calls/hour at the confirmed 3-concurrent ceiling.
+  assert.equal(Math.round((estimate.hoursFor["2000"] ?? 0) * 100) / 100, 22.22);
+  assert.equal(Math.round((estimate.hoursFor["10000"] ?? 0) * 100) / 100, 111.11);
 });
 
 // ─────────────────────────────────────────────────────────────────

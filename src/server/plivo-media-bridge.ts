@@ -189,6 +189,17 @@ export function attachPlivoMediaBridge(
    * interrupting becomes the next user turn.
    */
   function onCallerSpeechStart(): void {
+    // Same stamp, same reason, as the Vobiz bridge: the caller is
+    // audibly speaking on the transport's own energy VAD, which is the
+    // one liveness signal that survives an STT outage. Written before
+    // the barge-in early-return because it is true whether or not the
+    // assistant was talking. See `noteCallerSpeech`.
+    try {
+      manager.noteCallerSpeech(sessionId);
+    } catch {
+      // Session already ended — nothing to stamp.
+    }
+
     if (!wasSpeaking && outboundQueue.length === 0) return;
 
     // eslint-disable-next-line no-console

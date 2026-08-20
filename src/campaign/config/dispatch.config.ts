@@ -11,6 +11,26 @@
 import { optionalEnv, optionalEnvNumber } from "../../providers/shared/env";
 import { CAMPAIGN_TTS_PROVIDERS, type CampaignTtsProvider } from "../domain/campaign-types";
 
+/**
+ * The Vobiz account's CONFIRMED ceiling on simultaneous live calls.
+ *
+ * No longer a guess, which is why it is now the default rather than a
+ * comment. The previous defaults — 15 global, 5 per lane — let the
+ * dispatcher hold five times the carrier's allowance open at once with
+ * nothing in this repository or in `.env.local` bringing it back down,
+ * so the ceiling was enforced only by Vobiz refusing or tearing down
+ * the calls above it. That is a carrier-side hangup on a live
+ * conversation, and it is indistinguishable at this end from any other
+ * random disconnect.
+ *
+ * The global semaphore is shared by all three lanes (see
+ * `LaneGate.acquire`, which takes it before the lane's own), so this
+ * one number bounds the total live calls whatever the lanes are set to.
+ * Both remain env-overridable: raising them is a deliberate act, and
+ * `checkLoadSafety` still holds every value to the absolute ceiling.
+ */
+const CARRIER_MAX_CONCURRENT_CALLS = 3;
+
 export interface LaneLimits {
   readonly maxConcurrent: number;
   readonly callsPerSecond: number;
@@ -76,7 +96,7 @@ export function getDispatchConfig(): DispatchConfig {
     CAMPAIGN_TTS_PROVIDERS.map((provider) => [
       provider,
       {
-        maxConcurrent: optionalEnvNumber(`CAMPAIGN_CONCURRENCY_${envKey(provider)}`, 5),
+        maxConcurrent: optionalEnvNumber(`CAMPAIGN_CONCURRENCY_${envKey(provider)}`, CARRIER_MAX_CONCURRENT_CALLS),
         callsPerSecond: optionalEnvNumber(`CAMPAIGN_CPS_${envKey(provider)}`, 1),
       },
     ]),
@@ -86,7 +106,7 @@ export function getDispatchConfig(): DispatchConfig {
     // THE KILL SWITCH. Off by default: the dispatcher can be built,
     // started and rehearsed without any code path able to place a call.
     dialingEnabled: optionalEnv("CAMPAIGN_DIALING_ENABLED", "false") === "true",
-    globalMaxConcurrent: optionalEnvNumber("CAMPAIGN_GLOBAL_MAX_CONCURRENCY", 15),
+    globalMaxConcurrent: optionalEnvNumber("CAMPAIGN_GLOBAL_MAX_CONCURRENCY", CARRIER_MAX_CONCURRENT_CALLS),
     globalCallsPerSecond: optionalEnvNumber("CAMPAIGN_GLOBAL_CPS", 3),
     lanes,
     ringTimeoutSeconds: optionalEnvNumber("CAMPAIGN_RING_TIMEOUT_SECONDS", 35),

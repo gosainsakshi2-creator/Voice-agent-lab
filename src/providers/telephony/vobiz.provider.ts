@@ -61,7 +61,22 @@ interface VobizCallResponse {
   readonly error?: string;
   readonly message?: string;
 }
-private async startRecording(callUuid: string): Promise<void> {
+
+export class VobizTelephonyProvider implements TelephonyProvider {
+  readonly descriptor: ProviderDescriptor = {
+    category: ProviderCategory.TELEPHONY,
+    id: TELEPHONY_PROVIDER_IDS.VOBIZ,
+    displayName: "Vobiz",
+    supportedLanguages: [
+      SupportedLanguage.ENGLISH,
+      SupportedLanguage.HINDI,
+      SupportedLanguage.HINGLISH,
+    ],
+    version: "v1",
+  };
+
+  private readonly config: VobizEnvConfig;
+ private async startRecording(callUuid: string): Promise<void> {
   const { authId, authToken, baseUrl } = this.config;
 
   const url = `${baseUrl}/api/v1/Account/${authId}/Call/${callUuid}/Record/`;
@@ -91,21 +106,6 @@ private async startRecording(callUuid: string): Promise<void> {
     `[Vobiz] recording started: call_uuid=${callUuid} recording_id=${result.recording_id ?? "n/a"}`,
   );
 }
-export class VobizTelephonyProvider implements TelephonyProvider {
-  readonly descriptor: ProviderDescriptor = {
-    category: ProviderCategory.TELEPHONY,
-    id: TELEPHONY_PROVIDER_IDS.VOBIZ,
-    displayName: "Vobiz",
-    supportedLanguages: [
-      SupportedLanguage.ENGLISH,
-      SupportedLanguage.HINDI,
-      SupportedLanguage.HINGLISH,
-    ],
-    version: "v1",
-  };
-
-  private readonly config: VobizEnvConfig;
-
   constructor(config: VobizEnvConfig = loadEnvConfig()) {
     this.config = config;
   }

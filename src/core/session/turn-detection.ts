@@ -604,10 +604,22 @@ export class AdaptiveTurnDetector {
   }
 
   /**
-   * DISPLAY ONLY: the final segments accumulated for the turn still in
+   * READ-ONLY: the final segments accumulated for the turn still in
    * progress, so a caller whose utterance spans several Deepgram finals
-   * can be shown as the one growing utterance it is. Read by nothing
-   * that makes a turn, barge-in or LLM decision.
+   * can be shown as the one growing utterance it is.
+   *
+   * Pure observation — it arms no timer, consumes nothing, clears
+   * nothing and touches no threshold. It does NOT decide when a turn
+   * ends; the words it returns are still released by `emitTurnEnd`
+   * under exactly the guards they always were.
+   *
+   * Read by the dashboard preview, by
+   * `ConversationPipeline.isBackchannel` (which needs the whole
+   * utterance, not just the latest segment, to tell an acknowledgement
+   * from a real interruption) and by
+   * `ConversationPipeline.newerUserTurnWaiting` (non-empty means the
+   * caller has resumed speaking, so a reply to the PREVIOUS turn that
+   * has not been spoken yet is already stale).
    */
   getPendingTurnText(): string {
     return this.pendingFinalText;

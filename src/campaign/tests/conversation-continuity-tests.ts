@@ -718,6 +718,396 @@ await test("a transcript whose last turn is the caller's is never a final answer
   assert.equal(verdict, undefined, "the agent's reply must have been spoken first");
 });
 
+// ═════════════════════════════════════════════════════════════════
+section("SECTION F — the caller RESUMES SPEAKING before the reply is spoken");
+//
+// THE DEFECT THIS SECTION EXISTS FOR.
+//
+// `newerUserTurnWaiting()` used to be `hasBufferedTurn()` alone — a
+// turn that had fully ENDPOINTED. That is blind to the commonest shape
+// of the report: the caller finishes a thought, the detector releases
+// it, and while the model is still generating they carry on. Nothing
+// has endpointed, so `pendingEvent` is null, so the reply to the older,
+// partial thought was spoken OVER them — and their real question was
+// then answered separately. Three utterances that were one thought came
+// back as three isolated answers.
+//
+// The signal that closes it is the turn detector's pending FINAL text:
+// the words it holds for an utterance in progress. It can never be the
+// turn being answered (`emitTurnEnd` resets before it dispatches), and
+// it is guaranteed to become a turn, so a supersession is always
+// followed by a real one.
+//
+// Every test below drives the caller's second thought in as a Deepgram
+// CHUNK-BOUNDARY final — `is_final` without `speech_final`, which is
+// what a caller mid-sentence actually produces. Nothing has endpointed
+// at the moment the reply would have been spoken.
+// ═════════════════════════════════════════════════════════════════
+
+await test("A — three related utterances become ONE context and ONE answer", async () => {
+  const h = startHarness({
+    openingLine: OPENING,
+    replies: [
+      "STALE — answers only the ad, not the question that followed it.",
+      "Yes, it is from FlexiFunnels, and the session shows how Flexi Genie builds your business.",
+    ],
+    replyDelayMs: 1200,
+  });
+  try {
+    await h.waitForReplies(1);
+
+    // The caller's opening thought, released as a turn.
+    h.say("I just saw Saurabh sir's ad on Instagram.");
+    await sleep(1500);
+    // They carry on while the model is still generating.
+    h.say("I wanted to know whether this is related to FlexiFunnels", {
+      isFinal: true,
+      isSpeechFinal: false,
+    });
+    await sleep(1200);
+    h.say("and what exactly is the session about?", { isFinal: true, isSpeechFinal: true });
+
+    await h.waitForReplies(2);
+    await sleep(400);
+
+    assert.ok(
+      !h.synthesized.some((text) => text.includes("STALE")),
+      `the reply to the partial thought must never be spoken, got ${JSON.stringify(h.synthesized)}`,
+    );
+
+    // ONE answer, not one per utterance.
+    const spoken = assistantTexts(h.history());
+    assert.equal(
+      spoken.length,
+      2,
+      `exactly one answer should follow the opening, got ${JSON.stringify(spoken)}`,
+    );
+
+    // And it was generated from the COMBINED context: the ad, the
+    // FlexiFunnels question and the session question are all present in
+    // the request that produced it.
+    const answering = h.requests[h.requests.length - 1] ?? [];
+    const everythingTheCallerSaid = answering
+      .filter((turn) => turn.role === "user")
+      .map((turn) => turn.content)
+      .join(" ");
+    for (const fragment of ["ad on Instagram", "related to FlexiFunnels", "session about"]) {
+      assert.ok(
+        everythingTheCallerSaid.includes(fragment),
+        `the combined context must contain "${fragment}", got ${JSON.stringify(everythingTheCallerSaid)}`,
+      );
+    }
+    // The NEWEST of them is the one marked as the turn to answer.
+    assert.ok(
+      lastUserContent(answering).includes("session about"),
+      `the newest thought must be the current turn, got ${JSON.stringify(lastUserContent(answering))}`,
+    );
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("B — a newer utterance supersedes the obsolete pending reply", async () => {
+  const h = startHarness({
+    openingLine: OPENING,
+    replies: ["OBSOLETE.", "It is fifteen hundred rupees."],
+    replyDelayMs: 1200,
+  });
+  try {
+    await h.waitForReplies(1);
+
+    h.say("Is there any fee?");
+    await sleep(1500);
+    h.say("Actually I mean what is the price", { isFinal: true, isSpeechFinal: false });
+    await sleep(1200);
+    h.say("of the session?", { isFinal: true, isSpeechFinal: true });
+
+    await h.waitForReplies(2);
+    await sleep(400);
+
+    assert.ok(
+      !h.synthesized.includes("OBSOLETE."),
+      `the obsolete reply must not reach the text-to-speech provider, got ${JSON.stringify(h.synthesized)}`,
+    );
+    // Not committed either — the caller never heard a word of it, so it
+    // is not part of the conversation the next request is built from.
+    assert.ok(
+      !assistantTexts(h.history()).includes("OBSOLETE."),
+      "an unspoken superseded reply must never be committed to memory",
+    );
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("C — an answer the caller already heard is never spoken twice", async () => {
+  const h = startHarness({
+    openingLine: OPENING,
+    replies: [BLOCK_B, "Sure, ask away.", "It is on Sunday at 11 am."],
+    replyDelayMs: 60,
+  });
+  try {
+    await h.waitForReplies(1);
+    h.say("Tell me about it.");
+    await h.waitForReplies(2);
+    h.say("I have a question.");
+    await h.waitForReplies(3);
+
+    // BLOCK_B is three sentences, so it is synthesized as three chunks;
+    // counting its FIRST sentence is what tells a re-run from chunking.
+    const firstSentence = "Actually, I am calling you with a very interesting invitation.";
+    const occurrences = h.synthesized.filter((text) => text.includes(firstSentence)).length;
+    assert.equal(
+      occurrences,
+      1,
+      `the block must be spoken exactly once, got ${JSON.stringify(h.synthesized)}`,
+    );
+
+    // The model is SHOWN what it already said, which is what makes "do
+    // not repeat it" an actionable instruction rather than a wish.
+    const latest = h.requests[h.requests.length - 1] ?? [];
+    const alreadySaid = latest
+      .filter((turn) => turn.role === "assistant")
+      .map((turn) => turn.content)
+      .join(" ");
+    assert.ok(
+      alreadySaid.includes(firstSentence),
+      "the block the caller already heard must be in the history the model is given",
+    );
+  } finally {
+    await h.stop();
+  }
+});
+
+for (const ack of ["Hello.", "Hi.", "Okay.", "Haan."]) {
+  await test(`D — "${ack}" while the agent is thinking does not cancel or restart anything`, async () => {
+    const h = startHarness({
+      openingLine: OPENING,
+      replies: ["The session is this Sunday at 11 am.", "SHOULD-NOT-BE-NEEDED"],
+      replyDelayMs: 1200,
+    });
+    try {
+      await h.waitForReplies(1);
+
+      h.say("When is the session?");
+      await sleep(1500);
+      // A bare acknowledgement lands while the model is generating. It
+      // is the caller showing they are listening, not a new
+      // contribution, so the reply must still be spoken — and the
+      // opening must not be spoken again.
+      h.say(ack, { isFinal: true, isSpeechFinal: false });
+
+      await h.waitForReplies(2);
+      await sleep(400);
+
+      assert.ok(
+        h.synthesized.includes("The session is this Sunday at 11 am."),
+        `the reply must survive "${ack}", got ${JSON.stringify(h.synthesized)}`,
+      );
+      assert.equal(
+        h.synthesized.filter((text) => text === OPENING).length,
+        1,
+        `"${ack}" must not make the agent introduce itself again, got ${JSON.stringify(h.synthesized)}`,
+      );
+    } finally {
+      await h.stop();
+    }
+  });
+}
+
+await test("E — after a supersession the agent resumes from where it was, not from the top", async () => {
+  const h = startHarness({
+    openingLine: OPENING,
+    replies: [BLOCK_B, "STALE.", "No coding needed, and as I was saying, it writes your emails too."],
+    replyDelayMs: 1200,
+  });
+  try {
+    await h.waitForReplies(1);
+    h.say("Tell me about it.");
+    await h.waitForReplies(2);
+
+    h.say("Is it hard to use?");
+    await sleep(1500);
+    h.say("I mean do I need to know coding", { isFinal: true, isSpeechFinal: false });
+    await sleep(1200);
+    h.say("for it?", { isFinal: true, isSpeechFinal: true });
+
+    await h.waitForReplies(3);
+    await sleep(400);
+
+    // The reply to the half-asked question never reached the caller...
+    assert.ok(
+      !h.synthesized.includes("STALE."),
+      `the superseded reply must not be spoken, got ${JSON.stringify(h.synthesized)}`,
+    );
+
+    // ...and the block the caller heard is still in the history the model is
+    // shown, so "carry on from where you were" is a statement about
+    // something it can see. That is the whole mechanism behind "do not
+    // restart the script".
+    const answering = h.requests[h.requests.length - 1] ?? [];
+    const alreadySaid = answering
+      .filter((turn) => turn.role === "assistant")
+      .map((turn) => turn.content)
+      .join(" ");
+    assert.ok(
+      alreadySaid.includes("Flexi Genie"),
+      "the script position the agent reached must still be in its history",
+    );
+    assert.equal(
+      h.synthesized.filter((text) => text === OPENING).length,
+      1,
+      `the opening must not be spoken a second time, got ${JSON.stringify(h.synthesized)}`,
+    );
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("F — a contextual question is answered, not talked over by the scripted line", async () => {
+  const h = startHarness({
+    openingLine: OPENING,
+    replies: [
+      "SCRIPTED CONTINUATION — answers nothing the caller asked.",
+      "It is free, and it runs for about an hour.",
+    ],
+    replyDelayMs: 1200,
+  });
+  try {
+    await h.waitForReplies(1);
+
+    h.say("Okay tell me more.");
+    await sleep(1500);
+    // The real question arrives while the scripted continuation is
+    // still being generated.
+    h.say("Actually is there any fee", { isFinal: true, isSpeechFinal: false });
+    await sleep(1200);
+    h.say("and how long is it?", { isFinal: true, isSpeechFinal: true });
+
+    await h.waitForReplies(2);
+    await sleep(400);
+
+    assert.ok(
+      !h.synthesized.some((text) => text.includes("SCRIPTED CONTINUATION")),
+      `the scripted line must not be spoken over the question, got ${JSON.stringify(h.synthesized)}`,
+    );
+    const current = lastUserContent(h.requests[h.requests.length - 1] ?? []);
+    assert.ok(
+      current.includes("any fee") && current.includes("how long"),
+      `both halves of the question must be the current context, got ${JSON.stringify(current)}`,
+    );
+  } finally {
+    await h.stop();
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════
+section("SECTION G — the protected systems, asserted unchanged");
+// ═════════════════════════════════════════════════════════════════
+
+await test("G — FINAL_YES and FINAL_NO still read the same way", () => {
+  // A supersession leaves TWO consecutive caller turns with no agent
+  // turn between them — the same shape a barge-in leaves. The gate must
+  // read that exactly as it does today.
+  assert.equal(
+    definitiveAnswerIn(
+      [
+        agentTurn("So, would you be interested to attend?"),
+        callerTurn("I just saw the ad."),
+        callerTurn("Haan, yes, I will attend."),
+        agentTurn("Perfect! I will get your registration done."),
+      ],
+      "registration",
+    ),
+    "FINAL_YES",
+  );
+  assert.equal(
+    definitiveAnswerIn(
+      [
+        agentTurn("So, would you be interested to attend?"),
+        callerTurn("No, I am not interested."),
+        agentTurn("No problem at all, thank you for your time."),
+      ],
+      "registration",
+    ),
+    "FINAL_NO",
+  );
+  // And an unanswered gate is still not an answer.
+  assert.equal(
+    definitiveAnswerIn([agentTurn("So, would you be interested to attend?")], "registration"),
+    undefined,
+  );
+});
+
+await test("H — the Google Sheets FINAL_YES gate is the same decision", async () => {
+  const { isFinalYes } = await import("../integrations/final-yes-sheet");
+  const confirmed = {
+    outcomeType: "registered_confirmed",
+    succeeded: true,
+    primaryReason: "confirmed_at_gate",
+    classifier: "test",
+    schemaVersion: 1,
+    detail: {
+      confidence: "high",
+      campaignType: "registration",
+      customerTurns: 2,
+      assistantTurns: 2,
+      signals: [],
+      explanation: "test",
+    },
+  };
+  assert.equal(isFinalYes(confirmed as never, "FINAL_YES"), true, "a real registration still writes");
+  assert.equal(isFinalYes(confirmed as never, "FINAL_NO"), false, "a refusal never writes");
+  assert.equal(isFinalYes(undefined, "FINAL_YES"), false, "an unclassified call never writes");
+  assert.equal(
+    isFinalYes({ ...confirmed, primaryReason: "asked_a_question" } as never, "FINAL_YES"),
+    false,
+    "a question at the gate is not a confirmation",
+  );
+});
+
+await test("I — a supersession never strands the call: the agent keeps answering", async () => {
+  const states: string[] = [];
+  const h = startHarness({
+    openingLine: OPENING,
+    replies: ["STALE ONE.", "ANSWER ONE.", "ANSWER TWO."],
+    replyDelayMs: 1200,
+  });
+  try {
+    await h.waitForReplies(1);
+
+    // Supersede a reply...
+    h.say("What is it about?");
+    await sleep(1500);
+    h.say("I mean what is the session about", { isFinal: true, isSpeechFinal: false });
+    await sleep(1200);
+    h.say("exactly?", { isFinal: true, isSpeechFinal: true });
+    await h.waitForReplies(2);
+    states.push(h.record.state);
+
+    // ...and the call must still be a working conversation afterwards.
+    h.say("And who is it for?");
+    await h.waitForReplies(3);
+    states.push(h.record.state);
+
+    assert.deepEqual(
+      states,
+      [SessionState.LISTENING, SessionState.LISTENING],
+      "the session must return to LISTENING after every turn",
+    );
+    assert.ok(
+      h.synthesized.includes("ANSWER ONE.") && h.synthesized.includes("ANSWER TWO."),
+      `both later answers must be spoken, got ${JSON.stringify(h.synthesized)}`,
+    );
+    assert.ok(
+      !h.synthesized.includes("STALE ONE."),
+      "the superseded reply is still the only thing dropped",
+    );
+  } finally {
+    await h.stop();
+  }
+});
+
 // ─────────────────────────────────────────────────────────────────
 console.log(
   `\n${failures.length === 0 ? "ALL PASSED" : "FAILURES"} — ${passed} passed, ${failures.length} failed`,

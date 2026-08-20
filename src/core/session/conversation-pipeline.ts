@@ -217,6 +217,26 @@ const PLAYBACK_PREROLL_ALLOWANCE_MS = 150;
 const BACKCHANNEL_MIN_REMAINING_SPEECH_MS = 4_000;
 
 /**
+ * A bare greeting and nothing else.
+ *
+ * `isBareAcknowledgement` deliberately EXCLUDES "hello": said over a
+ * reply that is already playing it means the line has gone bad, and it
+ * must interrupt. That reasoning is about audio the caller is failing
+ * to hear, so it does not apply while the assistant is still THINKING —
+ * nothing is playing to have gone bad. A caller who says "hello" into
+ * that gap is filling a silence, not opening a new subject, and
+ * throwing away the answer they are waiting for is the "the script
+ * restarted because I said hello" complaint in its other form.
+ *
+ * So this is read at exactly one place — the supersession test in
+ * `newerUserTurnWaiting`, where nothing has been spoken yet. Barge-in
+ * keeps `isBareAcknowledgement` and is completely unaffected: a "hello"
+ * over a playing reply still interrupts it, exactly as today.
+ */
+const BARE_GREETING_ONLY =
+  /^(?:(?:hello|hallo|helo|hullo|hi|hii+|hey|haan ji|haanji|hanji|namaste|namaskar|हैलो|हेलो|नमस्ते|नमस्कार)[\s,.!?…।-]*)+$/iu;
+
+/**
  * Upper bound on a believable STT recognition lag, used only to
  * discard nonsense samples from the benchmark (see
  * `lastFinalSttLagMs`). Purely a metrics guard — it gates no
@@ -746,18 +766,68 @@ export class ConversationPipeline {
   }
 
   /**
-   * Has the caller already finished saying something NEWER than the
-   * turn this reply is answering?
+   * Has the caller moved on from the turn this reply is answering?
    *
-   * True only when the turn detector is holding a fully endpointed turn
-   * for the next subscriber (`hasBufferedTurn`), which means the caller
-   * spoke, stopped, and their words passed every release guard while we
-   * were still preparing a reply to what they said before that. Read
-   * only at the two points below, and only while nothing has been
-   * spoken yet.
+   * TWO signals, and the second is why this method exists rather than
+   * being one call at each site.
+   *
+   * 1. `hasBufferedTurn()` — the caller spoke, STOPPED, and their words
+   *    passed every release guard while we were still preparing a reply
+   *    to what they said before that. The original signal, unchanged.
+   *
+   * 2. The caller has RESUMED SPEAKING, and their new contribution has
+   *    not endpointed yet.
+   *
+   * Signal 1 alone was blind to the commonest shape of the reported
+   * defect. A caller finishes a thought, the detector releases it, and
+   * ~0.3-1.5s later they carry on — a clarification, the question the
+   * first line was leading up to, the context for it. `pendingEvent` is
+   * null the whole time, because nothing has endpointed yet, so nothing
+   * stopped the reply to the older, partial thought: it was spoken OVER
+   * the caller mid-sentence, and their real question was then answered
+   * separately. Three utterances that were one thought came back as
+   * three isolated answers — exactly the reported "responds to
+   * individual utterances instead of the conversation" behaviour.
+   *
+   * `getPendingTurnText()` is what closes it: the FINAL transcript
+   * words the detector is holding for the utterance in progress. Three
+   * properties make it safe to read here.
+   *
+   *   - It can never be the turn we are answering. `emitTurnEnd` calls
+   *     `reset()` — which clears `pendingFinalText` — BEFORE it
+   *     dispatches to listeners, so anything held here arrived strictly
+   *     after the release of the turn this reply belongs to.
+   *   - It cannot strand the call. Non-empty, non-filler pending text
+   *     is guaranteed to become a turn: every `emitTurnEnd` path that
+   *     does not release rearms the timer, and every hold is bounded
+   *     (`MAX_CONTINUATION_GRACES`, `MAX_CHUNK_BOUNDARY_GRACES`,
+   *     `MAX_INTERIM_CONFIRMATIONS`). So a supersession is always
+   *     followed by a real turn — the same guarantee signal 1 relies
+   *     on.
+   *   - FINALS ONLY, deliberately. An interim-only utterance is NOT
+   *     used: Deepgram owing a final it never delivers would leave a
+   *     discarded reply and no turn to replace it, and silence is a
+   *     worse failure than a stale sentence. That case keeps exactly
+   *     the behaviour it has today — the reply is spoken and the
+   *     caller's speech barges in on it.
+   *
+   * A bare acknowledgement is excluded. "Haan" / "okay" / "hmm"
+   * landing while we are still THINKING is the caller showing they are
+   * listening, not a new contribution — the same judgement
+   * `isBackchannel` makes while the assistant is SPEAKING, for the same
+   * reason. Cancelling a reply for one would restart the block the
+   * acknowledgement was agreeing with.
+   *
+   * Read only at the two existing sites, and only while nothing has
+   * been spoken yet, so the barge-in path is untouched.
    */
   private newerUserTurnWaiting(): boolean {
-    return this.record.turnDetector.hasBufferedTurn();
+    if (this.record.turnDetector.hasBufferedTurn()) return true;
+
+    const resumed = this.record.turnDetector.getPendingTurnText().trim();
+    if (resumed.length === 0) return false;
+    if (BARE_GREETING_ONLY.test(resumed)) return false;
+    return !isBareAcknowledgement(resumed);
   }
 
   /**

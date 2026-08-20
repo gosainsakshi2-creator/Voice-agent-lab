@@ -65,6 +65,7 @@ import {
   type ConversationEvents,
 } from "./conversation-events";
 import { checkScriptAdherence, type ScriptAdherenceReport } from "./script-adherence";
+import { VOICEMAIL_MARKERS } from "../../core/session/voicemail-detection";
 import type { TranscriptTurn } from "./transcript";
 
 // ── Phrase tables ─────────────────────────────────────────────────
@@ -148,32 +149,17 @@ const OPT_OUT = [
 ];
 
 /**
- * Phrases only an answering machine says.
+ * Phrases only an answering machine says — `VOICEMAIL_MARKERS`,
+ * imported above from `core/session/voicemail-detection.ts`.
  *
- * This is a TRANSCRIPT HEURISTIC and nothing more. The platform has no
- * answering-machine detection: the media stream opening looks identical
- * for a human, a machine and an IVR, and no carrier verdict is
- * received (external-limits.ts records this as unavailable). Matching
- * one of these phrases is therefore evidence that we reached a machine,
- * never proof — and failing to match one is not evidence of a human.
- *
- * It exists for one reason: a greeting is transcribed as customer
- * speech, so without it a machine can supply the tokens the
- * affirmation rules read. A voicemail must never become a
+ * It used to be declared here. It moved because the PIPELINE now reads
+ * the same phrases live, to stop the agent talking to a machine at all,
+ * and a live gate that disagreed with the label the call is later given
+ * would be worse than no gate. The table, its order and the way it is
+ * matched are unchanged, and so is everything this file does with it: a
+ * transcript heuristic, never proof, and a machine must never become a
  * registration.
  */
-const VOICEMAIL_MARKERS = [
-  "has been forwarded to voicemail", "forwarded to voicemail", "to voicemail",
-  "leave a message after", "leave a message", "record your message",
-  "after the tone", "after the beep", "at the tone", "not available right now",
-  "is not answering your call", "is currently unavailable", "please try again later",
-  "the person you are calling", "the number you are calling",
-  "voice mail", "voicemail",
-  // Hindi / Hinglish, transliterated and in Devanagari.
-  "abhi uplabdh nahi", "sandesh record", "sandesh chhod", "message chhod dijiye",
-  "beep ke baad", "tone ke baad", "jis vyakti ko aap",
-  "उपलब्ध नहीं", "संदेश रिकॉर्ड", "संदेश छोड़", "वॉइस मेल", "वॉइसमेल",
-];
 
 /**
  * Assistant questions where a "yes" is a COMMITMENT rather than

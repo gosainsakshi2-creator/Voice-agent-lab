@@ -377,14 +377,23 @@ export class DefaultVoiceSessionManager implements VoiceSessionManager, Pipeline
    * faster than STT can confirm it, or by tests exercising
    * interruption handling without a real streaming STT provider.
    */
-  signalBargeIn(sessionId: SessionId): void {
+  /**
+   * @returns whether the barge-in was ACCEPTED. A transport that clears
+   *   its own playback buffer for latency must only do so when the
+   *   answer is `true`: the pipeline declines a barge-in while the fixed
+   *   opening line is still playing (see
+   *   `ConversationPipeline.triggerExternalBargeIn`), and a transport
+   *   that dropped the queue anyway would leave the caller in silence
+   *   with nothing left to play and no reply on the way.
+   */
+  signalBargeIn(sessionId: SessionId): boolean {
     const record = this.getRecordOrThrow(sessionId);
     const pipeline = this.pipelines.get(sessionId);
     if (pipeline) {
-      pipeline.triggerExternalBargeIn();
-    } else {
-      record.bargeIn.triggerBargeIn();
+      return pipeline.triggerExternalBargeIn();
     }
+    record.bargeIn.triggerBargeIn();
+    return true;
   }
 
   /**
@@ -449,6 +458,35 @@ getTranscript(sessionId: SessionId): readonly import("../../types/provider.types
     const record = this.sessions.get(sessionId);
     if (!record) return;
     record.lastConversationActivityAt = Date.now();
+  }
+
+  /**
+   * ADDITIVE, NOT PART OF `VoiceSessionManager`. The transport reporting
+   * that it is hearing LOUD, near-end speech right now — a strictly
+   * stronger claim than `noteCallerSpeech` above, from the same energy
+   * VAD at a higher threshold (see the loud gate in
+   * `vad-segmenter.ts`).
+   *
+   * This is the signal that lets the pipeline tell the caller talking
+   * over the assistant apart from a television, a second person across
+   * the room, or the echo of our own audio out of the caller's
+   * earpiece. All three are transcribed by Deepgram exactly like real
+   * speech, and every one of them used to cut the assistant off
+   * mid-sentence — the reported "background voice interrupts the agent
+   * and it goes quiet" behaviour.
+   *
+   * Writes two timestamps and nothing else: no state transition, no
+   * effect on turn detection, the LLM or playback. Loud speech is also
+   * conversation activity, so `lastConversationActivityAt` is stamped
+   * too — an OR with `noteCallerSpeech`, never a replacement, so the
+   * silence watchdog's deadline is unchanged.
+   */
+  noteCallerEnergy(sessionId: SessionId): void {
+    const record = this.sessions.get(sessionId);
+    if (!record) return;
+    const now = Date.now();
+    record.lastCallerEnergyAt = now;
+    record.lastConversationActivityAt = now;
   }
 
   // ---------------------------------------------------------------

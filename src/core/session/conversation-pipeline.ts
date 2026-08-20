@@ -45,6 +45,7 @@ import { detectLanguage, type LanguageDetectionResult } from "./language-detecto
 import { currentTurnNote, languageHintFor, openingLineFor } from "./system-prompt";
 import { SentenceChunker } from "./sentence-chunker";
 import { isBareAcknowledgement } from "./turn-detection";
+import { voicemailPhraseIn } from "./voicemail-detection";
 import { combineSignals, abortableSleep } from "./abort-utils";
 import { estimateAudioSeconds, withByteCounter } from "./audio-utils";
 import { estimateLlmCost, estimateSttCost, estimateTtsCost, estimateTokenCount } from "./cost-estimator";
@@ -237,6 +238,167 @@ const BARE_GREETING_ONLY =
   /^(?:(?:hello|hallo|helo|hullo|hi|hii+|hey|haan ji|haanji|hanji|namaste|namaskar|हैलो|हेलो|नमस्ते|नमस्कार)[\s,.!?…।-]*)+$/iu;
 
 /**
+ * ---------------- Reached a machine, not a person ----------------
+ *
+ * A voicemail greeting opens the media stream exactly like a human
+ * answer does, so the pipeline used to start its script and deliver the
+ * whole pitch to an answering machine — a call paid for, a script
+ * spent, and a transcript of a recording for the classifier to read.
+ *
+ * There is no carrier verdict to consult (`external-limits.ts` records
+ * answering-machine detection as unavailable on both providers), so the
+ * only signal available is the one thing a machine reliably does: it
+ * says machine things. `voicemail-detection.ts` owns that vocabulary —
+ * the SAME table the outcome classifier has always used to keep a
+ * voicemail from being read as a registration.
+ *
+ * ONLY EVER A HEURISTIC, so the window it may fire in is deliberately
+ * narrow, and both bounds are load-bearing:
+ *
+ *   - `turnIndex === 0` — nothing the agent said has been answered yet.
+ *     A machine never answers, so it never leaves this window; a person
+ *     who has had one exchange with the agent can never be silenced by
+ *     this, whatever they go on to say.
+ *   - the time window — a machine's greeting is the FIRST thing on the
+ *     line and is over in seconds. Later in a call, "leave a message"
+ *     is a person talking about their phone.
+ *
+ * A false positive costs one attempt and nothing else: the call is
+ * classified `no_engagement`, which for a registration campaign is NOT
+ * terminal — `planRegistrationRetry` schedules the contact again.
+ */
+const VOICEMAIL_DETECTION_WINDOW_MS = 20_000;
+/**
+ * Cap on the early transcript held for matching. A marker phrase is at
+ * most a few words, so this only has to span the seam between two
+ * finals — it is not a buffer of the call.
+ */
+const VOICEMAIL_TRANSCRIPT_CAP = 400;
+
+/**
+ * ---------------- Is this the CALLER interrupting us? ----------------
+ *
+ * A transcript arriving while the assistant is speaking is not, on its
+ * own, evidence that the caller is talking over it. Deepgram is handed
+ * one mixed mono telephony channel and transcribes everything on it:
+ * a television, a second person across the room, a shop counter, and
+ * the echo of our own audio out of the caller's earpiece. Every one of
+ * those used to trigger a barge-in, which aborts the LLM/TTS stream and
+ * drops the whole outbound queue — so the assistant fell silent
+ * mid-sentence for a voice that was never speaking to it. That is the
+ * reported "it recognises background voices and goes quiet" behaviour.
+ *
+ * Nothing in a transcript can separate those from the caller. What
+ * separates them is LOUDNESS: the near-end speaker's mouth is
+ * centimetres from the microphone and everything else in the room is
+ * metres away. The transports already measure that (see the loud gate
+ * in `vad-segmenter.ts`) and stamp `record.lastCallerEnergyAt`, so a
+ * barge-in now needs BOTH signals to agree — words from Deepgram, and
+ * loud near-end speech from the transport at the same moment.
+ *
+ * A transcript that is NOT corroborated is treated exactly like a
+ * backchannel: ignored, so the assistant finishes its sentence. This
+ * cannot strand a soft-spoken caller, because the whole test only
+ * applies while the assistant is SPEAKING — every segment that arrives
+ * while it is LISTENING or THINKING feeds the turn detector completely
+ * ungated, exactly as before.
+ */
+const BARGE_IN_ENERGY_WINDOW_MS = 2_000;
+/**
+ * Confidence floor for a segment allowed to interrupt.
+ *
+ * Distant and overlapped speech scores markedly lower than near-end
+ * speech, so this is a second, independent filter on the same class of
+ * false interruption. Applied ONLY when the provider reports a non-zero
+ * confidence: `0` means "not reported" (batch results, providers with
+ * no such field) and must not be read as "no confidence at all".
+ *
+ * Deliberately low. Deepgram runs here in `multi` language mode for
+ * Hinglish code-switching, where genuine near-end speech scores lower
+ * than it would on monolingual audio, and blocking a real interruption
+ * is a worse failure than allowing a marginal one — the energy gate
+ * above is what does the heavy lifting.
+ */
+const BARGE_IN_MIN_CONFIDENCE = 0.4;
+
+/**
+ * ---------------- Stranded after a barge-in ----------------
+ *
+ * A barge-in cancels the reply in flight and drops the outbound queue.
+ * Normally the caller's interrupting words then become the next turn
+ * and are answered — but they do not always become a turn at all. A
+ * cough, a door, a half-word, a hesitation sound (`FILLER_ONLY` is
+ * dropped by the turn detector by design), a transcript Deepgram never
+ * finalised: each of those can cancel the reply and leave nothing
+ * behind to reply TO. The session then sits in LISTENING with the
+ * assistant mid-sentence and no reply on the way, and the caller hears
+ * dead air. They say "hello?", which is answered, or they hang up.
+ *
+ * So a cancelled reply that leaves the caller in silence is resumed
+ * from exactly where playback stopped — the words that were already
+ * synthesized or generated and never heard. No LLM round trip, so it
+ * starts speaking within a TTS request rather than in a couple of
+ * seconds, and it continues the script rather than restarting it.
+ *
+ * Guarded to the one case it is for: the resume is abandoned the moment
+ * the caller produces any turn material at all, so a real interruption
+ * is answered by the normal contextual path and never by this.
+ */
+/** Silence from the caller that says the barge-in produced no turn. */
+const STRANDED_RESUME_QUIET_MS = 700;
+/** Never wait longer than this for the line to go quiet before deciding. */
+const STRANDED_RESUME_MAX_WAIT_MS = 2_500;
+/** How often the wait re-checks, so a real turn is picked up promptly. */
+const STRANDED_RESUME_POLL_MS = 100;
+/**
+ * Hard cap per call. Bounds the pathological case — a caller on a noisy
+ * line whose every barge-in yields no turn — so this can never become a
+ * loop that talks over them repeatedly.
+ */
+const MAX_STRANDED_RESUMES = 3;
+
+/**
+ * The part of `fullText` the caller has NOT heard, given the prefix
+ * they have (`heardText`, from `heardSoFarText`).
+ *
+ * `heardText` is the spoken utterances joined by single spaces, and
+ * each of those is a trimmed slice of `fullText`, so the two agree on
+ * every non-whitespace character and can disagree on whitespace. The
+ * walk below compares them ignoring whitespace and returns the rest of
+ * `fullText` from the point the prefix ends.
+ *
+ * Returns `""` — resume nothing — the moment they diverge. Speech
+ * formatting is applied per utterance as well as to the whole reply, so
+ * the two are not guaranteed to line up; when they do not, saying
+ * nothing is correct and guessing is not.
+ */
+export function unspokenTail(fullText: string, heardText: string): string {
+  const heard = heardText.trim();
+  if (heard.length === 0) return fullText.trim();
+
+  const isSpace = (ch: string): boolean => /\s/u.test(ch);
+  let i = 0;
+  let j = 0;
+  while (i < fullText.length && j < heard.length) {
+    if (isSpace(fullText[i]!)) {
+      i += 1;
+      continue;
+    }
+    if (isSpace(heard[j]!)) {
+      j += 1;
+      continue;
+    }
+    if (fullText[i] !== heard[j]) return "";
+    i += 1;
+    j += 1;
+  }
+  while (j < heard.length && isSpace(heard[j]!)) j += 1;
+  // The "heard" text is not a prefix of the reply at all.
+  if (j < heard.length) return "";
+  return fullText.slice(i).trim();
+}
+
+/**
  * Upper bound on a believable STT recognition lag, used only to
  * discard nonsense samples from the benchmark (see
  * `lastFinalSttLagMs`). Purely a metrics guard — it gates no
@@ -317,6 +479,18 @@ export class ConversationPipeline {
    */
   private greetingDone = false;
   /**
+   * Set once, when the live transcript shows we are talking to a
+   * machine. From that instant the agent says NOTHING for the rest of
+   * the call — see `synthesizeAndPlay`, which is the single choke point
+   * every spoken word goes through. Never cleared: a machine does not
+   * turn into a person.
+   */
+  private voicemailDetected = false;
+  /** Wall clock at which `run()` started — the origin of the detection window. */
+  private runStartedAtMs = 0;
+  /** Finals heard so far inside the detection window, bounded. */
+  private earlyTranscript = "";
+  /**
    * ---------------- Assistant response lifecycle ----------------
    *
    * PENDING/SPEAKING -> COMPLETED -> committed to `memory`
@@ -363,6 +537,12 @@ export class ConversationPipeline {
    */
   private cancelledHeardText = "";
   /**
+   * Resumes spent on this call, against `MAX_STRANDED_RESUMES`. Bounds
+   * the pathological case where a noisy line barges in over and over
+   * and never produces a turn.
+   */
+  private strandedResumes = 0;
+  /**
    * ---------------- Metrics bookkeeping (read-only observers) ----------------
    * Everything below is written from points that already exist in the
    * flow and is read only by `recordTurn`. Nothing here feeds turn
@@ -391,6 +571,11 @@ export class ConversationPipeline {
   /** Runs until the session's loop-abort signal fires or a fatal error occurs. */
   async run(): Promise<void> {
     const sid = this.record.id;
+    // The media stream has just opened, so this is the moment the callee
+    // picked up — the origin the voicemail detection window is measured
+    // from. Stamped before the listener starts, so a marker in the very
+    // first segment is inside the window.
+    this.runStartedAtMs = Date.now();
     const loopSignal = this.record.loopAbortController?.signal;
     if (!loopSignal) {
       // eslint-disable-next-line no-console
@@ -436,7 +621,10 @@ export class ConversationPipeline {
     }
 
     // --- Greeting phase: a dedicated startup action, NOT a turn ---
-    if (!loopSignal.aborted) {
+    // Skipped outright when the machine announced itself before we got
+    // this far, which is the common case: its greeting starts the
+    // instant the line opens and ours needs a TTS round trip first.
+    if (!loopSignal.aborted && !this.voicemailDetected) {
       // --- The greeting is spoken, not generated ---
       //
       // The system prompt mandates ONE fixed opening line per language
@@ -472,9 +660,19 @@ export class ConversationPipeline {
         this.activeTimer = undefined;
         timer.summarize();
 
-        // eslint-disable-next-line no-console
-        console.log(`[PIPELINE:${sid}] Greeting spoken: text="${greetingText}" state=${this.record.state}`);
-        this.record.memory.recordAssistantTurn(greetingText);
+        if (this.voicemailDetected) {
+          // Cut mid-line by the detection below. Deliberately NOT
+          // committed: the transcript the outcome classifier reads
+          // should contain the machine's greeting, which is the evidence
+          // for the label, and not a fragment of ours that no person
+          // heard.
+          // eslint-disable-next-line no-console
+          console.log(`[PIPELINE:${sid}] Greeting CUT SHORT — voicemail detected while it was playing`);
+        } else {
+          // eslint-disable-next-line no-console
+          console.log(`[PIPELINE:${sid}] Greeting spoken: text="${greetingText}" state=${this.record.state}`);
+          this.record.memory.recordAssistantTurn(greetingText);
+        }
         this.record.bargeIn.reset();
       } catch (error) {
         this.activeTimer = undefined;
@@ -535,6 +733,25 @@ export class ConversationPipeline {
         // eslint-disable-next-line no-console
         console.log(`[STT:${sid}] Transcript received: "${turn.text.slice(0, 80)}${turn.text.length > 80 ? "..." : ""}" userSpeechMs=${turn.userSpeechMs} sttLagMs=${turn.sttLagMs ?? "n/a"}`);
 
+        // ── A machine, not a person ─────────────────────────────────
+        //
+        // Still RECORDED, and that is not incidental: the outcome
+        // classifier reads this transcript and it is what labels the
+        // call `suspected_voicemail` rather than an ordinary silent
+        // call. But no reply is generated and nothing is spoken, so the
+        // machine costs no language-model request, no synthesis and no
+        // script. The call then ends on the existing silence watchdog
+        // once the recording stops talking — no hangup logic is added
+        // to the pipeline, exactly as before.
+        if (this.voicemailDetected) {
+          const machineLanguage = detectLanguage(turn.text, this.record.memory.currentLanguage);
+          this.record.memory.recordUserTurn(turn.text, machineLanguage.language);
+          this.record.liveUserTranscript = "";
+          // eslint-disable-next-line no-console
+          console.log(`[PIPELINE:${sid}] voicemail — transcript recorded, nothing answered and nothing spoken`);
+          continue;
+        }
+
         // t0 for this turn's latency trace: the turn detector has just
         // endpointed, i.e. the caller has stopped speaking as far as
         // the pipeline is concerned. Everything after this is ours.
@@ -582,6 +799,11 @@ export class ConversationPipeline {
         // `AdaptiveTurnDetector.pendingEvent`) and it becomes the next
         // user turn on the following iteration, so the model sees the
         // caller's latest thought as the live conversational state.
+        // The unheard tail of a reply the caller cut off, if the
+        // barge-in turns out to have produced no turn to answer. See
+        // `resumeAfterStrandedBargeIn`, which runs at the end of this
+        // iteration — after the metrics below — and decides.
+        let strandedRemainder = "";
         if (this.isResponseCancelled(responseId)) {
           // The part that PLAYED is what the caller heard, so it is
           // what the conversation actually contains — see
@@ -597,6 +819,7 @@ export class ConversationPipeline {
             `[PIPELINE:${sid}] Response #${responseId} CANCELLED by barge-in — heard="${heard.slice(0, 80)}${heard.length > 80 ? "..." : ""}" discarded="${result.assistantText.slice(heard.length, heard.length + 80)}${result.assistantText.length > heard.length + 80 ? "..." : ""}"`,
           );
           if (heard.length > 0) this.record.memory.recordAssistantTurn(heard);
+          strandedRemainder = unspokenTail(result.assistantText, heard);
         } else {
           this.record.memory.recordAssistantTurn(result.assistantText);
         }
@@ -630,6 +853,14 @@ export class ConversationPipeline {
           llmCostUsd: result.llmCostUsd,
           ttsCostUsd: result.ttsCostUsd,
         });
+
+        // Last, after everything this turn owns has been committed and
+        // measured: if the barge-in that cancelled the reply produced no
+        // turn of its own, the caller is now sitting in silence. Resume
+        // rather than leave them there.
+        if (strandedRemainder.length > 0) {
+          await this.resumeAfterStrandedBargeIn(strandedRemainder, loopSignal);
+        }
       } catch (error) {
         if (error instanceof RecoverableTurnError) {
           // eslint-disable-next-line no-console
@@ -656,6 +887,85 @@ export class ConversationPipeline {
 
     // eslint-disable-next-line no-console
     console.log(`[PIPELINE:${sid}] run() exiting — state=${this.record.state} aborted=${loopSignal.aborted}`);
+  }
+
+  /**
+   * A barge-in cancelled the reply. If the caller then produced nothing
+   * to answer, speak the part of that reply they never heard.
+   *
+   * See the note on `STRANDED_RESUME_QUIET_MS` for why this exists: a
+   * cough, a door, a half-word, a hesitation sound or a transcript that
+   * never finalised can all cancel a reply and leave nothing behind to
+   * reply to, and the caller then hears dead air with the assistant
+   * stopped mid-sentence.
+   *
+   * THE GUARD IS THE WHOLE DESIGN. Any turn material at all — a
+   * completed turn already buffered for the next subscriber, or finals
+   * the detector is still holding — abandons the resume, because a
+   * genuine interruption must be answered by the normal contextual
+   * path and never by this. Both are guaranteed to become a turn (see
+   * `newerUserTurnWaiting` for why), so abandoning here always hands
+   * the call straight back to the main loop.
+   *
+   * Nothing here changes what a reply says, how it is generated, or how
+   * a barge-in behaves: it only fills a silence that would otherwise
+   * end the call, using text that was already generated for this
+   * caller and never reached them.
+   */
+  private async resumeAfterStrandedBargeIn(remainder: string, loopSignal: AbortSignal): Promise<void> {
+    const sid = this.record.id;
+    if (this.voicemailDetected) return;
+    if (this.strandedResumes >= MAX_STRANDED_RESUMES) return;
+
+    // Wait for the line to go quiet, re-checking often so a real turn
+    // is handed back to the main loop with no added latency.
+    const deadline = Date.now() + STRANDED_RESUME_MAX_WAIT_MS;
+    while (Date.now() < deadline) {
+      if (loopSignal.aborted) return;
+      if (this.callerHasTurnMaterial()) return;
+      if (Date.now() - this.record.lastConversationActivityAt >= STRANDED_RESUME_QUIET_MS) break;
+      await abortableSleep(STRANDED_RESUME_POLL_MS, loopSignal);
+    }
+
+    if (loopSignal.aborted) return;
+    if (this.callerHasTurnMaterial()) return;
+    // Anything other than LISTENING means the loop has already moved on
+    // (a turn is being answered, or the session is ending).
+    if (this.record.state !== SessionState.LISTENING) return;
+
+    this.strandedResumes += 1;
+    // eslint-disable-next-line no-console
+    console.log(
+      `[PIPELINE:${sid}] barge-in produced no turn — RESUMING the unheard remainder (${this.strandedResumes}/${MAX_STRANDED_RESUMES}): "${remainder.slice(0, 80)}${remainder.length > 80 ? "..." : ""}"`,
+    );
+    const timer = new TurnTimer(sid, "RESUME");
+    this.beginTurnTiming(timer);
+    try {
+      await this.speakFixedUtterance(remainder, loopSignal, "resuming an interrupted reply");
+    } finally {
+      this.activeTimer = undefined;
+      timer.summarize();
+    }
+    // Committed for the same reason the interrupted part was: the caller
+    // heard it, so the model must be able to see it and carry on from
+    // there instead of starting the block again.
+    this.record.memory.recordAssistantTurn(remainder);
+    this.record.bargeIn.reset();
+  }
+
+  /**
+   * READ-ONLY. Does the caller have something in flight that is going to
+   * become a turn? Pure observation over the turn detector's two
+   * existing read-only accessors — it consumes nothing, arms no timer
+   * and clears nothing, and in particular it does NOT subscribe (a
+   * subscriber would receive the turn and the main loop would never see
+   * it).
+   */
+  private callerHasTurnMaterial(): boolean {
+    return (
+      this.record.turnDetector.hasBufferedTurn() ||
+      this.record.turnDetector.getPendingTurnText().trim().length > 0
+    );
   }
 
   /** Installs `timer` as the trace for the turn now starting. */
@@ -875,8 +1185,40 @@ export class ConversationPipeline {
     return this.cancelledResponseId === responseId;
   }
 
-  /** Externally-triggered barge-in (e.g. from a future real-time transport, or a test harness). */
-  triggerExternalBargeIn(): void {
+  /**
+   * Externally-triggered barge-in (e.g. from a telephony transport's own
+   * energy VAD, or a test harness).
+   *
+   * @returns whether the barge-in was ACCEPTED, so a transport that
+   *   clears its own playback buffer for latency knows whether to.
+   *   Declining is not a failure: it means the assistant is saying
+   *   something that is not interruptible, and a transport that dropped
+   *   its queue anyway would leave the caller in silence with nothing
+   *   left to play and no reply on the way.
+   */
+  triggerExternalBargeIn(): boolean {
+    // THE OPENING LINE IS NOT INTERRUPTIBLE.
+    //
+    // `greetingDone` has always gated the transcript-confirmed barge-in
+    // path below (see `startContinuousStt`) — a caller saying "hello?"
+    // as they lift the phone must not destroy the very first thing the
+    // assistant says. The transports' own energy VAD reached this method
+    // WITHOUT that gate, so a "hello" on pickup truncated the opening
+    // line ~120ms in and left the caller listening to nothing while the
+    // next reply was generated. Saying "hello" again cancelled that
+    // reply too, and the call could livelock there until they hung up.
+    //
+    // Nothing the caller says during the greeting is lost: the listener
+    // has been running since call-connect and the turn detector buffers
+    // the turn (`AdaptiveTurnDetector.pendingEvent`), so it is answered
+    // the moment the opening line finishes.
+    if (!this.greetingDone) {
+      // eslint-disable-next-line no-console
+      console.log(
+        `[PIPELINE:${this.record.id}] barge-in DECLINED — the fixed opening line is still playing`,
+      );
+      return false;
+    }
     // Recorded FIRST, before anything can observe the aborts below:
     // whichever response is in flight is now CANCELLED and stays
     // cancelled, so a chunk or `final` event that arrives after this
@@ -893,6 +1235,32 @@ export class ConversationPipeline {
     if (this.record.state === SessionState.SPEAKING) {
       this.host.transition(this.record, SessionState.LISTENING, "external barge-in signal");
     }
+    return true;
+  }
+
+  /**
+   * Does this transcript segment corroborate as the CALLER talking over
+   * the assistant, rather than something else the microphone can hear?
+   *
+   * See the note on `BARGE_IN_ENERGY_WINDOW_MS` for why a transcript
+   * alone is not evidence. Only ever asked while the assistant is
+   * SPEAKING, and it gates nothing else: no turn, no timer, no
+   * threshold, no state.
+   */
+  private interruptionCorroborated(segment: TranscriptSegment): boolean {
+    // A transport that never reports energy at all — the in-process
+    // audio fallback, the test harnesses — keeps exactly the
+    // transcript-only behaviour this had before the energy gate existed.
+    // `noteCallerEnergy` is the only writer, so `0` is "never stamped".
+    if (this.record.lastCallerEnergyAt !== 0) {
+      const energyAgeMs = Date.now() - this.record.lastCallerEnergyAt;
+      if (energyAgeMs > BARGE_IN_ENERGY_WINDOW_MS) return false;
+    }
+    // `0` is "not reported", not "no confidence" — see the constant.
+    if (segment.confidence > 0 && segment.confidence < BARGE_IN_MIN_CONFIDENCE) {
+      return false;
+    }
+    return true;
   }
 
   // ---------------------------------------------------------------
@@ -951,6 +1319,11 @@ export class ConversationPipeline {
             this.record.liveUserTranscript =
               buffered.length > 0 ? `${buffered} ${segment.text}`.trim() : segment.text;
           }
+
+          // Checked BEFORE anything downstream: while a machine is
+          // announcing itself, its greeting must not become a barge-in
+          // judgement, a turn, or a reply.
+          this.checkForVoicemail(segment);
 
           // METRICS ONLY — pure observation, no control flow. Records
           // when this final landed and how far behind the audio it
@@ -1045,6 +1418,31 @@ export class ConversationPipeline {
           }
           this.backchannelInFlight = false;
 
+          // ── Not the caller, so not an interruption ────────────────
+          //
+          // Words, over the assistant, that the transport's energy VAD
+          // does not corroborate as loud near-end speech — a television,
+          // a second person in the room, our own audio echoing back out
+          // of the caller's earpiece. Ignored exactly like the
+          // backchannel above: no barge-in, and NOT fed to the turn
+          // detector, so it creates no turn either and the assistant
+          // simply finishes its sentence.
+          //
+          // Only reachable while the assistant is SPEAKING. A caller
+          // speaking while it is LISTENING or THINKING is never touched
+          // by this, so a soft-spoken caller cannot be filtered out of
+          // the conversation — and if these words really were theirs,
+          // they are still talking when the reply ends, and everything
+          // from that point on becomes their turn as usual.
+          if (spokeOverTheAssistant && !this.interruptionCorroborated(segment)) {
+            this.record.liveUserTranscript = "";
+            // eslint-disable-next-line no-console
+            console.log(
+              `[TURN:${this.record.id}] uncorroborated speech ignored (not the caller interrupting): "${segment.text.trim()}" — confidence=${segment.confidence} loudSpeechAgeMs=${this.record.lastCallerEnergyAt === 0 ? "n/a" : Date.now() - this.record.lastCallerEnergyAt}`,
+            );
+            continue;
+          }
+
           if (spokeOverTheAssistant) {
             this.triggerExternalBargeIn();
           }
@@ -1058,6 +1456,69 @@ export class ConversationPipeline {
         // new turns, and `end()` still works normally.
       }
     })();
+  }
+
+  /**
+   * Have we reached a machine? Read on every segment inside the
+   * detection window and at most once per call — see the note on
+   * `VOICEMAIL_DETECTION_WINDOW_MS` for why the window is narrow and
+   * what a false positive costs.
+   *
+   * Interim segments are TESTED but not accumulated: testing them is
+   * what makes the gate fast enough to cut our own opening line while
+   * it is still playing, and accumulating them would count the same
+   * words several times over.
+   */
+  private checkForVoicemail(segment: TranscriptSegment): void {
+    if (this.voicemailDetected) return;
+    const text = segment.text.trim();
+    if (text.length === 0) return;
+    // Both bounds are load-bearing — see the constant.
+    if (this.record.turnIndex !== 0) return;
+    if (Date.now() - this.runStartedAtMs > VOICEMAIL_DETECTION_WINDOW_MS) return;
+
+    const heard = this.earlyTranscript.length > 0 ? `${this.earlyTranscript} ${text}` : text;
+    const phrase = voicemailPhraseIn(heard);
+    if (phrase === undefined) {
+      if (segment.isFinal) this.earlyTranscript = heard.slice(-VOICEMAIL_TRANSCRIPT_CAP);
+      return;
+    }
+    this.stopSpeakingForVoicemail(phrase);
+  }
+
+  /**
+   * Silence the agent for the rest of the call.
+   *
+   * `synthesizeAndPlay` is the gate that makes that a guarantee rather
+   * than an intention — every spoken word on every path goes through
+   * it. What happens here is only the immediate stop: cancel whatever
+   * is mid-sentence and get it off the line.
+   *
+   * The transition reason says "barge-in" because that is precisely
+   * what the transports have to do with it: their existing
+   * SPEAKING -> LISTENING handler reads the reason and clears both our
+   * outbound queue and the carrier's playback buffer, so the machine
+   * stops hearing us in the same tick. Reusing that path is why no new
+   * transport message is needed.
+   */
+  private stopSpeakingForVoicemail(phrase: string): void {
+    this.voicemailDetected = true;
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[PIPELINE:${this.record.id}] VOICEMAIL DETECTED ("${phrase}") — the agent will not speak for the rest of this call`,
+    );
+    // Whatever reply is in flight is cancelled and must never be
+    // committed as something a person heard.
+    this.cancelledResponseId = this.currentResponseId;
+    this.cancelledHeardText = "";
+    this.record.bargeIn.triggerBargeIn();
+    if (this.record.state === SessionState.SPEAKING) {
+      this.host.transition(
+        this.record,
+        SessionState.LISTENING,
+        "voicemail detected — barge-in to stop the agent speaking",
+      );
+    }
   }
 
   private async acquireNextUserTurn(loopSignal: AbortSignal): Promise<AcquiredTurn | null> {
@@ -1248,8 +1709,12 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
    * LISTENING -> SPEAKING edge, and skipping it would also hide the
    * greeting from the dashboard's state stepper.
    */
-  private async speakFixedUtterance(text: string, loopSignal: AbortSignal): Promise<void> {
-    this.host.transition(this.record, SessionState.THINKING, "preparing the greeting");
+  private async speakFixedUtterance(
+    text: string,
+    loopSignal: AbortSignal,
+    transitionReason = "preparing the greeting",
+  ): Promise<void> {
+    this.host.transition(this.record, SessionState.THINKING, transitionReason);
     const speakingSignal = this.enterSpeaking();
     if (speakingSignal.aborted || loopSignal.aborted) return;
 
@@ -1676,9 +2141,14 @@ await this.drainPlayback(speakingSignal);
     speakingSignal: AbortSignal,
   ): Promise<{ ttsMs: number; ttsCostUsd: number; firstChunkMs?: number }> {
     const sid = this.record.id;
-    if (speakingSignal.aborted || text.trim().length === 0) {
+    // THE choke point. Every spoken word on every path — the greeting,
+    // a generated reply, the contamination fallback, a resumed
+    // remainder — is synthesized here, so one condition here is what
+    // makes "the agent does not speak on a voicemail" a guarantee
+    // instead of a list of places that remembered to check.
+    if (speakingSignal.aborted || text.trim().length === 0 || this.voicemailDetected) {
       // eslint-disable-next-line no-console
-      console.log(`[TTS:${sid}] synthesizeAndPlay skipped (aborted=${speakingSignal.aborted} emptyText=${text.trim().length === 0})`);
+      console.log(`[TTS:${sid}] synthesizeAndPlay skipped (aborted=${speakingSignal.aborted} emptyText=${text.trim().length === 0} voicemail=${this.voicemailDetected})`);
       return { ttsMs: 0, ttsCostUsd: 0 };
     }
 

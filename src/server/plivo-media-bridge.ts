@@ -119,9 +119,7 @@ const OUTBOUND_LOW_WATER_FRAMES = 110; // 2200ms
  */
 const OUTBOUND_BACKPRESSURE_TIMEOUT_MS = 5000;
 /**
- * Barge-in onset gate. These only affect `onSpeechStart` (the VAD's
- * utterance callback here is diagnostic-only), i.e. they decide what
- * counts as "the caller started talking over us".
+ * ---------------- Two energy gates, two questions ----------------
  *
  * The segmenter's default threshold of RMS 150 is ~-47 dBFS — inside
  * the band occupied by G.711 comfort noise, mobile background noise,
@@ -132,14 +130,37 @@ const OUTBOUND_BACKPRESSURE_TIMEOUT_MS = 5000;
  * most of the remaining reply — so a single blip truncated the
  * assistant mid-sentence even though nobody had interrupted.
  *
- * Real speech on a phone line sits around RMS 2000-8000 and lasts far
- * longer than 120ms, so genuine barge-in still fires promptly. Soft or
- * marginal interruptions are still caught by the pipeline's
- * independent, Deepgram-transcript-confirmed barge-in path.
+ * LIVENESS (`onSpeechStart`) answers "is somebody on this line?". It
+ * has to stay permissive: it is the one signal that survives an STT
+ * outage, and the campaign silence watchdog hangs up on a caller it
+ * cannot hear. RMS 700 over 120ms, unchanged.
+ *
+ * NEAR-END SPEECH (`onLoudSpeech`) answers the different and much
+ * harder question "is the CALLER talking over us, rather than a
+ * television, a second person across the room, or our own audio
+ * echoing back?". Real near-end phone speech sits around RMS
+ * 2000-8000; anything metres from the handset arrives 15-25 dB down,
+ * i.e. RMS ~110-1300. 1600 sits above that band and below the caller.
+ * This gate no longer decides a barge-in by itself — it corroborates
+ * the pipeline's Deepgram-transcript-confirmed path, which is what
+ * stops a transcribed background voice from cutting the assistant off.
  */
-const BARGE_IN_SPEECH_THRESHOLD_RMS = 700;
+const LIVENESS_SPEECH_THRESHOLD_RMS = 700;
 /** 6 frames = 120ms of continuous speech energy. */
-const BARGE_IN_SPEECH_START_FRAMES = 6;
+const LIVENESS_SPEECH_START_FRAMES = 6;
+/** See above: loud enough to be the near-end speaker, not the room. */
+const NEAR_END_SPEECH_THRESHOLD_RMS = 1600;
+/** 4 frames = 80ms, so corroboration is available before any transcript. */
+const NEAR_END_SPEECH_FRAMES = 4;
+/**
+ * Continuous near-end speech that barges in with NO transcript at all.
+ *
+ * The last resort for a dead or lagging STT socket, which would
+ * otherwise leave the assistant uninterruptible. 700ms of sustained
+ * loud near-end energy is a caller talking, not a cough (~200-300ms), a
+ * door, or the intermittent bursts a background conversation produces.
+ */
+const ENERGY_ONLY_BARGE_IN_MS = 700;
 
 export function attachPlivoMediaBridge(
   socket: BridgeSocket,
@@ -165,50 +186,88 @@ export function attachPlivoMediaBridge(
   // stopped speaking — real-time barge-in was impossible and every turn
   // carried (utterance duration + 400ms) of dead latency. Inbound
   // frames now stream straight through (see the "media" case below);
-  // the segmenter's only job is to fire `onSpeechStart` immediately.
+  // the segmenter's only job is to report energy the instant it hears
+  // it, through the two callbacks below.
   const segmenter = new MulawVadSegmenter(
     (mulawBytes) => {
       utteranceCount += 1;
       void mulawBytes;
     },
     () => onCallerSpeechStart(),
-    // See BARGE_IN_* above: the onset must look like actual speech, not
-    // a noise/echo blip, or it truncates the assistant mid-reply.
+    // Two gates, two questions — see the constants above.
     {
-      speechStartFrames: BARGE_IN_SPEECH_START_FRAMES,
-      speechThreshold: BARGE_IN_SPEECH_THRESHOLD_RMS,
+      speechStartFrames: LIVENESS_SPEECH_START_FRAMES,
+      speechThreshold: LIVENESS_SPEECH_THRESHOLD_RMS,
+      loudSpeechThreshold: NEAR_END_SPEECH_THRESHOLD_RMS,
+      loudSpeechFrames: NEAR_END_SPEECH_FRAMES,
+      onLoudSpeech: (loudMs) => onCallerNearEndSpeech(loudMs),
     },
   );
 
   /**
-   * Real-time barge-in. Fires ~40ms after the caller starts speaking,
-   * not after they finish. Clears our own queue and Plivo's playback
-   * buffer immediately, then tells the pipeline to abort the in-flight
-   * LLM/TTS work. The caller's speech is NOT swallowed: inbound frames
-   * keep streaming to Deepgram throughout, so whatever they said while
-   * interrupting becomes the next user turn.
+   * The transport's own energy VAD has heard the caller's voice —
+   * liveness, at the permissive threshold. Inbound frames keep
+   * streaming to Deepgram throughout, so nothing they say is swallowed
+   * whatever this decides.
    */
   function onCallerSpeechStart(): void {
-    // Same stamp, same reason, as the Vobiz bridge: the caller is
-    // audibly speaking on the transport's own energy VAD, which is the
-    // one liveness signal that survives an STT outage. Written before
-    // the barge-in early-return because it is true whether or not the
-    // assistant was talking. See `noteCallerSpeech`.
+    // LIVENESS ONLY, and deliberately so. RMS >= 700 for 120ms proves
+    // somebody is on the line — nothing more. It is the one signal that
+    // survives an STT outage, and without it the campaign silence
+    // watchdog can read a talking caller as a silent line and hang up on
+    // them; comfort noise and a quiet line never reach it, so genuine
+    // silence still ends the call at exactly the same deadline.
+    //
+    // It no longer triggers a barge-in. At this threshold it cannot tell
+    // the caller apart from a television, a second person in the room,
+    // or our own audio out of their earpiece, and cutting the assistant
+    // off for any of those is the reported "a background voice
+    // interrupts it and it goes quiet" behaviour. That decision now
+    // belongs to `onCallerNearEndSpeech` below and to the pipeline,
+    // which requires BOTH loud near-end energy and words from Deepgram
+    // to agree before anything is interrupted.
     try {
       manager.noteCallerSpeech(sessionId);
     } catch {
       // Session already ended — nothing to stamp.
     }
+  }
 
+  /**
+   * The transport is hearing LOUD, near-end speech right now — see
+   * NEAR_END_SPEECH_* above. Fired repeatedly for as long as it lasts,
+   * carrying the length of the current run.
+   *
+   * Two jobs, and the first is the important one:
+   *
+   *   1. Stamp the session so the pipeline can CORROBORATE a Deepgram
+   *      transcript before treating it as the caller talking over the
+   *      assistant. Neither signal is sufficient alone: energy with no
+   *      words is a door or a cough, words with no energy are the room.
+   *   2. Barge in directly once the run is long enough to need no
+   *      transcript at all — the last resort for a dead STT socket,
+   *      which would otherwise leave the assistant uninterruptible.
+   */
+  function onCallerNearEndSpeech(loudMs: number): void {
+    try {
+      manager.noteCallerEnergy(sessionId);
+    } catch {
+      // Session already ended — nothing to stamp.
+    }
+
+    if (loudMs < ENERGY_ONLY_BARGE_IN_MS) return;
     if (!wasSpeaking && outboundQueue.length === 0) return;
 
     // eslint-disable-next-line no-console
     console.log(
-      `[plivo-bridge:${sessionId}] BARGE-IN: caller speech detected while assistant audio was active (queue=${outboundQueue.length} frames)`,
+      `[plivo-bridge:${sessionId}] BARGE-IN: ${loudMs}ms of sustained near-end speech over assistant audio, with no transcript (queue=${outboundQueue.length} frames)`,
     );
-    clearOutboundPlayback();
     try {
-      manager.signalBargeIn(sessionId);
+      // Clear playback only if the pipeline ACCEPTED the barge-in: it
+      // declines while the fixed opening line is still playing, and
+      // dropping the queue anyway would leave the caller in silence with
+      // nothing left to play and no reply on the way.
+      if (manager.signalBargeIn(sessionId)) clearOutboundPlayback();
     } catch {
       // Session already ended — nothing left to interrupt.
     }

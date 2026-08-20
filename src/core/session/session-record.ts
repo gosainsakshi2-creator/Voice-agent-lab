@@ -80,6 +80,25 @@ export class SessionRecord {
    */
   lastConversationActivityAt = 0;
 
+  /**
+   * Epoch-ms at which the TRANSPORT last reported LOUD, near-end speech
+   * energy — its own RMS measurement, not a transcript. Written only by
+   * `noteCallerEnergy`; see the loud gate in `vad-segmenter.ts` for why
+   * this is a different question from `lastConversationActivityAt`.
+   *
+   * Read by the pipeline to corroborate a transcript before treating it
+   * as the caller talking over the assistant: Deepgram transcribes a
+   * television, a second person across the room and the echo of our own
+   * audio just as readily as it transcribes the caller, and a barge-in
+   * on any of those cuts the assistant off mid-sentence for nobody.
+   *
+   * `0` means no transport on this session reports energy at all — the
+   * in-process audio fallback, and the test harnesses — which the
+   * pipeline reads as "no corroboration is available here", falling
+   * back to exactly the transcript-only behaviour it had before.
+   */
+  lastCallerEnergyAt = 0;
+
   readonly memory: ConversationMemory;
   readonly metrics: SessionMetricsCollector;
   /** Grammatical gender of the selected TTS voice — also drives the deterministic Hindi greeting. */

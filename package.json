@@ -28,6 +28,7 @@
     "test:continuity": "tsx src/campaign/tests/conversation-continuity-tests.ts",
     "test:pronunciation": "tsx src/campaign/tests/pronunciation-tests.ts",
     "test:speaking-watchdog": "tsx src/campaign/tests/speaking-watchdog-tests.ts",
+    "test:barge-in": "tsx src/campaign/tests/barge-in-accuracy-tests.ts",
     "preflight:prod": "tsx src/campaign/production-readiness-cli.ts",
     "campaign:audit": "tsx src/campaign/audit-cli.ts"
   },

@@ -535,7 +535,7 @@ export async function buildCampaignAudit(
   ]);
 
   const unanswerable = [
-    "Voicemail vs human answer: no answering-machine detection exists, so an answered voicemail is counted as an answered call.",
+    "Voicemail vs human answer: no answering-machine detection exists, so an answered voicemail is still counted as an answered call. The pipeline does mute the agent when a voicemail greeting matches the transcript heuristic in `voicemail-detection.ts`, which saves the script but is not a carrier verdict and decides no status.",
     "Carrier-reported busy / rejected / hangup cause: no status callback is received, so BUSY and REJECTED appear only when the Call API's own error text says so.",
     "Event-loop starvation and audio-pump warnings are logged to the process stdout by the media bridge, not to the database. Read them from the deployment's logs for the run window.",
     "Process memory growth is not recorded anywhere; take it from the host's metrics for the run window.",

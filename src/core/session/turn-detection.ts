@@ -280,15 +280,105 @@ const QUESTION_ENDING = /\?["')\]]?$/u;
  * Punctuation only gets the final say for the ambiguous SOFT set,
  * where a full stop really does distinguish "I told you that." from
  * "the transaction that".
+ *
+ * A QUESTION MARK is the exception to all of that, and it is the same
+ * exception `confirmationWindowMs` already makes for the same reason: a
+ * full stop is a formatting decision Deepgram sprinkles on mid-thought
+ * chunks, but a question mark is a claim about the shape of the whole
+ * utterance, and a finished question is a finished thought. Without
+ * this, English and Hinglish questions that legitimately END on a word
+ * in the HARD set — "What is this event about?", "Who is it for?",
+ * "Kitne baje se hai on?" — were read as mid-sentence pauses and spent
+ * the full silence window plus both continuation graces before
+ * releasing: ~2.7s to answer a six-word question, measured. Ending a
+ * question on a preposition is ordinary speech, not a trailing off.
  */
 function looksIncomplete(text: string): boolean {
   // A comma, a dash or a trailing ellipsis ends a fragment, never a
-  // thought — the caller is still adding to it.
+  // thought — the caller is still adding to it. Still checked first, so
+  // fragment punctuation keeps precedence over everything below it.
   if (MID_THOUGHT_PUNCTUATION.test(text)) return true;
+  // A finished question is a finished thought, whatever word it landed
+  // on. See the note above.
+  if (QUESTION_ENDING.test(text)) return false;
   const lastWordText = text.replace(TRAILING_NOISE, "");
   if (HARD_TRAILING.test(lastWordText)) return true;
   if (TERMINAL_PUNCTUATION.test(text)) return false;
   return SOFT_TRAILING.test(lastWordText);
+}
+
+/**
+ * Bare acknowledgements — the sounds a listener makes to show they are
+ * still there.
+ *
+ * These are not turns. Said on their own WHILE the agent is still
+ * speaking they are backchannel: "carry on", not "stop, I have
+ * something to say". The pipeline uses this to tell that apart from a
+ * real interruption (see `ConversationPipeline.startContinuousStt`);
+ * this file only owns the vocabulary, because the utterance-shape
+ * tables it belongs with — `FILLER_ONLY`, `HOLD_PHRASE_ONLY`,
+ * `looksIncomplete` — already live here.
+ *
+ * Deliberately narrow, and every exclusion is load-bearing:
+ *
+ *   - No negation. "No", "nahi", "nahin" is an objection and must
+ *     interrupt, whatever else is being said.
+ *   - No "hello". Mid-reply that means the line has gone bad, and it
+ *     must interrupt.
+ *   - Nothing with content. Anything beyond the bare token — "ok but",
+ *     "haan, kitna hai" — is a real turn and is matched by nothing
+ *     here, so it interrupts exactly as it does today.
+ *
+ * "Yes"/"haan" ARE included, and the pipeline is what makes that safe:
+ * it only treats them as backchannel while the agent still has several
+ * seconds of its own reply left to speak. An answer to the script's
+ * commitment question arrives at or after the end of that reply, and is
+ * therefore never matched here.
+ */
+const ACKNOWLEDGEMENT_TOKENS = [
+  // Hesitation sounds, so a stacked backchannel ("hmm okay", "haan
+  // hmm") matches as one. `FILLER_ONLY` covers them on their own.
+  "hmm", "hm", "mhm", "mhmm", "uh huh", "uh-huh", "mm hmm", "mmhmm",
+  // English
+  "ok", "okay", "okey", "k", "kk", "right", "alright", "all right",
+  "sure", "fine", "correct", "true", "good", "nice", "great", "cool",
+  "yes", "yeah", "yep", "yup", "yah", "ya",
+  "got it", "i see", "i understand", "understood", "makes sense",
+  "carry on", "go on", "go ahead",
+  // Hinglish (transliterated)
+  "haan", "haa", "ha", "han", "hanji", "han ji", "haan ji", "ji", "ji haan",
+  "theek", "theek hai", "thik hai", "sahi", "sahi hai", "achha", "acha",
+  "accha", "bilkul", "samajh gaya", "samajh gayi", "samjha", "hmm ji",
+  // Devanagari
+  "हाँ", "हां", "जी", "जी हाँ", "ठीक", "ठीक है", "अच्छा", "सही",
+  "बिल्कुल", "समझ गया", "समझ गई",
+];
+
+/**
+ * The WHOLE utterance is one bare acknowledgement, optionally repeated
+ * ("ok ok", "haan haan") and optionally stacked with a hesitation sound
+ * ("hmm okay") — both of which are how people actually backchannel.
+ *
+ * `FILLER_ONLY` still covers a pure hesitation on its own, so the two
+ * tables do not need to duplicate each other.
+ */
+const ACKNOWLEDGEMENT_ONLY = new RegExp(
+  `^(?:(?:${ACKNOWLEDGEMENT_TOKENS.join("|")})[\\s,.!?…।-]*)+$`,
+  "iu",
+);
+
+/**
+ * True when `text` is nothing but acknowledgement — no question, no
+ * objection, no content of its own.
+ *
+ * Says nothing about what should be DONE with it: whether an
+ * acknowledgement is backchannel or a real answer depends on when it
+ * was said, which only the pipeline knows.
+ */
+export function isBareAcknowledgement(text: string): boolean {
+  const trimmed = text.trim();
+  if (trimmed.length === 0) return false;
+  return ACKNOWLEDGEMENT_ONLY.test(trimmed) || FILLER_ONLY.test(trimmed);
 }
 
 export interface TurnDetectionEvent {
@@ -420,25 +510,41 @@ export class AdaptiveTurnDetector {
         return;
       }
 
-      // A short, fully-punctuated utterance that Deepgram's OWN
-      // endpointer has closed ("Yes.", "Haan.", "Yes, that's right.")
-      // does not need a full adaptive silence window on top of that
-      // decision: `confirmationWindowMs` already grants this exact
-      // class zero hold once the window expires, so the window is pure
-      // re-confirmation of something already confirmed — ~1.1s of it by
-      // default, and up to 1.6s once the threshold has adapted upward.
-      // It is the single largest fixed cost between the caller's first
-      // "yes" and the reply they wait for.
+      // A fully-punctuated, finished thought that Deepgram's OWN
+      // endpointer has closed ("Yes.", "Haan.", "I would like to join
+      // the session today.") does not need a full adaptive silence
+      // window on top of that decision. Deepgram has already waited
+      // out its own `endpointing` window before sending this final, so
+      // re-measuring the same silence here counts it twice — and the
+      // detector's clock only starts when the final ARRIVES, so the
+      // delivery lag is added on top of the double count. That is the
+      // single largest avoidable span between the caller's last word
+      // and the reply they wait for: ~1.1s by default, up to 1.6s once
+      // the threshold has adapted upward, on every completed turn.
       //
-      // Only the WAIT shortens. `emitTurnEnd` still runs every release
-      // guard it runs today — filler, mid-thought continuation, hold
-      // phrases, chunk-boundary grace, the pending-interim re-wait —
-      // and speech already in flight still gets a window to arrive and
-      // cancel the turn, which is what CONFIRMATION_WINDOW_MS is for.
-      // Anything that is not an endpointed, short, complete thought
-      // (including "yes, but…", which carries no sentence-final
-      // punctuation) keeps exactly the timing it has today.
-      if (this.lastFinalWasEndpoint && !this.pendingInterim && this.isShortCompleteTurn()) {
+      // Only the redundant WAIT is removed. `emitTurnEnd` still runs
+      // every release guard it runs today — filler, mid-thought
+      // continuation, hold phrases, chunk-boundary grace, the
+      // pending-interim re-wait — and it still applies the post-speech
+      // confirmation window for this text, so speech already in flight
+      // gets a window to arrive and cancel the turn (see `feed`).
+      //
+      // What is DELIBERATELY excluded keeps exactly the timing it has
+      // today, because for these the silence window is not redundant:
+      //
+      //   - a final Deepgram did NOT endpoint (`speech_final` absent) —
+      //     a chunk boundary mid-utterance, which claims nothing about
+      //     the caller having stopped;
+      //   - text with an outstanding interim — Deepgram has recognised
+      //     more of this turn than we hold;
+      //   - text that reads as unfinished (`looksIncomplete`: dangling
+      //     conjunction, comma, no sentence-final punctuation, "yes,
+      //     but…"), a hesitation sound, or a request for a moment.
+      //
+      // So a caller pausing mid-thought is held for the full window
+      // exactly as before; only a thought Deepgram and the text BOTH
+      // agree is finished is released on the confirmation window alone.
+      if (this.lastFinalWasEndpoint && !this.pendingInterim && this.isCompleteThought()) {
         this.rearmTimer(CONFIRMATION_WINDOW_MS);
         return;
       }
@@ -447,12 +553,23 @@ export class AdaptiveTurnDetector {
     this.rearmTimer();
   }
 
-  /** The held text is a short, sentence-final, non-hesitation thought. */
-  private isShortCompleteTurn(): boolean {
+  /**
+   * The held text is a sentence-final, non-hesitation, finished
+   * thought — the same test as before minus the word-count cap.
+   *
+   * The cap was the reason a completed turn of five words or more still
+   * paid a full adaptive silence window it could not learn anything
+   * from. Length is not evidence about whether a thought finished:
+   * "Yes." and "I would like to join the session today." are both
+   * complete, and `looksIncomplete` is what actually separates either
+   * of them from "...and I was going to". Word count still decides how
+   * long the post-speech CONFIRMATION runs (see `confirmationWindowMs`),
+   * which is where it belongs.
+   */
+  private isCompleteThought(): boolean {
     const text = this.pendingFinalText.trim();
     if (text.length === 0 || FILLER_ONLY.test(text) || HOLD_PHRASE_ONLY.test(text)) return false;
-    if (!TERMINAL_PUNCTUATION.test(text) || looksIncomplete(text)) return false;
-    return text.split(/\s+/).length <= SHORT_COMPLETE_TURN_MAX_WORDS;
+    return TERMINAL_PUNCTUATION.test(text) && !looksIncomplete(text);
   }
 
   /** Force an immediate end-of-turn (e.g. the caller detected hard silence via another signal). */

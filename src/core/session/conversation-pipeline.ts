@@ -44,6 +44,7 @@ import type { SessionRecord } from "./session-record";
 import { detectLanguage, type LanguageDetectionResult } from "./language-detector";
 import { currentTurnNote, languageHintFor, openingLineFor } from "./system-prompt";
 import { SentenceChunker } from "./sentence-chunker";
+import { isBareAcknowledgement } from "./turn-detection";
 import { combineSignals, abortableSleep } from "./abort-utils";
 import { estimateAudioSeconds, withByteCounter } from "./audio-utils";
 import { estimateLlmCost, estimateSttCost, estimateTtsCost, estimateTokenCount } from "./cost-estimator";
@@ -190,6 +191,31 @@ const MAX_GREETING_CHARS = 200;
 const PLAYBACK_PREROLL_ALLOWANCE_MS = 150;
 
 /**
+ * How much of its own reply the assistant must still have left to
+ * speak before a bare acknowledgement counts as backchannel rather
+ * than as an answer.
+ *
+ * This is the whole safety margin of the backchannel rule, so it is
+ * set from the approved script rather than from taste. The
+ * commitment question is the second-to-last line of its block —
+ * "Would you be interested to attend?" is followed by "The
+ * registration is completely FREE.", roughly two seconds of speech.
+ * A caller answering that question therefore has at most ~2s of reply
+ * left when their "haan" is recognised, and must be heard normally:
+ * that answer is the registration.
+ *
+ * 4000ms is double that, so an answer at the gate is never absorbed,
+ * while the long explanation blocks — where the queued reply runs many
+ * seconds ahead of playback — are fully covered. A short reply (a
+ * one-sentence answer to a question) never reaches this threshold at
+ * all and so keeps exactly today's barge-in behaviour.
+ *
+ * Measured from the same span `drainPlayback` waits out, so "still
+ * speaking" means here what it already means everywhere else.
+ */
+const BACKCHANNEL_MIN_REMAINING_SPEECH_MS = 4_000;
+
+/**
  * Upper bound on a believable STT recognition lag, used only to
  * discard nonsense samples from the benchmark (see
  * `lastFinalSttLagMs`). Purely a metrics guard — it gates no
@@ -252,6 +278,16 @@ export class ConversationPipeline {
   /** Guards `tts-first-chunk` / `audio-queued` so they mark the FIRST occurrence of each per turn. */
   private markedTtsThisTurn = false;
   private markedAudioThisTurn = false;
+  /**
+   * True while the caller's CURRENT utterance has already been judged
+   * backchannel. Keeps one utterance treated consistently: its interim
+   * may be recognised with seconds of reply left and its final only
+   * once the reply is nearly over, and half of an ignored "okay"
+   * becoming a turn is the one outcome worse than either choice.
+   * Cannot outlive the assistant's turn — every read of it is guarded
+   * by `spokeOverTheAssistant`.
+   */
+  private backchannelInFlight = false;
   /**
    * False until the greeting has finished. The STT listener now runs
    * from call-connect (see `run()`), so this is what keeps the
@@ -641,6 +677,34 @@ export class ConversationPipeline {
     })();
   }
 
+  /**
+   * Real-time ms of already-synthesized reply audio the transport has
+   * been handed but has not played yet — the same span `drainPlayback`
+   * waits out before leaving SPEAKING. `0` when nothing is playing.
+   */
+  private remainingSpeechMs(): number {
+    if (this.outboundPlaybackStartedAt === 0 || this.outboundQueuedMs <= 0) return 0;
+    return this.outboundQueuedMs - (Date.now() - this.outboundPlaybackStartedAt);
+  }
+
+  /**
+   * Is this segment the caller acknowledging, rather than taking a
+   * turn? Only ever asked while the assistant is speaking.
+   *
+   * Judged on the WHOLE pending utterance — the finals the turn
+   * detector already holds plus this segment — so a turn that started
+   * with real content is never mistaken for an acknowledgement.
+   */
+  private isBackchannel(segment: TranscriptSegment): boolean {
+    const pending = this.record.turnDetector.getPendingTurnText();
+    const utterance = pending.length > 0 ? `${pending} ${segment.text}` : segment.text;
+    if (!isBareAcknowledgement(utterance)) return false;
+    return (
+      this.backchannelInFlight ||
+      this.remainingSpeechMs() > BACKCHANNEL_MIN_REMAINING_SPEECH_MS
+    );
+  }
+
   /** Records a stage on the in-flight turn's trace, if one is active. */
   private markTiming(stage: string): void {
     this.activeTimer?.mark(stage);
@@ -769,11 +833,63 @@ export class ConversationPipeline {
           // which is precisely the protection deferring the listener
           // used to provide. The segment is still fed to the turn
           // detector below, so the words are not lost.
-          if (
+          const spokeOverTheAssistant =
             this.greetingDone &&
             this.record.state === SessionState.SPEAKING &&
-            segment.endedAtMs > this.speakingStartedAtStreamMs
-          ) {
+            segment.endedAtMs > this.speakingStartedAtStreamMs;
+
+          // ── Backchannel, not barge-in ─────────────────────────────
+          //
+          // "Ok." / "haan" / "hmm" said while the assistant is still
+          // several seconds into its own reply is the caller showing
+          // they are listening, not asking it to stop. Treating it as
+          // an interruption is what produced the reported "the agent
+          // stops and repeats the explanation" behaviour, and the
+          // mechanism is not the prompt:
+          //
+          //   1. barge-in aborts the LLM/TTS stream mid-paragraph;
+          //   2. an interrupted reply is CANCELLED, so it is never
+          //      committed to `memory` (see the commit site in the main
+          //      loop) — the model's history says it never spoke;
+          //   3. the next request therefore generates the SAME block
+          //      again from the top, and the caller hears the pitch
+          //      restart. `conversation-policy.ts` cannot prevent that:
+          //      "never repeat a line they have already heard" is
+          //      unactionable when history shows the line was never
+          //      said.
+          //
+          // So an acknowledgement here does nothing at all: no
+          // interruption, and it is not fed to the turn detector, so it
+          // creates no turn and the assistant simply finishes its
+          // sentence — which also means the reply IS committed, and the
+          // commitment question inside it stays in the transcript the
+          // FINAL_YES gate reads.
+          //
+          // The whole utterance is tested, not just this segment, so
+          // "ok, but what's the price?" is not an acknowledgement and
+          // interrupts exactly as it does today. Deepgram's interims
+          // accumulate until its next final, so the "ok" is still part
+          // of the turn when the caller carries on.
+          if (spokeOverTheAssistant && this.isBackchannel(segment)) {
+            // Deepgram finalising the utterance ends it; until then the
+            // same utterance keeps being treated as backchannel even if
+            // the reply is nearly finished by the time its final lands.
+            this.backchannelInFlight = !segment.isFinal;
+            // Display-only preview. Cleared because no turn will
+            // replace it, and `getTranscript` appends it as a trailing
+            // user turn — a stale one would sit after the assistant's
+            // last turn and block the final-answer hangup check, which
+            // requires the assistant to have spoken last.
+            this.record.liveUserTranscript = "";
+            // eslint-disable-next-line no-console
+            console.log(
+              `[TURN:${this.record.id}] backchannel ignored (not a barge-in): "${segment.text.trim()}" — ${Math.round(this.remainingSpeechMs())}ms of reply still to play`,
+            );
+            continue;
+          }
+          this.backchannelInFlight = false;
+
+          if (spokeOverTheAssistant) {
             this.triggerExternalBargeIn();
           }
 
@@ -1306,6 +1422,11 @@ await this.drainPlayback(speakingSignal);
     // this is the stream-clock mark the barge-in check above compares
     // incoming transcript segments against.
     this.speakingStartedAtStreamMs = this.inboundStreamMs;
+    // A backchannel judgement belongs to one utterance during one
+    // reply. If Deepgram never sent the final that would have closed it
+    // (a dropped socket mid-"okay"), it must not carry into the next
+    // reply and absorb the first acknowledgement heard there.
+    this.backchannelInFlight = false;
   }
 
   /**

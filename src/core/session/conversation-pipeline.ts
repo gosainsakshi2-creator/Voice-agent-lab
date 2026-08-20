@@ -50,6 +50,7 @@ import { estimateAudioSeconds, withByteCounter } from "./audio-utils";
 import { estimateLlmCost, estimateSttCost, estimateTtsCost, estimateTokenCount } from "./cost-estimator";
 import { withGracefulRetry, RecoverableTurnError, toSessionErrorInfo } from "./error-recovery";
 import { formatForSpeech } from "../../utils/speech-formatter";
+import { pronounceForSpeech } from "../../utils/speech-pronunciation";
 
 export interface ResolvedProviderStack {
   readonly telephony: TelephonyProvider;
@@ -321,6 +322,27 @@ export class ConversationPipeline {
   /** Id of the response a barge-in cancelled, if any. */
   private cancelledResponseId: number | undefined;
   /**
+   * The part of the cancelled response the caller had ACTUALLY HEARD,
+   * frozen at the instant of cancellation.
+   *
+   * A cancelled response is still not committed as if it had been
+   * delivered — that design is unchanged and correct. But discarding
+   * ALL of it, including the sentences the caller already listened to,
+   * is what let the script restart: the model's history said it had
+   * never spoken, so the next request regenerated the same block from
+   * the top and the caller heard the introduction again.
+   *
+   * So the two halves of an interrupted reply are now separated. What
+   * played is history (it happened, the caller heard it, and it is what
+   * "continue from where you were" is relative to). What was still
+   * queued, or never synthesized at all, is discarded exactly as
+   * before. Computed inside `triggerExternalBargeIn` — the single
+   * choke point every cancellation goes through — because playback
+   * stops there, and reading the clock any later would count audio the
+   * transport had already thrown away.
+   */
+  private cancelledHeardText = "";
+  /**
    * ---------------- Metrics bookkeeping (read-only observers) ----------------
    * Everything below is written from points that already exist in the
    * flow and is read only by `recordTurn`. Nothing here feeds turn
@@ -541,10 +563,20 @@ export class ConversationPipeline {
         // user turn on the following iteration, so the model sees the
         // caller's latest thought as the live conversational state.
         if (this.isResponseCancelled(responseId)) {
+          // The part that PLAYED is what the caller heard, so it is
+          // what the conversation actually contains — see
+          // `cancelledHeardText`. Committing it is what makes "carry on
+          // from where you left off" a statement about something the
+          // model can see; committing nothing is what made the next
+          // request start the block again. The unplayed remainder is
+          // still discarded, so nothing the caller never heard is ever
+          // put into the assistant's mouth.
+          const heard = this.cancelledHeardText;
           // eslint-disable-next-line no-console
           console.log(
-            `[PIPELINE:${sid}] Response #${responseId} CANCELLED by barge-in — discarding "${result.assistantText.slice(0, 80)}${result.assistantText.length > 80 ? "..." : ""}" (not committed to conversation history)`,
+            `[PIPELINE:${sid}] Response #${responseId} CANCELLED by barge-in — heard="${heard.slice(0, 80)}${heard.length > 80 ? "..." : ""}" discarded="${result.assistantText.slice(heard.length, heard.length + 80)}${result.assistantText.length > heard.length + 80 ? "..." : ""}"`,
           );
+          if (heard.length > 0) this.record.memory.recordAssistantTurn(heard);
         } else {
           this.record.memory.recordAssistantTurn(result.assistantText);
         }
@@ -688,6 +720,47 @@ export class ConversationPipeline {
   }
 
   /**
+   * The part of the reply currently being spoken that the transport has
+   * already PLAYED — i.e. what the caller has actually heard.
+   *
+   * Every utterance handed to `synthesizeAndPlay` is recorded with the
+   * playback offset it starts at (`spokenUtterances`), and playback
+   * runs in real time from `outboundPlaybackStartedAt`, so an utterance
+   * whose start offset is behind the play head has been heard. The one
+   * still playing when this is read counts as heard: the caller is
+   * listening to it, and the alternative — dropping it — is the
+   * repetition this exists to prevent.
+   *
+   * Read-only over counters that already exist for `drainPlayback` and
+   * `remainingSpeechMs`. Nothing here changes what is synthesized,
+   * queued, played or cancelled.
+   */
+  private heardSoFarText(): string {
+    if (this.outboundPlaybackStartedAt === 0 || this.spokenUtterances.length === 0) return "";
+    const playedMs = Date.now() - this.outboundPlaybackStartedAt;
+    return this.spokenUtterances
+      .filter((utterance) => utterance.startsAtMs < playedMs)
+      .map((utterance) => utterance.text)
+      .join(" ")
+      .trim();
+  }
+
+  /**
+   * Has the caller already finished saying something NEWER than the
+   * turn this reply is answering?
+   *
+   * True only when the turn detector is holding a fully endpointed turn
+   * for the next subscriber (`hasBufferedTurn`), which means the caller
+   * spoke, stopped, and their words passed every release guard while we
+   * were still preparing a reply to what they said before that. Read
+   * only at the two points below, and only while nothing has been
+   * spoken yet.
+   */
+  private newerUserTurnWaiting(): boolean {
+    return this.record.turnDetector.hasBufferedTurn();
+  }
+
+  /**
    * Is this segment the caller acknowledging, rather than taking a
    * turn? Only ever asked while the assistant is speaking.
    *
@@ -716,6 +789,14 @@ export class ConversationPipeline {
    */
   private beginAssistantResponse(): number {
     this.currentResponseId += 1;
+    // Whatever the PREVIOUS reply spoke belongs to the previous reply.
+    // Cleared here, at the response boundary, and not only in
+    // `resetPlaybackAccounting`: a reply cancelled before it ever
+    // entered SPEAKING never calls that, and would otherwise be
+    // credited with the utterances of the reply before it — which is
+    // the last reply's text being committed a second time.
+    this.spokenUtterances = [];
+    this.cancelledHeardText = "";
     return this.currentResponseId;
   }
 
@@ -733,6 +814,11 @@ export class ConversationPipeline {
     // committed response (a barge-in signalled with nothing pending) is
     // harmless — the next response takes a fresh id.
     this.cancelledResponseId = this.currentResponseId;
+    // Frozen HERE, before the aborts below stop the transport: this is
+    // the last instant at which "how much of the reply has played" is
+    // still a true statement about what the caller heard. Read by the
+    // commit site in the main loop — see `cancelledHeardText`.
+    this.cancelledHeardText = this.heardSoFarText();
     this.record.bargeIn.triggerBargeIn();
     if (this.record.state === SessionState.SPEAKING) {
       this.host.transition(this.record, SessionState.LISTENING, "external barge-in signal");
@@ -1257,6 +1343,12 @@ await this.drainPlayback(speakingSignal);
     // + retry safety net never runs for a streaming provider, and both
     // configured LLM providers (GPT-5.1, Gemma) implement streaming.
     let contaminated = false;
+    /**
+     * Set when the caller's newer turn cancelled this reply before a
+     * word of it was spoken. Only used to keep the two checks below
+     * from cancelling — and logging — the same reply twice.
+     */
+    let superseded = false;
     const startedAt = Date.now();
 
     try {
@@ -1289,6 +1381,41 @@ await this.drainPlayback(speakingSignal);
             // speaking the entire echoed prompt to the caller.
             if (isContaminatedOutput(fullText)) {
               contaminated = true;
+              break;
+            }
+
+            // ── Superseded, not interrupted ───────────────────────
+            //
+            // Nothing of this reply has been spoken yet
+            // (`speakingSignal` is still unset), and the caller has
+            // ALREADY finished saying something newer — a correction, a
+            // clarification, a different question. Speaking this now
+            // answers a question they have moved on from, and then
+            // makes them wait through it before their real one is
+            // answered. That is the stale-backlog behaviour: old
+            // question, old answer, new question, new answer.
+            //
+            // So the reply is cancelled through the SAME path a
+            // barge-in takes — the caller's newer turn wins, this
+            // response is never committed, and the buffered turn (the
+            // turn detector merges consecutive ones, so a correction
+            // and the thought it corrects arrive together) is picked up
+            // as the next turn on the following iteration. One current
+            // response instead of a queue of stale ones.
+            //
+            // Deliberately only BEFORE the first sentence. Once audio
+            // is playing, the caller talking is a barge-in and is
+            // handled exactly as it is today; nothing about that path
+            // changes. And the loop cannot stall: a buffered turn is
+            // delivered to the next subscriber immediately, so every
+            // supersession is followed by a real turn.
+            if (speakingSignal === undefined && this.newerUserTurnWaiting()) {
+              // eslint-disable-next-line no-console
+              console.log(
+                `[PIPELINE:${this.record.id}] reply SUPERSEDED before it was spoken — the caller has already said something newer`,
+              );
+              superseded = true;
+              this.triggerExternalBargeIn();
               break;
             }
 
@@ -1354,7 +1481,19 @@ await this.drainPlayback(speakingSignal);
 
     const rawRemainder = chunker.flush();
     const remainder = rawRemainder ? toSpokenText(rawRemainder) : "";
-    if (remainder.length > 0 && !(speakingSignal?.aborted ?? false)) {
+    // The same supersession test, for the reply that never reached a
+    // sentence cut and so arrives here whole. Same two conditions:
+    // nothing spoken yet, and the caller has already moved on.
+    if (superseded) {
+      // Already cancelled above; the remainder belongs to the reply the
+      // caller has moved on from, so none of it is spoken.
+    } else if (remainder.length > 0 && speakingSignal === undefined && this.newerUserTurnWaiting()) {
+      // eslint-disable-next-line no-console
+      console.log(
+        `[PIPELINE:${this.record.id}] reply SUPERSEDED before it was spoken — the caller has already said something newer`,
+      );
+      this.triggerExternalBargeIn();
+    } else if (remainder.length > 0 && !(speakingSignal?.aborted ?? false)) {
       speakingSignal ??= this.enterSpeaking();
       if (!speakingSignal.aborted) {
         const spoken = await this.synthesizeAndPlay(remainder, speakingSignal);
@@ -1414,10 +1553,20 @@ await this.drainPlayback(speakingSignal);
   private outboundQueuedMs = 0;
   /** Wall clock at which the transport began playing this speaking phase. */
   private outboundPlaybackStartedAt = 0;
+  /**
+   * Every utterance handed to the transport this speaking phase, with
+   * the playback offset (ms into this phase's audio) at which it
+   * starts — i.e. `outboundQueuedMs` as it stood before the utterance
+   * was queued. Read only by `heardSoFarText`, to tell the part of an
+   * interrupted reply the caller heard from the part they did not.
+   */
+  private spokenUtterances: Array<{ readonly text: string; readonly startsAtMs: number }> = [];
 
   private resetPlaybackAccounting(): void {
     this.outboundQueuedMs = 0;
     this.outboundPlaybackStartedAt = 0;
+    // Belongs to one reply, like the two counters above it.
+    this.spokenUtterances = [];
     // Called at exactly the two places the session enters SPEAKING, so
     // this is the stream-clock mark the barge-in check above compares
     // incoming transcript segments against.
@@ -1463,10 +1612,27 @@ await this.drainPlayback(speakingSignal);
       return { ttsMs: 0, ttsCostUsd: 0 };
     }
 
+    // The text of this utterance, against the playback offset it starts
+    // at. Recorded before synthesis so it is recorded whether or not
+    // the provider, the transport or the caller cuts it short —
+    // `heardSoFarText` decides what of it was heard from the play head,
+    // not from whether this call returned. The original wording is
+    // stored, NOT the `pronounceForSpeech` rewrite below: history, the
+    // classifier and the sheet all read approved wording.
+    this.spokenUtterances.push({ text, startsAtMs: this.outboundQueuedMs });
+
     const ttsProviderId = this.providers.tts.descriptor.id;
+    const language = this.record.memory.currentLanguage;
     const task: SynthesisTaskRequest = {
       sessionId: this.record.id,
-      request: { text, language: this.record.memory.currentLanguage },
+      // Numeric notation ("7:30 PM", "₹1,50,000+") is read aloud
+      // differently in English than in Hindi/Hinglish, and every TTS
+      // vendor mangles it the same way. Rewriting it HERE, on the way
+      // into `synthesize`, is what keeps that fix identical across
+      // Cartesia, Smallest AI, Sarvam and ElevenLabs while leaving the
+      // transcript, the classifier and the sheet reading the original
+      // approved wording.
+      request: { text: pronounceForSpeech(text, language), language },
     };
     const startedAt = Date.now();
 

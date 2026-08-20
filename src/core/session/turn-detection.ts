@@ -613,6 +613,22 @@ export class AdaptiveTurnDetector {
     return this.pendingFinalText;
   }
 
+  /**
+   * READ-ONLY. True when a COMPLETED turn is already being held for
+   * the next subscriber (see `pendingEvent`) — i.e. the caller has
+   * finished saying something newer than whatever the pipeline is
+   * currently working on.
+   *
+   * Pure observation. It arms no timer, consumes nothing, clears
+   * nothing and touches no threshold: `feed`, `emitTurnEnd`,
+   * `adaptTimeout` and every window above are byte-for-byte what they
+   * were. The buffered turn is still delivered to whoever subscribes
+   * next, exactly as before.
+   */
+  hasBufferedTurn(): boolean {
+    return this.pendingEvent !== null;
+  }
+
   private rearmTimer(delayMs: number = this.silenceTimeoutMs): void {
     this.clearTimer();
     this.timer = setTimeout(() => this.emitTurnEnd(), delayMs);

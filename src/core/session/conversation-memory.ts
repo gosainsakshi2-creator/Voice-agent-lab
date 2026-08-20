@@ -120,8 +120,33 @@ export class ConversationMemory {
    * `maxPairs` user/assistant exchange pairs. Keeps the LLM context
    * bounded so token usage and latency don't grow with call length,
    * while preserving enough recent context for a natural conversation.
+   *
+   * WHY THE WINDOW IS 20 PAIRS AND NOT 6.
+   *
+   * The window is what the model knows it has already said. At 6 pairs
+   * (12 entries) the opening turns fall out of it after six exchanges —
+   * including the assistant turn carrying the introduction and the
+   * first script block. From that point on the model is being asked to
+   * "continue from where you were" while looking at a history in which
+   * it never introduced itself and never opened the pitch, so it
+   * re-introduces and re-opens. That is a context-construction bug, not
+   * a prompt one: `conversation-policy.ts` already says "never repeat
+   * the opening line", and the instruction is unactionable when the
+   * line is no longer in the history.
+   *
+   * 20 pairs covers a whole call rather than the last minute of it.
+   * `CAMPAIGN_MAX_CALL_SECONDS` is 180s by default and one exchange is
+   * an agent block plus a reply — roughly 8-10s — so ~20 exchanges is
+   * the whole conversation. It is still a WINDOW, so the original
+   * guarantee holds: token usage stays bounded and a call that somehow
+   * runs long cannot grow the prompt without limit.
+   *
+   * Cost is not a concern at this size. The campaign system prompt
+   * measures ~12,400 prompt tokens and is served from the provider's
+   * prefix cache (see `primeLlmPrefixCache`); 40 short conversational
+   * turns are on the order of a thousand tokens against it.
    */
-  recentHistory(maxPairs: number = 6): readonly ConversationTurn[] {
+  recentHistory(maxPairs: number = 20): readonly ConversationTurn[] {
     const systemTurn = this.turns[0];
     if (!systemTurn || systemTurn.role !== "system") return this.turns;
 

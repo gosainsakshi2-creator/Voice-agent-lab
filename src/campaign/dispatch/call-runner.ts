@@ -80,6 +80,13 @@ export interface ManagerLike {
    * outcome label, not the call.
    */
   getTranscript?(sessionId: SessionId): readonly ConversationTurn[];
+  /**
+   * OPTIONAL, and read-only. Epoch-ms of the last conversation activity
+   * the pipeline heard (streaming STT, interim segments included), or
+   * `0` when nothing has been heard yet. Optional so a manager without
+   * it behaves exactly as before.
+   */
+  lastActivityAt?(sessionId: SessionId): number;
 }
 
 export interface CallRunnerDeps {
@@ -354,7 +361,17 @@ export async function runCall(
         if (!answered && now > ringDeadline) return "NO_ANSWER" as const;
         if (answered) {
           if (now - answeredAt > config.maxCallSeconds * 1000) return "MAX_DURATION" as const;
-          if (now - lastActivityAt > config.maxSilenceSeconds * 1000) return "MAX_SILENCE" as const;
+          // State transitions alone under-report activity: while the
+          // caller is speaking the session stays in LISTENING, so a
+          // transition-only clock treats a talking caller as silence
+          // and hangs up on a live conversation. The pipeline's own
+          // heard-audio stamp is the other half of the signal; a
+          // genuinely silent call produces neither, so real silence
+          // still ends the call at exactly the same deadline.
+          const heardAt = pipelineActivityAt(manager, sessionId as SessionId);
+          if (now - Math.max(lastActivityAt, heardAt) > config.maxSilenceSeconds * 1000) {
+            return "MAX_SILENCE" as const;
+          }
           // The person has decided, and has already heard the agent's
           // reply to it. Nothing is left on this call, so it ends here
           // instead of holding the line open until the silence timeout.
@@ -644,6 +661,22 @@ export function definitiveAnswerIn(
     return containsPhrase(lastWords, UNMISTAKABLE_WRONG_NUMBER) ? "FINAL_NO" : undefined;
   }
   return hasExplicitRefusal(lastWords) ? "FINAL_NO" : undefined;
+}
+
+/**
+ * Last activity the pipeline itself heard, contained the same way
+ * `definitiveAnswerSoFar` is: a manager that does not expose it, or a
+ * session that has not been heard from, reports `0` and the watchdog
+ * falls back to state transitions alone.
+ */
+function pipelineActivityAt(manager: ManagerLike, sessionId: SessionId): number {
+  if (typeof manager.lastActivityAt !== "function") return 0;
+  try {
+    const at = manager.lastActivityAt(sessionId);
+    return Number.isFinite(at) ? at : 0;
+  } catch {
+    return 0;
+  }
 }
 
 /** The same reading, against a live session, contained. */

@@ -700,6 +700,12 @@ export class ConversationPipeline {
           // LLM continue to work off `segment` / the turn detector
           // exactly as before.
           if (segment.text.trim().length > 0) {
+            // The caller is audibly speaking right now. Stamped here
+            // because this is the earliest point the pipeline knows
+            // that — before any state transition — so the campaign
+            // silence watchdog cannot mistake a caller mid-utterance
+            // for a silent line.
+            this.record.lastConversationActivityAt = Date.now();
             // Prefix the finals already accumulated for this turn. A
             // Deepgram interim/final is only the tail since the last
             // final, so without this the preview snaps back to the

@@ -69,6 +69,17 @@ export class SessionRecord {
    */
   liveUserTranscript = "";
 
+  /**
+   * Epoch-ms of the last real conversation activity observed inside the
+   * pipeline — an STT segment for the caller (interim segments
+   * included). Session STATE transitions are not the whole story: a
+   * caller who is mid-utterance produces streaming transcripts but no
+   * transition, so a silence watchdog that only watches transitions
+   * sees an actively talking caller as silent. `0` means nothing has
+   * been heard yet, which is genuine silence.
+   */
+  lastConversationActivityAt = 0;
+
   readonly memory: ConversationMemory;
   readonly metrics: SessionMetricsCollector;
   /** Grammatical gender of the selected TTS voice — also drives the deterministic Hindi greeting. */

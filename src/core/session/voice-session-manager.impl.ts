@@ -414,6 +414,19 @@ getTranscript(sessionId: SessionId): readonly import("../../types/provider.types
   ];
 }
 
+  /**
+   * ADDITIVE, NOT PART OF `VoiceSessionManager`. Read-only companion to
+   * `getTranscript` above: epoch-ms of the last conversation activity
+   * the pipeline actually heard (streaming STT segments, interim
+   * included), or `0` if nothing has been heard on this call yet.
+   * Exposes state that already exists so a caller-side watchdog can
+   * tell an active call from a silent one without watching session
+   * state transitions, which do not fire while a caller is speaking.
+   */
+  lastActivityAt(sessionId: SessionId): number {
+    return this.getRecordOrThrow(sessionId).lastConversationActivityAt;
+  }
+
   // ---------------------------------------------------------------
 
   private getRecordOrThrow(sessionId: SessionId): SessionRecord {

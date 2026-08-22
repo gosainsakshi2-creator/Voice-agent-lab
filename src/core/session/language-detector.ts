@@ -175,10 +175,16 @@ export function detectLanguage(
 
   // A bare acknowledgement says nothing about language — keep the one
   // already in play instead of reporting a switch that didn't happen.
+  //
+  // There is deliberately no length cap here. The test already requires
+  // EVERY word to be language-neutral, so a longer utterance is not more
+  // evidence of a switch — it is the same non-evidence repeated. A cap
+  // meant "hello hello" kept the call's language while "hello hello
+  // hello" flipped a Hindi call to English, and a caller repeating
+  // themselves into a silence is exactly when that happens.
   if (
     previous !== undefined &&
     words.length > 0 &&
-    words.length <= 2 &&
     words.every((word) => LANGUAGE_NEUTRAL_TOKENS.has(word))
   ) {
     return { language: previous, confidence: 0.5, script: "latin" };

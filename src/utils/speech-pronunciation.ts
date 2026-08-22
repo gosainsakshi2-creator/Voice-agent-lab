@@ -90,10 +90,32 @@ function hindiDaypart(hour24: number): string {
 }
 
 /**
- * Clock times. The minute is always two digits, so ratios and scores
+ * Clock times, together with the words a Hindi sentence ALREADY puts
+ * around them. The minute is always two digits, so ratios and scores
  * ("3:1", "1:2") never match.
+ *
+ * The three optional groups exist because the LLM writes the time the
+ * way a person says it — "रात को 7:30 बजे", "आज शाम साढ़े 7:30 बजे" —
+ * and this rewrite then emitted its OWN "baje" and its own part-of-day
+ * on top of them. That is the reported malformation: a doubled unit
+ * word and a doubled fraction ("...साढ़े saadhe saat baje बजे").
+ *
+ * So the redundant words are MATCHED and consumed rather than left
+ * behind, and one clean reading is produced in their place. Only words
+ * this function would otherwise duplicate are listed — nothing else in
+ * the sentence is touched.
  */
-const CLOCK_TIME = /\b(\d{1,2}):([0-5]\d)(?:\s*(AM|PM))?/giu;
+/** Part-of-day words, Devanagari and romanized, with an optional "को". */
+const DAYPART_PREFIX = "(?:सुबह|शाम|दोपहर|रात|subah|shaam|sham|dopahar|raat)(?:\\s*(?:को|ko))?";
+/** Fraction words this function re-emits itself: saadhe / sawa / paune. */
+const FRACTION_PREFIX = "(?:साढ़े|सवा|पौने|साढे|saadhe|sadhe|sawa|paune)";
+/** The "o'clock" unit word this function re-emits itself. */
+const CLOCK_UNIT = "(?:बजे|baje)";
+
+const CLOCK_TIME = new RegExp(
+  `(?:(${DAYPART_PREFIX})\\s*)?(?:${FRACTION_PREFIX}\\s*)?\\b(\\d{1,2}):([0-5]\\d)(?:\\s*(AM|PM))?(?:\\s*${CLOCK_UNIT})?`,
+  "giu",
+);
 
 /** "7:30 p.m." / "7:30 P.M." — folded before the clock rule runs. */
 const DOTTED_MERIDIEM = /\b([ap])\.\s?m\./giu;
@@ -129,11 +151,17 @@ const ENGLISH_LEXICON: Lexicon = { rupees: "rupees", thousand: "thousand", hundr
  * caller expects — sawa / saadhe / paune, including the irregular
  * "dedh" (1:30) and "dhaai" (2:30).
  */
+/**
+ * @param dayStated The sentence already names the part of day (it is
+ *   re-emitted verbatim by the caller), so this must not append one of
+ *   its own — that is what produced "शाम ... shaam ko".
+ */
 function pronounceTime(
   hour: number,
   minute: number,
   meridiem: string | undefined,
   hindi: boolean,
+  dayStated = false,
 ): string | undefined {
   if (hour > 23) return undefined;
 
@@ -172,7 +200,7 @@ function pronounceTime(
     clock = `${hindiHour(hour12)} bajkar ${minute} minute`;
   }
 
-  return dayKnown ? `${clock} ${hindiDaypart(hour24)} ko` : clock;
+  return dayKnown && !dayStated ? `${clock} ${hindiDaypart(hour24)} ko` : clock;
 }
 
 /**
@@ -241,8 +269,16 @@ export function pronounceForSpeech(text: string, language: SupportedLanguage): s
 
   let spoken = text.replace(DOTTED_MERIDIEM, (_match, ap: string) => `${ap.toUpperCase()}M`);
 
-  spoken = spoken.replace(CLOCK_TIME, (match, h: string, m: string, mer?: string) =>
-    pronounceTime(Number(h), Number(m), mer, hindi) ?? match,
+  // A part-of-day the sentence already stated is kept verbatim and the
+  // reading is built without one, so neither it nor the unit word nor
+  // the fraction word is ever said twice.
+  spoken = spoken.replace(
+    CLOCK_TIME,
+    (match, daypart: string | undefined, h: string, m: string, mer?: string) => {
+      const reading = pronounceTime(Number(h), Number(m), mer, hindi, daypart !== undefined);
+      if (reading === undefined) return match;
+      return daypart !== undefined ? `${daypart} ${reading}` : reading;
+    },
   );
 
   spoken = spoken.replace(

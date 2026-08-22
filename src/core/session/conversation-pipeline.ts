@@ -1163,6 +1163,29 @@ export class ConversationPipeline {
   private isBackchannel(segment: TranscriptSegment): boolean {
     const pending = this.record.turnDetector.getPendingTurnText();
     const utterance = pending.length > 0 ? `${pending} ${segment.text}` : segment.text;
+    // A bare greeting, before a single frame of this reply has PLAYED.
+    //
+    // `isBareAcknowledgement` excludes "hello" because over audio the
+    // caller is hearing it means the line has gone bad, and it must
+    // interrupt. That reasoning is about audio they are failing to
+    // hear — and here there is none: the state is SPEAKING but the
+    // transport has not started playing, so nothing exists to have gone
+    // bad. It is the same case `BARE_GREETING_ONLY` already covers while
+    // THINKING, and the window is real (TTS time-to-first-chunk sits
+    // inside SPEAKING).
+    //
+    // Cancelling here is what produced the reported "the script starts
+    // again" defect: `heardSoFarText` is empty before playback begins,
+    // so a barge-in commits NOTHING to memory, and the next request
+    // regenerates the identical script line — once per "hello?".
+    //
+    // Bounded and non-stranding: it holds only while SPEAKING has no
+    // audio, so the moment playback starts a "hello" interrupts exactly
+    // as it does today, and once the turn ends the segment feeds the
+    // turn detector normally.
+    if (this.outboundPlaybackStartedAt === 0 && BARE_GREETING_ONLY.test(utterance.trim())) {
+      return true;
+    }
     if (!isBareAcknowledgement(utterance)) return false;
     return (
       this.backchannelInFlight ||

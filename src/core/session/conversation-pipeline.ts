@@ -334,6 +334,49 @@ const BARGE_IN_ENERGY_WINDOW_MS = 2_000;
 const BARGE_IN_MIN_CONFIDENCE = 0.4;
 
 /**
+ * ---------------- The STT stream clock can rewind ----------------
+ *
+ * The interruption test below asks "did these words happen AFTER I
+ * started speaking", and answers it by comparing Deepgram's word times
+ * (`segment.endedAtMs`) against `speakingStartedAtStreamMs`, a snapshot
+ * of `inboundStreamMs`. That comparison is only meaningful while the
+ * two are the same clock, and they are not:
+ *
+ *   - `inboundStreamMs` counts every byte handed to the STT provider
+ *     and is monotonic for the WHOLE CALL.
+ *   - `segment.endedAtMs` is measured from the start of the audio the
+ *     provider's CURRENT WEBSOCKET has received.
+ *
+ * `@deepgram/sdk` hands back a reconnecting socket, and the provider
+ * deliberately keeps the transcript stream alive across a reconnect
+ * (ending it on the first blip used to kill the rest of the call). A
+ * reconnect opens a NEW Deepgram stream, so its word clock restarts at
+ * zero while `inboundStreamMs` keeps climbing. From that instant
+ * `endedAtMs` is a small number and the snapshot is a large one, the
+ * test is false for every segment, and BARGE-IN IS DEAD FOR THE REST
+ * OF THE CALL — silently, because a segment that fails the test is not
+ * logged: it simply falls through to the turn detector, so the caller
+ * is still transcribed and still answered, just never able to
+ * interrupt. "Deepgram hears my 'hello?' and the agent talks over it."
+ *
+ * So a rewind is detected and the offset between the two clocks is
+ * recorded, rather than the reported time being trusted raw. On a call
+ * that never reconnects the offset stays `0` and every comparison is
+ * byte-for-byte the one made before.
+ */
+/**
+ * How far behind the furthest point the call has reached a segment may
+ * land before it is read as a NEW stream rather than as noise.
+ *
+ * Within one connection the word clock is effectively monotonic —
+ * interim results extend the utterance, they do not retract seconds of
+ * it — so nothing legitimate moves it back this far. A reconnect moves
+ * it back by however long the call had been running, which is larger
+ * than this from two seconds into any call onwards.
+ */
+const STT_CLOCK_REWIND_TOLERANCE_MS = 2_000;
+
+/**
  * ---------------- Stranded after a barge-in ----------------
  *
  * A barge-in cancels the reply in flight and drops the outbound queue.
@@ -468,6 +511,22 @@ export class ConversationPipeline {
   private inboundStreamMs = 0;
   /** Value of `inboundStreamMs` when the current SPEAKING phase began. */
   private speakingStartedAtStreamMs = 0;
+  /**
+   * Furthest point the STT stream has reached ON THE CALL-LONG
+   * TIMELINE — i.e. after the offset below has been applied. A segment
+   * that lands far behind this is the stream having restarted; see
+   * `STT_CLOCK_REWIND_TOLERANCE_MS`. Held in re-based terms rather than
+   * as-reported so that a SECOND restart is measured against real call
+   * progress: a per-connection mark restarts low with its stream, and
+   * would go blind to the next restart until it had climbed back.
+   */
+  private sttClockHighWaterMs = 0;
+  /**
+   * Milliseconds to add to a reported `endedAtMs` to place it on
+   * `inboundStreamMs`'s call-long timeline. Zero — and therefore
+   * arithmetically invisible — until the STT stream restarts.
+   */
+  private sttClockOffsetMs = 0;
   /** Latency trace for the turn currently in flight, if any. */
   private activeTimer: TurnTimer | undefined;
   /** Guards `tts-first-chunk` / `audio-queued` so they mark the FIRST occurrence of each per turn. */
@@ -1306,6 +1365,56 @@ export class ConversationPipeline {
     return this.record.mediaStream?.inbound ?? this.record.inboundAudioFallback;
   }
 
+  /**
+   * `segment.endedAtMs`, placed on the same call-long timeline
+   * `inboundStreamMs` uses — see `STT_CLOCK_REWIND_TOLERANCE_MS` for
+   * why the reported value cannot be compared against it raw.
+   *
+   * Called once per segment, before anything reads the result, and it
+   * is the only writer of either clock field.
+   *
+   * `0` is passed straight back. The provider reports `0` for "no word
+   * timings in this result" (see the Deepgram adapter), NOT for "the
+   * start of the stream", so it must neither move the high-water mark
+   * (a spurious rewind) nor be shifted by the offset (which would let
+   * a segment with no timings at all read as an interruption). Keeping
+   * it at `0` is exactly the arithmetic this had before.
+   */
+  private sttStreamMsOf(segment: TranscriptSegment): number {
+    const reported = segment.endedAtMs;
+    if (reported <= 0) return 0;
+
+    let onCallTimelineMs = this.sttClockOffsetMs + reported;
+    if (onCallTimelineMs + STT_CLOCK_REWIND_TOLERANCE_MS < this.sttClockHighWaterMs) {
+      // The stream restarted. `inboundStreamMs` is the audio position
+      // this segment's words are near, and `reported` is where the new
+      // stream thinks they are, so the difference is where the new
+      // stream's zero sits on our timeline. Recomputed from absolute
+      // values, so a second and third reconnect are handled the same
+      // way rather than compounding.
+      //
+      // It lands a recognition-lag too FAR forward, because
+      // `inboundStreamMs` is the live edge while `reported` is the end
+      // of the last recognised word. That bias makes the interruption
+      // test marginally more permissive for the rest of the call, which
+      // is the safe direction: a wrongly-allowed barge-in still has to
+      // clear the backchannel and near-end-energy gates, and if it
+      // produces no turn `resumeAfterStrandedBargeIn` continues the
+      // reply. A wrongly-BLOCKED one is silent and permanent.
+      this.sttClockOffsetMs = Math.max(0, this.inboundStreamMs - reported);
+      onCallTimelineMs = this.sttClockOffsetMs + reported;
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[TURN:${this.record.id}] STT stream clock restarted (reported=${Math.round(reported)}ms, call was at ${Math.round(this.sttClockHighWaterMs)}ms) — re-basing interruption timing by ${Math.round(this.sttClockOffsetMs)}ms so barge-in keeps working`,
+      );
+    }
+
+    if (onCallTimelineMs > this.sttClockHighWaterMs) {
+      this.sttClockHighWaterMs = onCallTimelineMs;
+    }
+    return onCallTimelineMs;
+  }
+
   private startContinuousStt(loopSignal: AbortSignal): void {
     const wrapped = withByteCounter(this.inboundAudioSource(), (chunk) => {
       this.sinceLastTurnBytes += chunk.data.byteLength;
@@ -1397,10 +1506,22 @@ export class ConversationPipeline {
           // which is precisely the protection deferring the listener
           // used to provide. The segment is still fed to the turn
           // detector below, so the words are not lost.
+          //
+          // Read through `sttStreamMsOf` rather than raw: the reported
+          // time is measured from the start of the STT provider's
+          // CURRENT connection, and a reconnect restarts it at zero
+          // while `speakingStartedAtStreamMs` keeps counting the whole
+          // call — after which this test is false forever and the
+          // assistant becomes uninterruptible. See
+          // `STT_CLOCK_REWIND_TOLERANCE_MS`. On a call whose STT stream
+          // never restarts the offset is `0` and this is the identical
+          // comparison. Called unconditionally, and before the two
+          // `continue`s below, so every segment maintains the clock.
+          const segmentEndedAtStreamMs = this.sttStreamMsOf(segment);
           const spokeOverTheAssistant =
             this.greetingDone &&
             this.record.state === SessionState.SPEAKING &&
-            segment.endedAtMs > this.speakingStartedAtStreamMs;
+            segmentEndedAtStreamMs > this.speakingStartedAtStreamMs;
 
           // ── Backchannel, not barge-in ─────────────────────────────
           //

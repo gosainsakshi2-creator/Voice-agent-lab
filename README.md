@@ -1,3 +1,11 @@
+> **Start here instead:** [CLAUDE.md](CLAUDE.md) → [MEMORY.md](MEMORY.md) →
+> [HANDOFF.md](HANDOFF.md), with reference docs in [docs/](docs/).
+>
+> This file is the **original architecture write-up**. It is still accurate on
+> layering, the state machine and the design rationale, but stale on scope: it
+> predates the dashboard UI, the API routes, the concrete provider
+> implementations, the WebSocket media bridges and the whole campaign layer.
+
 # Voice Agent Lab — Core Architecture
 
 This package contains **only** the core architecture for Voice Agent Lab: shared

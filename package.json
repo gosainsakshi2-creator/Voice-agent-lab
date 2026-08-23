@@ -30,6 +30,8 @@
     "test:speaking-watchdog": "tsx src/campaign/tests/speaking-watchdog-tests.ts",
     "test:barge-in": "tsx src/campaign/tests/barge-in-accuracy-tests.ts",
     "test:stt-clock": "tsx src/campaign/tests/stt-clock-reset-tests.ts",
+    "test:end-of-speech": "tsx src/campaign/tests/end-of-speech-tests.ts",
+    "test:agent-hangup": "tsx src/campaign/tests/agent-hangup-tests.ts",
     "preflight:prod": "tsx src/campaign/production-readiness-cli.ts",
     "campaign:audit": "tsx src/campaign/audit-cli.ts"
   },

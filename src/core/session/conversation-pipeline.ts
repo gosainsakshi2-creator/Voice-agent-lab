@@ -1440,6 +1440,27 @@ export class ConversationPipeline {
 
         for await (const segment of stream) {
           if (loopSignal.aborted) break;
+
+          // ── An end-of-speech MARKER, not a transcript ────────────
+          //
+          // The provider's endpointer reporting that the words it has
+          // already delivered are finished — see
+          // `TranscriptSegment.isEndOfSpeechMarker`. It carries no text
+          // and no word timings, so it is routed straight to the turn
+          // detector and to nothing else: it must not reach the display
+          // preview, the recognition-lag metric, the STT stream clock
+          // (`endedAtMs` of 0 is not a position on it), the barge-in
+          // corroboration gates, or `feed` — where a text-less final
+          // would restart the turn clock and be measured as an enormous
+          // inter-final pause.
+          //
+          // Nothing else in this loop changes, and a provider that
+          // never sends a marker never reaches this branch.
+          if (segment.isEndOfSpeechMarker) {
+            this.record.turnDetector.noteEndOfSpeech();
+            continue;
+          }
+
           // DISPLAY ONLY: surface what the caller is saying as soon
           // as Deepgram reports it (interim segments included) so the
           // Dashboard transcript no longer lags turn-end. Nothing

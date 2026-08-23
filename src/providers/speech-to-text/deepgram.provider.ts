@@ -221,7 +221,44 @@ connection.on("message", (message) => {
   if (message.type !== "Results") return;
 
   const alternative = message.channel?.alternatives?.[0];
-  if (!alternative?.transcript?.trim()) return;
+
+  // ── The end-of-speech claim can arrive on its own ────────────────
+  //
+  // `speech_final: true` is set on whichever Results message Deepgram's
+  // endpointer fires on. When it has already returned every word of the
+  // utterance in an earlier `is_final` message, that message carries an
+  // EMPTY transcript: the words and the "they have stopped talking"
+  // claim arrive SEPARATELY.
+  //
+  // Filtering on transcript text (which is what the line below does,
+  // and correctly, for interim noise) therefore silently discarded the
+  // endpoint. Downstream, `isSpeechFinal` then stayed false for the
+  // whole turn, so `AdaptiveTurnDetector` treated the caller's finished
+  // sentence as a mid-utterance chunk boundary and paid a full adaptive
+  // silence window (1100-1600ms) plus its chunk-boundary grace (700ms)
+  // instead of the single confirmation window an endpointed turn gets.
+  // That is ~1.0-1.5s added to `stt-to-release` on every turn it
+  // happens on.
+  //
+  // Forwarded as a MARKER, never as a transcript: no text, no word
+  // timings, and flagged so no consumer can mistake it for speech.
+  // Recognition parameters are untouched — this reads a field the
+  // socket was already delivering.
+  if (!alternative?.transcript?.trim()) {
+    if ((message.speech_final ?? false) && (message.is_final ?? false)) {
+      queue.push({
+        text: "",
+        isFinal: true,
+        isSpeechFinal: true,
+        isEndOfSpeechMarker: true,
+        confidence: 0,
+        language: request.language,
+        startedAtMs: 0,
+        endedAtMs: 0,
+      });
+    }
+    return;
+  }
 
   const words = alternative.words ?? [];
     const firstWord = words[0];

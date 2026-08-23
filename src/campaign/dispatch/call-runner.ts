@@ -402,6 +402,16 @@ export async function runCall(
           // Read-only — see `definitiveAnswerSoFar`.
           finalAnswer = definitiveAnswerSoFar(manager, sessionId as SessionId, campaign);
           if (finalAnswer) return "FINAL_ANSWER" as const;
+          // SECOND, and only if the above found nothing: the AGENT has
+          // said goodbye. The conversation reached its end without the
+          // person giving a verdict the classifier can close a contact
+          // on — which is a real and common way a call finishes, and
+          // was the one ending that left the line open until the
+          // silence window expired. Read-only, and checked after
+          // `definitiveAnswerSoFar` so a FINAL_YES / FINAL_NO still
+          // takes its own path and names its own hangup. See
+          // `agentClosedIn`.
+          if (agentClosedSoFar(manager, sessionId as SessionId)) return "AGENT_CLOSED" as const;
         }
       }
       return undefined;
@@ -446,6 +456,20 @@ export async function runCall(
         `the person gave a definitive answer (${finalAnswer}) and the call was ended`,
         "observed",
         `agent_hangup:${String(finalAnswer).toLowerCase()}`,
+      );
+    }
+    if (verdict === "AGENT_CLOSED") {
+      // A conversation that ran to its end. `finalize` re-reads the
+      // finished transcript exactly as it does for every other
+      // completed call, so the stored outcome, the disposition, the
+      // retry decision and the sheet row are produced by the same
+      // unchanged code — all this changed is that the line is no longer
+      // held open after the agent has said goodbye.
+      return finalize(
+        "COMPLETED",
+        "the agent delivered its closing line and the call was ended",
+        "observed",
+        "agent_hangup:closing",
       );
     }
     if (errored) {
@@ -688,6 +712,117 @@ export function definitiveAnswerIn(
 }
 
 /**
+ * Sign-offs, and ONLY sign-offs.
+ *
+ * The agent reaching the end of the conversation is a real end-of-call
+ * signal that no existing check could see. `definitiveAnswerIn` above
+ * reads what the PERSON said, through the classifier — so it fires on a
+ * yes at the gate and on an unmistakable refusal, and on nothing else.
+ * A conversation that finished without either (the classifier's
+ * `unclear`, `affirmative_not_at_gate`, `callback_requested`,
+ * `interested_not_confirmed`) produced no verdict, so the watchdog held
+ * the line open after the agent had already said goodbye and the call
+ * ended on the silence window — or, if the person offered one more
+ * pleasantry, on the silence window after THAT.
+ *
+ * Every phrase here is a thing said only when leaving. Deliberately
+ * absent: "namaste" / "namaskar", which this script's own opening line
+ * uses as a greeting, and any bare courtesy ("thank you", "ok",
+ * "shukriya" on its own) that is said just as often mid-call.
+ */
+const AGENT_CLOSINGS = [
+  "take care", "goodbye", "good bye", "bye bye", "bye",
+  "have a great day", "have a good day", "have a nice day", "have a lovely day",
+  "have a great evening", "have a good evening", "enjoy your day",
+  "thanks for your time", "thank you for your time", "thanks for the time",
+  "thank you for the time", "thanks for listening",
+  "see you today", "see you there", "see you soon", "see you at the session",
+  "see you in the session", "see you live",
+  // Hindi / Hinglish, transliterated and in Devanagari.
+  "apna dhyan rakhiye", "apna dhyan rakhna", "dhyan rakhiye",
+  "aapka din shubh ho", "shubh din", "phir milenge", "milte hain",
+  "aapke samay ke liye dhanyavaad", "samay ke liye dhanyavaad",
+  "अपना ध्यान रखिए", "अपना ध्यान रखना", "फिर मिलेंगे", "मिलते हैं",
+  "आपका दिन शुभ हो", "समय के लिए धन्यवाद",
+] as const;
+
+/**
+ * A sign-off turn is SHORT. The approved script's blocks and the
+ * agent's answers to questions run well past this (measured at
+ * 213-286 characters, ~35-50 words, on the v2/v3 prompt stack), so the
+ * cap is what keeps a long turn that happens to contain a closing
+ * phrase from reading as one.
+ */
+const AGENT_CLOSING_MAX_WORDS = 12;
+
+/** Does the normalised turn FINISH on one of the phrases above? */
+function endsWithClosing(normalised: string): boolean {
+  for (const phrase of AGENT_CLOSINGS) {
+    if (normalised.endsWith(` ${phrase} `)) return true;
+  }
+  return false;
+}
+
+/**
+ * Has the AGENT closed the conversation, with its closing line already
+ * spoken in full?
+ *
+ * Introduces no verdict of its own and reads no classifier: this is the
+ * hangup condition only. Whatever the call MEANT is still decided by
+ * `classifyOutcome` and `dispositionFor` inside `finalize`, from the
+ * finished transcript, exactly as it is for every other completed call
+ * — so the disposition, the retry decision and the registrations-sheet
+ * row are produced by unchanged code. `definitiveAnswerSoFar` is
+ * checked FIRST at the one call site, so a FINAL_YES or a FINAL_NO
+ * still ends the call as `agent_hangup:final_yes` / `final_no` and
+ * nothing about those two paths is reachable from here.
+ *
+ * Four guards, and each one exists to answer a specific way this could
+ * cut a live call short:
+ *
+ *   1. The last turn must be the AGENT's. `ConversationPipeline`
+ *      commits an assistant turn only after that reply's audio has
+ *      DRAINED (see `drainPlayback`), so this is the moment the closing
+ *      the person just heard finished playing — never before. It also
+ *      means the live partial utterance `getTranscript` appends while
+ *      somebody is still speaking blocks this, so a person who is
+ *      talking is never hung up on mid-sentence.
+ *
+ *   2. The person must have said something. A call where only the agent
+ *      spoke is a machine or a line nobody answered into, and it is
+ *      already handled by the voicemail path and the silence window.
+ *
+ *   3. The turn must END on a sign-off, not merely contain one. This is
+ *      what separates "Thanks for your time, take care." from "Just
+ *      take care to join a few minutes early, the link will be on
+ *      WhatsApp" — the same phrase, mid-conversation, in a turn that
+ *      carries on afterwards. Combined with the word cap, a closing
+ *      phrase used as an ordinary verb inside a longer reply cannot
+ *      reach this.
+ *
+ *   4. The turn must ask nothing. A turn with a question in it is a
+ *      handover point, not an ending, whatever else it contains — and
+ *      the person is about to answer it.
+ *
+ * Never throws, for the same reason `definitiveAnswerIn` does not.
+ */
+export function agentClosedIn(turns: readonly ConversationTurn[]): boolean {
+  const last = turns[turns.length - 1];
+  if (!last || last.role !== "assistant") return false;
+  if (!turns.some((turn) => turn.role === "user" && turn.content.trim().length > 0)) return false;
+
+  // Tested on the RAW text: `normaliseText` strips punctuation, so the
+  // question mark is gone by the time the phrase match runs.
+  if (last.content.includes("?")) return false;
+
+  const normalised = normaliseText(last.content);
+  const wordCount = normalised.trim().length === 0 ? 0 : normalised.trim().split(/\s+/).length;
+  if (wordCount === 0 || wordCount > AGENT_CLOSING_MAX_WORDS) return false;
+
+  return endsWithClosing(normalised);
+}
+
+/**
  * Last activity the pipeline itself heard, contained the same way
  * `definitiveAnswerSoFar` is: a manager that does not expose it, or a
  * session that has not been heard from, reports `0` and the watchdog
@@ -700,6 +835,16 @@ function pipelineActivityAt(manager: ManagerLike, sessionId: SessionId): number 
     return Number.isFinite(at) ? at : 0;
   } catch {
     return 0;
+  }
+}
+
+/** The same reading, against a live session, contained. */
+function agentClosedSoFar(manager: ManagerLike, sessionId: SessionId): boolean {
+  if (typeof manager.getTranscript !== "function") return false;
+  try {
+    return agentClosedIn(manager.getTranscript(sessionId));
+  } catch {
+    return false;
   }
 }
 

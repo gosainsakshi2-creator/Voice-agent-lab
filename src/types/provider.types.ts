@@ -84,6 +84,29 @@ export interface TranscriptSegment {
    * keep their existing turn-detection behaviour unchanged.
    */
   readonly isSpeechFinal?: boolean;
+  /**
+   * OPTIONAL, ADDITIVE. This result carries NO new words — it is only
+   * the provider's endpointer reporting that the speech it has already
+   * delivered has ended.
+   *
+   * Deepgram sets `speech_final: true` on the Results message its
+   * endpointer fires on. When every word of the utterance was already
+   * returned in an earlier `is_final` message, that message arrives
+   * with an EMPTY transcript and no word timings — the words and the
+   * end-of-speech claim come in two separate messages. Dropping the
+   * empty one (which is what an adapter does if it filters on
+   * transcript text) throws the endpoint claim away, and the turn
+   * detector then has to fall back to waiting out a full silence
+   * window plus its chunk-boundary grace for a turn the provider had
+   * already declared finished.
+   *
+   * A segment carrying this flag has no text, no timings and no
+   * confidence worth reading. It is a signal, not a transcript:
+   * consumers must route it to end-of-speech handling and must NOT
+   * feed it anywhere a real segment goes. Absent everywhere else, so
+   * every existing provider and consumer is unchanged.
+   */
+  readonly isEndOfSpeechMarker?: boolean;
   readonly confidence: number;
   readonly language: SupportedLanguage;
   readonly startedAtMs: number;

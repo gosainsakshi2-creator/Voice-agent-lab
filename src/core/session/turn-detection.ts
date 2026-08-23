@@ -572,6 +572,48 @@ export class AdaptiveTurnDetector {
     return TERMINAL_PUNCTUATION.test(text) && !looksIncomplete(text);
   }
 
+  /**
+   * The provider's endpointer has declared END OF SPEECH for words it
+   * has ALREADY delivered — see `TranscriptSegment.isEndOfSpeechMarker`
+   * and the Deepgram adapter that produces it.
+   *
+   * This is NOT a segment and must never be fed as one: it carries no
+   * text, no word timings and no confidence. It makes exactly one claim
+   * — "the caller has stopped talking" — about the text this detector
+   * is already holding, so it:
+   *
+   *   - records that the last final WAS an endpoint, which is what
+   *     drops the chunk-boundary grace this turn would otherwise pay
+   *     for a claim Deepgram never actually made;
+   *   - does NOT touch `pendingFinalText`, `lastFinalEndedAtMs`,
+   *     `turnStartedAtMs` or `lastSegmentAtMs`. Appending nothing must
+   *     not restart the turn clock, and `endedAtMs` of `0` would
+   *     otherwise be measured as an enormous inter-final gap and push
+   *     the adaptive threshold to its ceiling for the rest of the call;
+   *   - only ever SHORTENS the armed wait, and only for the exact class
+   *     `feed` already releases on the confirmation window alone: an
+   *     endpointed, interim-free, complete thought. Every other class —
+   *     mid-thought, unpunctuated, filler, hold phrase, outstanding
+   *     interim — keeps the window it is already waiting out.
+   *
+   * A provider that never sends such a marker never calls this, so its
+   * behaviour is byte-for-byte unchanged.
+   */
+  noteEndOfSpeech(): void {
+    // Nothing is being held, so there is no turn for this to be about.
+    if (this.timer === null || this.pendingFinalText.trim().length === 0) return;
+
+    this.lastFinalWasEndpoint = true;
+
+    // Guarded to the long adaptive window only. Shortening a
+    // confirmation window that is already running would cut the
+    // in-flight-speech check this detector exists to apply, and there
+    // is nothing to gain: it is 300ms.
+    if (this.stage !== "silence") return;
+    if (this.pendingInterim || !this.isCompleteThought()) return;
+    this.rearmTimer(CONFIRMATION_WINDOW_MS);
+  }
+
   /** Force an immediate end-of-turn (e.g. the caller detected hard silence via another signal). */
   forceEndTurn(): void {
     this.clearTimer();

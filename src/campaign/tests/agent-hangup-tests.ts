@@ -176,6 +176,102 @@ await test("F6. an agent-only transcript never closes a call", () => {
   assert.equal(agentClosedIn([]), false, "an empty transcript closes nothing");
 });
 
+
+// ═════════════════════════════════════════════════════════════════
+// SECTION G — THE REPORTED PRODUCTION REGRESSION.
+//
+// Every case in F1 above happens to stop on a table phrase with
+// NOTHING after it, so the suite passed while the shape the agent
+// actually produces on a live call did not close anything.
+//
+// This script is name-driven — `{{customer_name}}`, `requiresName:
+// true`, and the whole prompt stack addresses the person by name — and
+// the closing is the most natural place in a call to use it. The
+// reported ending was "Take care, Sakshi.", which normalises to
+// " take care sakshi " and therefore did not END on " take care ". No
+// closing was seen, no `AGENT_CLOSED` verdict was produced, and the
+// line was held open to the silence window; by then the person had
+// already put the phone down, so Vobiz answered `endCall` with a 404.
+// ═════════════════════════════════════════════════════════════════
+
+section("G. A CLOSING WITH A TRAILING VOCATIVE (THE REPORTED DEFECT)");
+
+await test("G1. the reported production closings close the call", () => {
+  for (const closing of [
+    // Verbatim from the production log.
+    "Take care, Sakshi.",
+    // The same defect, every other shape it appears in.
+    "Take care, Priya!",
+    "Sure. Have a good day, Sakshi.",
+    "Have a nice day, Sakshi!",
+    "Thank you, have a great day ahead.",
+    "No problem at all. Thanks for your time, Sakshi.",
+    "Alright, goodbye Priya.",
+    "Theek hai, apna dhyan rakhiye ji.",
+    "Apna dhyan rakhiye, Sakshi ji.",
+  ]) {
+    assert.ok(closesOn(closing), `must read as a closing: "${closing}"`);
+  }
+});
+
+await test("G2. ...and the exact ending that stopped the call is still short of the cap", () => {
+  // The relaxation is the TAIL rule alone. The word cap, the
+  // last-turn-is-the-agent guard, the person-spoke guard and the
+  // no-question guard are all unchanged, and the reported turn passes
+  // every one of them — so the tail was the only thing blocking it.
+  assert.ok(closesOn("Take care, Sakshi."));
+  assert.equal(agentClosedIn([...EXCHANGE, agent("Take care, Sakshi?")]), false, "still a question");
+  assert.equal(
+    agentClosedIn([...EXCHANGE, agent("Take care, Sakshi."), caller("wait")]),
+    false,
+    "a talking caller still blocks it",
+  );
+  assert.equal(
+    agentClosedIn([agent("Hi Priya, this is Ishita."), agent("Take care, Sakshi.")]),
+    false,
+    "an agent-only transcript still closes nothing",
+  );
+});
+
+await test("G3. a CONTINUATION after the phrase is still not a closing", () => {
+  // The false positive the tail rule must not re-open: a short tail
+  // that carries the sentence on rather than trailing off it. Every
+  // one of these is <= 2 words after the phrase, so only the
+  // continuation-word half of the rule can reject them.
+  for (const notClosing of [
+    "Have a great day at work.",
+    "Take care of yourself.",
+    "Take care and rest.",
+    "Thanks for your time on this.",
+    "See you soon with Priya.",
+    "Have a good day if possible.",
+    "Bye is premature.",
+    "Take care ke baad.",
+  ]) {
+    assert.equal(closesOn(notClosing), false, `must NOT read as a closing: "${notClosing}"`);
+  }
+});
+
+await test("G4. a tail longer than a vocative is not a closing", () => {
+  for (const notClosing of [
+    // Three words after the phrase, none of them a continuation word.
+    "Take care Sakshi ji madam.",
+    "Have a great day Sakshi madam ji.",
+    // The mid-conversation cases from F2, re-asserted through the new
+    // reading so a future widening of the tail cap trips here.
+    "Just take care to join a few minutes early, the link will be on WhatsApp today.",
+    "Take care of the registration and I will send you the details in ten minutes.",
+  ]) {
+    assert.equal(closesOn(notClosing), false, `must NOT read as a closing: "${notClosing}"`);
+  }
+});
+
+await test("G5. a turn using a closing phrase mid-sentence AND at its end still closes", () => {
+  // Measured on the LAST occurrence, so the mid-sentence use does not
+  // mask a genuine ending.
+  assert.ok(closesOn("Take care to join early. Take care, Sakshi."));
+});
+
 // ═════════════════════════════════════════════════════════════════
 // SECTIONS A-E — the live watchdog, through the real `runCall`.
 // ═════════════════════════════════════════════════════════════════
@@ -461,6 +557,60 @@ try {
     assert.ok(
       afterClosingMs <= TICK_SLACK_MS,
       `...and within one watchdog tick (${afterClosingMs}ms)`,
+    );
+  });
+
+
+  // The reported production ending, verbatim, driven end to end. A1-A3
+  // above use "Thanks for your time, take care." — the one shape that
+  // already worked. This is the one that did not: same path, same
+  // verdict, same hangup reason, and the closing still spoken through
+  // to its end before anything hangs up.
+  const vocative = await runScripted({
+    transcriptSoFar: [
+      agent(GREETING),
+      caller("Yes, tell me."),
+      agent("We are doing a live demo of the Funnel Builder Agent today at 7:30 pm."),
+      caller("No, I don't want to join."),
+    ],
+    drive: async (s) => {
+      await wait(300);
+      s.beginReply();
+      await wait(WINDOW_MS * 2);
+      s.finishReply("Take care, Sakshi.");
+    },
+  });
+
+  await test("A4. \"Take care, Sakshi.\" — the reported ending — ends the call", async () => {
+    assert.equal(vocative.telemetry.endCalls, 1, "through the manager's public end(), once");
+    assert.equal(vocative.outcome.failureClass, "COMPLETED");
+    assert.equal(
+      await hangupReasonOf(vocative.outcome.attemptId!),
+      "agent_hangup:closing",
+      "a trailing vocative must not stop the closing from being read",
+    );
+  });
+
+  await test("A5. ...and its audio finishes in full first", () => {
+    assert.notEqual(
+      vocative.telemetry.endedInState,
+      SessionState.SPEAKING,
+      "the person must hear the closing in full",
+    );
+    assert.equal(vocative.telemetry.endedInState, SessionState.LISTENING);
+    const spokenForMs = vocative.telemetry.replyFinishedAt - vocative.telemetry.replyStartedAt;
+    assert.ok(
+      spokenForMs >= WINDOW_MS * 2,
+      `the closing must be spoken through, spoke for ${spokenForMs}ms`,
+    );
+    assert.ok(
+      vocative.telemetry.endedAt >= vocative.telemetry.replyFinishedAt,
+      "the hangup must come after the closing was committed, never before",
+    );
+    const afterClosingMs = vocative.telemetry.endedAt - vocative.telemetry.replyFinishedAt;
+    assert.ok(
+      afterClosingMs < WINDOW_MS && afterClosingMs <= TICK_SLACK_MS,
+      `...and within one watchdog tick, not a silence window later (${afterClosingMs}ms)`,
     );
   });
 

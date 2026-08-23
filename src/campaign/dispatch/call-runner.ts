@@ -755,10 +755,95 @@ const AGENT_CLOSINGS = [
  */
 const AGENT_CLOSING_MAX_WORDS = 12;
 
-/** Does the normalised turn FINISH on one of the phrases above? */
+/**
+ * At most this many words may follow the sign-off phrase and still
+ * leave the turn a sign-off.
+ *
+ * The original reading of guard 3 was `endsWith` — the turn had to stop
+ * on the phrase itself with nothing after it. Production showed that is
+ * not how the agent says goodbye. This script is name-driven
+ * (`{{customer_name}}`, `requiresName: true`), the whole prompt stack
+ * addresses the person by name, and the closing is the most natural
+ * place in a call to use it. The reported ending was:
+ *
+ *     "Take care, Sakshi."   ->   " take care sakshi "
+ *
+ * which does not END on " take care ", so no closing was ever seen, no
+ * `AGENT_CLOSED` verdict was produced, and the line was held open until
+ * the silence window — by which point the person had already hung up
+ * and Vobiz answered `endCall` with a 404. The same was true of "Sure.
+ * Have a good day, Sakshi." and "Thank you, have a great day ahead."
+ *
+ * Two words is what a trailing vocative costs ("sakshi", "sakshi ji",
+ * "sir", "ma'am") plus the occasional trailing adverb ("ahead", "now").
+ * It is deliberately NOT enough for a clause.
+ */
+const AGENT_CLOSING_MAX_TRAILING_WORDS = 2;
+
+/**
+ * Words that CARRY A SENTENCE ON rather than trail off the end of one.
+ *
+ * This is the other half of the tail rule, and it is what keeps the
+ * relaxation from re-opening the false positive guard 3 exists to
+ * close. A vocative or an adverb ends a sentence; a preposition,
+ * conjunction, article, pronoun or auxiliary continues it. So:
+ *
+ *     "Take care, Sakshi."                    tail ["sakshi"]      -> a closing
+ *     "Have a great day at work, and I..."    tail ["at", ...]     -> NOT a closing
+ *     "Just take care to join early..."       tail ["to", ...]     -> NOT a closing
+ *
+ * A closed word class, so the list is complete rather than a sample,
+ * and it costs nothing to keep the Hinglish connectors in it: a Hindi
+ * closing is followed by "ji" (a honorific, deliberately absent below)
+ * far more often than by "aur" or "ke".
+ */
+const CLOSING_CONTINUATION_WORDS = new Set([
+  // Conjunctions and subordinators.
+  "and", "or", "but", "so", "if", "when", "while", "before", "after", "until",
+  "till", "then", "because", "since", "though", "although", "unless", "that",
+  "which", "who", "whom", "whose", "as",
+  // Prepositions.
+  "to", "of", "for", "with", "at", "in", "into", "on", "from", "by", "about",
+  "over", "under", "through", "during", "per",
+  // Articles and determiners.
+  "the", "a", "an", "my", "your", "our", "their", "his", "her", "its", "this",
+  "these", "those", "some", "any", "no", "not",
+  // Pronouns.
+  "i", "we", "you", "they", "he", "she", "it", "me", "us", "them", "him",
+  // Auxiliaries and common verbs that open a clause.
+  "is", "are", "am", "was", "were", "be", "been", "being", "will", "would",
+  "can", "could", "should", "shall", "may", "might", "must", "do", "does",
+  "did", "have", "has", "had", "let", "get", "got",
+  // Hindi / Hinglish connectors, transliterated and in Devanagari.
+  "aur", "ki", "ka", "ke", "ko", "se", "me", "mein", "par", "hai", "hain",
+  "hoga", "kar", "karo", "karke", "lekin", "agar", "jo", "tak", "liye",
+  "wala", "wali", "phir", "yeh", "woh", "kya",
+  "और", "की", "का", "के", "को", "से", "में", "पर", "है", "हैं", "लेकिन", "अगर",
+  "जो", "तक", "लिए", "क्या",
+]);
+
+/**
+ * Does the normalised turn FINISH on one of the phrases above — either
+ * exactly, or with a short trailing vocative and nothing else?
+ *
+ * `lastIndexOf`, so a turn that uses a closing phrase twice is measured
+ * from the LAST one: "take care to join early... anyway, take care" is
+ * read on the ending, not on the mid-sentence use.
+ */
 function endsWithClosing(normalised: string): boolean {
   for (const phrase of AGENT_CLOSINGS) {
-    if (normalised.endsWith(` ${phrase} `)) return true;
+    const needle = ` ${phrase} `;
+    const at = normalised.lastIndexOf(needle);
+    if (at === -1) continue;
+
+    const tail = normalised.slice(at + needle.length).trim();
+    // Ends exactly on the phrase — the original reading, unchanged.
+    if (tail.length === 0) return true;
+
+    const trailing = tail.split(/\s+/);
+    if (trailing.length > AGENT_CLOSING_MAX_TRAILING_WORDS) continue;
+    if (trailing.some((word) => CLOSING_CONTINUATION_WORDS.has(word))) continue;
+    return true;
   }
   return false;
 }
@@ -792,13 +877,15 @@ function endsWithClosing(normalised: string): boolean {
  *      spoke is a machine or a line nobody answered into, and it is
  *      already handled by the voicemail path and the silence window.
  *
- *   3. The turn must END on a sign-off, not merely contain one. This is
- *      what separates "Thanks for your time, take care." from "Just
- *      take care to join a few minutes early, the link will be on
- *      WhatsApp" — the same phrase, mid-conversation, in a turn that
- *      carries on afterwards. Combined with the word cap, a closing
- *      phrase used as an ordinary verb inside a longer reply cannot
- *      reach this.
+ *   3. The turn must END on a sign-off, not merely contain one — where
+ *      "end on" allows at most a two-word trailing vocative and no
+ *      continuation word (see `endsWithClosing`), because the agent
+ *      really says "Take care, Sakshi." and not "Take care." This is
+ *      what separates that from "Just take care to join a few minutes
+ *      early, the link will be on WhatsApp" — the same phrase,
+ *      mid-conversation, in a turn that carries on afterwards.
+ *      Combined with the word cap, a closing phrase used as an
+ *      ordinary verb inside a longer reply cannot reach this.
  *
  *   4. The turn must ask nothing. A turn with a question in it is a
  *      handover point, not an ending, whatever else it contains — and

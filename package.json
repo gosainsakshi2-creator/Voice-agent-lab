@@ -32,6 +32,10 @@
     "test:stt-clock": "tsx src/campaign/tests/stt-clock-reset-tests.ts",
     "test:end-of-speech": "tsx src/campaign/tests/end-of-speech-tests.ts",
     "test:agent-hangup": "tsx src/campaign/tests/agent-hangup-tests.ts",
+    "test:attention": "tsx src/campaign/tests/attention-check-tests.ts",
+    "test:tts-streaming": "tsx src/campaign/tests/tts-streaming-latency-tests.ts",
+    "test:sarvam-stream": "tsx src/campaign/tests/sarvam-stream-tests.ts",
+    "test:smallest-stream": "tsx src/campaign/tests/smallest-ai-stream-tests.ts",
     "preflight:prod": "tsx src/campaign/production-readiness-cli.ts",
     "campaign:audit": "tsx src/campaign/audit-cli.ts"
   },

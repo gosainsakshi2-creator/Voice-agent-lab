@@ -358,6 +358,44 @@ const BLOCK_B =
 
 // ═════════════════════════════════════════════════════════════════
 section("SECTION A — an interrupted block stays in the history (TEST 1, TEST 5)");
+//
+// ONE ASSERTION IN TEST 1 WAS RETIRED WHEN THE HELLO / ATTENTION-CHECK
+// FIX LANDED. It is worth saying exactly which, and why that is not a
+// weakening.
+//
+// TEST 1 originally asserted that a mid-block "hello" PRODUCED a
+// language-model request, and then inspected that request's history for
+// the opening line and the block. That was the correct shape of the
+// first remedy for this defect: the model was going to be asked either
+// way, so the only thing that could be fixed was WHAT IT WAS TOLD —
+// hence this file's opening note about asserting "the fix at the only
+// place it can be asserted honestly".
+//
+// The pipeline no longer asks. A bare attention check is answered from
+// the script position the pipeline already computed (`unspokenTail`,
+// held across the turn), so it spends no generation at all — which is a
+// strictly stronger guarantee than showing the model the right history,
+// because a generation that never happens cannot restate a line.
+// "Hello must produce a request" was therefore an expectation about the
+// old MECHANISM, not about the invariant, and the two cannot both hold.
+//
+// The invariant itself is unchanged and TEST 1 still owns it, now
+// asserted as the property rather than the mechanism:
+//
+//   - the assistant content the caller HEARD stays in history;
+//   - the unheard remainder is not lost — it is resumed verbatim, and
+//     heard + resumed reconstruct the block exactly;
+//   - no already-heard content is ever spoken a second time;
+//   - a bare hello and a resume each spend ZERO generations;
+//   - the next SUBSTANTIVE turn still gets its reply, and the history
+//     that reply is built from still contains the opening, the heard
+//     block and the resumed part — the original assertion, unweakened,
+//     re-pointed at the turn that actually reaches the model.
+//
+// Supporting coverage, all green and none of it removed: TEST 1b (only
+// the played part is committed), TEST 2 (a contextual question does not
+// rewind the script), and `test:attention` C1/C3/C4/H1/H2 for the
+// attention path itself.
 // ═════════════════════════════════════════════════════════════════
 
 await test('TEST 1 — "hello" over the middle of a block does not erase the block from history', async () => {
@@ -374,8 +412,14 @@ await test('TEST 1 — "hello" over the middle of a block does not erase the blo
     // "hello" mid-block is a real barge-in — it is deliberately NOT in
     // the backchannel vocabulary (see `isBareAcknowledgement`), so this
     // is the exact production path that used to discard the whole block.
+    const requestsBeforeHello = h.requests.length;
     h.say("hello");
-    await h.waitForReplies(2);
+    // THREE assistant turns by the time this settles: the opening, the
+    // part of the block that PLAYED before the barge-in, and the short
+    // attention acknowledgement. Waiting for only two would return
+    // while the acknowledgement was still being prepared, and the
+    // caller's next line would then merge into the same turn.
+    await h.waitForReplies(3);
 
     const spoken = assistantTexts(h.history());
     assert.equal(spoken[0], OPENING);
@@ -383,17 +427,87 @@ await test('TEST 1 — "hello" over the middle of a block does not erase the blo
       spoken[1]?.startsWith("Actually, I am calling you"),
       `the part of the block the caller heard must be committed, got ${JSON.stringify(spoken[1])}`,
     );
+    assert.ok(
+      spoken[2]?.includes("can you hear me"),
+      `the hello is answered by the short attention line, got ${JSON.stringify(spoken[2])}`,
+    );
 
-    // THE REGRESSION. The next request the model receives must contain
-    // both — otherwise it has no way to know it already said them, and
-    // starts the script again.
-    await h.waitFor("the reply after the interruption", () => h.requests.length >= 2);
+    // THE INVARIANT, first half: a bare "hello" must not spend a
+    // generation. This assertion REPLACES an obsolete one — see the
+    // note under SECTION A. The old expectation was that the hello
+    // produced an LLM request whose history contained the block; that
+    // was the first remedy for this defect, and it has been superseded
+    // by one that does not consult the model at all. What must never
+    // regress is the CONTINUITY, not the request count, so the request
+    // count is now asserted the other way round.
+    assert.equal(
+      h.requests.length,
+      requestsBeforeHello,
+      "a bare attention check must not spend a language-model generation",
+    );
+
+    // THE INVARIANT, second half: the unheard remainder was NOT lost
+    // with the reply that was cancelled. The caller confirms, and the
+    // block carries on from exactly where it stopped — still with no
+    // generation, because this is text already produced for this caller.
+    h.say("Yes, I can hear you.");
+    await h.waitForReplies(4);
+    const resumed = assistantTexts(h.history())[3] ?? "";
+    assert.ok(
+      resumed.startsWith("We have created Flexi Genie"),
+      `the unheard remainder must be resumed at its exact stopping point, got ${JSON.stringify(resumed.slice(0, 80))}`,
+    );
+    assert.ok(
+      !resumed.includes("Actually, I am calling you"),
+      "and must not repeat the sentence the caller already heard",
+    );
+    assert.equal(
+      `${spoken[1]} ${resumed}`.replace(/\s+/gu, " ").trim(),
+      BLOCK_B.replace(/\s+/gu, " ").trim(),
+      "the heard part and the resumed part must reconstruct the block exactly — nothing lost, nothing said twice",
+    );
+    assert.equal(
+      h.requests.length,
+      requestsBeforeHello,
+      "resuming an already-generated remainder must not spend a generation either",
+    );
+
+    // THE INVARIANT, third half: the next SUBSTANTIVE turn still gets a
+    // reply, and the history it is built from still contains everything
+    // the agent has said. This is the original assertion, unweakened —
+    // only re-pointed at the turn that actually reaches the model.
+    h.say("What is the date of the session?");
+    await h.waitFor("the reply to the substantive turn", () => h.requests.length >= requestsBeforeHello + 1);
+    assert.equal(
+      h.requests.length,
+      requestsBeforeHello + 1,
+      "exactly one generation for the whole episode, and it belongs to the real question",
+    );
     const next = h.requests[h.requests.length - 1] ?? [];
     const shown = next.filter((t) => t.role === "assistant").map((t) => t.content);
     assert.ok(shown.includes(OPENING), "the model must still be shown its own opening line");
     assert.ok(
       shown.some((text) => text.startsWith("Actually, I am calling you")),
       `the model must be shown the block it already spoke, got ${JSON.stringify(shown)}`,
+    );
+    assert.ok(
+      shown.some((text) => text.startsWith("We have created Flexi Genie")),
+      `and the part it resumed with, got ${JSON.stringify(shown)}`,
+    );
+
+    // Already-heard content is never spoken a second time, for the
+    // whole episode. The transport dropped the queued remainder at the
+    // barge-in, so a repeat here would be one the caller genuinely
+    // heard twice.
+    assert.equal(
+      h.synthesized.filter((text) => text === OPENING).length,
+      1,
+      "the opening line is spoken exactly once for the whole call",
+    );
+    assert.equal(
+      h.synthesized.filter((text) => text.startsWith("Actually, I am calling you")).length,
+      1,
+      "and the sentence the caller heard before the interruption is spoken exactly once",
     );
   } finally {
     await h.stop();

@@ -32,21 +32,95 @@ import type { TtsAudioChunk } from "../../types/streaming.types";
 /**
  * How the end-of-utterance idle gap is sized.
  *
- * `SARVAM_STREAM_IDLE_GAP_MS` (700ms) is the CEILING, not the value —
- * see `synthesizeStream` for why waiting the full ceiling on every
- * request cost the caller real silence. The floor and the multiplier
- * below turn it into a budget derived from this request's own observed
- * frame cadence.
+ * `SARVAM_STREAM_IDLE_GAP_MS` (700ms) is the CEILING on the ADAPTIVE
+ * term, not the budget itself — see `synthesizeStream` for why waiting
+ * the full ceiling on every request cost the caller real silence. The
+ * floor and the multiplier below turn it into a budget derived from
+ * this request's own observed frame cadence.
  *
  * Measured against bulbul on this account, with the raw socket logged
- * frame by frame: inter-frame gaps run 1-106ms once audio is flowing.
+ * frame by frame: inter-frame gaps run 0-216ms once audio is flowing.
  * Four times the widest gap this request actually showed is therefore
- * a wide margin over its real cadence, and the 300ms floor keeps a
- * request whose frames happened to arrive in a tight burst from
- * declaring the utterance over on a momentary hiccup.
+ * a wide margin over its real cadence.
+ *
+ * ── Why the 300ms floor ALONE was not safe ────────────────────────
+ *
+ * `MIN_IDLE_GAP_MS` was written as the guard against "frames happened
+ * to arrive in a tight burst". It is not, on its own, sufficient, and
+ * this is the truncation defect the two constants below exist to fix.
+ *
+ * Sarvam does not send one frame per fixed slice of audio. Frame sizes
+ * are quantised multiples of 2200 bytes, and which multiple you get
+ * varies run to run on identical text (18 measured runs, 8kHz PCM_16,
+ * so 16000 bytes/s):
+ *
+ *   2200 B = 138ms of audio      6600 B = 413ms of audio
+ *   4400 B = 275ms of audio      8800 B = 550ms of audio
+ *
+ * On four of six runs of one 134-character sentence the stream was
+ * mostly 6600- and 8800-byte frames. So the vendor routinely delivers
+ * 413-550ms of audio per frame while the floor grants it only 300ms to
+ * produce the next one — the safety mechanism was calibrated BELOW the
+ * vendor's own delivery quantum. Any moment the vendor generates at
+ * roughly real time (ordinary under load; socket-open alone was
+ * measured at 255-1300ms on the same runs) the gap exceeds 300ms and a
+ * healthy utterance is declared finished.
+ *
+ * That is exactly the reported failure. The truncated run in the audit
+ * delivered `frames=2, audio=0.82s` of a 5.97s sentence: two 6600-byte
+ * frames is 13200 bytes is 0.825s — the byte count matches the quantum
+ * exactly. It was not a short read; it was two normal frames followed
+ * by a normal gap that the budget was too small to survive.
+ *
+ * `widestFrameGapMs` starting at 0 is the second half of the same
+ * defect: it is 0 until two frames have arrived, so `widest * FACTOR`
+ * is 0 and the budget collapses to that too-small floor precisely in
+ * the window where nothing about the cadence is yet known.
  */
 const IDLE_GAP_SAFETY_FACTOR = 4;
 const MIN_IDLE_GAP_MS = 300;
+
+/**
+ * How many real inter-frame gaps must be observed before the adaptive
+ * term is trusted at all.
+ *
+ * Until then the budget is the configured `SARVAM_STREAM_IDLE_GAP_MS`
+ * ceiling — i.e. the fixed 700ms this adapter used BEFORE the adaptive
+ * change, which is the known-good value with no truncation on record.
+ * This is a WIDENING of the early window only (300ms -> 700ms), so it
+ * cannot introduce a new truncation, and it costs at most ~400ms of
+ * tail on a clip so short it ends inside the first two frames.
+ */
+const MIN_OBSERVED_GAPS_BEFORE_ADAPTING = 2;
+
+/**
+ * Hard bound on the whole budget, including the delivery-quantum floor
+ * derived from the stream (see `synthesizeStream`).
+ *
+ * The floor is evidence, not a constant, so it needs a ceiling of its
+ * own: under sustained transport backpressure the consumer parks, a
+ * whole utterance can accumulate in `pending`, and the burst that then
+ * drains would otherwise license a tail as long as the clip.
+ *
+ * 1200ms is ~2.2x the widest single delivery ever measured (550ms) and
+ * ~1.7x the pre-adaptive fixed wait (700ms).
+ *
+ * Whether the burst case is even reachable depends on the transport,
+ * and the two bridges differ:
+ *
+ *   - **Vobiz** (the live campaign transport) applies NO outbound
+ *     backpressure at all — its outbound listener returns void, and it
+ *     queues every frame and paces the pump at real time. The producer
+ *     is therefore never parked, so a large burst cannot accumulate in
+ *     `pending` on this path and the hard bound is never reached.
+ *   - **Plivo** does apply it: `OUTBOUND_HIGH_WATER_FRAMES` 140 (2800ms)
+ *     parks the producer, `OUTBOUND_LOW_WATER_FRAMES` 110 (2200ms)
+ *     releases it. This is the only path a big drained burst can come
+ *     from — and there the queue still holds >=2200ms of audio when the
+ *     producer resumes, which comfortably covers a 1200ms tail, so the
+ *     extra wait costs the caller no dead air.
+ */
+const MAX_IDLE_GAP_MS = 1200;
 
 interface SarvamEnvConfig {
   readonly apiKey: string;
@@ -273,6 +347,28 @@ export class SarvamTextToSpeechProvider implements TextToSpeechProvider {
     let lastFrameAtMs = 0;
     /** Widest gap between consecutive frames seen on THIS request. */
     let widestFrameGapMs = 0;
+    /**
+     * How many real inter-frame gaps have been measured on this
+     * request. `widestFrameGapMs` is only meaningful once this reaches
+     * `MIN_OBSERVED_GAPS_BEFORE_ADAPTING`; before that it is 0 because
+     * nothing has been measured, NOT because the cadence is tight.
+     */
+    let observedGapCount = 0;
+    /**
+     * The vendor's demonstrated DELIVERY QUANTUM: the most audio, in
+     * real-time ms, it has ever handed over in one uninterrupted drain
+     * - i.e. without us having to wait for it.
+     *
+     * This is the evidence the idle budget was missing. Sarvam's frames
+     * carry 138-550ms of audio each (see the constants above), so a
+     * vendor that has just delivered 550ms in one frame must be granted
+     * at least 550ms to produce the next one before silence can be read
+     * as "the utterance ended". Summed per drain pass rather than per
+     * frame, because frames that arrive together and drain back to back
+     * are one delivery as far as cadence is concerned - and they measure
+     * as ~0ms gaps, which is what made the adaptive term blind to them.
+     */
+    let widestDeliveryMs = 0;
 
     try {
       // -- Open, configure, submit, flush ---------------------------
@@ -307,6 +403,12 @@ export class SarvamTextToSpeechProvider implements TextToSpeechProvider {
       for (;;) {
         if (aborted()) return;
 
+        /**
+         * Real-time audio, in ms, handed over during THIS pass. Reset
+         * per pass so it measures one delivery rather than the whole
+         * utterance.
+         */
+        let deliveredThisPassMs = 0;
         while (pending.length > 0) {
           const next = pending.shift();
           if (next === undefined || next.byteLength === 0) continue;
@@ -317,8 +419,12 @@ export class SarvamTextToSpeechProvider implements TextToSpeechProvider {
           const frameAtMs = Date.now();
           if (lastFrameAtMs !== 0) {
             widestFrameGapMs = Math.max(widestFrameGapMs, frameAtMs - lastFrameAtMs);
+            observedGapCount += 1;
           }
           lastFrameAtMs = frameAtMs;
+          // PCM_16 mono: 2 bytes per sample, so bytes / (rate * 2) is
+          // the clip's real-time duration.
+          deliveredThisPassMs += (aligned / (this.config.sampleRateHz * 2)) * 1000;
           if (!loggedFirst) {
             loggedFirst = true;
             // eslint-disable-next-line no-console
@@ -329,21 +435,61 @@ export class SarvamTextToSpeechProvider implements TextToSpeechProvider {
           yield emit(next.subarray(0, aligned), false);
         }
 
+        widestDeliveryMs = Math.max(widestDeliveryMs, deliveredThisPassMs);
+
         if (failure) throw failure;
         if (closed) break;
 
         // Two different waits wearing one name would be a bug. The gap
-        // BETWEEN frames is ~40-70ms, so 700ms of silence means the
-        // utterance ended. The wait for the FIRST frame is a different
-        // quantity entirely — socket handshake plus the vendor starting
-        // synthesis, measured at 500-750ms and worse under load — so
-        // holding it to the inter-frame gap would abandon healthy
-        // requests.
+        // BETWEEN frames is ~40-70ms, so silence well past the vendor's
+        // delivery quantum means the utterance ended. The wait for the
+        // FIRST frame is a different quantity entirely - socket
+        // handshake plus the vendor starting synthesis, measured at
+        // 500-750ms and worse under load - so holding it to the
+        // inter-frame gap would abandon healthy requests.
+        //
+        // -- The three layers, and why each is needed ----------------
+        //
+        // 1. ADAPTIVE. Four times the widest gap this request actually
+        //    showed, floored at `MIN_IDLE_GAP_MS` and capped by the
+        //    configured `SARVAM_STREAM_IDLE_GAP_MS`. This is the term
+        //    that buys back the ~300ms tail at every chunk boundary,
+        //    and it is unchanged - but it is only trusted once
+        //    `MIN_OBSERVED_GAPS_BEFORE_ADAPTING` real gaps have been
+        //    measured. Before that `widestFrameGapMs` is 0 because
+        //    nothing has been observed, and multiplying that by four
+        //    collapsed the budget to the floor in exactly the window
+        //    where the least was known. Until the cadence exists, the
+        //    budget is the configured ceiling - the fixed wait this
+        //    adapter used before the adaptive change.
+        //
+        // 2. DELIVERY-QUANTUM FLOOR. Never conclude the vendor stopped
+        //    in less time than the audio it just delivered in one go.
+        //    Sarvam's frames carry 138-550ms each, so the old 300ms
+        //    floor sat BELOW its own delivery quantum: two 6600-byte
+        //    (413ms) frames followed by one ordinary gap is the audit's
+        //    truncated run, byte for byte. This floor is measured from
+        //    this stream, not configured, so it tracks whatever the
+        //    vendor is actually doing on this request.
+        //
+        // 3. HARD BOUND. `MAX_IDLE_GAP_MS` caps the whole thing, so a
+        //    large burst drained after transport backpressure cannot
+        //    license a tail as long as the clip.
+        //
+        // Layers 1 and 2 are both WIDENINGS of the shipped budget, so
+        // neither can introduce a truncation that did not already
+        // exist; layer 3 is the only narrowing and it sits far above
+        // both the configured ceiling and every delivery measured.
+        const adaptiveBudget =
+          observedGapCount >= MIN_OBSERVED_GAPS_BEFORE_ADAPTING
+            ? Math.min(
+                this.config.streamIdleGapMs,
+                Math.max(MIN_IDLE_GAP_MS, widestFrameGapMs * IDLE_GAP_SAFETY_FACTOR),
+              )
+            : this.config.streamIdleGapMs;
+
         const budget = loggedFirst
-          ? Math.min(
-              this.config.streamIdleGapMs,
-              Math.max(MIN_IDLE_GAP_MS, widestFrameGapMs * IDLE_GAP_SAFETY_FACTOR),
-            )
+          ? Math.min(MAX_IDLE_GAP_MS, Math.max(adaptiveBudget, Math.ceil(widestDeliveryMs)))
           : this.config.streamStartTimeoutMs;
 
         const gotFrame = await new Promise<boolean>((resolve) => {
@@ -360,7 +506,19 @@ export class SarvamTextToSpeechProvider implements TextToSpeechProvider {
         if (!gotFrame) {
           // Once audio has started, silence is this protocol's only
           // available end-of-utterance signal.
-          if (loggedFirst) break;
+          if (loggedFirst) {
+            // Diagnostic only, and the one place a truncation would
+            // show: this line is where the utterance is declared over
+            // on inference rather than on a marker. `budget` against
+            // `delivery` is the safety margin that was actually
+            // applied, so a real-call log makes a premature
+            // termination visible instead of silent.
+            // eslint-disable-next-line no-console
+            console.log(
+              `[TTS:sarvam] idle gap ${budget}ms elapsed after ${sequence} frames - treating utterance as complete (widestGap=${widestFrameGapMs}ms gaps=${observedGapCount} delivery=${Math.round(widestDeliveryMs)}ms)`,
+            );
+            break;
+          }
           throw new Error(
             `Sarvam TTS sent no audio within ${budget}ms for session "${task.sessionId}".`,
           );

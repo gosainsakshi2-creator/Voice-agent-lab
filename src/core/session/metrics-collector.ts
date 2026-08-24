@@ -49,6 +49,12 @@ export interface TurnLatencyInput {
   readonly sttCostUsd: number;
   readonly llmCostUsd: number;
   readonly ttsCostUsd: number;
+  /** OpenAI-reported prompt tokens for this turn's LLM request, when the provider exposed them. */
+  readonly promptTokens: number | undefined;
+  /** Of `promptTokens`, how many were served from the prompt-prefix cache. */
+  readonly cachedPromptTokens: number | undefined;
+  /** Reasoning tokens generated before the first visible content token. */
+  readonly reasoningTokens: number | undefined;
 }
 
 /**
@@ -101,6 +107,13 @@ export class SessionMetricsCollector {
     const llmGenerationMs = positiveOrUndefined(input.llmGenerationMs);
     const ttsSynthesisMs = positiveOrUndefined(input.ttsSynthesisMs);
     const userSpeechMs = positiveOrUndefined(input.userSpeechMs);
+    // Token counts, not latencies — 0 is meaningful (e.g. a genuine
+    // cache miss), so it must survive alongside `undefined` ("not
+    // reported"), not collapse into it. `positiveOrUndefined` already
+    // preserves 0 and only rejects undefined/NaN/negative.
+    const promptTokens = positiveOrUndefined(input.promptTokens);
+    const cachedPromptTokens = positiveOrUndefined(input.cachedPromptTokens);
+    const reasoningTokens = positiveOrUndefined(input.reasoningTokens);
 
     this.turnLatencies.push({
       turnIndex: input.turnIndex,
@@ -111,6 +124,9 @@ export class SessionMetricsCollector {
       ...(llmGenerationMs !== undefined ? { llmGenerationMs } : {}),
       ...(ttsSynthesisMs !== undefined ? { ttsSynthesisMs } : {}),
       ...(userSpeechMs !== undefined ? { userSpeechMs } : {}),
+      ...(promptTokens !== undefined ? { promptTokens } : {}),
+      ...(cachedPromptTokens !== undefined ? { cachedPromptTokens } : {}),
+      ...(reasoningTokens !== undefined ? { reasoningTokens } : {}),
     });
 
     this.costTotals.speechToText += input.sttCostUsd;

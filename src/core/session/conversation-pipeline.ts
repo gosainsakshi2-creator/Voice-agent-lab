@@ -105,6 +105,17 @@ interface ThinkingAndSpeakingResult {
   /** Total synthesis wall-clock across every sentence chunk of the turn. */
   readonly ttsSynthesisMs: number;
   readonly ttsCostUsd: number;
+  /**
+   * OpenAI-reported prompt tokens for this turn's LLM request (distinct
+   * from the character-count `promptTokens` heuristic used for cost
+   * estimation above). Only a streaming provider that reports usage
+   * populates this — see `LlmFinalEvent`.
+   */
+  readonly reportedPromptTokens?: number;
+  /** Of `reportedPromptTokens`, how many were served from the prompt-prefix cache. */
+  readonly cachedPromptTokens?: number;
+  /** Reasoning tokens generated before the first visible content token. */
+  readonly reasoningTokens?: number;
 }
 
 // ------------------------------------------------------------------
@@ -1115,6 +1126,9 @@ export class ConversationPipeline {
           sttCostUsd: turn.sttCostUsd,
           llmCostUsd: result.llmCostUsd,
           ttsCostUsd: result.ttsCostUsd,
+          promptTokens: result.reportedPromptTokens,
+          cachedPromptTokens: result.cachedPromptTokens,
+          reasoningTokens: result.reasoningTokens,
         });
 
         // Last, after everything this turn owns has been committed and
@@ -2421,6 +2435,12 @@ await this.drainPlayback(speakingSignal);
     let ttsBlockedDuringStreamMs = 0;
     /** Wall clock at which the LLM stream finished producing. */
     let llmStreamEndedAtMs: number | undefined;
+    // --- OpenAI usage telemetry, carried through from the final event.
+    // Purely diagnostic: never read to alter this turn's request or
+    // response, only forwarded into `TurnLatencyBreakdown`. ---
+    let reportedPromptTokens: number | undefined;
+    let cachedPromptTokens: number | undefined;
+    let reasoningTokens: number | undefined;
     // Set once contamination is detected mid-stream: stops speaking any
     // further sentences from this turn. See the contamination check
     // below for why this exists — the batch path's isContaminatedOutput
@@ -2515,6 +2535,9 @@ await this.drainPlayback(speakingSignal);
         } else {
           finalText = event.turn.content;
           llmStreamEndedAtMs = Date.now();
+          reportedPromptTokens = event.promptTokens;
+          cachedPromptTokens = event.cachedPromptTokens;
+          reasoningTokens = event.reasoningTokens;
         }
 
         if (contaminated || speakingSignal?.aborted) break;
@@ -2560,6 +2583,9 @@ await this.drainPlayback(speakingSignal);
         ttsMs: ttsFirstChunkMs,
         ttsSynthesisMs,
         ttsCostUsd,
+        ...(reportedPromptTokens !== undefined ? { reportedPromptTokens } : {}),
+        ...(cachedPromptTokens !== undefined ? { cachedPromptTokens } : {}),
+        ...(reasoningTokens !== undefined ? { reasoningTokens } : {}),
       };
     }
 
@@ -2608,6 +2634,9 @@ await this.drainPlayback(speakingSignal);
       ttsMs: ttsFirstChunkMs,
       ttsSynthesisMs,
       ttsCostUsd,
+      ...(reportedPromptTokens !== undefined ? { reportedPromptTokens } : {}),
+      ...(cachedPromptTokens !== undefined ? { cachedPromptTokens } : {}),
+      ...(reasoningTokens !== undefined ? { reasoningTokens } : {}),
     };
   }
 

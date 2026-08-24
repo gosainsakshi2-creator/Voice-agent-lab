@@ -122,7 +122,8 @@ export class OpenAiGptLanguageModelProvider implements LanguageModelProvider {
     let tokenIndex = 0;
     let fullContent = "";
 
-    // ── DIAGNOSTIC ONLY — read by nothing, logged once per stream ──────
+    // ── TELEMETRY — logged once per stream, and forwarded on the final
+    // event for `TurnLatencyBreakdown` (see `LlmFinalEvent`) ──────────
     //
     // Real token counts from OpenAI, so "where is LLM First Token going"
     // can be answered with measurements instead of the character-count
@@ -135,7 +136,7 @@ export class OpenAiGptLanguageModelProvider implements LanguageModelProvider {
     //
     // All four stay `undefined` when the stream is interrupted (barge-in):
     // the usage chunk is the last thing sent, so an aborted stream never
-    // reaches it. That is reported as "n/a", never as 0.
+    // reaches it. That is reported as "n/a"/omitted, never as 0.
     let promptTokens: number | undefined;
     let cachedTokens: number | undefined;
     let completionTokens: number | undefined;
@@ -193,6 +194,9 @@ export class OpenAiGptLanguageModelProvider implements LanguageModelProvider {
       type: "final" as const,
       turn: { role: "assistant" as const, content: fullContent, timestamp: new Date() },
       latencyMs,
+      ...(promptTokens !== undefined ? { promptTokens } : {}),
+      ...(cachedTokens !== undefined ? { cachedPromptTokens: cachedTokens } : {}),
+      ...(reasoningTokens !== undefined ? { reasoningTokens } : {}),
     };
   }
 

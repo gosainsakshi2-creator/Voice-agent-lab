@@ -36,6 +36,17 @@ export interface LlmFinalEvent {
   readonly type: "final";
   readonly turn: ConversationTurn;
   readonly latencyMs: number;
+  /**
+   * OpenAI usage diagnostics, when the provider captured them (absent
+   * if the stream was aborted before its usage chunk arrived, or if
+   * the provider doesn't report usage at all). TELEMETRY ONLY — read
+   * for metrics/logging, never used to alter a request or response.
+   */
+  readonly promptTokens?: number;
+  /** Of `promptTokens`, how many were served from the provider's prompt-prefix cache. */
+  readonly cachedPromptTokens?: number;
+  /** Reasoning tokens generated before the first visible content token, on a reasoning model. */
+  readonly reasoningTokens?: number;
 }
 
 export type LlmStreamEvent = LlmTokenEvent | LlmFinalEvent;

@@ -141,6 +141,18 @@ export interface TurnLatencyBreakdown {
   readonly ttsSynthesisMs?: number;
   /** How long the caller spoke. Useful context; explicitly not a latency. */
   readonly userSpeechMs?: number;
+
+  // --- OpenAI usage telemetry. TELEMETRY ONLY: informs investigation
+  // of `llm` (TTFT), never itself a latency and never summed into
+  // `total`. Absent whenever the provider doesn't report usage, or a
+  // stream was aborted before its usage chunk arrived. ---
+
+  /** OpenAI-reported prompt tokens for this turn's LLM request. */
+  readonly promptTokens?: number;
+  /** Of `promptTokens`, how many were served from the prompt-prefix cache. */
+  readonly cachedPromptTokens?: number;
+  /** Reasoning tokens generated before the first visible content token. */
+  readonly reasoningTokens?: number;
 }
 
 /**

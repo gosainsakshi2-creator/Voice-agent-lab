@@ -351,6 +351,26 @@ function assistantTexts(history: readonly ConversationTurn[]): string[] {
 // heard, then a block long enough that a caller can interrupt the
 // middle of it. Sized so one block is ~5s of audio.
 const OPENING = "Hi Sakshi, this is Rohan from Team FlexiFunnels.";
+/**
+ * PHASE 2 — pause before a caller "carries on" while an earlier reply
+ * is still generating, used by tests A/B/E/F/I below.
+ *
+ * Those tests race a follow-up fragment against a stale reply's
+ * arrival: the fragment must be FED (even unfinished, see
+ * `newerUserTurnWaiting`) before `replyDelayMs` elapses on the earlier
+ * turn, or the stale reply is spoken before there is anything to
+ * supersede it with. It was `1500`, tuned to Phase 1's turn-release
+ * latency (300-600ms for the short turn-1 utterances these tests use).
+ * Phase 2 collapsed that to a single evidenced window
+ * (150-250ms — see `EVIDENCED_CONFIRMATION_SHORT_MS` in
+ * turn-detection.ts), so a turn-1 reply is now ready ~150-350ms
+ * SOONER and `1500` no longer reliably lands before it — it isn't a
+ * race the pipeline is meant to lose, it is a wall-clock constant that
+ * assumed the old latency. Shortened with headroom under the fastest
+ * remaining case (an evidenced-short turn-1: ~150ms release +
+ * `replyDelayMs` 1200ms = ~1350ms).
+ */
+const CARRY_ON_PAUSE_MS = 900;
 const BLOCK_B =
   "Actually, I am calling you with a very interesting invitation. " +
   "We have created Flexi Genie, which helps you build and automate your online business just by chatting with AI. " +
@@ -872,7 +892,7 @@ await test("A — three related utterances become ONE context and ONE answer", a
 
     // The caller's opening thought, released as a turn.
     h.say("I just saw Saurabh sir's ad on Instagram.");
-    await sleep(1500);
+    await sleep(CARRY_ON_PAUSE_MS);
     // They carry on while the model is still generating.
     h.say("I wanted to know whether this is related to FlexiFunnels", {
       isFinal: true,
@@ -931,7 +951,7 @@ await test("B — a newer utterance supersedes the obsolete pending reply", asyn
     await h.waitForReplies(1);
 
     h.say("Is there any fee?");
-    await sleep(1500);
+    await sleep(CARRY_ON_PAUSE_MS);
     h.say("Actually I mean what is the price", { isFinal: true, isSpeechFinal: false });
     await sleep(1200);
     h.say("of the session?", { isFinal: true, isSpeechFinal: true });
@@ -1041,7 +1061,7 @@ await test("E — after a supersession the agent resumes from where it was, not 
     await h.waitForReplies(2);
 
     h.say("Is it hard to use?");
-    await sleep(1500);
+    await sleep(CARRY_ON_PAUSE_MS);
     h.say("I mean do I need to know coding", { isFinal: true, isSpeechFinal: false });
     await sleep(1200);
     h.say("for it?", { isFinal: true, isSpeechFinal: true });
@@ -1091,7 +1111,7 @@ await test("F — a contextual question is answered, not talked over by the scri
     await h.waitForReplies(1);
 
     h.say("Okay tell me more.");
-    await sleep(1500);
+    await sleep(CARRY_ON_PAUSE_MS);
     // The real question arrives while the scripted continuation is
     // still being generated.
     h.say("Actually is there any fee", { isFinal: true, isSpeechFinal: false });
@@ -1192,7 +1212,7 @@ await test("I — a supersession never strands the call: the agent keeps answeri
 
     // Supersede a reply...
     h.say("What is it about?");
-    await sleep(1500);
+    await sleep(CARRY_ON_PAUSE_MS);
     h.say("I mean what is the session about", { isFinal: true, isSpeechFinal: false });
     await sleep(1200);
     h.say("exactly?", { isFinal: true, isSpeechFinal: true });

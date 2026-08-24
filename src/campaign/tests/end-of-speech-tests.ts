@@ -85,6 +85,14 @@ const CONFIRMATION_MS = 300;
 const OPEN_ENDED_CONFIRMATION_MS = 550;
 const CHUNK_BOUNDARY_GRACE_MS = 700;
 const CONTINUATION_GRACE_MS = 800;
+/**
+ * PHASE 2 — once `noteEndOfSpeech` marks `stage = "confirming"` before
+ * arming its window, `emitTurnEnd` releases directly on that timer
+ * instead of re-running the inference confirmation on top of it. See
+ * `EVIDENCED_CONFIRMATION_SHORT_MS` in turn-detection.ts.
+ */
+const EVIDENCED_SHORT_MS = 150;
+const EVIDENCED_LONG_MS = 250;
 
 /** Timer slack: a real `setTimeout` chain can only ever run late. */
 const EARLY = 120;
@@ -182,10 +190,12 @@ await test(
       wordsThenMarker("I am going to attend the session."),
     );
     assert.equal(text, "I am going to attend the session.");
-    // The marker lands mid-silence-window and re-arms to one
-    // confirmation window; `emitTurnEnd` then applies the post-speech
-    // confirmation for this text exactly as it does on the fast path.
-    within(delayMs, CONFIRMATION_MS * 2, "complete thought, endpoint delivered separately");
+    // The marker lands mid-silence-window and `noteEndOfSpeech` marks
+    // `stage = "confirming"` before arming ONE evidenced window — see
+    // `EVIDENCED_CONFIRMATION_SHORT_MS` in turn-detection.ts. Was
+    // CONFIRMATION_MS * 2 (~600ms) before Phase 2 collapsed the double
+    // confirmation into this single LONG-tier window.
+    within(delayMs, EVIDENCED_LONG_MS, "complete thought, endpoint delivered separately");
     assert.ok(
       delayMs < SILENCE_WINDOW_MS,
       `the silence window must no longer be paid once the endpoint is known: measured ${delayMs}ms`,
@@ -222,7 +232,8 @@ await test("A1c. the marker is worth at least 900ms on that turn", async () => {
 await test("A1d. a short endpointed confirmation delivered in two messages releases at once", async () => {
   const { delayMs, text } = await releaseDelayMs(wordsThenMarker("Haan."));
   assert.equal(text, "Haan.");
-  within(delayMs, CONFIRMATION_MS, "short complete turn, endpoint delivered separately");
+  // Was CONFIRMATION_MS (~300ms). Phase 2: EVIDENCED_SHORT_MS.
+  within(delayMs, EVIDENCED_SHORT_MS, "short complete turn, endpoint delivered separately");
 });
 
 // ── A2. What did NOT get faster, and must not ────────────────────

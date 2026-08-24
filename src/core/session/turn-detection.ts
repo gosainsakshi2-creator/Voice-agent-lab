@@ -98,6 +98,52 @@ const MAX_CONTINUATION_GRACES = 2;
  */
 const CONFIRMATION_WINDOW_MS = 300;
 /**
+ * ---------------- Evidence-gated release (PHASE 2) ----------------
+ *
+ * `CONFIRMATION_WINDOW_MS` above is charged when a turn's completeness
+ * has to be INFERRED — the caller went quiet and stayed quiet, so
+ * `emitTurnEnd` waits `CONFIRMATION_WINDOW_MS` on the chance more
+ * speech is already in flight. But two call sites — `feed`'s fast
+ * path and `noteEndOfSpeech`'s release — already hold something
+ * stronger than that inference: the provider's OWN endpointer has
+ * just this moment declared the caller finished
+ * (`lastFinalWasEndpoint`), AND the accumulated text independently
+ * reads as a finished thought (`isCompleteThought`). Two agreeing
+ * signals, not a guess.
+ *
+ * Before this, both call sites armed `CONFIRMATION_WINDOW_MS` and then
+ * left `stage` at `"silence"` — so when that timer fired, `emitTurnEnd`
+ * read it as "the silence window just expired" and ran the INFERENCE
+ * confirmation a SECOND time on the same text. For a short turn the
+ * second pass returns 0 (harmless). For anything longer than
+ * `SHORT_COMPLETE_TURN_MAX_WORDS` it returns another
+ * `CONFIRMATION_WINDOW_MS` — so a long, cleanly-endpointed sentence
+ * paid the confirmation window TWICE (~600ms) for evidence that was
+ * already conclusive after the first ~300ms. That double payment,
+ * not the window's size, was the remaining gap between this detector
+ * and the ~150–250ms an evidenced release can safely target.
+ *
+ * The fix is not a second, shorter timeout bolted on top: it is
+ * marking `stage = "confirming"` at the SAME two call sites before
+ * arming the (now single) window, so `emitTurnEnd` recognises its own
+ * fast-lane timer on the way back in and releases directly instead of
+ * re-deriving a confirmation it already granted. Word count still
+ * tiers the ONE window that remains — short/short-question keeps the
+ * least possible hold, everything else gets a little more — exactly
+ * as `confirmationWindowMs` already tiers the inference-based window.
+ *
+ * Every OTHER hold in this file — the adaptive silence window, both
+ * continuation graces, the hold-phrase grace, the chunk-boundary
+ * grace, the pending-interim re-wait, and `CONFIRMATION_WINDOW_MS`
+ * itself for text that reaches confirmation WITHOUT this fresh
+ * evidence — is untouched. This only ever shortens the SINGLE class
+ * both call sites already required: complete, endpointed, no
+ * outstanding interim.
+ */
+const EVIDENCED_CONFIRMATION_SHORT_MS = 150;
+/** The longer of the two evidence-gated tiers — see the block above. */
+const EVIDENCED_CONFIRMATION_LONG_MS = 250;
+/**
  * A turn with no sentence-final punctuation is the likelier mid-thought
  * pause, so it gets the longer hold. Still bounded — this is a
  * confirmation, not another silence window.
@@ -563,8 +609,18 @@ export class AdaptiveTurnDetector {
       // So a caller pausing mid-thought is held for the full window
       // exactly as before; only a thought Deepgram and the text BOTH
       // agree is finished is released on the confirmation window alone.
+      //
+      // PHASE 2: `stage` is set to `"confirming"` here, not left at
+      // `"silence"`. Two agreeing signals — the provider's own
+      // endpointer AND the text reading as finished — are already
+      // conclusive, so the window armed below is the ONE confirmation
+      // this turn pays. Leaving `stage` at `"silence"` was what made
+      // `emitTurnEnd` mistake this timer's own expiry for "the silence
+      // window just expired" and re-run the inference confirmation on
+      // top of it — see the block above `EVIDENCED_CONFIRMATION_SHORT_MS`.
       if (this.lastFinalWasEndpoint && !this.pendingInterim && this.isCompleteThought()) {
-        this.rearmTimer(CONFIRMATION_WINDOW_MS);
+        this.stage = "confirming";
+        this.rearmTimer(this.evidencedConfirmationWindowMs(this.pendingFinalText));
         return;
       }
     }
@@ -663,7 +719,14 @@ export class AdaptiveTurnDetector {
     }
 
     if (this.pendingInterim || !this.isCompleteThought()) return;
-    this.rearmTimer(CONFIRMATION_WINDOW_MS);
+    // PHASE 2: same reasoning as the `feed` fast path above — the
+    // marker just arriving IS the endpoint claim, and the text already
+    // reads as finished, so `stage` is marked `"confirming"` rather
+    // than left at `"silence"`. Without it `emitTurnEnd` would treat
+    // this timer's own expiry as a fresh silence-window timeout and
+    // re-run `confirmationWindowMs` on top of the window armed here.
+    this.stage = "confirming";
+    this.rearmTimer(this.evidencedConfirmationWindowMs(this.pendingFinalText));
   }
 
   /** Force an immediate end-of-turn (e.g. the caller detected hard silence via another signal). */
@@ -897,7 +960,38 @@ export class AdaptiveTurnDetector {
     // is a finished question. "What should I do now?" answers at the
     // same speed it always has.
     if (QUESTION_ENDING.test(text) && wordCount <= SHORT_QUESTION_MAX_WORDS) return 0;
-    return endsCompletely ? CONFIRMATION_WINDOW_MS : OPEN_ENDED_CONFIRMATION_WINDOW_MS;
+    if (!endsCompletely) return OPEN_ENDED_CONFIRMATION_WINDOW_MS;
+    // PHASE 2: this is the chunk-boundary-grace COLLAPSE path (see
+    // `noteEndOfSpeech`'s `chunkBoundaryGraceArmed` branch) landing on
+    // a long, complete turn — `lastFinalWasEndpoint` is only true here
+    // because the provider's endpoint claim just arrived, the same
+    // fresh evidence the two direct call sites act on. Reuse their
+    // tiering rather than the plain inferred wait. When no such claim
+    // has EVER arrived for this turn (chunk-boundary graces exhausted,
+    // background noise, no marker) `lastFinalWasEndpoint` is still
+    // false and the original inferred `CONFIRMATION_WINDOW_MS` stands —
+    // unchanged, because there is no fresh evidence to act on.
+    return this.lastFinalWasEndpoint
+      ? this.evidencedConfirmationWindowMs(text)
+      : CONFIRMATION_WINDOW_MS;
+  }
+
+  /**
+   * The SINGLE confirmation window for a turn whose completeness AND
+   * end-of-speech are BOTH freshly evidenced — see the block above
+   * `EVIDENCED_CONFIRMATION_SHORT_MS`. Both call sites already require
+   * `isCompleteThought()` and `!pendingInterim` before reaching this;
+   * word count here only tunes how much of that already-qualified
+   * window is granted, exactly as `confirmationWindowMs` tiers its own
+   * inferred window by the same two constants.
+   */
+  private evidencedConfirmationWindowMs(text: string): number {
+    const wordCount = text.split(/\s+/).length;
+    const shortComplete = wordCount <= SHORT_COMPLETE_TURN_MAX_WORDS;
+    const shortQuestion = QUESTION_ENDING.test(text) && wordCount <= SHORT_QUESTION_MAX_WORDS;
+    return shortComplete || shortQuestion
+      ? EVIDENCED_CONFIRMATION_SHORT_MS
+      : EVIDENCED_CONFIRMATION_LONG_MS;
   }
 
   /**

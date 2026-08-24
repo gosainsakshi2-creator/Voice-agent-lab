@@ -69,6 +69,20 @@ const OPEN_ENDED_CONFIRMATION_MS = 550;
 const CHUNK_BOUNDARY_GRACE_MS = 700;
 const CONTINUATION_GRACE_MS = 800;
 const HOLD_GRACE_MS = 1_200;
+/**
+ * PHASE 2 — the tiered window for a turn whose completeness AND
+ * end-of-speech are BOTH freshly evidenced (the provider's own
+ * endpointer just fired, and the text independently reads as
+ * finished). Before this phase, both direct call sites armed
+ * `CONFIRMATION_MS` and left `stage` at `"silence"`, so `emitTurnEnd`
+ * mistook that timer's own expiry for a fresh silence-window timeout
+ * and re-ran the inference confirmation on top of it — 0 extra for a
+ * short turn, but another full `CONFIRMATION_MS` for anything longer,
+ * i.e. `CONFIRMATION_MS * 2` (~600ms) for a long complete sentence.
+ * See `EVIDENCED_CONFIRMATION_SHORT_MS` in turn-detection.ts.
+ */
+const EVIDENCED_SHORT_MS = 150;
+const EVIDENCED_LONG_MS = 250;
 
 interface FedSegment {
   readonly text: string;
@@ -145,8 +159,13 @@ await test(
       { text: "Yes I would like to attend the session today.", isSpeechFinal: true },
     ]);
     assert.equal(text, "Yes I would like to attend the session today.");
-    // Was SILENCE_WINDOW_MS + CONFIRMATION_MS (~1400ms).
-    within(delayMs, CONFIRMATION_MS * 2, "long complete endpointed turn");
+    // Was SILENCE_WINDOW_MS + CONFIRMATION_MS (~1400ms) before Phase 1,
+    // then CONFIRMATION_MS * 2 (~600ms) under Phase 1: the fast path
+    // armed one CONFIRMATION_MS window but left `stage` at `"silence"`,
+    // so `emitTurnEnd` paid a second one on top for any turn longer
+    // than SHORT_COMPLETE_TURN_MAX_WORDS. Phase 2 collapses that into
+    // the single EVIDENCED_LONG_MS window — see turn-detection.ts.
+    within(delayMs, EVIDENCED_LONG_MS, "long complete endpointed turn");
     assert.ok(
       delayMs < SILENCE_WINDOW_MS,
       `must no longer pay a full silence window: measured ${delayMs}ms`,
@@ -158,7 +177,8 @@ await test("an endpointed complete QUESTION releases without a silence window", 
   const { delayMs } = await releaseDelayMs([
     { text: "How do I join the session?", isSpeechFinal: true },
   ]);
-  within(delayMs, CONFIRMATION_MS, "short endpointed question");
+  // Was CONFIRMATION_MS (~300ms). Phase 2: EVIDENCED_SHORT_MS.
+  within(delayMs, EVIDENCED_SHORT_MS, "short endpointed question");
 });
 
 await test(
@@ -173,7 +193,8 @@ await test(
       { text: "What exactly is this event about?", isSpeechFinal: true },
     ]);
     assert.equal(text, "What exactly is this event about?");
-    within(delayMs, CONFIRMATION_MS, "question ending on a HARD continuation word");
+    // Was CONFIRMATION_MS (~300ms). Phase 2: EVIDENCED_SHORT_MS.
+    within(delayMs, EVIDENCED_SHORT_MS, "question ending on a HARD continuation word");
   },
 );
 
@@ -192,9 +213,13 @@ await test(
   },
 );
 
-await test("a short endpointed confirmation keeps exactly the latency it already had", async () => {
+await test("a short endpointed confirmation is now the tightest evidenced window", async () => {
+  // Was CONFIRMATION_MS (~300ms) under Phase 1. Phase 2:
+  // EVIDENCED_SHORT_MS — the shortest hold this detector ever grants,
+  // and only for a turn that is both endpointed and grammatically
+  // complete.
   const { delayMs } = await releaseDelayMs([{ text: "Haan.", isSpeechFinal: true }]);
-  within(delayMs, CONFIRMATION_MS, "short complete endpointed turn");
+  within(delayMs, EVIDENCED_SHORT_MS, "short complete endpointed turn");
 });
 
 // ── A2. What did NOT get faster, and must not ────────────────────
@@ -286,6 +311,67 @@ await test("a hold phrase is still given its longer grace, not released", async 
     `a caller who asked for a moment must get one: measured ${delayMs}ms`,
   );
 });
+
+// ═════════════════════════════════════════════════════════════════
+section("A3. PHASE 2 — more evidenced classes, and the pause protection they must not lose");
+
+await test("a short evidenced 'yes' releases on the short evidenced window", async () => {
+  const { delayMs, text } = await releaseDelayMs([{ text: "Yes.", isSpeechFinal: true }]);
+  assert.equal(text, "Yes.");
+  within(delayMs, EVIDENCED_SHORT_MS, "short evidenced affirmative");
+});
+
+await test("a short evidenced 'no' releases on the short evidenced window", async () => {
+  const { delayMs, text } = await releaseDelayMs([{ text: "No.", isSpeechFinal: true }]);
+  assert.equal(text, "No.");
+  within(delayMs, EVIDENCED_SHORT_MS, "short evidenced negation");
+});
+
+await test(
+  "a LONG evidenced question (more than SHORT_QUESTION_MAX_WORDS) gets the LONG tier, not the short one",
+  async () => {
+    const { delayMs, text } = await releaseDelayMs([
+      {
+        text: "Could you please tell me exactly what time the workshop is starting tomorrow?",
+        isSpeechFinal: true,
+      },
+    ]);
+    assert.equal(text, "Could you please tell me exactly what time the workshop is starting tomorrow?");
+    // 12 words > SHORT_QUESTION_MAX_WORDS (8): must land on the LONG
+    // tier, not fall through to the short one word count alone would
+    // suggest for any other question.
+    within(delayMs, EVIDENCED_LONG_MS, "long evidenced question");
+  },
+);
+
+await test(
+  "a LONG ANSWER WITH AN INTERNAL PAUSE keeps its continuation grace, then releases on the LONG evidenced window",
+  async () => {
+    // First half trails on "and" (a HARD continuation word) with NO
+    // endpoint claim yet — this must still be read as mid-thought and
+    // given the full continuation grace, exactly as before Phase 2.
+    const { delayMs, text } = await releaseDelayMs([
+      { text: "I wanted to ask about the pricing and", isSpeechFinal: false },
+      // The pause: fed well inside CONTINUATION_GRACE_MS, so the grace
+      // — not a fresh silence window — is what carries the turn across
+      // it. If Phase 2 had weakened this, the turn would have already
+      // released on the first half alone.
+      {
+        text: "also whether there is a discount for early registration.",
+        isSpeechFinal: true,
+        afterMs: 400,
+      },
+    ]);
+    assert.equal(
+      text,
+      "I wanted to ask about the pricing and also whether there is a discount for early registration.",
+    );
+    // Measured from the SECOND segment: the pause already cost its own
+    // grace before this was fed, so what remains is the ordinary long
+    // evidenced window — not stacked on top of anything.
+    within(delayMs, EVIDENCED_LONG_MS, "long answer, resumed after an internal pause");
+  },
+);
 
 // ═════════════════════════════════════════════════════════════════
 section("B. BACKCHANNEL VOCABULARY — what may be ignored while the agent is speaking");

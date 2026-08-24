@@ -31,6 +31,7 @@
     "test:barge-in": "tsx src/campaign/tests/barge-in-accuracy-tests.ts",
     "test:stt-clock": "tsx src/campaign/tests/stt-clock-reset-tests.ts",
     "test:end-of-speech": "tsx src/campaign/tests/end-of-speech-tests.ts",
+    "test:wire-trace": "tsx src/campaign/tests/wire-trace-tests.ts",
     "test:agent-hangup": "tsx src/campaign/tests/agent-hangup-tests.ts",
     "test:attention": "tsx src/campaign/tests/attention-check-tests.ts",
     "test:tts-streaming": "tsx src/campaign/tests/tts-streaming-latency-tests.ts",

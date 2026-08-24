@@ -427,6 +427,25 @@ export class AdaptiveTurnDetector {
   private lastFinalWasEndpoint = true;
   /** Consecutive waits spent on a chunk-boundary final for this turn. */
   private chunkBoundaryGraces = 0;
+  /**
+   * True while the CHUNK-BOUNDARY GRACE is the currently-armed window —
+   * as opposed to the adaptive silence window, a continuation grace, a
+   * hold grace, or the post-speech confirmation.
+   *
+   * A dedicated flag rather than a third `stage` value, for two reasons.
+   * `stage` is read by `emitTurnEnd` to decide whether the post-speech
+   * confirmation is still owed, so adding a value there would silently
+   * change the timing of turns that have nothing to do with this. And
+   * inferring it from `chunkBoundaryGraces > 0` would be wrong the
+   * moment `emitTurnEnd`'s branch order changed — a continuation grace
+   * armed after a chunk-boundary grace would be indistinguishable from
+   * the grace itself, and `noteEndOfSpeech` would then cut off a caller
+   * who is mid-thought. See the collapse site in `noteEndOfSpeech`.
+   *
+   * Set only where the grace is armed; cleared by `rearmTimer` (so any
+   * other window clears it by construction) and by `reset`.
+   */
+  private chunkBoundaryGraceArmed = false;
   private readonly listeners = new Set<(event: TurnDetectionEvent) => void>();
   /**
    * A turn that ended while nobody was subscribed. The pipeline only
@@ -610,6 +629,39 @@ export class AdaptiveTurnDetector {
     // in-flight-speech check this detector exists to apply, and there
     // is nothing to gain: it is 300ms.
     if (this.stage !== "silence") return;
+
+    // ── A LATE claim, arriving inside the chunk-boundary grace ───────
+    //
+    // That grace exists for exactly one reason, stated where it is
+    // spent: Deepgram had NOT declared end-of-speech for the words we
+    // hold, so the grace buys one bounded window for the declaration to
+    // arrive. This call IS the declaration arriving. Sitting out the
+    // remainder waits for something already in hand.
+    //
+    // Measured, and this is why the branch is not merely tidiness: on a
+    // telephone line carrying comfort noise, Deepgram withholds
+    // `speech_final` from the words and delivers the endpoint 2.3-2.4s
+    // later in its own message — which lands mid-grace or later. Before
+    // this branch, an endpointed turn on a noisy line still paid the
+    // whole 700ms, and an UNPUNCTUATED one paid it for nothing at all:
+    // `isCompleteThought()` is false there, so the two lines below
+    // returned without touching the armed timer.
+    //
+    // `rearmTimer(0)` rather than a shortened window, deliberately: it
+    // hands the decision straight back to `emitTurnEnd`, which then runs
+    // every guard it runs today — filler, mid-thought continuation, hold
+    // phrase, the outstanding-interim re-wait — and applies the
+    // post-speech confirmation window for this text. So a caller who is
+    // actually mid-thought is still held (their text fails
+    // `looksIncomplete` and takes a continuation grace instead), and the
+    // in-flight-speech check is still applied. Only the dead wait is
+    // removed. `lastFinalWasEndpoint`, set above, is what stops
+    // `emitTurnEnd` taking a SECOND grace on the way through.
+    if (this.chunkBoundaryGraceArmed) {
+      this.rearmTimer(0);
+      return;
+    }
+
     if (this.pendingInterim || !this.isCompleteThought()) return;
     this.rearmTimer(CONFIRMATION_WINDOW_MS);
   }
@@ -636,6 +688,7 @@ export class AdaptiveTurnDetector {
     this.pendingInterim = false;
     this.interimConfirmations = 0;
     this.chunkBoundaryGraces = 0;
+    this.chunkBoundaryGraceArmed = false;
     // Back to the permissive default: the next turn has produced no
     // finals yet, so nothing is known about its endpointing.
     this.lastFinalWasEndpoint = true;
@@ -685,6 +738,11 @@ export class AdaptiveTurnDetector {
 
   private rearmTimer(delayMs: number = this.silenceTimeoutMs): void {
     this.clearTimer();
+    // Whatever window is being armed, it is not the chunk-boundary grace
+    // unless the grace site says so immediately after this returns. Doing
+    // it here rather than at each call site means a future window added
+    // to `emitTurnEnd` cannot accidentally inherit the flag.
+    this.chunkBoundaryGraceArmed = false;
     this.timer = setTimeout(() => this.emitTurnEnd(), delayMs);
   }
 
@@ -751,6 +809,10 @@ export class AdaptiveTurnDetector {
         this.chunkBoundaryGraces += 1;
         this.stage = "silence";
         this.rearmTimer(CHUNK_BOUNDARY_GRACE_MS);
+        // Marks THIS window as the grace, so a late endpoint claim can
+        // abandon it (see `noteEndOfSpeech`). Must follow `rearmTimer`,
+        // which clears the flag.
+        this.chunkBoundaryGraceArmed = true;
         return;
       }
 

@@ -10,6 +10,7 @@
  */
 import type { StreamingTranscriptionRequest } from "../../types/streaming.types";
 import { DeepgramClient } from "@deepgram/sdk";
+import type { Deepgram } from "@deepgram/sdk";
 import { SPEECH_TO_TEXT_PROVIDER_IDS } from "../../constants/providers.constants";
 import { LANGUAGE_METADATA } from "../../constants/languages.constants";
 import { ProviderCategory, SupportedLanguage } from "../../types/enums";
@@ -53,6 +54,121 @@ function toDeepgramEncoding(encoding: TranscriptionRequest["audio"]["encoding"])
     case "OPUS":
       return "opus";
   }
+}
+
+/**
+ * Every message shape the live socket can deliver. The SDK types this as
+ * a union discriminated on `type`, so a handler that only ever narrowed
+ * with `type !== "Results"` was silently discarding two of the four.
+ */
+export type DeepgramLiveMessage =
+  | Deepgram.listen.ListenV1Results
+  | Deepgram.listen.ListenV1Metadata
+  | Deepgram.listen.ListenV1UtteranceEnd
+  | Deepgram.listen.ListenV1SpeechStarted;
+
+/**
+ * The whole of the live socket's message -> `TranscriptSegment` mapping,
+ * as one pure function. `null` means "forward nothing".
+ *
+ * EXPORTED for the same reason `isBareAcknowledgement` and `unspokenTail`
+ * are: the boundary IS the safety case. Three of the four branches here
+ * are decisions to forward *nothing* or to forward a signal that must
+ * never be mistaken for speech, and a test has to be able to assert both
+ * sides of each one without opening a socket. It is pure — no queue, no
+ * logging, no clock — so `transcribeStream` below is left doing only
+ * transport.
+ *
+ * The four cases, and why each is what it is:
+ *
+ *   1. `UtteranceEnd` — Deepgram's WORD-TIMING end-of-utterance claim
+ *      (see `utterance_end_ms` above). Emitted as an end-of-speech
+ *      MARKER: the SAME shape the empty `speech_final` message already
+ *      produces, so nothing downstream has to learn a second one. The
+ *      turn detector consumes exactly one marker type and the pipeline
+ *      routes it to exactly one method.
+ *   2. `SpeechStarted` — from `vad_events`. Dropped. It is a claim about
+ *      speech STARTING, and the only thing that would consume it is
+ *      barge-in, which has its own corroborated energy gate and is
+ *      deliberately not touched here. Forwarding it would put a
+ *      text-less segment into the turn detector's `feed`.
+ *   3. a `Results` with no transcript — dropped, UNLESS it is
+ *      `is_final && speech_final`, which is the endpoint arriving on its
+ *      own after the words (the §0c case). Then it is the same marker.
+ *   4. a `Results` with a transcript — a real segment, carrying
+ *      `is_final` and `speech_final` as the two SEPARATE claims they
+ *      are.
+ *
+ * A marker carries no text, no confidence and no word timings, and every
+ * one of those absences is load-bearing: `endedAtMs` of 0 would be read
+ * as an enormous inter-final gap and push the detector's adaptive
+ * threshold to its ceiling for the rest of the call, which is why the
+ * pipeline routes a marker before the STT stream clock ever sees it.
+ */
+export function transcriptEventFromMessage(
+  message: DeepgramLiveMessage,
+  language: SupportedLanguage,
+): TranscriptSegment | null {
+  const endOfSpeechMarker = (): TranscriptSegment => ({
+    text: "",
+    isFinal: true,
+    isSpeechFinal: true,
+    isEndOfSpeechMarker: true,
+    confidence: 0,
+    language,
+    startedAtMs: 0,
+    endedAtMs: 0,
+  });
+
+  if (message.type === "UtteranceEnd") return endOfSpeechMarker();
+  if (message.type !== "Results") return null;
+
+  const alternative = message.channel?.alternatives?.[0];
+
+  // ── The end-of-speech claim can arrive on its own ────────────────
+  //
+  // `speech_final: true` is set on whichever Results message Deepgram's
+  // endpointer fires on. When it has already returned every word of the
+  // utterance in an earlier `is_final` message, that message carries an
+  // EMPTY transcript: the words and the "they have stopped talking"
+  // claim arrive SEPARATELY.
+  //
+  // Filtering on transcript text (which is correct for interim noise)
+  // therefore silently discarded the endpoint. Downstream,
+  // `isSpeechFinal` then stayed false for the whole turn, so
+  // `AdaptiveTurnDetector` treated the caller's finished sentence as a
+  // mid-utterance chunk boundary and paid a full adaptive silence window
+  // (1100-1600ms) plus its chunk-boundary grace (700ms) instead of the
+  // single confirmation window an endpointed turn gets.
+  //
+  // Recognition parameters are untouched by this branch — it reads a
+  // field the socket was already delivering.
+  if (!alternative?.transcript?.trim()) {
+    if ((message.speech_final ?? false) && (message.is_final ?? false)) return endOfSpeechMarker();
+    return null;
+  }
+
+  const words = alternative.words ?? [];
+  const firstWord = words[0];
+  const lastWord = words.at(-1);
+
+  return {
+    text: alternative.transcript,
+    isFinal: message.is_final ?? false,
+    // `is_final` and `speech_final` are DIFFERENT claims and only the
+    // second one is about the caller having stopped talking:
+    //   is_final     — "I will not revise these words" (chunk boundary,
+    //                  emitted repeatedly mid-utterance)
+    //   speech_final — "my endpointer detected end of speech"
+    // Passing only `is_final` downstream left the turn detector unable
+    // to tell a mid-sentence chunk boundary from an actual endpoint, so
+    // every chunk boundary started a full end-of-turn countdown.
+    isSpeechFinal: message.speech_final ?? false,
+    confidence: alternative.confidence ?? 0,
+    language,
+    startedAtMs: firstWord ? (firstWord.start ?? 0) * 1000 : 0,
+    endedAtMs: lastWord ? (lastWord.end ?? 0) * 1000 : 0,
+  };
 }
 
 export class DeepgramSpeechToTextProvider implements SpeechToTextProvider {
@@ -166,6 +282,46 @@ const connection = await this.client.listen.v1.connect({
   // gap observations closer to real inter-utterance pauses without
   // adding meaningful latency.
   endpointing: "400",
+  // ── Why a SECOND end-of-speech signal is requested ─────────────────
+  //
+  // `endpointing` above is VAD-driven, and a telephone line that carries
+  // comfort noise instead of digital silence defeats the VAD. Measured
+  // against the live socket on these exact parameters, holding the
+  // utterance constant and changing ONLY the trailing audio:
+  //
+  //   pure digital silence   speech_final ON the words,   lag  878ms
+  //   low-level line noise   speech_final ABSENT,         lag 1740ms
+  //                          -> arrives 2289ms later, in its own
+  //                             empty message
+  //   faint background voice speech_final ABSENT entirely
+  //
+  // So on a real call the words settle as a CHUNK BOUNDARY, the turn
+  // detector spends its full adaptive silence window AND its 700ms
+  // chunk-boundary grace waiting for a claim that is still in flight,
+  // and releases the turn BEFORE it lands. Replayed through the real
+  // detector that is 3742ms of stt-to-release against 1375ms on a clean
+  // line, and the separately-delivered `speech_final` arrived 146ms
+  // AFTER the release — too late to be worth anything.
+  //
+  // `utterance_end_ms` is Deepgram's WORD-TIMING-based end-of-utterance
+  // signal: it fires when no new word has been transcribed for this long
+  // after the last one, so it does not depend on the VAD and survives
+  // exactly the noise that suppresses `speech_final`. It is delivered as
+  // a separate `UtteranceEnd` message, handled below.
+  //
+  // It SUPPLEMENTS `speech_final` and replaces nothing — on a clean line
+  // the endpoint still rides along with the words and the turn has
+  // released before this ever arrives (measured +1110ms), so this is
+  // inert there. 1000ms is the documented minimum, and it is
+  // deliberately 2.5x MORE conservative than the 400ms `endpointing`
+  // window this file already trusts, so it cannot cut a caller off
+  // anywhere `endpointing` would not have.
+  utterance_end_ms: "1000",
+  // Requested alongside it, per Deepgram's documented pairing. Its
+  // `SpeechStarted` messages are DELIBERATELY IGNORED (see
+  // `transcriptEventFromMessage`): barge-in is driven by the transport's
+  // corroborated near-end energy gate and is not touched by this change.
+  vad_events: "true",
 });
 
 connection.connect();
@@ -218,78 +374,27 @@ const keepAlive: ReturnType<typeof setInterval> = setInterval(() => {
 }, KEEPALIVE_INTERVAL_MS);
 
 connection.on("message", (message) => {
-  if (message.type !== "Results") return;
+  // The whole mapping — including which message types are dropped — is
+  // `transcriptEventFromMessage`, so it can be asserted without a socket.
+  const event = transcriptEventFromMessage(message, request.language);
+  if (event === null) return;
 
-  const alternative = message.channel?.alternatives?.[0];
-
-  // ── The end-of-speech claim can arrive on its own ────────────────
-  //
-  // `speech_final: true` is set on whichever Results message Deepgram's
-  // endpointer fires on. When it has already returned every word of the
-  // utterance in an earlier `is_final` message, that message carries an
-  // EMPTY transcript: the words and the "they have stopped talking"
-  // claim arrive SEPARATELY.
-  //
-  // Filtering on transcript text (which is what the line below does,
-  // and correctly, for interim noise) therefore silently discarded the
-  // endpoint. Downstream, `isSpeechFinal` then stayed false for the
-  // whole turn, so `AdaptiveTurnDetector` treated the caller's finished
-  // sentence as a mid-utterance chunk boundary and paid a full adaptive
-  // silence window (1100-1600ms) plus its chunk-boundary grace (700ms)
-  // instead of the single confirmation window an endpointed turn gets.
-  // That is ~1.0-1.5s added to `stt-to-release` on every turn it
-  // happens on.
-  //
-  // Forwarded as a MARKER, never as a transcript: no text, no word
-  // timings, and flagged so no consumer can mistake it for speech.
-  // Recognition parameters are untouched — this reads a field the
-  // socket was already delivering.
-  if (!alternative?.transcript?.trim()) {
-    if ((message.speech_final ?? false) && (message.is_final ?? false)) {
-      queue.push({
-        text: "",
-        isFinal: true,
-        isSpeechFinal: true,
-        isEndOfSpeechMarker: true,
-        confidence: 0,
-        language: request.language,
-        startedAtMs: 0,
-        endedAtMs: 0,
-      });
-    }
-    return;
+  if (event.isEndOfSpeechMarker === true) {
+    // An END-OF-SPEECH claim about words already delivered, from either
+    // `UtteranceEnd` (word timings) or an empty `speech_final` (VAD). It
+    // is not a transcript and is never logged as one.
+    console.log("[Deepgram] End of speech (type:", message.type, ")");
+  } else {
+    console.log(
+      "[Deepgram] Transcript:",
+      event.text,
+      "Final:",
+      event.isFinal,
+      "SpeechFinal:",
+      event.isSpeechFinal,
+    );
   }
-
-  const words = alternative.words ?? [];
-    const firstWord = words[0];
-    const lastWord = words.at(-1);
-    const segment: TranscriptSegment = {
-    text: alternative.transcript,
-    isFinal: message.is_final ?? false,
-    // `is_final` and `speech_final` are DIFFERENT claims and only the
-    // second one is about the caller having stopped talking:
-    //   is_final     — "I will not revise these words" (chunk boundary,
-    //                  emitted repeatedly mid-utterance)
-    //   speech_final — "my endpointer detected end of speech"
-    // Passing only `is_final` downstream left the turn detector unable
-    // to tell a mid-sentence chunk boundary from an actual endpoint, so
-    // every chunk boundary started a full end-of-turn countdown.
-    isSpeechFinal: message.speech_final ?? false,
-    confidence: alternative.confidence ?? 0,
-    language: request.language,
-
-    startedAtMs: firstWord ? (firstWord.start ?? 0) * 1000 : 0,
-    endedAtMs: lastWord ? (lastWord.end ?? 0) * 1000 : 0,
-  };
-console.log(
-  "[Deepgram] Transcript:",
-  segment.text,
-  "Final:",
-  segment.isFinal,
-  "SpeechFinal:",
-  segment.isSpeechFinal,
-);
-  queue.push(segment);
+  queue.push(event);
 });                          
 void (async () => {
   let sentFrames = 0;

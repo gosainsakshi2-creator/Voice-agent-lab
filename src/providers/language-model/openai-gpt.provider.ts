@@ -197,6 +197,7 @@ export class OpenAiGptLanguageModelProvider implements LanguageModelProvider {
       ...(promptTokens !== undefined ? { promptTokens } : {}),
       ...(cachedTokens !== undefined ? { cachedPromptTokens: cachedTokens } : {}),
       ...(reasoningTokens !== undefined ? { reasoningTokens } : {}),
+      ...(completionTokens !== undefined ? { completionTokens } : {}),
     };
   }
 

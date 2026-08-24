@@ -47,6 +47,11 @@ export interface LlmFinalEvent {
   readonly cachedPromptTokens?: number;
   /** Reasoning tokens generated before the first visible content token, on a reasoning model. */
   readonly reasoningTokens?: number;
+  /**
+   * FIX #7A — completion tokens for the reply, from the same usage
+   * chunk as `promptTokens`/`reasoningTokens` above. TELEMETRY ONLY.
+   */
+  readonly completionTokens?: number;
 }
 
 export type LlmStreamEvent = LlmTokenEvent | LlmFinalEvent;

@@ -91,6 +91,17 @@ interface AcquiredTurn {
   /** Wall clock at which the caller's audio actually ended, back-dated by the recognition lag. */
   readonly userSpeechEndedAtMs: number | undefined;
   readonly sttCostUsd: number;
+  /**
+   * FIX #7A — wall clock at which the turn detector's `emitTurnEnd`
+   * actually ran, captured at the top of the `onTurnEnd` listener it
+   * calls synchronously (so no measurable gap from the real event).
+   * Used as this turn's `TurnTimer` t0 instead of a fresh `Date.now()`
+   * taken a microtask later in the main loop.
+   */
+  readonly turnReleasedAtMs: number;
+  /** FIX #7A — arrival time of the Deepgram evidence that ended this turn, if it was directly observed (see `lastEndpointEvidenceAtMs`). */
+  readonly endpointEvidenceAtMs: number | undefined;
+  readonly endpointEvidenceKind: "utterance_end" | "speech_final" | undefined;
 }
 
 interface ThinkingAndSpeakingResult {
@@ -116,6 +127,15 @@ interface ThinkingAndSpeakingResult {
   readonly cachedPromptTokens?: number;
   /** Reasoning tokens generated before the first visible content token. */
   readonly reasoningTokens?: number;
+  /**
+   * FIX #7A — OpenAI-reported completion tokens for this turn's reply,
+   * when the provider supplied them (see `LlmFinalEvent.completionTokens`).
+   * Telemetry only, and a real measurement rather than the
+   * character-count heuristic `estimateTokenCount` falls back to.
+   */
+  readonly reportedCompletionTokens?: number;
+  /** FIX #7A — number of sentence-level TTS invocations this turn produced (1 on the non-streaming LLM path). Telemetry only. */
+  readonly ttsChunkCount: number;
 }
 
 // ------------------------------------------------------------------
@@ -629,17 +649,31 @@ const MAX_PLAUSIBLE_STT_LAG_MS = 10_000;
  * the caller hears it one bridge pre-roll (~100ms) later.
  */
 class TurnTimer {
-  private readonly startedAt = Date.now();
+  private readonly startedAt: number;
   private readonly marks: string[] = [];
+  /** Same instants as `marks`, keyed by stage, as absolute wall clock — lets `printLatencyBreakdown` compute a delta between any two named stages instead of only "since turn start". */
+  private readonly absoluteMarks = new Map<string, number>();
 
   constructor(
     private readonly sessionId: string,
     private readonly label: string,
-  ) {}
+    /**
+     * Overrides the timer's t0. Used for a normal/attention turn so
+     * "elapsed since start" is elapsed since the ACTUAL turn release
+     * (`AcquiredTurn.turnReleasedAtMs`) rather than since this object
+     * happened to be constructed a microtask or two later. Omitted by
+     * the greeting/resume timers, which have no such external t0.
+     */
+    startedAtOverride?: number,
+  ) {
+    this.startedAt = startedAtOverride ?? Date.now();
+  }
 
   mark(stage: string): void {
-    const at = Date.now() - this.startedAt;
+    const now = Date.now();
+    const at = now - this.startedAt;
     this.marks.push(`${stage}=${at}ms`);
+    this.absoluteMarks.set(stage, now);
     // eslint-disable-next-line no-console
     console.log(`[TIMING:${this.sessionId}] ${this.label} ${stage} +${at}ms`);
   }
@@ -650,6 +684,86 @@ class TurnTimer {
       `[TIMING:${this.sessionId}] ${this.label} SUMMARY total=${Date.now() - this.startedAt}ms ${this.marks.join(" ")}`,
     );
   }
+
+  /**
+   * FIX #7A — read-only latency trace for one turn, printed in
+   * addition to (never instead of) `summarize()` above. Every value
+   * here is either an absolute timestamp captured at the actual event
+   * (passed in via `opts`, or recorded by a prior `mark()` call) or a
+   * subtraction of two such timestamps — never inferred from an
+   * unrelated total. A boundary with no timestamp on either side
+   * prints "NOT DIRECTLY MEASURABLE" rather than a guessed number.
+   */
+  printLatencyBreakdown(opts: {
+    readonly speechEndAtMs: number | undefined;
+    readonly endpointEvidenceAtMs: number | undefined;
+    readonly endpointEvidenceKind: string | undefined;
+  }): void {
+    const turnRelease = this.startedAt;
+    const at = (stage: string): number | undefined => this.absoluteMarks.get(stage);
+    const llmRequest = at("llm-request");
+    const llmFirstToken = at("llm-first-token");
+    const firstSentence = at("first-sentence-ready");
+    const ttsRequest = at("tts-request");
+    const ttsFirstAudio = at("tts-first-chunk");
+    const audioQueued = at("audio-queued");
+
+    const ts = (ms: number | undefined): string => (ms === undefined ? "NOT DIRECTLY MEASURABLE" : new Date(ms).toISOString());
+    const delta = (fromMs: number | undefined, toMs: number | undefined): string =>
+      fromMs === undefined || toMs === undefined ? "NOT DIRECTLY MEASURABLE" : `${toMs - fromMs}ms`;
+
+    // eslint-disable-next-line no-console
+    console.log(
+      `[TIMING:${this.sessionId}] ${this.label}\n` +
+        `speech-end=${ts(opts.speechEndAtMs)}\n` +
+        `endpoint-evidence=${ts(opts.endpointEvidenceAtMs)}${opts.endpointEvidenceKind ? ` (${opts.endpointEvidenceKind})` : ""}\n` +
+        `turn-release=${ts(turnRelease)}\n` +
+        `llm-request=${ts(llmRequest)}\n` +
+        `llm-first-token=${ts(llmFirstToken)}\n` +
+        `first-sentence-ready=${ts(firstSentence)}\n` +
+        `tts-request=${ts(ttsRequest)}\n` +
+        `tts-first-audio=${ts(ttsFirstAudio)}\n` +
+        `audio-queued=${ts(audioQueued)}`,
+    );
+    // eslint-disable-next-line no-console
+    console.log(
+      `[TIMING:${this.sessionId}] ${this.label} DELTAS\n` +
+        `endpoint-to-release=${delta(opts.endpointEvidenceAtMs, turnRelease)}\n` +
+        `release-to-llm-request=${delta(turnRelease, llmRequest)}\n` +
+        `llm-to-first-token=${delta(llmRequest, llmFirstToken)}\n` +
+        `first-token-to-sentence=${delta(llmFirstToken, firstSentence)}\n` +
+        `sentence-to-tts=${delta(firstSentence, ttsRequest)}\n` +
+        `tts-to-first-audio=${delta(ttsRequest, ttsFirstAudio)}\n` +
+        `first-audio-to-queue=${delta(ttsFirstAudio, audioQueued)}\n` +
+        `speech-end-to-audio=${delta(opts.speechEndAtMs, audioQueued)}`,
+    );
+  }
+}
+
+/**
+ * FIX #7A — telemetry only. Caller-requested brevity ("keep it short",
+ * "one line", "just briefly") is checked against the raw user text so
+ * we can report whether the model honored it — nothing here alters
+ * the request, the prompt, or the response.
+ */
+const BREVITY_PHRASES = [
+  "short",
+  "briefly",
+  "brief",
+  "one line",
+  "one-line",
+  "one word",
+  "quick answer",
+  "quickly",
+  "concise",
+  "in short",
+  "just answer",
+  "straight answer",
+];
+
+function detectBrevityRequest(userText: string): string | undefined {
+  const lower = userText.toLowerCase();
+  return BREVITY_PHRASES.find((phrase) => lower.includes(phrase));
 }
 
 export class ConversationPipeline {
@@ -683,6 +797,20 @@ export class ConversationPipeline {
   /** Guards `tts-first-chunk` / `audio-queued` so they mark the FIRST occurrence of each per turn. */
   private markedTtsThisTurn = false;
   private markedAudioThisTurn = false;
+  /** FIX #7A — guards `first-sentence-ready` / `tts-request` the same way, one mark per turn. */
+  private markedFirstSentenceThisTurn = false;
+  private markedTtsRequestThisTurn = false;
+  /**
+   * FIX #7A — arrival time of the most recent Deepgram end-of-speech
+   * evidence (`UtteranceEnd`, or a final segment with `speech_final`)
+   * that actually reached the turn detector — i.e. was not filtered
+   * out as backchannel/uncorroborated speech first. Snapshotted and
+   * cleared by `waitForTurnDetectorEnd`'s `onTurnEnd` handler the same
+   * way `lastFinalSttLagMs`/`lastFinalSegmentAtMs` already are, so it
+   * cannot leak into the next turn's trace.
+   */
+  private lastEndpointEvidenceAtMs: number | undefined;
+  private lastEndpointEvidenceKind: "utterance_end" | "speech_final" | undefined;
   /**
    * True while the caller's CURRENT utterance has already been judged
    * backchannel. Keeps one utterance treated consistently: its interim
@@ -1009,7 +1137,7 @@ export class ConversationPipeline {
         // t0 for this turn's latency trace: the turn detector has just
         // endpointed, i.e. the caller has stopped speaking as far as
         // the pipeline is concerned. Everything after this is ours.
-        const timer = new TurnTimer(sid, `TURN#${this.record.turnIndex}`);
+        const timer = new TurnTimer(sid, `TURN#${this.record.turnIndex}`, turn.turnReleasedAtMs);
         timer.mark("turn-detected");
         // The trace above starts at turn RELEASE, so everything the
         // caller actually waited through before that — Deepgram's
@@ -1050,6 +1178,17 @@ export class ConversationPipeline {
         // before this can run.
         if (await this.handleAttentionCheck(turn.text, loopSignal)) {
           timer.summarize();
+          // FIX #7A — attention-check turns still went through real
+          // STT endpointing and turn release above; labelled ATTENTION
+          // by `label` alone (see `speakAttentionUtterance`'s own
+          // timer), so this one keeps reporting under its TURN# label
+          // with whatever LLM/TTS stages did NOT run left as
+          // "NOT DIRECTLY MEASURABLE" rather than fabricated.
+          timer.printLatencyBreakdown({
+            speechEndAtMs: turn.userSpeechEndedAtMs,
+            endpointEvidenceAtMs: turn.endpointEvidenceAtMs,
+            endpointEvidenceKind: turn.endpointEvidenceKind,
+          });
           this.activeTimer = undefined;
           continue;
         }
@@ -1061,9 +1200,29 @@ export class ConversationPipeline {
         const responseId = this.beginAssistantResponse();
         const result = await this.runThinkingAndSpeaking(turn.text, detected, loopSignal);
         timer.summarize();
+        timer.printLatencyBreakdown({
+          speechEndAtMs: turn.userSpeechEndedAtMs,
+          endpointEvidenceAtMs: turn.endpointEvidenceAtMs,
+          endpointEvidenceKind: turn.endpointEvidenceKind,
+        });
         this.activeTimer = undefined;
         // eslint-disable-next-line no-console
         console.log(`[PIPELINE:${sid}] Turn complete: assistant="${result.assistantText.slice(0, 80)}${result.assistantText.length > 80 ? "..." : ""}" llmMs=${result.llmMs} ttsMs=${result.ttsMs}`);
+        // FIX #7A — response-length telemetry only: does not read from
+        // or alter generation in any way. `estimateTokenCount` is the
+        // same heuristic already used for cost above, reused here
+        // rather than re-implemented; `reportedCompletionTokens` is the
+        // real OpenAI usage count when the provider supplied one.
+        {
+          const brevityPhrase = detectBrevityRequest(turn.text);
+          // eslint-disable-next-line no-console
+          console.log(
+            `[RESPONSE-LEN:${sid}] TURN#${this.record.turnIndex} userChars=${turn.text.length} assistantChars=${result.assistantText.length} ` +
+              `estTokens=${estimateTokenCount(result.assistantText)} reportedCompletionTokens=${result.reportedCompletionTokens ?? "NOT DIRECTLY MEASURABLE"} ` +
+              `ttsChunks=${result.ttsChunkCount} audioQueuedMs=${Math.round(this.outboundQueuedMs)} ` +
+              `briefRequested=${brevityPhrase !== undefined}${brevityPhrase ? ` matchedPhrase="${brevityPhrase}"` : ""}`,
+          );
+        }
         // An interrupted reply is CANCELLED, not a completed assistant
         // turn: the caller talked over it, so committing it would put a
         // sentence the caller never let us finish between their own two
@@ -1399,6 +1558,8 @@ export class ConversationPipeline {
     this.activeTimer = timer;
     this.markedTtsThisTurn = false;
     this.markedAudioThisTurn = false;
+    this.markedFirstSentenceThisTurn = false;
+    this.markedTtsRequestThisTurn = false;
     this.firstAudioQueuedAtMs = undefined;
   }
 
@@ -1812,6 +1973,10 @@ export class ConversationPipeline {
           // Nothing else in this loop changes, and a provider that
           // never sends a marker never reaches this branch.
           if (segment.isEndOfSpeechMarker) {
+            // FIX #7A — telemetry only: arrival of the `UtteranceEnd`
+            // evidence itself, before it is handed to the detector.
+            this.lastEndpointEvidenceAtMs = Date.now();
+            this.lastEndpointEvidenceKind = "utterance_end";
             this.record.turnDetector.noteEndOfSpeech();
             continue;
           }
@@ -1979,6 +2144,16 @@ export class ConversationPipeline {
             this.triggerExternalBargeIn();
           }
 
+          // FIX #7A — telemetry only: arrival of `speech_final`
+          // evidence on a segment that is actually about to reach the
+          // detector (i.e. survived the backchannel/uncorroborated
+          // filters above), so this only records evidence that could
+          // plausibly have participated in the release it precedes.
+          if (segment.isSpeechFinal) {
+            this.lastEndpointEvidenceAtMs = Date.now();
+            this.lastEndpointEvidenceKind = "speech_final";
+          }
+
           this.record.turnDetector.feed(segment);
         }
       } catch {
@@ -2104,9 +2279,14 @@ export class ConversationPipeline {
       };
 
       const unsubscribe = this.record.turnDetector.onTurnEnd((event) => {
-             console.log(
-  `[TURN END] ${Date.now()} text="${event.text}" sttMs=${event.turnDurationMs}`
-);
+        // FIX #7A — captured at the top of this listener, which
+        // `AdaptiveTurnDetector.emitTurnEnd` invokes synchronously, so
+        // this IS the turn-release instant, not an approximation of it.
+        const turnReleasedAtMs = Date.now();
+        // eslint-disable-next-line no-console
+        console.log(
+          `[TIMING:${this.record.id}] TURN END turn-release=${turnReleasedAtMs} text="${event.text}" sttMs=${event.turnDurationMs}`,
+        );
         const audioSeconds = this.consumeSinceLastTurnAudioSeconds();
         const providerId = this.providers.stt.descriptor.id;
 
@@ -2121,6 +2301,12 @@ export class ConversationPipeline {
           lastSegmentAtMs !== undefined ? lastSegmentAtMs - (sttLagMs ?? 0) : undefined;
         this.lastFinalSttLagMs = undefined;
         this.lastFinalSegmentAtMs = undefined;
+        // Same snapshot-then-clear pattern for the Deepgram endpoint
+        // evidence that triggered this release (see the field docs).
+        const endpointEvidenceAtMs = this.lastEndpointEvidenceAtMs;
+        const endpointEvidenceKind = this.lastEndpointEvidenceKind;
+        this.lastEndpointEvidenceAtMs = undefined;
+        this.lastEndpointEvidenceKind = undefined;
 
         finish({
           text: event.text,
@@ -2128,6 +2314,9 @@ export class ConversationPipeline {
           sttLagMs,
           userSpeechEndedAtMs,
           sttCostUsd: estimateSttCost(providerId, audioSeconds),
+          turnReleasedAtMs,
+          endpointEvidenceAtMs,
+          endpointEvidenceKind,
         });
       });
 
@@ -2207,6 +2396,11 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
         sttLagMs: undefined,
         userSpeechEndedAtMs: undefined,
         sttCostUsd: estimateSttCost(providerId, estimateAudioSeconds(next.value)),
+        // Batch STT has no incremental endpointing event to speak of —
+        // the whole utterance resolves at once, right here.
+        turnReleasedAtMs: Date.now(),
+        endpointEvidenceAtMs: undefined,
+        endpointEvidenceKind: undefined,
       };
     }
 
@@ -2403,6 +2597,8 @@ await this.drainPlayback(speakingSignal);
         ttsMs: firstChunkMs,
         ttsSynthesisMs: ttsMs,
         ttsCostUsd,
+        // Non-streaming LLM path: exactly one synthesizeAndPlay call for the whole reply.
+        ttsChunkCount: 1,
       };
     });
   }
@@ -2441,6 +2637,9 @@ await this.drainPlayback(speakingSignal);
     let reportedPromptTokens: number | undefined;
     let cachedPromptTokens: number | undefined;
     let reasoningTokens: number | undefined;
+    let reportedCompletionTokens: number | undefined;
+    /** FIX #7A — telemetry only: count of sentence-level synthesizeAndPlay invocations this turn. */
+    let ttsChunkCount = 0;
     // Set once contamination is detected mid-stream: stops speaking any
     // further sentences from this turn. See the contamination check
     // below for why this exists — the batch path's isContaminatedOutput
@@ -2472,6 +2671,15 @@ await this.drainPlayback(speakingSignal);
           for (const sentence of readySentences) {
             const cleaned = toSpokenText(sentence);
             if (cleaned.length === 0) continue;
+
+            // FIX #7A — the chunker has just produced a TTS-ready
+            // sentence. Marked here, before the contamination/
+            // supersession checks below, because those decide whether
+            // the sentence gets SPOKEN, not whether it was READY.
+            if (!this.markedFirstSentenceThisTurn) {
+              this.markedFirstSentenceThisTurn = true;
+              this.markTiming("first-sentence-ready");
+            }
 
             // Check the ACCUMULATED text so far, not just this sentence
             // in isolation — a leak's markers are often split across
@@ -2531,6 +2739,7 @@ await this.drainPlayback(speakingSignal);
             ttsFirstChunkMs ??= spoken.firstChunkMs;
             ttsSynthesisMs += spoken.ttsMs;
             ttsCostUsd += spoken.ttsCostUsd;
+            ttsChunkCount += 1;
           }
         } else {
           finalText = event.turn.content;
@@ -2538,6 +2747,7 @@ await this.drainPlayback(speakingSignal);
           reportedPromptTokens = event.promptTokens;
           cachedPromptTokens = event.cachedPromptTokens;
           reasoningTokens = event.reasoningTokens;
+          reportedCompletionTokens = event.completionTokens;
         }
 
         if (contaminated || speakingSignal?.aborted) break;
@@ -2569,6 +2779,7 @@ await this.drainPlayback(speakingSignal);
           ttsFirstChunkMs ??= spoken.firstChunkMs;
           ttsSynthesisMs += spoken.ttsMs;
           ttsCostUsd += spoken.ttsCostUsd;
+          ttsChunkCount += 1;
         }
       }
       // Stay in SPEAKING until the queued audio has actually played.
@@ -2583,9 +2794,11 @@ await this.drainPlayback(speakingSignal);
         ttsMs: ttsFirstChunkMs,
         ttsSynthesisMs,
         ttsCostUsd,
+        ttsChunkCount,
         ...(reportedPromptTokens !== undefined ? { reportedPromptTokens } : {}),
         ...(cachedPromptTokens !== undefined ? { cachedPromptTokens } : {}),
         ...(reasoningTokens !== undefined ? { reasoningTokens } : {}),
+        ...(reportedCompletionTokens !== undefined ? { reportedCompletionTokens } : {}),
       };
     }
 
@@ -2610,6 +2823,7 @@ await this.drainPlayback(speakingSignal);
         ttsFirstChunkMs ??= spoken.firstChunkMs;
         ttsSynthesisMs += spoken.ttsMs;
         ttsCostUsd += spoken.ttsCostUsd;
+        ttsChunkCount += 1;
       }
     }
 
@@ -2634,9 +2848,11 @@ await this.drainPlayback(speakingSignal);
       ttsMs: ttsFirstChunkMs,
       ttsSynthesisMs,
       ttsCostUsd,
+      ttsChunkCount,
       ...(reportedPromptTokens !== undefined ? { reportedPromptTokens } : {}),
       ...(cachedPromptTokens !== undefined ? { cachedPromptTokens } : {}),
       ...(reasoningTokens !== undefined ? { reasoningTokens } : {}),
+      ...(reportedCompletionTokens !== undefined ? { reportedCompletionTokens } : {}),
     };
   }
 
@@ -2728,6 +2944,14 @@ await this.drainPlayback(speakingSignal);
       // eslint-disable-next-line no-console
       console.log(`[TTS:${sid}] synthesizeAndPlay skipped (aborted=${speakingSignal.aborted} emptyText=${text.trim().length === 0} voicemail=${this.voicemailDetected})`);
       return { ttsMs: 0, ttsCostUsd: 0 };
+    }
+
+    // FIX #7A — this utterance is actually going to be synthesized;
+    // marks the first such call this turn, i.e. the moment TTS is
+    // requested for the turn's first chunk.
+    if (!this.markedTtsRequestThisTurn) {
+      this.markedTtsRequestThisTurn = true;
+      this.markTiming("tts-request");
     }
 
     // The text of this utterance, against the playback offset it starts

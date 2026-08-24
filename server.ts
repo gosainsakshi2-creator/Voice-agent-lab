@@ -22,6 +22,7 @@ import next from "next";
 import { WebSocketServer, type WebSocket } from "ws";
 
 import { getRuntime } from "./src/server/runtime";
+import { installHttpKeepAlive } from "./src/server/http-keepalive";
 import { attachPlivoMediaBridge } from "./src/server/plivo-media-bridge";
 import { attachVobizMediaBridge } from "./src/server/vobiz-media-bridge";
 import type { SessionId } from "./src/types/session.types";
@@ -37,6 +38,10 @@ const PLIVO_STREAM_PATH = "/api/voice/plivo/stream";
 const VOBIZ_STREAM_PATH = "/api/voice/vobiz/stream";
 
 async function main(): Promise<void> {
+  // Before any vendor request can happen: extend the global fetch
+  // pool's keep-alive so LLM/TTS connections survive the inter-turn
+  // gap instead of paying a fresh TLS setup on every reply.
+  installHttpKeepAlive();
   await app.prepare();
 
   const server = createServer(async (req, res) => {

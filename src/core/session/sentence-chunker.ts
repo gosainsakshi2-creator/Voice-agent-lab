@@ -247,13 +247,12 @@ export class SentenceChunker {
 
     // Latency guard for the very first chunk: a clause boundary is a
     // natural enough place to breathe, and it gets audio to the caller
-    // a full sentence sooner.
+    // a full sentence sooner. Scans PAST a too-short boundary to the
+    // next one — see `firstQualifyingClauseEnd` for why testing only
+    // the first boundary silently disabled this escape.
     if (this.isFirstChunk) {
-      const clause = CLAUSE_BOUNDARY.exec(this.buffer);
-      if (clause) {
-        const end = clause.index + clause[0].length;
-        if (this.buffer.slice(0, end).trim().length >= MIN_FIRST_CLAUSE_LENGTH) return end;
-      }
+      const clauseEnd = this.firstQualifyingClauseEnd(MIN_FIRST_CLAUSE_LENGTH);
+      if (clauseEnd !== null) return clauseEnd;
     }
 
     // The model is producing a run-on with no usable punctuation. Cut
@@ -295,6 +294,45 @@ export class SentenceChunker {
       // abbreviation, a stray "...", or a genuine but very short
       // sentence. Keep scanning: the next boundary merges it with what
       // follows rather than stranding the whole buffer.
+    }
+  }
+
+  /**
+   * End index of the earliest clause boundary whose preceding text
+   * reaches `minLength`, or null when the buffer holds none yet.
+   *
+   * Mirrors `firstQualifyingSentenceEnd` above, and exists for the
+   * same defect in its other guise. Testing only the FIRST clause
+   * boundary in the buffer — which is what the first-chunk escape did
+   * — silently gave up on the whole reply whenever its opening clause
+   * was shorter than `MIN_FIRST_CLAUSE_LENGTH`. The approved script's
+   * sentences run 88-160 characters with their first comma at ~40-60
+   * (see the notes on `MIN_FIRST_CLAUSE_LENGTH` and the forced-cut
+   * valves above), so on essentially every long opening sentence the
+   * escape declined at the first comma and never looked again: the
+   * caller waited for the full stop, and the 90-character threshold
+   * bought nothing it was written to buy. Production traces show that
+   * wait as the `first-token-to-sentence` delta (measured 116-348ms).
+   *
+   * Scanning past a too-short boundary to the next one restores the
+   * escape while keeping its guarantee intact: a cut is still only
+   * ever returned at a clause boundary with at least `minLength`
+   * characters (~4s of audio) in front of it, so everything the
+   * threshold protects — seam audibility, transport queue coverage —
+   * is protected exactly as before. A fresh global regex is built per
+   * scan so the shared `CLAUSE_BOUNDARY` literal never carries
+   * `lastIndex` state between calls.
+   */
+  private firstQualifyingClauseEnd(minLength: number): number | null {
+    const scanner = new RegExp(CLAUSE_BOUNDARY.source, "gu");
+    for (;;) {
+      const match = scanner.exec(this.buffer);
+      if (match === null) return null;
+      const end = match.index + match[0].length;
+      if (this.buffer.slice(0, end).trim().length >= minLength) return end;
+      // Too short to be a worthwhile first cut — keep scanning: a
+      // later clause boundary may still qualify, and giving up here is
+      // the defect this method exists to fix.
     }
   }
 

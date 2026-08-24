@@ -4,21 +4,121 @@
 > It is deliberately short. Stable project truth lives in [MEMORY.md](MEMORY.md);
 > this file only holds *what is happening right now*.
 
-**Updated:** 2026-08-23
+**Updated:** 2026-08-24
 **Branch:** `campaign-layer-phase-0` — **working tree DIRTY.** Uncommitted:
-**Fix #3** across all three campaign TTS lanes — Cartesia SSE (§0), **Sarvam
-truncation (PHASE A)** and **Smallest AI streaming (PHASE B)** — plus **Fix #2**
-(Hello / attention check, §0a). See §5. Fix #1 (§0b) was committed as `5dee8aa`.
-Every suite is green at its baseline; the one obsolete `test:continuity`
-expectation Fix #2 invalidated has been retired and replaced by the property it
-was standing in for — see §0a.7. **PHASE C (Sarvam handshake) was investigated
-to a conclusion and deliberately NOT implemented** — the reason is proven, not
-assumed; see that section.
-**Last commit:** `5dee8aa` — Hangup fix (= Fix #1, §0b)
+**FIX #8 (PHASE 3 turn release)** — 4 files: `turn-detection.ts`,
+`conversation-pipeline.ts`, `turn-release-tests.ts`, `end-of-speech-tests.ts`.
+Everything from Fix #3 through Fix #7a has since been committed
+(`b6491ca`…`4424f1d`).
+**Last commit:** `4424f1d` — #Fix 7a (turn-timing telemetry)
 **Dialing:** `CAMPAIGN_DIALING_ENABLED=true` — **real calls are live**
-**Latest pass:** **Fix #3 continued — the ordered TTS pass the AUDIT
-specified, all three phases run to a conclusion.** See the FIX #3 PHASE
-sections immediately below, then the CONSOLIDATED PROVIDER COMPARISON.
+**Latest pass:** **FIX #8 — endpoint evidence outranks punctuation
+(Deepgram turn release, PHASE 3).** See the FIX #8 section immediately
+below. The FIX #3 sections after it are the previous pass, kept as history.
+
+---
+
+## FIX #8 (2026-08-24) — TURN RELEASE, PHASE 3: THE ENDPOINT CLAIM WAS DISCARDED FOR UNPUNCTUATED TEXT
+
+**Status: implemented, tested, green (3x, no flakes). Uncommitted. Nothing
+dialed.**
+
+### Root cause — `isCompleteThought()` required terminal punctuation, so both evidence fast paths threw the endpoint claim away on the commonest real-call turn shape
+
+The live `stt-to-release` traces split cleanly in two: turns whose final was
+punctuated released on the evidenced 150/250ms tier; turns whose final was NOT
+punctuated (Deepgram `nova-3` in `multi` mode routinely declines to punctuate
+Hinglish finals) discarded the `speech_final` / `UtteranceEnd` evidence at both
+call sites — `feed`'s fast path and `noteEndOfSpeech` — and fell back to
+inference:
+
+```
+speech_final, unpunctuated:   silence window 1100–1600ms + open-ended 550ms
+                              ≈ 1.7–2.1s of self-inflicted wait
+UtteranceEnd, unpunctuated:   marker arrived mid-window, noteEndOfSpeech
+                              set lastFinalWasEndpoint and RETURNED —
+                              remaining window + 550ms all still paid
+text also trips looksIncomplete: + up to 2 × 800ms continuation graces
+                              ≈ 2.7–3.9s (TURN#0 stt-to-release=5040ms)
+```
+
+The Deepgram connect parameters (`endpointing: 400`,
+`utterance_end_ms: 1000` — the documented minimum) are NOT the cause and were
+not touched.
+
+### Exact change — `turn-detection.ts`, two gates and one new tier
+
+1. New `isReleasableThought()` replaces `isCompleteThought()` at BOTH evidence
+   call sites: non-empty, not `FILLER_ONLY`, not `HOLD_PHRASE_ONLY`, not
+   `looksIncomplete`. The terminal-punctuation requirement is gone — the file
+   already documents Deepgram's punctuation as a formatting decision, not a
+   completion judgement; its absence is equally weak evidence. Everything that
+   affirmatively reads unfinished still takes the full inference path.
+2. New `EVIDENCED_CONFIRMATION_OPEN_MS = 300` — the tier an unpunctuated
+   evidenced turn gets (punctuated tiers stay 150/250ms). With Deepgram's own
+   400ms `endpointing` silence in front of it, release still requires ~700ms of
+   observed quiet = `MIN_SILENCE_TIMEOUT_MS`, the file's own floor for a
+   plausible end of turn. Any segment arriving inside the window still cancels
+   the release (in-flight-speech check, unchanged).
+3. `confirmationWindowMs`'s unpunctuated branch mirrors the punctuated one:
+   evidenced → 300ms, no evidence → the inferred 550ms stands. (Only reachable
+   via the chunk-boundary-grace collapse.)
+
+**No silence window, grace, margin or Deepgram parameter changed.** Mid-thought
+(`looksIncomplete`), filler, hold-phrase, outstanding-interim, chunk-boundary
+(no evidence), backchannel and barge-in behaviour are all asserted unchanged.
+
+### Also fixed — `conversation-pipeline.ts`: `sttLagMs` ignored the STT clock re-basing
+
+The recognition-lag metric used raw `segment.endedAtMs`; after an STT socket
+reconnect ("STT stream clock restarted" in the logs) that value restarts at
+zero, so the lag inflated by the whole call duration, back-dated
+`userSpeechEndedAtMs`, and printed nonsense `stt-to-release` figures (the
+TURN#1=27733ms class). It now reads the re-based `sttStreamMsOf` value —
+metrics only, no control flow; identical on a call that never reconnects.
+
+### Tests — two expectations retired and replaced by the property they stood for (§0a.7 precedent)
+
+- `test:turn-release` "an UNPUNCTUATED endpointed turn still gets the full
+  silence window" → now asserts the evidenced 300ms tier, PLUS a new test that
+  the same text with NO evidence keeps the full slow path (silence + chunk
+  grace + 550ms). 14 → **19 tests**, green 3x.
+- `test:end-of-speech` A2b likewise, and now asserts its own premise
+  (no-evidence replay stays slow). **17 tests**, green 3x.
+
+### Measured (real detector, wall clock, this machine)
+
+| Class | Before | After |
+|---|---|---|
+| unpunctuated + `speech_final` on the words | ~1650ms | **~300ms** |
+| unpunctuated + `UtteranceEnd` marker | ~1500ms | **~300ms** |
+| wire-trace noisy line (stt-to-release) | 3604ms | **1745ms** |
+| wire-trace background voice | 7558ms | **5693ms** (vendor lag stays visible) |
+| wire-trace clean line | 1091ms | 1103ms — unchanged, as asserted |
+| mid-thought / hold / filler / interim / no-evidence | unchanged | unchanged |
+
+### Full regression — all green, nothing weakened
+
+`npx tsc --noEmit --incremental false` clean. `test:turn-release` 19/0 (3x),
+`test:end-of-speech` 17/0 (3x), `test:wire-trace` 19/0, `test:barge-in` 27/0,
+`test:continuity` 28/0, `test:turn-timing-telemetry` 8/0, `test:tts-streaming`
+21/0, `test:stt-clock` 10/0, `test:attention` 23/0, `test:agent-hangup` 23/0,
+`test:speaking-watchdog` 6/0, `test:phase10` 12/0.
+
+### Real-call verification — NOT YET DONE
+
+On the next live call, watch the `[TIMING:…] TURN#N DELTAS` blocks:
+`endpoint-to-release` should read ~150–300ms whenever `endpoint-evidence` shows
+`(speech_final)` or `(utterance_end)`; multi-second values should only remain
+on turns whose text genuinely trailed off (dangling conjunction, hold phrase).
+After any "STT stream clock restarted" line, `stt-to-release` must stay sane.
+What remains outside our control: Deepgram's own delivery lag (final +
+`UtteranceEnd` arrive ~1.0–1.5s after last word on a noisy line; ~0.8s clean),
+LLM first token, and TTS first audio.
+
+**Rollback:** revert the two gate call sites to require
+`TERMINAL_PUNCTUATION`, delete `EVIDENCED_CONFIRMATION_OPEN_MS` and the
+`confirmationWindowMs` branch, and restore the raw-`endedAtMs` lag line.
 
 - **PHASE A — Sarvam truncation: FIXED.** `test:sarvam-stream`, 17 tests, and
   the suite was verified to fail 4/17 against the pre-fix provider.

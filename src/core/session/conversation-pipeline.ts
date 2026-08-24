@@ -2010,13 +2010,38 @@ export class ConversationPipeline {
           // judgement, a turn, or a reply.
           this.checkForVoicemail(segment);
 
+          // Placed on the call-long timeline BEFORE anything reads it:
+          // both the recognition-lag metric just below and the
+          // interruption test further down compare this against
+          // `inboundStreamMs`-based values, and the raw `endedAtMs` is
+          // only meaningful while the provider's CURRENT socket is the
+          // call's first — a reconnect restarts it at zero. See
+          // `STT_CLOCK_REWIND_TOLERANCE_MS`. Called once per segment,
+          // and before the two `continue`s below, so every segment
+          // maintains the clock. On a call whose STT stream never
+          // restarts the offset is `0` and every value is identical to
+          // the raw one.
+          const segmentEndedAtStreamMs = this.sttStreamMsOf(segment);
+
           // METRICS ONLY — pure observation, no control flow. Records
           // when this final landed and how far behind the audio it
           // was, so `recordTurn` can report real recognition latency
           // instead of the caller's speaking duration.
           if (segment.isFinal && segment.text.trim().length > 0) {
             this.lastFinalSegmentAtMs = Date.now();
-            const lagMs = this.inboundStreamMs - segment.endedAtMs;
+            // On the RE-BASED clock, not raw `endedAtMs`. After an STT
+            // stream reconnect the raw value restarts at zero, so the
+            // lag computed from it inflates by however long the call
+            // had been running — which back-dated `userSpeechEndedAtMs`
+            // by that whole span and printed nonsense `stt-to-release`
+            // figures for every turn after the "STT stream clock
+            // restarted" line. `0` is "no word timings in this result"
+            // (see `sttStreamMsOf`), never a position, so it is
+            // excluded rather than measured.
+            const lagMs =
+              segmentEndedAtStreamMs > 0
+                ? this.inboundStreamMs - segmentEndedAtStreamMs
+                : Number.NaN;
             // Bounded: during the initial replay of audio buffered
             // while the greeting played, the stream clock advances far
             // faster than real time and a segment landing inside that
@@ -2048,17 +2073,14 @@ export class ConversationPipeline {
           // used to provide. The segment is still fed to the turn
           // detector below, so the words are not lost.
           //
-          // Read through `sttStreamMsOf` rather than raw: the reported
-          // time is measured from the start of the STT provider's
-          // CURRENT connection, and a reconnect restarts it at zero
-          // while `speakingStartedAtStreamMs` keeps counting the whole
-          // call — after which this test is false forever and the
-          // assistant becomes uninterruptible. See
-          // `STT_CLOCK_REWIND_TOLERANCE_MS`. On a call whose STT stream
-          // never restarts the offset is `0` and this is the identical
-          // comparison. Called unconditionally, and before the two
-          // `continue`s below, so every segment maintains the clock.
-          const segmentEndedAtStreamMs = this.sttStreamMsOf(segment);
+          // Read through `sttStreamMsOf` rather than raw (computed
+          // above, before the metrics block): the reported time is
+          // measured from the start of the STT provider's CURRENT
+          // connection, and a reconnect restarts it at zero while
+          // `speakingStartedAtStreamMs` keeps counting the whole call —
+          // after which this test is false forever and the assistant
+          // becomes uninterruptible. See
+          // `STT_CLOCK_REWIND_TOLERANCE_MS`.
           const spokeOverTheAssistant =
             this.greetingDone &&
             this.record.state === SessionState.SPEAKING &&

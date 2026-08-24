@@ -93,6 +93,13 @@ const CONTINUATION_GRACE_MS = 800;
  */
 const EVIDENCED_SHORT_MS = 150;
 const EVIDENCED_LONG_MS = 250;
+/**
+ * PHASE 3 — the evidenced tier for text with NO sentence-final
+ * punctuation, so an endpoint claim is acted on even when Deepgram's
+ * formatter withholds the full stop (the common case on Hinglish
+ * finals). See `EVIDENCED_CONFIRMATION_OPEN_MS` in turn-detection.ts.
+ */
+const EVIDENCED_OPEN_MS = 300;
 
 /** Timer slack: a real `setTimeout` chain can only ever run late. */
 const EARLY = 120;
@@ -257,16 +264,32 @@ await test("A2. a MID-THOUGHT turn still gets the full silence window and its gr
   );
 });
 
-await test("A2b. an UNPUNCTUATED turn still gets the full silence window", async () => {
-  const { delayMs } = await releaseDelayMs(wordsThenMarker("the timing is what I wanted to know"));
-  assert.ok(
-    delayMs >= SILENCE_WINDOW_MS - MARKER_GAP_MS - EARLY,
-    `no sentence-final punctuation must keep the silence window: measured ${delayMs}ms`,
+await test("A2b. an UNPUNCTUATED turn's endpoint claim buys the evidenced OPEN window", async () => {
+  // PHASE 3 — this expectation was retired and replaced by the property
+  // it stood for. It used to assert the marker was IGNORED for text
+  // with no sentence-final punctuation (full silence window + 550ms),
+  // which is exactly how a turn ending through `UtteranceEnd` on a real
+  // Hinglish call paid multi-second waits for silence Deepgram had
+  // already measured. Text that affirmatively reads unfinished is still
+  // protected — A2, A2c, A2d and A2e below are that property.
+  const { delayMs, text } = await releaseDelayMs(
+    wordsThenMarker("the timing is what I wanted to know"),
   );
+  assert.equal(text, "the timing is what I wanted to know");
+  within(delayMs, EVIDENCED_OPEN_MS, "endpointed-by-marker turn with no sentence-final punctuation");
+  assert.ok(
+    delayMs < SILENCE_WINDOW_MS - MARKER_GAP_MS,
+    `the endpoint claim must no longer be discarded for missing punctuation: measured ${delayMs}ms`,
+  );
+  // ASSERTS ITS OWN PREMISE: the same text with NO claim at all keeps
+  // the full slow path — evidence, not text shape, is what got faster.
+  const without = await releaseDelayMs([
+    { text: "the timing is what I wanted to know", isSpeechFinal: false },
+  ]);
   within(
-    delayMs,
-    SILENCE_WINDOW_MS - MARKER_GAP_MS + OPEN_ENDED_CONFIRMATION_MS,
-    "endpointed-by-marker turn with no sentence-final punctuation",
+    without.delayMs,
+    SILENCE_WINDOW_MS + CHUNK_BOUNDARY_GRACE_MS + OPEN_ENDED_CONFIRMATION_MS,
+    "unpunctuated chunk-boundary final with no endpoint claim",
   );
 });
 

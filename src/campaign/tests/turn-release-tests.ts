@@ -83,6 +83,16 @@ const HOLD_GRACE_MS = 1_200;
  */
 const EVIDENCED_SHORT_MS = 150;
 const EVIDENCED_LONG_MS = 250;
+/**
+ * PHASE 3 — the evidenced tier for text with NO sentence-final
+ * punctuation. Deepgram's formatter routinely withholds punctuation on
+ * Hinglish finals, and requiring it meant the endpoint claim was
+ * DISCARDED for the commonest shape of real turn — which then paid the
+ * full silence window plus the open-ended confirmation (~1.7s) for
+ * silence Deepgram had already measured. See
+ * `EVIDENCED_CONFIRMATION_OPEN_MS` in turn-detection.ts.
+ */
+const EVIDENCED_OPEN_MS = 300;
 
 interface FedSegment {
   readonly text: string;
@@ -245,18 +255,46 @@ await test(
   },
 );
 
-await test("an UNPUNCTUATED endpointed turn still gets the full silence window", async () => {
+await test(
+  "an UNPUNCTUATED endpointed turn releases on the evidenced OPEN window — the largest tier, but no silence window",
+  async () => {
+    // PHASE 3 — this expectation was retired and replaced by the
+    // property it stood for. It used to assert SILENCE_WINDOW_MS +
+    // OPEN_ENDED_CONFIRMATION_MS (~1650ms): the endpoint claim was
+    // discarded because Deepgram's formatter withheld a full stop, and
+    // that was the single largest avoidable wait in the live
+    // stt-to-release traces. The property that mattered — text that
+    // affirmatively reads unfinished still waits — is held by the
+    // MID-THOUGHT, dangling-preposition, interim, filler and hold-phrase
+    // tests around this one, and by the no-evidence test just below.
+    const { delayMs, text } = await releaseDelayMs([
+      { text: "the timing is what I wanted to know", isSpeechFinal: true },
+    ]);
+    assert.equal(text, "the timing is what I wanted to know");
+    within(delayMs, EVIDENCED_OPEN_MS, "unpunctuated endpointed turn");
+    assert.ok(
+      delayMs >= EVIDENCED_LONG_MS - EARLY,
+      `missing punctuation must still cost MORE than a punctuated turn: measured ${delayMs}ms`,
+    );
+  },
+);
+
+await test("an UNPUNCTUATED turn with NO endpoint claim keeps the full slow path", async () => {
+  // Evidence, not text shape, is what got faster: without
+  // `speech_final` this is a chunk boundary, and it still pays the
+  // silence window, the chunk-boundary grace, and the open-ended
+  // confirmation exactly as before PHASE 3.
   const { delayMs } = await releaseDelayMs([
-    { text: "the timing is what I wanted to know", isSpeechFinal: true },
+    { text: "the timing is what I wanted to know", isSpeechFinal: false },
   ]);
   within(
     delayMs,
-    SILENCE_WINDOW_MS + OPEN_ENDED_CONFIRMATION_MS,
-    "endpointed turn with no sentence-final punctuation",
+    SILENCE_WINDOW_MS + CHUNK_BOUNDARY_GRACE_MS + OPEN_ENDED_CONFIRMATION_MS,
+    "unpunctuated chunk-boundary final",
   );
   assert.ok(
-    delayMs >= SILENCE_WINDOW_MS,
-    `no sentence-final punctuation must keep the silence window: measured ${delayMs}ms`,
+    delayMs > SILENCE_WINDOW_MS,
+    `with no end-of-speech claim the wait must remain: measured ${delayMs}ms`,
   );
 });
 

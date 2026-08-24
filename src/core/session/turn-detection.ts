@@ -108,7 +108,7 @@ const CONFIRMATION_WINDOW_MS = 300;
  * stronger than that inference: the provider's OWN endpointer has
  * just this moment declared the caller finished
  * (`lastFinalWasEndpoint`), AND the accumulated text independently
- * reads as a finished thought (`isCompleteThought`). Two agreeing
+ * reads as a finished thought (`isReleasableThought`). Two agreeing
  * signals, not a guess.
  *
  * Before this, both call sites armed `CONFIRMATION_WINDOW_MS` and then
@@ -143,6 +143,38 @@ const CONFIRMATION_WINDOW_MS = 300;
 const EVIDENCED_CONFIRMATION_SHORT_MS = 150;
 /** The longer of the two evidence-gated tiers — see the block above. */
 const EVIDENCED_CONFIRMATION_LONG_MS = 250;
+/**
+ * ---------------- Evidence outranks punctuation (PHASE 3) ----------
+ *
+ * The evidence-gated tier for text that carries NO sentence-final
+ * punctuation. Before this tier existed, the two evidence call sites
+ * required `TERMINAL_PUNCTUATION` (via the old `isCompleteThought`),
+ * so an endpointed-but-unpunctuated turn DISCARDED the endpoint claim
+ * and fell back to inference: the full adaptive silence window
+ * (1100–1600ms) plus the 550ms open-ended confirmation — ~1.7–2.1s of
+ * self-inflicted wait, and the single largest avoidable span in the
+ * live `stt-to-release` traces (2.9–5.0s once Deepgram's own delivery
+ * lag on a noisy line is added). Deepgram in `multi` language mode
+ * routinely declines to punctuate Hinglish finals, so this was the
+ * COMMON case on real calls, not a corner.
+ *
+ * The detector's own tables already treat punctuation as a formatting
+ * decision, not a judgement that the caller finished (`looksIncomplete`
+ * tests the HARD set ahead of a full stop for exactly that reason).
+ * Its absence is equally weak evidence. What actually protects a
+ * mid-thought pause is `looksIncomplete` — dangling conjunctions,
+ * fragment punctuation, hold phrases — and every one of those guards
+ * still holds the turn exactly as before (see `isReleasableThought`).
+ *
+ * 300ms rather than the punctuated tiers' 150/250ms: with punctuation
+ * evidence absent, the in-flight-speech cancellation window is the one
+ * safety net left, so it gets the largest bounded hold of the three.
+ * Combined with the 400ms of real silence Deepgram's endpointer has
+ * already measured before making the claim, release requires ~700ms of
+ * observed quiet — exactly `MIN_SILENCE_TIMEOUT_MS`, the shortest pause
+ * this file already deems plausibly an end of turn.
+ */
+const EVIDENCED_CONFIRMATION_OPEN_MS = 300;
 /**
  * A turn with no sentence-final punctuation is the likelier mid-thought
  * pause, so it gets the longer hold. Still bounded — this is a
@@ -603,8 +635,8 @@ export class AdaptiveTurnDetector {
       //   - text with an outstanding interim — Deepgram has recognised
       //     more of this turn than we hold;
       //   - text that reads as unfinished (`looksIncomplete`: dangling
-      //     conjunction, comma, no sentence-final punctuation, "yes,
-      //     but…"), a hesitation sound, or a request for a moment.
+      //     conjunction, comma, "yes, but…"), a hesitation sound, or a
+      //     request for a moment.
       //
       // So a caller pausing mid-thought is held for the full window
       // exactly as before; only a thought Deepgram and the text BOTH
@@ -618,7 +650,16 @@ export class AdaptiveTurnDetector {
       // `emitTurnEnd` mistake this timer's own expiry for "the silence
       // window just expired" and re-run the inference confirmation on
       // top of it — see the block above `EVIDENCED_CONFIRMATION_SHORT_MS`.
-      if (this.lastFinalWasEndpoint && !this.pendingInterim && this.isCompleteThought()) {
+      //
+      // PHASE 3: the gate is `isReleasableThought`, not the old
+      // terminal-punctuation test — see the block above
+      // `EVIDENCED_CONFIRMATION_OPEN_MS`. Deepgram's endpointer firing
+      // ON the words is its strongest end-of-speech claim, and its
+      // formatter declining to add a full stop is not counter-evidence.
+      // Unpunctuated text pays the largest of the three evidenced
+      // tiers; anything that affirmatively reads as unfinished still
+      // takes the full inference path below.
+      if (this.lastFinalWasEndpoint && !this.pendingInterim && this.isReleasableThought()) {
         this.stage = "confirming";
         this.rearmTimer(this.evidencedConfirmationWindowMs(this.pendingFinalText));
         return;
@@ -629,22 +670,31 @@ export class AdaptiveTurnDetector {
   }
 
   /**
-   * The held text is a sentence-final, non-hesitation, finished
-   * thought — the same test as before minus the word-count cap.
+   * The held text may be released on FRESH endpoint evidence: it is a
+   * non-hesitation, non-hold thought that does not affirmatively read
+   * as unfinished.
    *
-   * The cap was the reason a completed turn of five words or more still
-   * paid a full adaptive silence window it could not learn anything
-   * from. Length is not evidence about whether a thought finished:
-   * "Yes." and "I would like to join the session today." are both
-   * complete, and `looksIncomplete` is what actually separates either
-   * of them from "...and I was going to". Word count still decides how
-   * long the post-speech CONFIRMATION runs (see `confirmationWindowMs`),
-   * which is where it belongs.
+   * This is the successor to `isCompleteThought`, minus its
+   * terminal-punctuation requirement (PHASE 3 — see the block above
+   * `EVIDENCED_CONFIRMATION_OPEN_MS`). Two earlier passes already
+   * removed the word-count cap for the same reason this removes the
+   * punctuation test: neither is evidence about whether a thought
+   * finished. `looksIncomplete` is what actually separates "main kal
+   * join karungi" from "...and I was going to", and it — plus the
+   * filler and hold-phrase tables — is the whole of this gate.
+   * Punctuation still decides how LONG the evidenced confirmation runs
+   * (see `evidencedConfirmationWindowMs`), which is where a formatting
+   * signal belongs.
+   *
+   * Only ever consulted when the provider's endpointer has declared
+   * end of speech (`lastFinalWasEndpoint`, or the marker arriving in
+   * `noteEndOfSpeech`). Text with no such claim never reaches it and
+   * keeps the full inference path.
    */
-  private isCompleteThought(): boolean {
+  private isReleasableThought(): boolean {
     const text = this.pendingFinalText.trim();
     if (text.length === 0 || FILLER_ONLY.test(text) || HOLD_PHRASE_ONLY.test(text)) return false;
-    return TERMINAL_PUNCTUATION.test(text) && !looksIncomplete(text);
+    return !looksIncomplete(text);
   }
 
   /**
@@ -699,8 +749,8 @@ export class AdaptiveTurnDetector {
     // `speech_final` from the words and delivers the endpoint 2.3-2.4s
     // later in its own message — which lands mid-grace or later. Before
     // this branch, an endpointed turn on a noisy line still paid the
-    // whole 700ms, and an UNPUNCTUATED one paid it for nothing at all:
-    // `isCompleteThought()` is false there, so the two lines below
+    // whole 700ms, and a MID-THOUGHT one paid it for nothing at all:
+    // `isReleasableThought()` is false there, so the lines below
     // returned without touching the armed timer.
     //
     // `rearmTimer(0)` rather than a shortened window, deliberately: it
@@ -718,13 +768,20 @@ export class AdaptiveTurnDetector {
       return;
     }
 
-    if (this.pendingInterim || !this.isCompleteThought()) return;
+    if (this.pendingInterim || !this.isReleasableThought()) return;
     // PHASE 2: same reasoning as the `feed` fast path above — the
     // marker just arriving IS the endpoint claim, and the text already
     // reads as finished, so `stage` is marked `"confirming"` rather
     // than left at `"silence"`. Without it `emitTurnEnd` would treat
     // this timer's own expiry as a fresh silence-window timeout and
     // re-run `confirmationWindowMs` on top of the window armed here.
+    //
+    // PHASE 3: gated on `isReleasableThought`, same as `feed` — an
+    // `UtteranceEnd` is Deepgram's word-timing claim that the caller
+    // stopped 1000ms ago, and discarding it because the formatter
+    // withheld a full stop left the turn to wait out the entire
+    // remaining silence window plus the open-ended confirmation. The
+    // unpunctuated tier below is what such a turn is granted instead.
     this.stage = "confirming";
     this.rearmTimer(this.evidencedConfirmationWindowMs(this.pendingFinalText));
   }
@@ -960,7 +1017,15 @@ export class AdaptiveTurnDetector {
     // is a finished question. "What should I do now?" answers at the
     // same speed it always has.
     if (QUESTION_ENDING.test(text) && wordCount <= SHORT_QUESTION_MAX_WORDS) return 0;
-    if (!endsCompletely) return OPEN_ENDED_CONFIRMATION_WINDOW_MS;
+    // PHASE 3: with an endpoint claim in hand the unpunctuated hold is
+    // the evidenced 300ms tier, not the inferred 550ms one — the same
+    // evidence/no-evidence split the fully-punctuated branch below has
+    // always made. No claim, no shortening: the inferred window stands.
+    if (!endsCompletely) {
+      return this.lastFinalWasEndpoint
+        ? EVIDENCED_CONFIRMATION_OPEN_MS
+        : OPEN_ENDED_CONFIRMATION_WINDOW_MS;
+    }
     // PHASE 2: this is the chunk-boundary-grace COLLAPSE path (see
     // `noteEndOfSpeech`'s `chunkBoundaryGraceArmed` branch) landing on
     // a long, complete turn — `lastFinalWasEndpoint` is only true here
@@ -977,15 +1042,22 @@ export class AdaptiveTurnDetector {
   }
 
   /**
-   * The SINGLE confirmation window for a turn whose completeness AND
-   * end-of-speech are BOTH freshly evidenced — see the block above
-   * `EVIDENCED_CONFIRMATION_SHORT_MS`. Both call sites already require
-   * `isCompleteThought()` and `!pendingInterim` before reaching this;
-   * word count here only tunes how much of that already-qualified
-   * window is granted, exactly as `confirmationWindowMs` tiers its own
-   * inferred window by the same two constants.
+   * The SINGLE confirmation window for a turn whose releasability AND
+   * end-of-speech are BOTH freshly evidenced — see the blocks above
+   * `EVIDENCED_CONFIRMATION_SHORT_MS` and
+   * `EVIDENCED_CONFIRMATION_OPEN_MS`. Both call sites already require
+   * `isReleasableThought()` and `!pendingInterim` before reaching this;
+   * punctuation and word count here only tune how much of that
+   * already-qualified window is granted, exactly as
+   * `confirmationWindowMs` tiers its own inferred window.
+   *
+   * Text with no sentence-final punctuation gets the largest tier:
+   * the formatter's silence is weak evidence either way, so the
+   * in-flight-speech cancellation window is kept widest exactly where
+   * the corroborating signal is missing.
    */
   private evidencedConfirmationWindowMs(text: string): number {
+    if (!TERMINAL_PUNCTUATION.test(text)) return EVIDENCED_CONFIRMATION_OPEN_MS;
     const wordCount = text.split(/\s+/).length;
     const shortComplete = wordCount <= SHORT_COMPLETE_TURN_MAX_WORDS;
     const shortQuestion = QUESTION_ENDING.test(text) && wordCount <= SHORT_QUESTION_MAX_WORDS;

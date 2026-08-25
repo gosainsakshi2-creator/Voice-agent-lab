@@ -122,6 +122,23 @@ const MIN_OBSERVED_GAPS_BEFORE_ADAPTING = 2;
  */
 const MAX_IDLE_GAP_MS = 1200;
 
+/**
+ * Speaking rate, sent as Sarvam's documented `pace` parameter on BOTH
+ * synthesis paths (REST body and the WebSocket `config` frame), so the
+ * caller hears the same delivery whichever one the pipeline takes —
+ * the same single-source rule the Cartesia adapter applies to its
+ * `generation_config`.
+ *
+ * The vendor default of 1.0 was the "voice is speaking too slowly"
+ * complaint on live calls. 1.15 is deliberately conservative: inside
+ * the documented range on both models (bulbul:v2 0.3–3.0, bulbul:v3
+ * 0.5–2.0) and well short of the point where Hindi/Hinglish starts to
+ * sound rushed. Not an environment variable, by the same reasoning as
+ * Cartesia's fixed `speed`: an approved voice setting, not per-deploy
+ * configuration.
+ */
+const SARVAM_PACE = 1.15;
+
 interface SarvamEnvConfig {
   readonly apiKey: string;
   readonly baseUrl: string;
@@ -187,6 +204,7 @@ export class SarvamTextToSpeechProvider implements TextToSpeechProvider {
         speaker,
         model: this.config.model,
         speech_sample_rate: this.config.sampleRateHz,
+        pace: SARVAM_PACE,
       },
     );
 
@@ -393,6 +411,7 @@ export class SarvamTextToSpeechProvider implements TextToSpeechProvider {
             target_language_code: toSarvamLanguage(task.request.language),
             output_audio_codec: "wav",
             speech_sample_rate: this.config.sampleRateHz,
+            pace: SARVAM_PACE,
           },
         }),
       );

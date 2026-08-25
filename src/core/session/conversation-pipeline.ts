@@ -2242,8 +2242,22 @@ export class ConversationPipeline {
           if (segment.isEndOfSpeechMarker) {
             // FIX #7A — telemetry only: arrival of the `UtteranceEnd`
             // evidence itself, before it is handed to the detector.
-            this.lastEndpointEvidenceAtMs = Date.now();
-            this.lastEndpointEvidenceKind = "utterance_end";
+            //
+            // FIX #9 — stamped ONLY when the detector is actually holding
+            // words for the marker to be about. Deepgram delivers
+            // `UtteranceEnd` ~1s after the last word, which on a clean
+            // line is long AFTER the 150ms evidenced release of that
+            // turn; a marker landing on an empty detector describes a
+            // turn already answered, and stamping it here made the NEXT
+            // turn's `endpoint-to-release` read as multi-second stale
+            // evidence whenever that turn released by inference.
+            // `noteEndOfSpeech` itself already ignores a marker with
+            // nothing held, so this changes no decision — only what the
+            // trace attributes.
+            if (this.record.turnDetector.getPendingTurnText().trim().length > 0) {
+              this.lastEndpointEvidenceAtMs = Date.now();
+              this.lastEndpointEvidenceKind = "utterance_end";
+            }
             this.record.turnDetector.noteEndOfSpeech();
             continue;
           }
@@ -2441,6 +2455,18 @@ export class ConversationPipeline {
           if (segment.isSpeechFinal) {
             this.lastEndpointEvidenceAtMs = Date.now();
             this.lastEndpointEvidenceKind = "speech_final";
+          } else {
+            // FIX #9 — telemetry only. This segment (interim or
+            // chunk-boundary final) is the caller CONTINUING past
+            // whatever endpoint claim was recorded for the words before
+            // it, so that claim no longer describes the end of the turn
+            // that will eventually be released. Left in place it was
+            // printed against a later inferred release as a multi-second
+            // `endpoint-to-release`. Cleared here; a fresh claim for the
+            // extended utterance re-stamps it. The detector receives
+            // exactly the same segment it always did.
+            this.lastEndpointEvidenceAtMs = undefined;
+            this.lastEndpointEvidenceKind = undefined;
           }
 
           // FIX #8 — the caller is still speaking (this segment, interim

@@ -187,6 +187,10 @@ interface FakeSarvam {
   scheduleDone(): boolean;
   /** How many REST fallback calls the provider made. */
   restCalls(): number;
+  /** Every `{type:"config"}` frame the provider sent over the WebSocket, parsed. */
+  configFrames(): ReadonlyArray<{ readonly data?: Record<string, unknown> }>;
+  /** Every REST request body the provider posted, parsed. */
+  restBodies(): ReadonlyArray<Record<string, unknown>>;
   close(): Promise<void>;
 }
 
@@ -202,6 +206,8 @@ async function startFakeSarvam(input: {
   const sent: number[] = [];
   let done = false;
   let restCalls = 0;
+  const configFrames: Array<{ readonly data?: Record<string, unknown> }> = [];
+  const restBodies: Array<Record<string, unknown>> = [];
 
   /**
    * Position-derived payloads, built up front. Non-zero and unique per
@@ -224,6 +230,11 @@ async function startFakeSarvam(input: {
     const body: Buffer[] = [];
     req.on("data", (c: Buffer) => body.push(c));
     req.on("end", () => {
+      try {
+        restBodies.push(JSON.parse(Buffer.concat(body).toString()) as Record<string, unknown>);
+      } catch {
+        // Not JSON — nothing to record; the response below is unaffected.
+      }
       const pcmBytes = input.restClipBytes ?? FRAME_550MS;
       const wav = wavContainer(new Uint8Array(pcmBytes));
       res.writeHead(200, { "Content-Type": "application/json" });
@@ -236,12 +247,13 @@ async function startFakeSarvam(input: {
   wss.on("connection", (socket: WsSocket) => {
     let flushed = false;
     socket.on("message", async (raw: Buffer) => {
-      let parsed: { type?: string };
+      let parsed: { type?: string; data?: Record<string, unknown> };
       try {
         parsed = JSON.parse(raw.toString()) as typeof parsed;
       } catch {
         return;
       }
+      if (parsed.type === "config") configFrames.push(parsed);
       if (parsed.type !== "flush" || flushed) return;
       flushed = true;
 
@@ -283,6 +295,8 @@ async function startFakeSarvam(input: {
     sentAudio: () => new Uint8Array(sent),
     scheduleDone: () => done,
     restCalls: () => restCalls,
+    configFrames: () => configFrames,
+    restBodies: () => restBodies,
     async close() {
       await new Promise<void>((resolve) => wss.close(() => resolve()));
       await new Promise<void>((resolve) => http.close(() => resolve()));
@@ -784,6 +798,32 @@ await test("C7 — a server that DOES close ends the stream on the close, not on
     assertSameAudio(result.audio, server.expectedAudio(), "C7 audio");
     // A real close is a definite end, so no idle gap is paid at all.
     assert.ok(result.tailMs < 250, `tail ${result.tailMs}ms — a server close should end the stream immediately`);
+  } finally {
+    await server.close();
+  }
+});
+
+await test("C8 — FIX #9: BOTH synthesis paths send the same speaking rate (`pace`), and it is a conservative, in-range value", async () => {
+  const frames: Frame[] = [{ bytes: FRAME_275MS, gapMsBefore: 20 }];
+  const server = await startFakeSarvam({ frames });
+  try {
+    const provider = providerFor(server.baseUrl);
+    // WebSocket path: the `config` frame carries it.
+    const streamed = await drain(provider, TEXT_SHORT);
+    assert.equal(streamed.error, undefined, `unexpected error: ${streamed.error?.message}`);
+    assert.equal(server.configFrames().length, 1, "exactly one config frame per streamed utterance");
+    const wsPace = server.configFrames()[0]!.data?.pace;
+    assert.equal(typeof wsPace, "number", "the WebSocket config must carry a numeric `pace`");
+    // REST path: the request body carries it.
+    await provider.synthesize(task(TEXT_SHORT));
+    assert.equal(server.restBodies().length, 1, "exactly one REST body recorded");
+    const restPace = server.restBodies()[0]!.pace;
+    assert.equal(typeof restPace, "number", "the REST body must carry a numeric `pace`");
+    assert.equal(wsPace, restPace, "both paths must speak at the SAME rate — the caller must not hear a different voice depending on which path was taken");
+    // Conservative: faster than the vendor default that was heard as too
+    // slow, inside the documented range of both models (v3 0.5–2.0,
+    // v2 0.3–3.0), and short of anything that could sound rushed.
+    assert.ok((wsPace as number) > 1.0 && (wsPace as number) <= 1.2, `pace ${wsPace} must be in (1.0, 1.2]`);
   } finally {
     await server.close();
   }

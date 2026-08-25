@@ -798,6 +798,82 @@ await test("D1 — evidence → llm-open is a few ms; the confirmation window is
 });
 
 // ═════════════════════════════════════════════════════════════════
+section("SECTION E — FIX #9: endpoint-evidence telemetry is attributed only to the turn it belongs to");
+// ═════════════════════════════════════════════════════════════════
+
+await test("E1 — a late end-of-speech MARKER for an already-answered turn is not attributed to the next one (no bogus multi-second endpoint-to-release)", async () => {
+  const h = startHarness({ openingLine: OPENING, replies: ["R1", "R2"], captureLogs: true });
+  try {
+    await h.waitForReplies(1);
+    h.say("Yes.", { isSpeechFinal: true });
+    await h.waitForReplies(2);
+    // Deepgram's `UtteranceEnd` for "Yes." lands ~1s after the words —
+    // long after the 150ms evidenced release. Nothing is held, so it is
+    // about nobody's turn.
+    h.markEndOfSpeech();
+    await sleep(700);
+    // The next turn releases by INFERENCE (chunk boundary, no claim).
+    h.say("Tell me more about it.", { isFinal: true, isSpeechFinal: false });
+    await h.waitForReplies(3);
+    const deltas = h.logs.find((l) => l.startsWith("[TIMING:speculate-test] TURN#1 DELTAS"));
+    assert.ok(deltas, "expected TURN#1 DELTAS");
+    const endpointToRelease = /endpoint-to-release=([^\n]+)/u.exec(deltas!)?.[1];
+    assert.equal(endpointToRelease, "NOT DIRECTLY MEASURABLE", `a turn released without evidence must not inherit stale evidence (got ${endpointToRelease})`);
+    // Behaviour is byte-for-byte what it was: same requests, same history.
+    assert.equal(h.requests.length, 2);
+    assert.equal(h.requests[1]!.userTurnCommitted, true, "the inferred release still takes the normal path");
+    assert.deepEqual(h.history().map((t) => t.content), [OPENING, "Yes.", "R1", "Tell me more about it.", "R2"]);
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("E2 — evidence for a turn the caller then CONTINUES is not attributed to the merged turn's inferred release; release, abandonment and adoption are unchanged", async () => {
+  // Two scripted replies: the fake model consumes one per request, and
+  // the abandoned pre-opened request takes the first (as in B6).
+  const h = startHarness({ openingLine: OPENING, replies: ["ABANDONED", "R1"], captureLogs: true });
+  try {
+    await h.waitForReplies(1);
+    h.say("Yes.", { isSpeechFinal: true });
+    await h.waitFor("a pre-opened request", () => h.requests.length >= 1, 100);
+    h.say("but I", { isFinal: false });
+    await h.waitFor("the pre-opened request to be aborted", () => h.requests[0]!.aborted(), 200);
+    h.say("but I want to know the timing.", { isFinal: true, isSpeechFinal: false });
+    await h.waitForReplies(2);
+    const deltas = h.logs.find((l) => l.startsWith("[TIMING:speculate-test] TURN#0 DELTAS"));
+    assert.ok(deltas, "expected TURN#0 DELTAS");
+    const endpointToRelease = /endpoint-to-release=([^\n]+)/u.exec(deltas!)?.[1];
+    assert.equal(endpointToRelease, "NOT DIRECTLY MEASURABLE", `the "Yes." evidence was superseded by more speech (got ${endpointToRelease})`);
+    assert.equal(h.requests.length, 2, "one abandoned, one real — no duplicate");
+    assert.equal(h.requests[1]!.userText, "Yes. but I want to know the timing.");
+    assert.deepEqual(h.history().map((t) => t.content), [OPENING, "Yes. but I want to know the timing.", "R1"]);
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("E3 — a marker that DOES land on held words is still stamped: endpoint-to-release reads the evidenced tier, as before", async () => {
+  const h = startHarness({ openingLine: OPENING, replies: ["R1"], captureLogs: true });
+  try {
+    await h.waitForReplies(1);
+    h.say("Yes, that's right.", { isFinal: true, isSpeechFinal: false });
+    await sleep(120);
+    h.markEndOfSpeech();
+    await h.waitForReplies(2);
+    const deltas = h.logs.find((l) => l.startsWith("[TIMING:speculate-test] TURN#0 DELTAS"));
+    const trace = h.logs.find((l) => l.startsWith("[TIMING:speculate-test] TURN#0\n"));
+    assert.ok(deltas && trace, "expected the TURN#0 trace and DELTAS");
+    assert.ok(trace!.includes("(utterance_end)"), "the marker is the evidence for this turn");
+    const endpointToRelease = Number(/endpoint-to-release=(\d+)ms/u.exec(deltas!)?.[1]);
+    assert.ok(Number.isFinite(endpointToRelease) && endpointToRelease >= EVIDENCED_SHORT_MS - 20 && endpointToRelease < 600, `evidenced release (${endpointToRelease}ms)`);
+    assert.equal(h.requests.length, 1);
+    assert.equal(h.requests[0]!.userTurnCommitted, false, "still pre-opened on the marker");
+  } finally {
+    await h.stop();
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════
 console.log(
   `\n${failures.length === 0 ? "ALL PASSED" : "FAILURES"} — ${passed} passed, ${failures.length} failed`,
 );

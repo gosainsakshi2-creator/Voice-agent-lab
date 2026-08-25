@@ -147,10 +147,33 @@ export class ConversationMemory {
    * turns are on the order of a thousand tokens against it.
    */
   recentHistory(maxPairs: number = 20): readonly ConversationTurn[] {
-    const systemTurn = this.turns[0];
-    if (!systemTurn || systemTurn.role !== "system") return this.turns;
+    return ConversationMemory.window(this.turns, maxPairs);
+  }
 
-    const nonSystem = this.turns.slice(1);
+  /**
+   * READ-ONLY PREVIEW: exactly what `recentHistory()` would return
+   * immediately after `recordUserTurn(text, …)` — the same window over
+   * the same turns with that one user turn appended — WITHOUT recording
+   * anything. Nothing is pushed, the language is not updated, no entity
+   * is extracted and the turn count does not move.
+   *
+   * Exists so a request can be prepared for a user turn the pipeline
+   * has not yet committed, and be identical (role for role, content for
+   * content) to the one it will build once it does. Sharing `window`
+   * with `recentHistory` is what makes that identity hold by
+   * construction rather than by duplication.
+   */
+  previewRecentHistory(pendingUserText: string, maxPairs: number = 20): readonly ConversationTurn[] {
+    const pending: ConversationTurn = { role: "user", content: pendingUserText, timestamp: new Date() };
+    return ConversationMemory.window([...this.turns, pending], maxPairs);
+  }
+
+  /** The single windowing rule behind `recentHistory` and `previewRecentHistory`. */
+  private static window(turns: readonly ConversationTurn[], maxPairs: number): readonly ConversationTurn[] {
+    const systemTurn = turns[0];
+    if (!systemTurn || systemTurn.role !== "system") return turns;
+
+    const nonSystem = turns.slice(1);
     // Each pair is a user + assistant turn = 2 entries.
     const maxEntries = maxPairs * 2;
     const windowed = nonSystem.length <= maxEntries

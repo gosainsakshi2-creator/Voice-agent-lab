@@ -535,10 +535,53 @@ export class AdaptiveTurnDetector {
    * subscribes instead.
    */
   private pendingEvent: TurnDetectionEvent | null = null;
+  /**
+   * OBSERVERS of the evidenced confirmation window — see `onTurnPending`.
+   * Notified, never consulted: nothing in this detector reads them or
+   * changes a decision because one is present.
+   */
+  private readonly pendingListeners = new Set<(text: string) => void>();
   constructor(
     private readonly now: () => number = Date.now,
     private readonly immediateOnFinal = false,
   ) {}
+
+  /**
+   * OBSERVATION ONLY: the detector has just armed the EVIDENCED
+   * confirmation window for `text` — i.e. at this instant the
+   * provider's OWN endpointer has explicitly declared end of speech
+   * (`speech_final: true` on the words, or the standalone end-of-speech
+   * marker), no interim is outstanding, and the text reads as a
+   * finished thought. Unless new speech arrives inside that window,
+   * `onTurnEnd` will fire with exactly this text when it expires.
+   *
+   * It is NOT a release and must not be treated as one: `onTurnEnd` is
+   * still the only release. New speech of any kind cancels the pending
+   * turn exactly as before (`feed` resets `stage`), and no notification
+   * is sent for that — a subscriber sees the cancellation as the fed
+   * segment itself, or as `onTurnEnd` delivering different text.
+   *
+   * Deliberately NOT fired for: an interim, an `is_final` chunk boundary
+   * without `speech_final`, the adaptive silence window expiring, a
+   * continuation/hold/chunk-boundary grace, the pending-interim re-wait,
+   * or a provider that reports no endpoint claim at all (`isSpeechFinal`
+   * absent). Those turns are released by inference, and inference is
+   * not the evidence this hook exists to announce.
+   *
+   * Arms no timer, consumes nothing, clears nothing and touches no
+   * threshold — every window in this file is byte-for-byte what it was.
+   */
+  onTurnPending(listener: (text: string) => void): () => void {
+    this.pendingListeners.add(listener);
+    return () => this.pendingListeners.delete(listener);
+  }
+
+  private notifyTurnPending(): void {
+    if (this.pendingListeners.size === 0) return;
+    const text = this.pendingFinalText.trim();
+    if (text.length === 0) return;
+    for (const listener of this.pendingListeners) listener(text);
+  }
 
   onTurnEnd(listener: (event: TurnDetectionEvent) => void): () => void {
     this.listeners.add(listener);
@@ -662,6 +705,11 @@ export class AdaptiveTurnDetector {
       if (this.lastFinalWasEndpoint && !this.pendingInterim && this.isReleasableThought()) {
         this.stage = "confirming";
         this.rearmTimer(this.evidencedConfirmationWindowMs(this.pendingFinalText));
+        // Observers are told only when the endpoint claim is EXPLICIT
+        // (`speech_final: true` on this very final). A provider that
+        // reports nothing (`isSpeechFinal` absent) takes this fast path
+        // by default and is not evidence — see `onTurnPending`.
+        if (segment.isSpeechFinal === true) this.notifyTurnPending();
         return;
       }
     }
@@ -784,6 +832,8 @@ export class AdaptiveTurnDetector {
     // unpunctuated tier below is what such a turn is granted instead.
     this.stage = "confirming";
     this.rearmTimer(this.evidencedConfirmationWindowMs(this.pendingFinalText));
+    // The marker IS the explicit endpoint claim — see `onTurnPending`.
+    this.notifyTurnPending();
   }
 
   /** Force an immediate end-of-turn (e.g. the caller detected hard silence via another signal). */

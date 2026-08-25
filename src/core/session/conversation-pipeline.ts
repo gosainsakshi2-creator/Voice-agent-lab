@@ -36,6 +36,7 @@ import type { SupportedLanguage } from "../../types/enums";
 import type { AudioPayload, ConversationTurn } from "../../types/provider.types";
 import type { CompletionRequest } from "../../interfaces/providers/language-model-provider.interface";
 import type { LanguageModelProvider } from "../../interfaces/providers/language-model-provider.interface";
+import type { LlmStreamEvent } from "../../types/streaming.types";
 import type { SpeechToTextProvider } from "../../interfaces/providers/speech-to-text-provider.interface";
 import type { TextToSpeechProvider, SynthesisTaskRequest } from "../../interfaces/providers/text-to-speech-provider.interface";
 import type { TelephonyProvider } from "../../interfaces/providers/telephony-provider.interface";
@@ -102,6 +103,62 @@ interface AcquiredTurn {
   /** FIX #7A — arrival time of the Deepgram evidence that ended this turn, if it was directly observed (see `lastEndpointEvidenceAtMs`). */
   readonly endpointEvidenceAtMs: number | undefined;
   readonly endpointEvidenceKind: "utterance_end" | "speech_final" | undefined;
+}
+
+/**
+ * FIX #8 — an LLM request PRE-OPENED during the turn detector's evidenced
+ * confirmation window, so the provider's time-to-first-token overlaps the
+ * one hold the pipeline still pays after Deepgram has declared end of
+ * speech — instead of starting only once that hold has expired.
+ *
+ * WHAT IT IS. The SAME request `runThinkingAndSpeaking` would build after
+ * the turn is released: same provider method, same `sessionId`, and a
+ * history that is identical role-for-role and content-for-content
+ * (`ConversationMemory.previewRecentHistory` + the same
+ * `buildRequestHistory` annotation). Adoption re-derives the normal
+ * request and compares; on ANY difference the pre-opened stream is
+ * abandoned and the normal request is sent exactly as today.
+ *
+ * WHEN IT STARTS. Only on `AdaptiveTurnDetector.onTurnPending` — the
+ * detector telling us it has armed the EVIDENCED confirmation window:
+ * Deepgram's own endpointer explicitly declared end of speech
+ * (`speech_final: true` on the words, or the standalone end-of-speech
+ * marker), no interim is outstanding, and the text reads as finished.
+ * Never on an interim, never on a bare `is_final`, never on silence or a
+ * timer. The detector's own guards (filler, hold phrase, incomplete
+ * thought, pending interim, chunk-boundary grace) run BEFORE that hook
+ * fires, so a turn they hold is never speculated on.
+ *
+ * WHEN IT IS ABANDONED. Any further caller speech reaching the detector
+ * (interim or final — the same segment that cancels the pending turn
+ * inside the detector), the turn being released with different text,
+ * voicemail, an attention-check turn, the loop ending — and, at
+ * adoption, any mismatch with the normally-built request. Abandonment
+ * aborts the provider stream through the signal it was given, the same
+ * way a barge-in does.
+ *
+ * WHAT IT DOES NOT TOUCH. Turn release is still `onTurnEnd`, unchanged.
+ * Barge-in, backchannel and interruption handling are untouched: a
+ * speculation only exists while the pipeline is LISTENING and awaiting
+ * a turn, so nothing here is alive while the assistant is speaking.
+ * The user turn is committed to memory at release, as before; nothing is
+ * recorded early. Sentence chunking, TTS, and every log/metric mark the
+ * existing path emits are emitted at the same points.
+ */
+interface SpeculativeCompletion {
+  /** The pending turn text this request was built for, exactly as the detector reported it. */
+  readonly text: string;
+  readonly request: CompletionRequest;
+  /** Wall clock at which the provider stream was opened. */
+  readonly openedAtMs: number;
+  /** Wall clock of the Deepgram evidence this was started on, for the trace. */
+  readonly evidenceAtMs: number | undefined;
+  readonly abort: AbortController;
+  readonly iterator: AsyncIterator<LlmStreamEvent>;
+  /** The one `next()` issued at pre-open time — what actually opens the connection. */
+  readonly first: Promise<IteratorResult<LlmStreamEvent>>;
+  /** Wall clock at which `first` settled with a token, if it has yet. */
+  firstTokenAtMs: number | undefined;
 }
 
 interface ThinkingAndSpeakingResult {
@@ -925,6 +982,22 @@ export class ConversationPipeline {
    */
   private attentionEpisodeOpen = false;
   /**
+   * FIX #8 — the LLM request pre-opened for the turn the detector is
+   * currently holding in its evidenced confirmation window, if any. See
+   * `SpeculativeCompletion`. At most one at a time; replaced or
+   * abandoned by the sites listed there.
+   */
+  private speculation: SpeculativeCompletion | undefined;
+  /**
+   * FIX #8 — true only while `waitForTurnDetectorEnd` is subscribed,
+   * i.e. the main loop is idle in LISTENING waiting for the caller's
+   * next turn. That is the ONLY window a speculation may start in: any
+   * other time (greeting, THINKING, SPEAKING, the barge-in unwind, an
+   * attention utterance) the pending-turn hook is ignored, so the
+   * barge-in and buffered-turn paths see exactly the traffic they did.
+   */
+  private awaitingTurn = false;
+  /**
    * ---------------- Metrics bookkeeping (read-only observers) ----------------
    * Everything below is written from points that already exist in the
    * flow and is read only by `recordTurn`. Nothing here feeds turn
@@ -1126,6 +1199,7 @@ export class ConversationPipeline {
         // once the recording stops talking — no hangup logic is added
         // to the pipeline, exactly as before.
         if (this.voicemailDetected) {
+          this.abandonSpeculation("voicemail — no reply is generated");
           const machineLanguage = detectLanguage(turn.text, this.record.memory.currentLanguage);
           this.record.memory.recordUserTurn(turn.text, machineLanguage.language);
           this.record.liveUserTranscript = "";
@@ -1176,7 +1250,18 @@ export class ConversationPipeline {
         // Reached only after `metrics.recordTurn` has advanced
         // `turnIndex` at least once, so the voicemail window is closed
         // before this can run.
+        // FIX #8 — `handleAttentionCheck` can only answer a turn itself
+        // while a script position is held or an episode is open, and
+        // `startSpeculation` already declines to start in either state,
+        // so no pre-opened request should exist here. Belt to that
+        // brace: if one somehow does, it is closed BEFORE the attention
+        // utterance is spoken rather than left open for the seconds that
+        // takes. Decided on the same two flags the handler reads.
+        if (this.speculation !== undefined && (this.attentionEpisodeOpen || this.heldScriptRemainder.length > 0)) {
+          this.abandonSpeculation("attention-check turn is answered without the language model");
+        }
         if (await this.handleAttentionCheck(turn.text, loopSignal)) {
+          this.abandonSpeculation("attention-check turn was handled without the language model");
           timer.summarize();
           // FIX #7A — attention-check turns still went through real
           // STT endpointing and turn release above; labelled ATTENTION
@@ -1624,6 +1709,188 @@ export class ConversationPipeline {
         abort.abort();
       }
     })();
+  }
+
+  // ---------------------------------------------------------------
+  // FIX #8 — speculative LLM pre-open. See `SpeculativeCompletion`.
+  // ---------------------------------------------------------------
+
+  /**
+   * The detector has armed its EVIDENCED confirmation window for `text`
+   * (see `AdaptiveTurnDetector.onTurnPending`). Open the request that
+   * turn will need, now, so the provider's time-to-first-token runs
+   * during that window instead of after it.
+   *
+   * Every guard here is a reason the released turn would NOT reach
+   * `runThinkingAndSpeaking`'s LLM call as this text, or would reach it
+   * in a state this request cannot match:
+   *   - not idle in LISTENING awaiting a turn (greeting, thinking,
+   *     speaking, barge-in unwind, attention utterance): the pending
+   *     turn hook is simply ignored — those paths are untouched;
+   *   - voicemail: the machine gets no reply;
+   *   - an attention episode is open or a script position is held:
+   *     `handleAttentionCheck` may answer the turn without the model;
+   *   - no streaming provider: nothing to pre-open.
+   *
+   * Nothing is committed to memory here. The history is the memory's
+   * own PREVIEW of the window it will produce once the turn is recorded,
+   * annotated by the same `buildRequestHistory`.
+   */
+  private startSpeculation(text: string): void {
+    if (!this.awaitingTurn || this.voicemailDetected) return;
+    if (this.record.state !== SessionState.LISTENING) return;
+    if (this.attentionEpisodeOpen || this.heldScriptRemainder.length > 0) return;
+    const generate = this.providers.llm.generateCompletionStream;
+    if (typeof generate !== "function") return;
+    const loopSignal = this.record.loopAbortController?.signal;
+    if (!loopSignal || loopSignal.aborted) return;
+    if (text.trim().length === 0) return;
+
+    if (this.speculation !== undefined) {
+      // The same pending turn re-announced (e.g. `speech_final` on the
+      // words AND a standalone marker for the same utterance): the open
+      // request already is this request.
+      if (this.speculation.text === text) return;
+      this.abandonSpeculation("pending turn text changed");
+    }
+
+    const sid = this.record.id;
+    const evidenceAtMs = this.lastEndpointEvidenceAtMs;
+    const evidenceKind = this.lastEndpointEvidenceKind;
+    try {
+      const detected = detectLanguage(text, this.record.memory.currentLanguage);
+      const request: CompletionRequest = {
+        sessionId: sid,
+        history: this.buildRequestHistory(detected.language, this.record.memory.previewRecentHistory(text)),
+      };
+      const abort = new AbortController();
+      const stream = generate.call(this.providers.llm, request, combineSignals([abort.signal, loopSignal]));
+      const iterator = stream[Symbol.asyncIterator]();
+      // An async generator runs nothing until its first `next()` — this
+      // call is what actually opens the provider connection.
+      const openedAtMs = Date.now();
+      const first = iterator.next();
+      const speculation: SpeculativeCompletion = {
+        text,
+        request,
+        openedAtMs,
+        evidenceAtMs,
+        abort,
+        iterator,
+        first,
+        firstTokenAtMs: undefined,
+      };
+      // Observe (for the trace) and mark handled: an abandoned request
+      // whose connection fails must not surface as an unhandled
+      // rejection. The adopter still sees the rejection through `first`.
+      first.then(
+        (result) => {
+          if (!result.done && result.value.type === "token") speculation.firstTokenAtMs = Date.now();
+        },
+        () => undefined,
+      );
+      this.speculation = speculation;
+      // eslint-disable-next-line no-console
+      console.log(
+        `[SPECULATE:${sid}] LLM request PRE-OPENED on ${evidenceKind ?? "endpoint"} evidence: text="${text.slice(0, 80)}${text.length > 80 ? "..." : ""}"` +
+          `${evidenceAtMs !== undefined ? ` evidence-to-llm-open=${openedAtMs - evidenceAtMs}ms` : ""} historyLength=${request.history.length}`,
+      );
+    } catch (error) {
+      // Nothing is lost: the turn is released and sent exactly as today.
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[SPECULATE:${sid}] could not pre-open the LLM request — falling back to the normal path: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  /**
+   * Drop the pre-opened request. Aborts the provider stream through the
+   * signal it was given — the same mechanism a barge-in uses — and
+   * releases the generator. Idempotent.
+   */
+  private abandonSpeculation(reason: string): void {
+    const speculation = this.speculation;
+    if (speculation === undefined) return;
+    this.speculation = undefined;
+    speculation.abort.abort();
+    void Promise.resolve(speculation.iterator.return?.()).catch(() => undefined);
+    // eslint-disable-next-line no-console
+    console.log(
+      `[SPECULATE:${this.record.id}] pre-opened LLM request ABANDONED (${reason}) text="${speculation.text.slice(0, 80)}${speculation.text.length > 80 ? "..." : ""}"` +
+        ` openMs=${Date.now() - speculation.openedAtMs} firstToken=${speculation.firstTokenAtMs !== undefined ? "received" : "not yet"}`,
+    );
+  }
+
+  /**
+   * Hand the pre-opened request to the turn that has just been released,
+   * IF it is that turn's request: same user text, and a history equal
+   * role-for-role and content-for-content to the one
+   * `runThinkingAndSpeaking` has just built the normal way. Any
+   * difference — different text, memory changed underneath, stream
+   * already aborted — abandons it and the caller sends its own request
+   * exactly as today.
+   *
+   * On adoption the reply's `thinkingSignal` is linked to the stream's
+   * abort, so a barge-in cancels it precisely as it cancels a stream the
+   * caller opened itself.
+   */
+  private adoptSpeculation(
+    userText: string,
+    request: CompletionRequest,
+    thinkingSignal: AbortSignal,
+  ): SpeculativeCompletion | undefined {
+    const speculation = this.speculation;
+    if (speculation === undefined) return undefined;
+    if (speculation.text !== userText) {
+      this.abandonSpeculation("released turn text differs");
+      return undefined;
+    }
+    if (speculation.abort.signal.aborted) {
+      this.abandonSpeculation("pre-opened stream already aborted");
+      return undefined;
+    }
+    const same =
+      speculation.request.sessionId === request.sessionId &&
+      speculation.request.history.length === request.history.length &&
+      speculation.request.history.every((turn, i) => {
+        const other = request.history[i];
+        return other !== undefined && other.role === turn.role && other.content === turn.content;
+      });
+    if (!same) {
+      this.abandonSpeculation("pre-opened request does not match the request built at release");
+      return undefined;
+    }
+    this.speculation = undefined;
+    if (thinkingSignal.aborted) {
+      speculation.abort.abort();
+    } else {
+      thinkingSignal.addEventListener("abort", () => speculation.abort.abort(), { once: true });
+    }
+    return speculation;
+  }
+
+  /**
+   * The adopted stream, as the ordinary `for await` in
+   * `runStreamingCompletion` expects it: the result of the `next()`
+   * issued at pre-open time first, then the rest of the generator. A
+   * rejection from the pre-open surfaces here, where the existing
+   * dropped-connection handling already is. Breaking out of this
+   * generator returns the underlying one, as it does today.
+   */
+  private async *resumeSpeculativeStream(speculation: SpeculativeCompletion): AsyncIterable<LlmStreamEvent> {
+    try {
+      const first = await speculation.first;
+      if (first.done) return;
+      yield first.value;
+      for (;;) {
+        const next = await speculation.iterator.next();
+        if (next.done) return;
+        yield next.value;
+      }
+    } finally {
+      await speculation.iterator.return?.();
+    }
   }
 
   /**
@@ -2176,6 +2443,14 @@ export class ConversationPipeline {
             this.lastEndpointEvidenceKind = "speech_final";
           }
 
+          // FIX #8 — the caller is still speaking (this segment, interim
+          // or final, is about to cancel the detector's pending turn
+          // exactly as it always has), so a request pre-opened for that
+          // pending turn is for text that will not be released. Abandon
+          // it BEFORE the feed, so the detector's own handling — and any
+          // fresh pending-turn notification it produces — starts clean.
+          if (this.speculation !== undefined) this.abandonSpeculation("caller resumed speaking");
+
           this.record.turnDetector.feed(segment);
         }
       } catch {
@@ -2248,6 +2523,8 @@ export class ConversationPipeline {
    */
   private hangUpOnVoicemail(phrase: string, heard: string): void {
     this.voicemailDetected = true;
+    // FIX #8 — a machine gets no reply, so nothing pre-opened for it is wanted.
+    this.abandonSpeculation("voicemail detected");
     // eslint-disable-next-line no-console
     console.warn(
       `[PIPELINE:${this.record.id}] VOICEMAIL DETECTED ("${phrase}") — stopping the agent and hanging up`,
@@ -2291,14 +2568,32 @@ export class ConversationPipeline {
   private waitForTurnDetectorEnd(loopSignal: AbortSignal): Promise<AcquiredTurn | null> {
     return new Promise((resolve) => {
       let settled = false;
+      // FIX #8 — the speculation window is exactly this subscription.
+      this.awaitingTurn = true;
 
       const finish = (result: AcquiredTurn | null): void => {
         if (settled) return;
         settled = true;
+        this.awaitingTurn = false;
         unsubscribe();
+        unsubscribePending();
         loopSignal.removeEventListener("abort", onAbort);
+        // FIX #8 — the loop is ending, or a turn was released with text
+        // other than the one speculated on; either way that request is
+        // for a turn that will never be sent. Matching text is adopted
+        // (or abandoned) in `runThinkingAndSpeaking`, never here.
+        if (result === null || (this.speculation !== undefined && this.speculation.text !== result.text)) {
+          this.abandonSpeculation(result === null ? "turn acquisition ended" : "released turn differs from the speculated text");
+        }
         resolve(result);
       };
+
+      // FIX #8 — see `SpeculativeCompletion`. Observation of the
+      // detector's evidenced confirmation window; it decides nothing
+      // about the release.
+      const unsubscribePending = this.record.turnDetector.onTurnPending((text) => {
+        this.startSpeculation(text);
+      });
 
       const unsubscribe = this.record.turnDetector.onTurnEnd((event) => {
         // FIX #7A — captured at the top of this listener, which
@@ -2447,10 +2742,14 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
    *   3. History order: system → user → assistant → user → assistant …
    */
  private buildRequestHistory(
-  detectedLanguage: SupportedLanguage
+  detectedLanguage: SupportedLanguage,
+  // FIX #8 — optional, additive: the window to annotate. Defaults to
+  // exactly what it always read; `startSpeculation` passes the memory's
+  // preview of that same window with the pending user turn appended.
+  recent: readonly ConversationTurn[] = this.record.memory.recentHistory(),
 ): readonly ConversationTurn[] {
 
-  const turns = this.record.memory.recentHistory().map(turn => ({ ...turn }));
+  const turns = recent.map(turn => ({ ...turn }));
 
   const hint = languageHintFor(detectedLanguage);
 
@@ -2517,12 +2816,25 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
     const thinkingSignal = combineSignals([this.record.bargeIn.beginThinking(), loopSignal]);
     const request: CompletionRequest = { sessionId: this.record.id, history: this.buildRequestHistory(detected.language) };
     const llmProviderId = this.providers.llm.descriptor.id;
+    // FIX #8 — the request above is STILL built, exactly as before, and
+    // is the reference a pre-opened request must match to be adopted.
+    // Anything else falls through to sending `request` as today.
+    const preOpened = this.adoptSpeculation(userText, request, thinkingSignal);
 
     // eslint-disable-next-line no-console
     console.log(
       `[LLM:${sid}] Sending to ${llmProviderId}: historyLength=${request.history.length} roles=[${request.history.map((t) => t.role).join(",")}] streaming=${typeof this.providers.llm.generateCompletionStream === "function"}`,
     );
     this.markTiming("llm-request");
+    if (preOpened !== undefined) {
+      const now = Date.now();
+      // eslint-disable-next-line no-console
+      console.log(
+        `[SPECULATE:${sid}] ADOPTED pre-opened request — llm-request is ${now - preOpened.openedAtMs}ms after the provider stream was opened` +
+          ` (${preOpened.firstTokenAtMs !== undefined ? `first token already in hand, ${now - preOpened.firstTokenAtMs}ms ago` : "first token not yet received"})` +
+          `${preOpened.evidenceAtMs !== undefined ? ` evidence-to-llm-open=${preOpened.openedAtMs - preOpened.evidenceAtMs}ms` : ""}`,
+      );
+    }
 
     // Cost basis: the tokens ACTUALLY sent — system prompt and recent
     // history included — not just the latest user utterance, which is
@@ -2534,7 +2846,7 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
     );
 
     if (this.providers.llm.generateCompletionStream) {
-      return this.runStreamingCompletion(request, thinkingSignal, loopSignal, promptTokens, llmProviderId);
+      return this.runStreamingCompletion(request, thinkingSignal, loopSignal, promptTokens, llmProviderId, preOpened);
     }
 
     return withGracefulRetry("LANGUAGE_MODEL", async () => {
@@ -2631,6 +2943,11 @@ await this.drainPlayback(speakingSignal);
     loopSignal: AbortSignal,
     promptTokens: number,
     llmProviderId: string,
+    // FIX #8 — optional, additive: an adopted pre-opened stream for THIS
+    // request. When present it is consumed in place of opening a new
+    // one, and `startedAt` is the instant it was really opened, so
+    // `llmMs` stays what it is documented as: provider time-to-first-token.
+    preOpened?: SpeculativeCompletion,
   ): Promise<ThinkingAndSpeakingResult> {
     const chunker = new SentenceChunker();
     let fullText = "";
@@ -2674,10 +2991,13 @@ await this.drainPlayback(speakingSignal);
      * from cancelling — and logging — the same reply twice.
      */
     let superseded = false;
-    const startedAt = Date.now();
+    const startedAt = preOpened?.openedAtMs ?? Date.now();
 
     try {
-      const stream = this.providers.llm.generateCompletionStream?.(request, thinkingSignal);
+      const stream =
+        preOpened !== undefined
+          ? this.resumeSpeculativeStream(preOpened)
+          : this.providers.llm.generateCompletionStream?.(request, thinkingSignal);
       if (!stream) throw new Error("generateCompletionStream unexpectedly unavailable");
 
       for await (const event of stream) {
@@ -2685,7 +3005,10 @@ await this.drainPlayback(speakingSignal);
 
         if (event.type === "token") {
           if (fullText.length === 0) {
-            llmFirstTokenMs ??= Date.now() - startedAt;
+            // FIX #8 — for an adopted pre-opened stream whose first token
+            // arrived BEFORE adoption, measure to its real arrival, not
+            // to the moment this loop got round to reading it.
+            llmFirstTokenMs ??= (preOpened?.firstTokenAtMs ?? Date.now()) - startedAt;
             this.markTiming("llm-first-token");
           }
           fullText += event.delta;

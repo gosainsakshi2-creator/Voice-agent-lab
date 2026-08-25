@@ -187,6 +187,30 @@ interface FakeVendorOptions {
   readonly recordsAfterDone?: boolean;
   /** Bytes per audio event. */
   readonly eventBytes?: number;
+  /**
+   * Pad the STREAMED clip with digital silence, the way the live vendor
+   * does (measured 80-300ms leading, 350-380ms trailing on every clip).
+   * `internalSilenceMs` inserts a pause at the clip's midpoint, which
+   * must survive untouched.
+   */
+  readonly leadSilenceMs?: number;
+  readonly trailSilenceMs?: number;
+  readonly internalSilenceMs?: number;
+}
+
+const silence = (ms: number): Uint8Array => new Uint8Array(Math.round((ms * BYTES_PER_SECOND) / 1000 / 2) * 2);
+
+/** The clip as the fake vendor streams it: `clipFor(text)` with the requested silence padding. */
+function paddedClipFor(text: string, options: FakeVendorOptions): Uint8Array {
+  const core = clipFor(text);
+  const mid = Math.floor(core.byteLength / 4) * 2;
+  const body =
+    options.internalSilenceMs === undefined
+      ? core
+      : Buffer.concat([core.subarray(0, mid), silence(options.internalSilenceMs), core.subarray(mid)]);
+  return new Uint8Array(
+    Buffer.concat([silence(options.leadSilenceMs ?? 0), body, silence(options.trailSilenceMs ?? 0)]),
+  );
 }
 
 function wavContainer(pcm: Uint8Array): Uint8Array {
@@ -256,7 +280,7 @@ async function startFakeVendor(options: FakeVendorOptions = {}): Promise<FakeVen
         Connection: "keep-alive",
       });
 
-      const pcm = clipFor(text);
+      const pcm = paddedClipFor(text, options);
       await sleep(VENDOR_FIRST_EVENT_MS);
 
       let sent = 0;
@@ -524,6 +548,124 @@ await test("A13 — streaming and batch return the SAME audio: byte count and du
   } finally {
     await vendor.close();
   }
+});
+
+// ── Edge-silence trim (2026-08-25) ────────────────────────────────
+//
+// Live measurement: the vendor bakes 80-300ms of leading and 350-380ms
+// of trailing silence into EVERY clip, so with one request per sentence
+// the caller heard ~430-680ms of dead air at each sentence boundary.
+// Cartesia's edges are 0-90ms. The adapter now trims each edge down to
+// 50ms. At 8kHz: 10ms window = 160 bytes, 50ms keep = 800 bytes; the
+// window grid is evaluated per event, so at most one extra window may
+// survive at an edge — hence the 960-byte ceiling.
+
+const KEEP_BYTES = 800;
+const EDGE_CEILING_BYTES = KEEP_BYTES + 160;
+
+function isAllZero(bytes: Uint8Array): boolean {
+  for (const b of bytes) if (b !== 0) return false;
+  return true;
+}
+
+/** Where `core` sits inside `out`, or -1. */
+function indexOfCore(out: Uint8Array, core: Uint8Array): number {
+  return Buffer.from(out).indexOf(Buffer.from(core));
+}
+
+await test("A14 — vendor leading/trailing silence is trimmed to ≤50ms per edge; the speech itself is byte-exact", async () => {
+  const vendor = await startFakeVendor({ leadSilenceMs: 300, trailSilenceMs: 360 });
+  try {
+    const result = await drain(providerFor(vendor.baseUrl), TEXT_LONG);
+    assert.equal(result.error, undefined, `unexpected error: ${result.error?.message}`);
+    const core = vendor.clipFor(TEXT_LONG);
+    const at = indexOfCore(result.audio, core);
+    assert.ok(at >= 0, "the speech bytes must be delivered intact and in order");
+    const lead = result.audio.subarray(0, at);
+    const trail = result.audio.subarray(at + core.byteLength);
+    assert.ok(isAllZero(lead) && isAllZero(trail), "only silence may surround the speech");
+    assert.ok(lead.byteLength <= EDGE_CEILING_BYTES, `leading silence ${lead.byteLength} bytes (${lead.byteLength / 16}ms) survived — expected ≤ ${EDGE_CEILING_BYTES / 16}ms of the vendor's 300ms`);
+    assert.ok(trail.byteLength <= EDGE_CEILING_BYTES, `trailing silence ${trail.byteLength} bytes (${trail.byteLength / 16}ms) survived — expected ≤ ${EDGE_CEILING_BYTES / 16}ms of the vendor's 360ms`);
+    assert.ok(lead.byteLength % 2 === 0 && trail.byteLength % 2 === 0, "trim must stay PCM_16 sample-aligned");
+    const last = result.chunks[result.chunks.length - 1];
+    assert.equal(last?.isFinal, true, "the final sentinel must still close the stream");
+    result.chunks.forEach((chunk, i) => assert.equal(chunk.sequence, i, `chunk ${i} sequence`));
+  } finally {
+    await vendor.close();
+  }
+});
+
+await test("A15 — an internal pause is preserved byte-for-byte; only the clip's edges are trimmed", async () => {
+  const vendor = await startFakeVendor({ leadSilenceMs: 240, trailSilenceMs: 360, internalSilenceMs: 200 });
+  try {
+    const result = await drain(providerFor(vendor.baseUrl), TEXT_LONG);
+    assert.equal(result.error, undefined, `unexpected error: ${result.error?.message}`);
+    // The body = speech + 200ms pause + speech, exactly as the vendor sent it.
+    const core = vendor.clipFor(TEXT_LONG);
+    const mid = Math.floor(core.byteLength / 4) * 2;
+    const body = new Uint8Array(Buffer.concat([core.subarray(0, mid), silence(200), core.subarray(mid)]));
+    const at = indexOfCore(result.audio, body);
+    assert.ok(at >= 0, "the internal 200ms pause must survive untouched between the two speech halves");
+    assert.ok(at <= EDGE_CEILING_BYTES, `leading silence ${at / 16}ms survived`);
+    assert.ok(result.audio.byteLength - at - body.byteLength <= EDGE_CEILING_BYTES, "trailing silence survived");
+  } finally {
+    await vendor.close();
+  }
+});
+
+await test("A16 — a clip with no edge silence is delivered unchanged (the trim is a no-op on clean audio)", async () => {
+  const vendor = await startFakeVendor();
+  try {
+    const result = await drain(providerFor(vendor.baseUrl), TEXT_LONG);
+    assertSameAudio(result.audio, vendor.clipFor(TEXT_LONG), "A16 clip");
+  } finally {
+    await vendor.close();
+  }
+});
+
+await test("A17 — trimming does not delay speech: the first yield is the first event carrying speech, not the end of the clip", async () => {
+  // 300ms of leading silence at 8kHz is 4800 bytes — under one 5122-byte
+  // event, so speech is in event 1. Whatever the vendor pads, the
+  // first playable yield must arrive well before the transfer ends.
+  const vendor = await startFakeVendor({ leadSilenceMs: 300, trailSilenceMs: 360 });
+  try {
+    const result = await drain(providerFor(vendor.baseUrl), TEXT_LONG);
+    assert.ok(result.firstAudioMs !== undefined, "no audio emitted");
+    assert.ok(
+      result.firstAudioMs! < result.totalMs * 0.6,
+      `first audio at ${result.firstAudioMs}ms of ${result.totalMs}ms — trimming must not turn the stream back into a batch`,
+    );
+    const first = result.chunks.find((c) => c.audio.data.byteLength > 0)!;
+    assert.ok(!isAllZero(first.audio.data), "the first yielded chunk must contain speech, not the vendor's leading pad");
+  } finally {
+    await vendor.close();
+  }
+});
+
+await test("A18 — the trimmer alone: an all-silent clip collapses to ≤50ms, and held silence is bounded by the 600ms cap", async () => {
+  const { EdgeSilenceTrimmer } = await import("../../providers/text-to-speech/smallest-ai.provider");
+  // All silent, under the cap: nothing emitted until finish, then ≤ keep.
+  const t1 = new EdgeSilenceTrimmer(SAMPLE_RATE_HZ);
+  assert.equal(t1.push(silence(200)), undefined);
+  assert.equal(t1.push(silence(200)), undefined);
+  const tail = t1.finish();
+  assert.ok((tail?.byteLength ?? 0) <= KEEP_BYTES, `all-silent clip emitted ${tail?.byteLength} bytes`);
+
+  // Leading silence beyond the cap is discarded down to the cap, never emitted.
+  const t2 = new EdgeSilenceTrimmer(SAMPLE_RATE_HZ);
+  for (let i = 0; i < 10; i += 1) assert.equal(t2.push(silence(100)), undefined, "leading silence is never emitted");
+  const speech = clipFor(TEXT_SHORT);
+  const out = t2.push(speech)!;
+  assert.ok(indexOfCore(out, speech) <= KEEP_BYTES, "speech is preceded by at most the kept 50ms");
+
+  // An internal pause longer than the cap is flushed intact, not dropped.
+  const t3 = new EdgeSilenceTrimmer(SAMPLE_RATE_HZ);
+  t3.push(speech);
+  let flushed = 0;
+  for (let i = 0; i < 7; i += 1) flushed += t3.push(silence(100))?.byteLength ?? 0;
+  const after = t3.push(speech)!;
+  const pauseBytes = flushed + indexOfCore(after, speech);
+  assert.equal(pauseBytes, silence(700).byteLength, `internal pause of 700ms came out as ${pauseBytes / 16}ms`);
 });
 
 await test("A4 — the explicit done:true marker ends the stream, and anything after it is ignored", async () => {

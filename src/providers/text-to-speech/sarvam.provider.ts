@@ -137,7 +137,7 @@ const MAX_IDLE_GAP_MS = 1200;
  * Cartesia's fixed `speed`: an approved voice setting, not per-deploy
  * configuration.
  */
-const SARVAM_PACE = 1.15;
+const SARVAM_PACE = 1.00;
 
 interface SarvamEnvConfig {
   readonly apiKey: string;

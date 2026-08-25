@@ -18,6 +18,27 @@ below. The FIX #3 sections after it are the previous pass, kept as history.
 
 ---
 
+## FIX #10 (2026-08-25) — SMALLEST AI: VENDOR-BAKED EDGE SILENCE BETWEEN SENTENCE CHUNKS
+
+**Status: implemented, tested, green. Uncommitted. Nothing dialed.** Two files:
+`smallest-ai.provider.ts` (an `EdgeSilenceTrimmer` applied only inside
+`synthesizeStream`) and `smallest-ai-stream-tests.ts` (+5 tests, A14–A18).
+
+**Root cause (measured live, 2 rounds, identical to the ms):** Smallest pads
+every rendered clip with **80–300ms leading + 350–380ms trailing** digital
+silence (RMS 0–8). One request per sentence chunk ⇒ **~430–680ms of dead air at
+every sentence boundary**. Cartesia's edges are 0–90ms — same pipeline, no pause.
+Queue starvation ruled out (each Smallest stream finishes ~2.4s before its audio
+has played). `remove_extra_silence: true` is silently ignored by the stream
+endpoint. Fix trims each edge to 50ms; internal pauses preserved byte-for-byte;
+held silence capped at 600ms. Live after: lead=50/trail=50 on all three test
+sentences. Watch `[TTS:smallest-ai] trimmed edge silence lead=…ms trail=…ms` on
+the next call. Note: `tts-first-chunk` on this lane may read 0–70ms later — it
+used to measure the arrival of the silent pad, not speech.
+
+Pre-existing, unrelated: `test:sarvam-stream` C8 fails before and after
+(`SARVAM_PACE` = 1, test wants (1.0, 1.2]).
+
 ## FIX #8 (2026-08-24) — TURN RELEASE, PHASE 3: THE ENDPOINT CLAIM WAS DISCARDED FOR UNPUNCTUATED TEXT
 
 **Status: implemented, tested, green (3x, no flakes). Uncommitted. Nothing

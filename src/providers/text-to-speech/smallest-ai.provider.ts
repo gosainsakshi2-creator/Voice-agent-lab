@@ -52,6 +52,192 @@ interface SmallestAiEnvConfig {
   readonly sampleRateHz: number;
 }
 
+/* ────────────────────────────────────────────────────────────────
+ * EDGE-SILENCE TRIM (Smallest AI only)
+ *
+ * MEASURED, live account, 2026-08-25, three consecutive sentences
+ * streamed sequentially exactly as the pipeline does, two rounds
+ * each (RMS > 60 on 10ms windows = "speech"):
+ *
+ *   sentence                      lead     trail    Cartesia lead/trail
+ *   "Actually, I am calling…"     300ms    350ms         0 /  10ms
+ *   "We have created Flexi…"       80ms    360ms        90 /  90ms
+ *   "Would you like to hear…"     240ms    360ms         0 /  20ms
+ *
+ * Identical to the millisecond across rounds: the vendor BAKES
+ * ~80-300ms of leading and ~350-380ms of trailing silence into every
+ * clip it renders. The pipeline issues one independent request per
+ * sentence chunk, so at every sentence boundary the caller hears
+ * trail(N) + lead(N+1) ≈ 430-680ms of dead air on top of the natural
+ * pause the chunker's cut already implies. Cartesia's edges are
+ * 0-90ms, which is why the same pipeline sounds continuous on that
+ * lane. Queue starvation was ruled out: each Smallest stream completes
+ * ~2.4s before its own audio has finished playing, so the next
+ * request's ~450ms first-audio is fully covered.
+ *
+ * `remove_extra_silence: true` was tried on the stream endpoint and is
+ * silently ignored (lead/trail unchanged over six paired runs), so the
+ * trim has to happen here.
+ *
+ * What the trimmer does, and does not do:
+ *   - Leading: silence before the first speech window is cut down to
+ *     `EDGE_SILENCE_KEEP_MS`. Nothing is buffered beyond what the
+ *     vendor has sent; the first yield is simply the first event that
+ *     contains speech, so speech reaches the transport EARLIER than
+ *     before (it used to sit behind the silence).
+ *   - Trailing: silence after the last speech window is HELD back, not
+ *     dropped — it is released in full the moment more speech arrives
+ *     (internal pauses are preserved byte-for-byte), and only what is
+ *     still held at `done:true` is cut down to `EDGE_SILENCE_KEEP_MS`.
+ *     Holding trailing silence delays no audible sample: the held
+ *     bytes are silent, and the transport queue is seconds deep.
+ *   - Bounded: held silence never exceeds `SILENCE_HOLD_CAP_MS`. Past
+ *     the cap an internal pause is flushed intact and excess leading
+ *     silence is discarded to the cap, so the worst case is today's
+ *     behaviour, never a hang or a lost word.
+ *   - Detection is RMS over PCM_16 at ~-54 dBFS; the vendor's padding
+ *     measures RMS 0-8, real speech onsets hundreds. Windows are
+ *     evaluated within each event, so at most one extra 10ms window
+ *     of silence survives at an edge.
+ * ──────────────────────────────────────────────────────────────── */
+
+/** RMS (PCM_16 units) at or below which a 10ms window counts as silence (~-54 dBFS). */
+const EDGE_SILENCE_RMS_THRESHOLD = 64;
+/** Analysis window. */
+const EDGE_SILENCE_WINDOW_MS = 10;
+/** Silence retained at each edge of a clip — Cartesia's measured edges are 0-90ms. */
+const EDGE_SILENCE_KEEP_MS = 50;
+/** Never hold back more silence than this; the vendor's trailing pad measures ≤380ms. */
+const SILENCE_HOLD_CAP_MS = 600;
+
+function concatBytes(parts: readonly Uint8Array[]): Uint8Array {
+  let total = 0;
+  for (const part of parts) total += part.byteLength;
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const part of parts) {
+    out.set(part, offset);
+    offset += part.byteLength;
+  }
+  return out;
+}
+
+/**
+ * Streaming trimmer for the vendor's per-clip leading/trailing silence.
+ * One instance per `synthesizeStream` call. Input chunks must be
+ * PCM_16 little-endian with an even byte length (the parity guard in
+ * the read loop guarantees that).
+ */
+export class EdgeSilenceTrimmer {
+  private readonly windowBytes: number;
+  private readonly keepBytes: number;
+  private readonly holdCapBytes: number;
+  private speechStarted = false;
+  private held: Uint8Array[] = [];
+  private heldBytes = 0;
+  private trimmedLeadBytes = 0;
+  private trimmedTrailBytes = 0;
+
+  constructor(sampleRateHz: number) {
+    const bytesPerMs = (sampleRateHz * 2) / 1000;
+    this.windowBytes = Math.max(2, Math.round((bytesPerMs * EDGE_SILENCE_WINDOW_MS) / 2) * 2);
+    this.keepBytes = Math.round((bytesPerMs * EDGE_SILENCE_KEEP_MS) / 2) * 2;
+    this.holdCapBytes = Math.round((bytesPerMs * SILENCE_HOLD_CAP_MS) / 2) * 2;
+  }
+
+  /** Bytes safe to emit now, or `undefined` when everything is being held as possible trailing silence. */
+  push(chunk: Uint8Array): Uint8Array | undefined {
+    const { firstLoudStart, lastLoudEnd } = this.loudSpan(chunk);
+
+    if (lastLoudEnd === 0) {
+      // Entirely silent: hold it until speech proves it was an internal pause.
+      this.hold(chunk);
+      if (this.heldBytes > this.holdCapBytes) {
+        if (this.speechStarted) return this.takeHeld();
+        // Leading silence past the cap is discarded down to the cap — it is
+        // provably silent, so nothing audible is lost.
+        const excess = this.heldBytes - this.holdCapBytes;
+        this.trimmedLeadBytes += excess;
+        this.hold(this.takeHeld().subarray(excess));
+      }
+      return undefined;
+    }
+
+    let lead: Uint8Array;
+    if (this.speechStarted) {
+      // An internal pause: release every held byte, unchanged.
+      lead = this.takeHeld();
+      lead = concatBytes([lead, chunk.subarray(0, firstLoudStart)]);
+    } else {
+      this.speechStarted = true;
+      this.hold(chunk.subarray(0, firstLoudStart));
+      const all = this.takeHeld();
+      const keepFrom = Math.max(0, all.byteLength - this.keepBytes);
+      this.trimmedLeadBytes += keepFrom;
+      lead = all.subarray(keepFrom);
+    }
+
+    const out = concatBytes([lead, chunk.subarray(firstLoudStart, lastLoudEnd)]);
+    if (lastLoudEnd < chunk.byteLength) this.hold(chunk.subarray(lastLoudEnd));
+    return out;
+  }
+
+  /** At end of stream: whatever is still held is trailing silence — keep only `EDGE_SILENCE_KEEP_MS` of it. */
+  finish(): Uint8Array | undefined {
+    if (this.heldBytes === 0) return undefined;
+    const all = this.takeHeld();
+    const keep = Math.min(all.byteLength, this.keepBytes);
+    if (this.speechStarted) this.trimmedTrailBytes += all.byteLength - keep;
+    else this.trimmedLeadBytes += all.byteLength - keep;
+    return keep === 0 ? undefined : all.subarray(0, keep);
+  }
+
+  /** Diagnostic: bytes removed so far. */
+  get trimmed(): { readonly leadBytes: number; readonly trailBytes: number } {
+    return { leadBytes: this.trimmedLeadBytes, trailBytes: this.trimmedTrailBytes };
+  }
+
+  private hold(bytes: Uint8Array): void {
+    if (bytes.byteLength === 0) return;
+    this.held.push(bytes);
+    this.heldBytes += bytes.byteLength;
+  }
+
+  private takeHeld(): Uint8Array {
+    const out = this.held.length === 1 ? this.held[0]! : concatBytes(this.held);
+    this.held = [];
+    this.heldBytes = 0;
+    return out;
+  }
+
+  /** Byte offsets of the first speech window's start and the last speech window's end (0/0 when all silent). */
+  private loudSpan(chunk: Uint8Array): { readonly firstLoudStart: number; readonly lastLoudEnd: number } {
+    let firstLoudStart = -1;
+    let lastLoudEnd = 0;
+    for (let start = 0; start < chunk.byteLength; start += this.windowBytes) {
+      const end = Math.min(start + this.windowBytes, chunk.byteLength);
+      if (this.isLoud(chunk, start, end)) {
+        if (firstLoudStart < 0) firstLoudStart = start;
+        lastLoudEnd = end;
+      }
+    }
+    return { firstLoudStart: firstLoudStart < 0 ? 0 : firstLoudStart, lastLoudEnd };
+  }
+
+  private isLoud(chunk: Uint8Array, start: number, end: number): boolean {
+    let sum = 0;
+    let n = 0;
+    for (let i = start; i + 1 < end; i += 2) {
+      // PCM_16 little-endian, sign-extended.
+      const sample = ((chunk[i]! | (chunk[i + 1]! << 8)) << 16) >> 16;
+      sum += sample * sample;
+      n += 1;
+    }
+    if (n === 0) return false;
+    return Math.sqrt(sum / n) > EDGE_SILENCE_RMS_THRESHOLD;
+  }
+}
+
 function loadEnvConfig(): SmallestAiEnvConfig {
   return {
     apiKey: requireEnv("SMALLEST_AI_API_KEY", TEXT_TO_SPEECH_PROVIDER_IDS.SMALLEST_AI),
@@ -223,6 +409,9 @@ export class SmallestAiTextToSpeechProvider implements TextToSpeechProvider {
     let carry: Uint8Array | undefined;
     let loggedFirstChunk = false;
     let emittedAudio = false;
+    // Per-clip leading/trailing silence trim — see the note above the
+    // class. One instance per stream; it never spans utterances.
+    const trimmer = new EdgeSilenceTrimmer(this.config.sampleRateHz);
 
     try {
       const response = await fetch(
@@ -338,10 +527,16 @@ export class SmallestAiTextToSpeechProvider implements TextToSpeechProvider {
               );
             }
 
+            // Edge-silence trim. `undefined` means the whole event was
+            // silence and is being held as possible trailing padding;
+            // it is released on the next speech event or cut at `done`.
+            const playable = trimmer.push(chunk);
+            if (playable === undefined || playable.byteLength === 0) continue;
+
             emittedAudio = true;
             yield {
               audio: {
-                data: chunk,
+                data: playable,
                 encoding: "PCM_16",
                 sampleRateHz: this.config.sampleRateHz,
               },
@@ -357,6 +552,23 @@ export class SmallestAiTextToSpeechProvider implements TextToSpeechProvider {
       }
 
       if (!aborted()) {
+        const tail = trimmer.finish();
+        if (tail !== undefined && tail.byteLength > 0) {
+          emittedAudio = true;
+          yield {
+            audio: { data: tail, encoding: "PCM_16", sampleRateHz: this.config.sampleRateHz },
+            sequence: sequence++,
+            isFinal: false,
+          };
+        }
+        const { leadBytes, trailBytes } = trimmer.trimmed;
+        if (leadBytes > 0 || trailBytes > 0) {
+          const bytesPerMs = (this.config.sampleRateHz * 2) / 1000;
+          // eslint-disable-next-line no-console
+          console.log(
+            `[TTS:smallest-ai] trimmed edge silence lead=${Math.round(leadBytes / bytesPerMs)}ms trail=${Math.round(trailBytes / bytesPerMs)}ms`,
+          );
+        }
         yield {
           audio: { data: new Uint8Array(0), encoding: "PCM_16", sampleRateHz: this.config.sampleRateHz },
           sequence: sequence++,

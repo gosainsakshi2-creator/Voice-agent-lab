@@ -230,6 +230,32 @@ export class DefaultVoiceSessionManager implements VoiceSessionManager, Pipeline
     // eslint-disable-next-line no-console
     console.log(`[session-mgr:${sessionId}] end() called, current state=${record.state}`);
 
+    // FIX #11 — release any TTS transport pre-opened for this session.
+    //
+    // Deliberately ahead of the IDLE early-return below, so a session
+    // that has already ended by another route still cannot leave a
+    // socket behind. The provider's `disposeSession` is idempotent and
+    // is a no-op for a session that was never prepared, so this is safe
+    // to run unconditionally and changes nothing else about teardown —
+    // no state transition, no metric, no ordering that anything depends
+    // on. The loop abort further down would also release it through the
+    // signal the pipeline passed; this is the belt to that braces, for
+    // the paths where the loop was never running.
+    try {
+      const tts = this.registry.resolve(
+        ProviderCategory.TEXT_TO_SPEECH,
+        record.providerStack.textToSpeech.id,
+      );
+      tts.disposeSession?.(sessionId);
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[session-mgr:${sessionId}] TTS transport dispose skipped: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+
     if (record.state === SessionState.IDLE) {
       // Already fully ended (e.g. the Dashboard's End Call and the
       // Plivo media stream closing due to a remote hangup both

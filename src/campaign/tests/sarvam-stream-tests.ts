@@ -191,6 +191,24 @@ interface FakeSarvam {
   configFrames(): ReadonlyArray<{ readonly data?: Record<string, unknown> }>;
   /** Every REST request body the provider posted, parsed. */
   restBodies(): ReadonlyArray<Record<string, unknown>>;
+  // ── FIX #11 (virgin-socket pre-open) observability ──────────────
+  /** How many WebSocket connections the provider has opened, ever. */
+  connections(): number;
+  /** How many of those the server has seen close. */
+  closedConnections(): number;
+  /**
+   * The `type` of EVERY frame the provider sent, across every socket, in
+   * order. A pre-opened socket must contribute nothing to this — that is
+   * what "virgin" means, and asserting on it is what proves no `config`,
+   * `text` or `flush` was written while the socket was parked.
+   */
+  receivedTypes(): ReadonlyArray<string>;
+  /** How many streaming RIFF headers the server has sent, across every socket. */
+  headerFrames(): number;
+  /** Kill every open server-side socket — a vendor dropping a parked connection. */
+  closeServerSockets(): void;
+  /** Resolves once the provider has opened at least `n` connections. */
+  awaitConnections(n: number, timeoutMs?: number): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -244,7 +262,20 @@ async function startFakeSarvam(input: {
 
   const wss = new WebSocketServer({ server: http, path: "/text-to-speech/ws" });
 
+  // FIX #11 observability — see the `FakeSarvam` members.
+  let connections = 0;
+  let closedConnections = 0;
+  let headerFrames = 0;
+  const receivedTypes: string[] = [];
+  const liveSockets = new Set<WsSocket>();
+
   wss.on("connection", (socket: WsSocket) => {
+    connections += 1;
+    liveSockets.add(socket);
+    socket.on("close", () => {
+      closedConnections += 1;
+      liveSockets.delete(socket);
+    });
     let flushed = false;
     socket.on("message", async (raw: Buffer) => {
       let parsed: { type?: string; data?: Record<string, unknown> };
@@ -253,12 +284,14 @@ async function startFakeSarvam(input: {
       } catch {
         return;
       }
+      if (parsed.type !== undefined) receivedTypes.push(parsed.type);
       if (parsed.type === "config") configFrames.push(parsed);
       if (parsed.type !== "flush" || flushed) return;
       flushed = true;
 
       // The streaming RIFF header, as its own frame, with the
       // placeholder sizes the live account really sends.
+      headerFrames += 1;
       socket.send(
         JSON.stringify({
           type: "audio",
@@ -297,6 +330,22 @@ async function startFakeSarvam(input: {
     restCalls: () => restCalls,
     configFrames: () => configFrames,
     restBodies: () => restBodies,
+    connections: () => connections,
+    closedConnections: () => closedConnections,
+    receivedTypes: () => receivedTypes,
+    headerFrames: () => headerFrames,
+    closeServerSockets: () => {
+      for (const socket of [...liveSockets]) socket.close();
+    },
+    async awaitConnections(n: number, timeoutMs = 3000) {
+      const deadline = Date.now() + timeoutMs;
+      while (connections < n) {
+        if (Date.now() > deadline) {
+          throw new Error(`only ${connections} of ${n} expected connections opened within ${timeoutMs}ms`);
+        }
+        await sleep(10);
+      }
+    },
     async close() {
       await new Promise<void>((resolve) => wss.close(() => resolve()));
       await new Promise<void>((resolve) => http.close(() => resolve()));
@@ -348,6 +397,12 @@ const task = (text: string): SynthesisTaskRequest => ({
   request: { text, language: SupportedLanguage.HINGLISH },
 });
 
+/** FIX #11 — the same task under an explicit session id. */
+const taskFor = (sessionId: string, text: string): SynthesisTaskRequest => ({
+  sessionId: sessionId as SessionId,
+  request: { text, language: SupportedLanguage.HINGLISH },
+});
+
 interface Drained {
   readonly chunks: readonly TtsAudioChunk[];
   /** Every audio byte the provider yielded, concatenated in order. */
@@ -369,6 +424,8 @@ async function drain(
   opts: {
     readonly signal?: AbortSignal;
     readonly onChunk?: (chunk: TtsAudioChunk, index: number) => void | Promise<void>;
+    /** FIX #11 — drive the stream under a specific session id. */
+    readonly sessionId?: string;
   } = {},
 ): Promise<Drained> {
   const chunks: TtsAudioChunk[] = [];
@@ -379,7 +436,8 @@ async function drain(
 
   try {
     let index = 0;
-    for await (const chunk of provider.synthesizeStream!(task(text), opts.signal)) {
+    const request = opts.sessionId === undefined ? task(text) : taskFor(opts.sessionId, text);
+    for await (const chunk of provider.synthesizeStream!(request, opts.signal)) {
       chunks.push(chunk);
       if (chunk.audio.data.byteLength > 0) {
         parts.push(chunk.audio.data);
@@ -876,6 +934,343 @@ await test("D2 — Sarvam TTS cost stays non-zero and character-billed on the st
     Math.abs(estimateTtsCost(sarvamId, 2000) - 2 * estimateTtsCost(sarvamId, 1000)) < 1e-12,
     "character billing should be linear",
   );
+});
+
+// ═════════════════════════════════════════════════════════════════
+section("SECTION E — FIX #11: virgin-socket pre-open");
+// ═════════════════════════════════════════════════════════════════
+
+/**
+ * These run against the same real provider over the same real local
+ * socket as every test above. The load-bearing observable is
+ * `server.connections()`: the pre-open path must produce exactly ONE
+ * connection for an utterance that consumed a warm socket, and TWO
+ * whenever the warm socket was not usable — which is what distinguishes
+ * "the handshake was moved off the caller's clock" from "a second socket
+ * was opened and the first leaked".
+ *
+ * `server.receivedTypes()` is the virginity proof: a parked socket must
+ * contribute nothing to it.
+ */
+
+/** A short, healthy schedule — these tests are about the socket, not the cadence. */
+const PREOPEN_FRAMES: Frame[] = [
+  { bytes: FRAME_550MS, gapMsBefore: 20 },
+  { bytes: FRAME_413MS, gapMsBefore: 60 },
+  { bytes: FRAME_275MS, gapMsBefore: 60 },
+  { bytes: FRAME_138MS, gapMsBefore: 60 },
+];
+
+await test("E1 — a pre-opened socket is handed out EXACTLY ONCE: the first utterance reuses it, the second opens its own", async () => {
+  const server = await startFakeSarvam({ frames: PREOPEN_FRAMES });
+  try {
+    const provider = providerFor(server.baseUrl);
+    provider.prepareSession("session-E1");
+    await server.awaitConnections(1);
+    assert.equal(server.connections(), 1, "pre-open should have opened exactly one socket");
+
+    // First utterance consumes the warm socket — no new connection.
+    const first = await drain(provider, TEXT_LONG, { sessionId: "session-E1" });
+    assert.equal(first.error, undefined, `first utterance errored: ${first.error?.message}`);
+    assertSameAudio(first.audio, server.expectedAudio(), "E1 first utterance (warm socket)");
+    assert.equal(server.connections(), 1, "the warm socket should have been REUSED, not supplemented");
+
+    // Second utterance: the warm socket is spent, so this one opens its
+    // own. A socket handed out twice would show up as connections still
+    // being 1 — and as two utterances sharing one socket, which is the
+    // contamination Phase C refused.
+    const second = await drain(provider, TEXT_LONG, { sessionId: "session-E1" });
+    assert.equal(second.error, undefined, `second utterance errored: ${second.error?.message}`);
+    assert.equal(server.connections(), 2, "the second utterance must open a socket of its own");
+    provider.disposeSession("session-E1");
+  } finally {
+    await server.close();
+  }
+});
+
+await test("E2 — session A's warm socket can NEVER be used by session B", async () => {
+  const server = await startFakeSarvam({ frames: PREOPEN_FRAMES });
+  try {
+    const provider = providerFor(server.baseUrl);
+    provider.prepareSession("session-A");
+    await server.awaitConnections(1);
+
+    // Session B synthesizes. It must open its OWN socket and leave A's
+    // parked one alone.
+    const result = await drain(provider, TEXT_LONG, { sessionId: "session-B" });
+    assert.equal(result.error, undefined, `session B errored: ${result.error?.message}`);
+    assertSameAudio(result.audio, server.expectedAudio(), "E2 session B audio");
+    assert.equal(
+      server.connections(),
+      2,
+      "session B must not consume session A's socket — it needs a second connection",
+    );
+
+    // And A's socket is still there, still virgin, still claimable by A.
+    const aResult = await drain(provider, TEXT_LONG, { sessionId: "session-A" });
+    assert.equal(aResult.error, undefined, `session A errored: ${aResult.error?.message}`);
+    assert.equal(server.connections(), 2, "session A should now consume the socket opened for it");
+    provider.disposeSession("session-A");
+    provider.disposeSession("session-B");
+  } finally {
+    await server.close();
+  }
+});
+
+await test("E3 — concurrent prepareSession calls do NOT create duplicate sockets", async () => {
+  const server = await startFakeSarvam({ frames: PREOPEN_FRAMES });
+  try {
+    const provider = providerFor(server.baseUrl);
+    // Same synchronous tick — the race the map insert has to win.
+    for (let i = 0; i < 8; i += 1) provider.prepareSession("session-E3");
+    // And again after the handshake has had time to land, which is the
+    // other ordering: a second hint arriving for a socket that is now OPEN.
+    await server.awaitConnections(1);
+    for (let i = 0; i < 5; i += 1) provider.prepareSession("session-E3");
+    await sleep(150);
+    assert.equal(
+      server.connections(),
+      1,
+      `13 prepareSession calls opened ${server.connections()} sockets — exactly 1 is required`,
+    );
+    provider.disposeSession("session-E3");
+  } finally {
+    await server.close();
+  }
+});
+
+await test("E4/E5 — a warm socket the vendor has closed is discarded, and synthesis falls back to the EXISTING fresh-socket path with identical audio", async () => {
+  const server = await startFakeSarvam({ frames: PREOPEN_FRAMES });
+  try {
+    const provider = providerFor(server.baseUrl);
+    provider.prepareSession("session-E4");
+    await server.awaitConnections(1);
+
+    // The vendor drops the parked connection.
+    server.closeServerSockets();
+    await sleep(200);
+    assert.ok(server.closedConnections() >= 1, "the server should have closed the parked socket");
+
+    // Synthesis must not attempt to use it, and must be byte-identical
+    // to the ordinary path.
+    const result = await drain(provider, TEXT_LONG, { sessionId: "session-E4" });
+    assert.equal(result.error, undefined, `fallback path errored: ${result.error?.message}`);
+    assertSameAudio(result.audio, server.expectedAudio(), "E5 fallback audio");
+    assert.equal(server.connections(), 2, "a dead warm socket must be replaced by a fresh connection");
+    assert.equal(server.restCalls(), 0, "the WebSocket path should still have been used — no REST fallback");
+    provider.disposeSession("session-E4");
+  } finally {
+    await server.close();
+  }
+});
+
+await test("E6 — an unused pre-opened socket expires after ~5s and is closed", async () => {
+  const server = await startFakeSarvam({ frames: PREOPEN_FRAMES });
+  try {
+    const provider = providerFor(server.baseUrl);
+    provider.prepareSession("session-E6");
+    await server.awaitConnections(1);
+    assert.equal(server.closedConnections(), 0, "should still be parked well before the TTL");
+
+    await sleep(3000);
+    assert.equal(
+      server.closedConnections(),
+      0,
+      "expired early — the TTL must not fire before ~5s or a normal turn would lose its warm socket",
+    );
+
+    await sleep(2800);
+    assert.equal(server.closedConnections(), 1, "the unused socket should have expired and closed by ~5.8s");
+
+    // And the session is left clean: the next utterance opens fresh.
+    const result = await drain(provider, TEXT_LONG, { sessionId: "session-E6" });
+    assert.equal(result.error, undefined, `post-expiry synthesis errored: ${result.error?.message}`);
+    assertSameAudio(result.audio, server.expectedAudio(), "E6 post-expiry audio");
+    assert.equal(server.connections(), 2, "after expiry the utterance must open its own socket");
+  } finally {
+    await server.close();
+  }
+});
+
+await test("E7 — aborting the session's signal closes and discards the warm socket", async () => {
+  const server = await startFakeSarvam({ frames: PREOPEN_FRAMES });
+  try {
+    const provider = providerFor(server.baseUrl);
+    const controller = new AbortController();
+    provider.prepareSession("session-E7", controller.signal);
+    await server.awaitConnections(1);
+
+    controller.abort();
+    await sleep(200);
+    assert.equal(server.closedConnections(), 1, "abort should have closed the parked socket");
+
+    const result = await drain(provider, TEXT_LONG, { sessionId: "session-E7" });
+    assert.equal(result.error, undefined, `post-abort synthesis errored: ${result.error?.message}`);
+    assert.equal(server.connections(), 2, "after abort the utterance must open its own socket");
+
+    // An already-aborted signal must not open anything at all.
+    const connectionsBefore = server.connections();
+    provider.prepareSession("session-E7b", controller.signal);
+    await sleep(150);
+    assert.equal(
+      server.connections(),
+      connectionsBefore,
+      "prepareSession on an already-aborted signal must not open a socket",
+    );
+  } finally {
+    await server.close();
+  }
+});
+
+await test("E8 — disposeSession (session teardown) closes the warm socket and is idempotent", async () => {
+  const server = await startFakeSarvam({ frames: PREOPEN_FRAMES });
+  try {
+    const provider = providerFor(server.baseUrl);
+    provider.prepareSession("session-E8");
+    await server.awaitConnections(1);
+
+    provider.disposeSession("session-E8");
+    await sleep(200);
+    assert.equal(server.closedConnections(), 1, "dispose should have closed the parked socket");
+
+    // Idempotent, and safe for a session that was never prepared —
+    // `end()` calls this unconditionally.
+    provider.disposeSession("session-E8");
+    provider.disposeSession("session-never-prepared");
+    await sleep(50);
+    assert.equal(server.closedConnections(), 1, "repeat dispose must not close anything else");
+    assert.equal(server.connections(), 1, "dispose must never open a socket");
+  } finally {
+    await server.close();
+  }
+});
+
+await test("E9 — NO config, text or flush is sent while a socket is pre-opened", async () => {
+  const server = await startFakeSarvam({ frames: PREOPEN_FRAMES });
+  try {
+    const provider = providerFor(server.baseUrl);
+    provider.prepareSession("session-E9");
+    await server.awaitConnections(1);
+    // Sit on it well past the point any handshake work would be done.
+    await sleep(600);
+
+    assert.deepEqual(
+      [...server.receivedTypes()],
+      [],
+      `a parked socket must send NOTHING, but the server received: ${server.receivedTypes().join(", ")}`,
+    );
+    assert.equal(server.configFrames().length, 0, "no config frame may be sent during pre-open");
+    assert.equal(server.headerFrames(), 0, "the vendor must not have been asked to synthesize anything");
+
+    // The frames appear only once synthesis claims the socket, and in
+    // the documented order.
+    const result = await drain(provider, TEXT_LONG, { sessionId: "session-E9" });
+    assert.equal(result.error, undefined, `synthesis errored: ${result.error?.message}`);
+    assert.deepEqual(
+      [...server.receivedTypes()],
+      ["config", "text", "flush"],
+      "claiming the socket must send exactly config, then text, then flush",
+    );
+  } finally {
+    await server.close();
+  }
+});
+
+await test("E10 — exactly ONE RIFF header per socket, and it is still stripped exactly once", async () => {
+  const server = await startFakeSarvam({ frames: PREOPEN_FRAMES });
+  try {
+    const provider = providerFor(server.baseUrl);
+    provider.prepareSession("session-E10");
+    await server.awaitConnections(1);
+
+    const result = await drain(provider, TEXT_LONG, { sessionId: "session-E10" });
+    assert.equal(result.error, undefined, `warm-socket synthesis errored: ${result.error?.message}`);
+    assert.equal(server.headerFrames(), 1, "the vendor should have sent exactly one streaming RIFF header");
+    // Stripped exactly once: the yielded audio is the payload bytes and
+    // nothing else, so no header survived into the caller's audio.
+    assertSameAudio(result.audio, server.expectedAudio(), "E10 warm-socket audio");
+    assert.equal(
+      Buffer.from(result.audio).indexOf(Buffer.from("RIFF", "ascii")),
+      -1,
+      "no RIFF magic may survive into the audio handed to the pipeline",
+    );
+    provider.disposeSession("session-E10");
+  } finally {
+    await server.close();
+  }
+});
+
+await test("E11/E12 — on the warm path the config payload, pace, sample rate and output format are unchanged", async () => {
+  const server = await startFakeSarvam({ frames: PREOPEN_FRAMES });
+  try {
+    const warmProvider = providerFor(server.baseUrl);
+    warmProvider.prepareSession("session-E11");
+    await server.awaitConnections(1);
+    const warm = await drain(warmProvider, TEXT_LONG, { sessionId: "session-E11" });
+    assert.equal(warm.error, undefined, `warm path errored: ${warm.error?.message}`);
+    const warmConfig = server.configFrames()[0]?.data ?? {};
+
+    // Same provider, same text, no pre-open — the reference.
+    const cold = await drain(providerFor(server.baseUrl), TEXT_LONG, { sessionId: "session-E11-cold" });
+    assert.equal(cold.error, undefined, `cold path errored: ${cold.error?.message}`);
+    const coldConfig = server.configFrames()[1]?.data ?? {};
+
+    assert.deepEqual(
+      warmConfig,
+      coldConfig,
+      "the config frame must be identical whether the socket was pre-opened or not",
+    );
+    // And it is the shipped payload, asserted by value rather than only
+    // against itself.
+    assert.equal(warmConfig.pace, 1.0, "pace must be unchanged on the warm path");
+    assert.equal(warmConfig.output_audio_codec, "wav", "output format must be unchanged");
+    assert.equal(warmConfig.speech_sample_rate, SAMPLE_RATE_HZ, "sample rate must be unchanged");
+    assert.equal(warmConfig.target_language_code, "hi-IN", "language must be unchanged");
+    assert.equal(warmConfig.speaker, "test-speaker", "speaker must be unchanged");
+
+    // Audio is byte-identical between the two paths.
+    assertSameAudio(warm.audio, cold.audio, "E11 warm vs cold audio");
+  } finally {
+    await server.close();
+  }
+});
+
+await test("E13 — a barge-in on the warm path still aborts, and leaves nothing claimable behind", async () => {
+  const server = await startFakeSarvam({ frames: PREOPEN_FRAMES });
+  try {
+    const provider = providerFor(server.baseUrl);
+    provider.prepareSession("session-E13");
+    await server.awaitConnections(1);
+
+    const controller = new AbortController();
+    const result = await drain(provider, TEXT_LONG, {
+      sessionId: "session-E13",
+      signal: controller.signal,
+      onChunk: (_chunk, index) => {
+        if (index === 0) controller.abort();
+      },
+    });
+    assert.equal(result.error, undefined, `abort should end the stream cleanly: ${result.error?.message}`);
+    assert.ok(
+      result.audio.byteLength < server.expectedAudio().byteLength,
+      "a barge-in must cut the utterance short",
+    );
+    await sleep(150);
+    assert.ok(server.closedConnections() >= 1, "the claimed socket must be closed after the abort");
+
+    // The warm socket was consumed by that utterance, so the next one
+    // opens its own — it can never be handed out a second time.
+    const connectionsBefore = server.connections();
+    const next = await drain(provider, TEXT_LONG, { sessionId: "session-E13" });
+    assert.equal(next.error, undefined, `post-abort synthesis errored: ${next.error?.message}`);
+    assert.equal(
+      server.connections(),
+      connectionsBefore + 1,
+      "the aborted socket must not be reclaimable",
+    );
+  } finally {
+    await server.close();
+  }
 });
 
 console.log(`\n${passed} passed, ${failures.length} failed`);

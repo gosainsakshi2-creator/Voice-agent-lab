@@ -139,6 +139,100 @@ const MAX_IDLE_GAP_MS = 1200;
  */
 const SARVAM_PACE = 1.00;
 
+/**
+ * ── FIX #11 — VIRGIN-SOCKET PRE-OPEN ──────────────────────────────
+ *
+ * Sarvam is the only vendor in this stack reached over a WebSocket, so
+ * it is the only one `http-keepalive.ts` cannot help: that file extends
+ * the keep-alive of the global `fetch` pool, and says in its own header
+ * that WebSocket traffic is untouched. Cartesia and Smallest AI reuse a
+ * warm HTTPS socket across the inter-turn gap; this adapter built a new
+ * connection from scratch for every utterance, and fully awaited it
+ * before the first byte of text was sent.
+ *
+ * Measured on the live account, 3 runs, this pass:
+ *
+ *   handshake            347 / 369 / 369 ms
+ *   RIFF header frame    +81 / +81 / +82 ms after the text is sent
+ *   first REAL audio     +258 / +287 / +619 ms
+ *
+ * Phase C decomposed the same handshake as DNS 2ms / TCP 73ms / TLS
+ * 88ms / **HTTP upgrade 169ms** = 326ms median — the largest component
+ * being the vendor answering `101`, which is not client-optimizable by
+ * anything except not opening the connection on the caller's clock.
+ * (TLS session resumption via a shared agent was measured at 13ms / 4%
+ * and rejected. Recorded so nobody re-measures it.)
+ *
+ * So the handshake is moved OFF the caller's clock: it is started when
+ * the pipeline learns a turn is about to be released, which is ~1.1-1.5s
+ * before the first sentence chunk exists (the evidenced confirmation
+ * window, plus LLM time-to-first-token, plus chunker accumulation). A
+ * 326-383ms handshake fits inside that with room to spare.
+ *
+ * ── WHY THIS IS NOT THE SOCKET POOLING PHASE C REFUSED ─────────────
+ *
+ * Phase C proved that Sarvam's protocol has NO utterance boundary: the
+ * streaming RIFF header is sent ONCE PER SOCKET, not once per utterance
+ * (3 utterances down one socket produced 1 header and 0 non-audio
+ * frames), so two utterances sharing a socket cannot be told apart and
+ * a truncation would become cross-utterance contamination. That finding
+ * stands and this does not touch it.
+ *
+ * The property that makes this safe is that a socket handed out here is
+ * VIRGIN: no `config`, no `text`, no `flush` has ever been sent on it,
+ * and it is handed out AT MOST ONCE. So no two utterances ever share a
+ * socket, exactly as before — the only thing that changed is WHEN the
+ * TCP/TLS/upgrade cost was paid. One utterance per socket, one RIFF
+ * header per socket, unchanged.
+ *
+ * ── PROVEN, NOT ASSUMED ────────────────────────────────────────────
+ *
+ * Idle tolerance before `config` was the one thing Phase C had not
+ * measured. Probed against the live endpoint: virgin idle of
+ * 0/1/3/5/7/10/20/40s — 12 sockets, every one still OPEN afterwards,
+ * every one accepted `config` and produced valid 8kHz/16-bit/mono audio
+ * (RMS 2693-3265, even byte counts), zero frames received while idle,
+ * zero protocol errors. Concurrency worst case (3 streaming + 3 held
+ * virgin = 6 simultaneous sockets): 6/6 handshakes, 3/3 virgins survived
+ * the burst and then produced audio. 18/18 sockets valid overall.
+ *
+ * The TTL below is therefore chosen with margin rather than at the edge
+ * of what was proven: 5s is well inside a tolerance that held at 40s.
+ */
+const WARM_SOCKET_TTL_MS = 5_000;
+
+/**
+ * One pre-opened, never-written-to socket belonging to ONE session.
+ *
+ * The parked listeners are the reason this is a record rather than a
+ * bare socket. A `ws` socket with no `error` listener throws on error,
+ * which would take the process down for a connection nobody is waiting
+ * on — so a parked socket carries its own handlers, and they are
+ * removed at the instant it is claimed, in the same synchronous block
+ * that attaches `synthesizeStream`'s own. There is no window in which
+ * the socket is unhandled.
+ */
+interface WarmSocket {
+  readonly socket: WebSocket;
+  readonly openedAtMs: number;
+  /** Unused-socket reaper. `unref`ed, so a warm socket can never hold the process open. */
+  readonly expiry: ReturnType<typeof setTimeout>;
+  readonly onParkedError: (err: Error) => void;
+  readonly onParkedClose: () => void;
+  readonly onParkedMessage: () => void;
+  /** Detaches the session's abort listener; called on claim and on dispose. */
+  readonly detachAbort: () => void;
+  /** Set the instant it leaves the map. A socket is handed out at most once. */
+  claimed: boolean;
+  /**
+   * Set by a parked close, error, or — the contamination guard — ANY
+   * inbound application frame. Nothing was sent, so nothing should ever
+   * arrive; if something does, this socket is not virgin and is never
+   * handed out.
+   */
+  poisoned: boolean;
+}
+
 interface SarvamEnvConfig {
   readonly apiKey: string;
   readonly baseUrl: string;
@@ -188,8 +282,213 @@ export class SarvamTextToSpeechProvider implements TextToSpeechProvider {
 
   private readonly config: SarvamEnvConfig;
 
+  /**
+   * FIX #11 — at most ONE pre-opened virgin socket per session, keyed by
+   * `sessionId` and never shared. The provider is a process-wide
+   * singleton (`bootstrapProviderRegistry` runs each factory once), so
+   * all concurrent calls share this instance — which is exactly why the
+   * key is the session and why `claimWarmSocket` deletes before it
+   * returns.
+   */
+  private readonly warmSockets = new Map<string, WarmSocket>();
+
   constructor(config: SarvamEnvConfig = loadEnvConfig()) {
     this.config = config;
+  }
+
+  /**
+   * The streaming endpoint. Extracted verbatim from `synthesizeStream`
+   * so the pre-open and the synthesis path cannot drift apart — a warm
+   * socket must be a socket to the SAME url, and everything that varies
+   * per utterance (speaker, language, sample rate, pace) travels in the
+   * `config` frame, not in the url.
+   */
+  private streamUrl(): string {
+    return `${this.config.baseUrl.replace(/^http/, "ws")}/text-to-speech/ws?model=${encodeURIComponent(
+      this.config.model,
+    )}`;
+  }
+
+  private closeQuietly(socket: WebSocket): void {
+    try {
+      if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {
+        socket.close();
+      }
+    } catch {
+      // A socket that cannot be closed is already gone. Nothing to do,
+      // and this must never throw into a teardown path.
+    }
+  }
+
+  /**
+   * FIX #11 — open the socket this session's next utterance will need,
+   * now. See `WARM_SOCKET_TTL_MS`.
+   *
+   * Nothing is sent. This opens a connection and parks it; the socket
+   * stays VIRGIN until `claimWarmSocket` hands it to `synthesizeStream`,
+   * which is the only place `config`/`text`/`flush` are ever written.
+   *
+   * ── Why this cannot race ───────────────────────────────────────────
+   *
+   * `new WebSocket(...)` is synchronous (it starts connecting and
+   * returns), and the map is written in the SAME synchronous block, with
+   * no `await` between the lookup and the insert. So two `prepareSession`
+   * calls for one session — whether in the same tick or different ticks
+   * — cannot both create a socket: the second finds the first's entry
+   * and returns. One socket per session, by construction rather than by
+   * a lock.
+   *
+   * Never throws: a provider hint that can break the caller is not a
+   * hint. If anything here fails, the session simply pays the handshake
+   * on the caller's clock exactly as it did before this existed.
+   */
+  prepareSession(sessionId: string, signal?: AbortSignal): void {
+    try {
+      if (signal?.aborted === true) return;
+
+      const existing = this.warmSockets.get(sessionId);
+      if (existing !== undefined) {
+        // Already have one for this session — CONNECTING counts, so a
+        // second hint arriving while the handshake is still in flight
+        // does not open a duplicate.
+        if (
+          !existing.poisoned &&
+          (existing.socket.readyState === WebSocket.CONNECTING ||
+            existing.socket.readyState === WebSocket.OPEN)
+        ) {
+          return;
+        }
+        // Dead or contaminated: drop it and open a fresh one.
+        this.disposeSession(sessionId);
+      }
+
+      const socket = new WebSocket(this.streamUrl(), {
+        headers: { "api-subscription-key": this.config.apiKey },
+      });
+
+      const poison = (): void => {
+        const current = this.warmSockets.get(sessionId);
+        // Already claimed, already replaced, or already disposed — the
+        // entry this listener belongs to is no longer the live one.
+        if (current === undefined || current.socket !== socket) return;
+        current.poisoned = true;
+        this.disposeSession(sessionId);
+      };
+
+      const onParkedError = (): void => poison();
+      const onParkedClose = (): void => poison();
+      // Contamination guard. Nothing has been sent, so nothing should
+      // arrive. If the vendor ever volunteers a frame, this socket is
+      // not virgin and must never be handed to an utterance.
+      const onParkedMessage = (): void => {
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[TTS:sarvam] pre-opened socket for session "${sessionId}" received an unsolicited frame — discarding it as non-virgin`,
+        );
+        poison();
+      };
+
+      const expiry = setTimeout(() => {
+        const current = this.warmSockets.get(sessionId);
+        if (current === undefined || current.socket !== socket) return;
+        // eslint-disable-next-line no-console
+        console.log(
+          `[TTS:sarvam] pre-opened socket for session "${sessionId}" expired unused after ${WARM_SOCKET_TTL_MS}ms`,
+        );
+        this.disposeSession(sessionId);
+      }, WARM_SOCKET_TTL_MS);
+      if (typeof expiry.unref === "function") expiry.unref();
+
+      const onAbort = (): void => this.disposeSession(sessionId);
+      signal?.addEventListener("abort", onAbort, { once: true });
+
+      const entry: WarmSocket = {
+        socket,
+        openedAtMs: Date.now(),
+        expiry,
+        onParkedError,
+        onParkedClose,
+        onParkedMessage,
+        detachAbort: () => signal?.removeEventListener("abort", onAbort),
+        claimed: false,
+        poisoned: false,
+      };
+
+      // Synchronous with `new WebSocket` above — this is the whole of
+      // the race argument. No await may ever be introduced between them.
+      this.warmSockets.set(sessionId, entry);
+
+      socket.on("error", onParkedError);
+      socket.on("close", onParkedClose);
+      socket.on("message", onParkedMessage);
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[TTS:sarvam] could not pre-open a socket for session "${sessionId}" — the normal path is unaffected: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
+  /**
+   * FIX #11 — release whatever `prepareSession` opened. Idempotent, and
+   * safe for a session that was never prepared.
+   *
+   * The `error`/`close` listeners are deliberately left attached across
+   * `closeQuietly`: closing can itself emit `error`, and an unhandled
+   * one on a `ws` socket throws. `poison()` is guarded on the entry
+   * still being the live one, so the close this triggers cannot recurse.
+   */
+  disposeSession(sessionId: string): void {
+    const entry = this.warmSockets.get(sessionId);
+    if (entry === undefined) return;
+    this.warmSockets.delete(sessionId);
+    clearTimeout(entry.expiry);
+    entry.detachAbort();
+    entry.socket.off("message", entry.onParkedMessage);
+    this.closeQuietly(entry.socket);
+  }
+
+  /**
+   * FIX #11 — atomically take this session's pre-opened socket, or
+   * `undefined` if there is not a usable one.
+   *
+   * "Atomically" is load-bearing and is why the delete comes FIRST and
+   * unconditionally: the entry leaves the map before a single check runs,
+   * so a socket can be handed out at most once even if two utterances
+   * for one session raced here, and an unusable one is never left behind
+   * for the next utterance to trip over. Returning `undefined` is not a
+   * failure — it is the signal to open a fresh socket exactly as the
+   * method always did.
+   */
+  private claimWarmSocket(sessionId: string): WebSocket | undefined {
+    const entry = this.warmSockets.get(sessionId);
+    if (entry === undefined) return undefined;
+
+    this.warmSockets.delete(sessionId);
+    clearTimeout(entry.expiry);
+    entry.detachAbort();
+
+    if (entry.claimed) return undefined;
+    entry.claimed = true;
+
+    if (entry.poisoned || entry.socket.readyState !== WebSocket.OPEN) {
+      // Still needs its parked handlers through the close, for the same
+      // reason `disposeSession` keeps them.
+      entry.socket.off("message", entry.onParkedMessage);
+      this.closeQuietly(entry.socket);
+      return undefined;
+    }
+
+    // Handed over unhandled — `synthesizeStream` attaches its own
+    // `message`/`error`/`close` listeners in the same synchronous block
+    // that calls this, so there is no window in which an `error` on this
+    // socket is unhandled.
+    entry.socket.off("error", entry.onParkedError);
+    entry.socket.off("close", entry.onParkedClose);
+    entry.socket.off("message", entry.onParkedMessage);
+    return entry.socket;
   }
 
   async synthesize(task: SynthesisTaskRequest): Promise<AudioPayload> {
@@ -281,13 +580,33 @@ export class SarvamTextToSpeechProvider implements TextToSpeechProvider {
     signal?: AbortSignal,
   ): AsyncIterable<TtsAudioChunk> {
     const speaker = task.request.voiceId ?? this.config.defaultSpeaker;
-    const wsUrl = `${this.config.baseUrl.replace(/^http/, "ws")}/text-to-speech/ws?model=${encodeURIComponent(
-      this.config.model,
-    )}`;
 
-    const socket = new WebSocket(wsUrl, {
-      headers: { "api-subscription-key": this.config.apiKey },
-    });
+    // FIX #11 — take this session's pre-opened VIRGIN socket if one is
+    // waiting, otherwise open one exactly as this method always has.
+    //
+    // Everything below this line is unchanged, and deliberately so:
+    //   - a claimed socket is already OPEN, so the open `await` below
+    //     short-circuits on its existing `readyState === OPEN` branch
+    //     and returns without waiting;
+    //   - `config`, `text` and `flush` are still sent from here and
+    //     ONLY from here, in the same order, with the same payloads —
+    //     a warm socket has never carried application data;
+    //   - the `finally` still closes the socket, warm or fresh, so a
+    //     socket is used for exactly one utterance either way;
+    //   - with no warm socket this is byte-for-byte the previous
+    //     behaviour, which is what makes the fallback path free.
+    const warmSocket = this.claimWarmSocket(task.sessionId);
+    const socket =
+      warmSocket ??
+      new WebSocket(this.streamUrl(), {
+        headers: { "api-subscription-key": this.config.apiKey },
+      });
+    if (warmSocket !== undefined) {
+      // eslint-disable-next-line no-console
+      console.log(
+        `[TTS:sarvam] using PRE-OPENED socket for session "${task.sessionId}" — handshake already paid off the caller's clock`,
+      );
+    }
 
     /** Frames received but not yet yielded, oldest first. */
     const pending: Uint8Array[] = [];

@@ -1712,6 +1712,53 @@ export class ConversationPipeline {
   }
 
   // ---------------------------------------------------------------
+  /**
+   * FIX #11 — ask the TTS provider to open its transport now, while the
+   * detector's evidenced confirmation window, the model's
+   * time-to-first-token and the chunker's accumulation still lie between
+   * here and the first synthesis call.
+   *
+   * This is a NETWORK HINT AND NOTHING ELSE, and every part of that is
+   * deliberate:
+   *
+   *   - it cannot produce audio, an LLM call, a transcript, a turn
+   *     release, an interruption or a barge-in. It opens a socket. The
+   *     provider contract (`prepareSession`) forbids sending anything on
+   *     it, and the Sarvam adapter's socket stays virgin until
+   *     `synthesizeStream` claims it;
+   *   - it decides nothing about turn-taking. `onTurnPending` is
+   *     OBSERVED here exactly as FIX #8 observes it — the release is
+   *     still `onTurnEnd` and the detector's guards are untouched;
+   *   - if the caller turns out to still be speaking, the turn is
+   *     cancelled inside the detector as before and the unused socket
+   *     simply expires. Nothing downstream is aware it existed;
+   *   - a provider that does not implement `prepareSession` (Cartesia,
+   *     Smallest AI, ElevenLabs — all three reach their vendor over
+   *     `fetch`, which `http-keepalive.ts` already keeps warm) is not
+   *     called at all;
+   *   - it never throws. A failed hint means the handshake is paid on
+   *     the caller's clock, which is exactly what happened before.
+   *
+   * The session's loop signal is passed so a call that ends mid-window
+   * releases the socket immediately rather than waiting out its TTL.
+   */
+  private prepareTtsTransport(): void {
+    const prepare = this.providers.tts.prepareSession;
+    if (typeof prepare !== "function") return;
+    const loopSignal = this.record.loopAbortController?.signal;
+    if (!loopSignal || loopSignal.aborted) return;
+    try {
+      prepare.call(this.providers.tts, this.record.id, loopSignal);
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[TTS-PREOPEN:${this.record.id}] provider hint failed — synthesis is unaffected: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
   // FIX #8 — speculative LLM pre-open. See `SpeculativeCompletion`.
   // ---------------------------------------------------------------
 
@@ -2618,6 +2665,10 @@ export class ConversationPipeline {
       // detector's evidenced confirmation window; it decides nothing
       // about the release.
       const unsubscribePending = this.record.turnDetector.onTurnPending((text) => {
+        // FIX #11 — pre-open the TTS transport. First, because it is the
+        // longest lead time available to it and it costs nothing to
+        // start: it opens a network connection and nothing else.
+        this.prepareTtsTransport();
         this.startSpeculation(text);
       });
 

@@ -886,6 +886,50 @@ export class ConversationPipeline {
    */
   private greetingDone = false;
   /**
+   * ---------------- The caller's PICKUP ACKNOWLEDGEMENT ----------------
+   *
+   * True once the caller has been heard saying something BEFORE the
+   * fixed opening line finished — i.e. while `greetingDone` was still
+   * false. Set from the STT listener, consumed by the FIRST turn the
+   * main loop acquires, and never set again: the listener only writes
+   * it while `!greetingDone`, and `greetingDone` is never cleared.
+   *
+   * WHY THIS EXISTS. The listener starts BEFORE the greeting (see
+   * `run()`), and the segments it produces are fed to the turn detector
+   * unchanged — only barge-in is gated on `greetingDone`. So the
+   * "Hello" a caller says as they put the phone to their ear is
+   * released by the detector while our opening line is still playing,
+   * held in `AdaptiveTurnDetector.pendingEvent` because nobody is
+   * subscribed yet, and delivered to the main loop's very first
+   * `onTurnEnd` subscription as the call's first user turn. It then
+   * reached the language model and was answered conversationally
+   * ("Hi! How can I help you?") immediately after our own opening line
+   * — which is the reported defect. `handleAttentionCheck` cannot catch
+   * it: that path only answers a turn itself when a barge-in left an
+   * unheard script remainder, and nothing has been interrupted here.
+   *
+   * A phone-answer reflex is not a conversational turn. It is the same
+   * judgement `isBackchannel` already makes about an acknowledgement
+   * said over a reply, applied to the one phase that had no such rule.
+   *
+   * EVERY BOUND IS LOAD-BEARING:
+   *
+   *   - it requires words heard BEFORE the opening line finished, so a
+   *     "Hello?" said AFTER it keeps exactly today's behaviour (that
+   *     case belongs to the attention-check family, not here);
+   *   - it is consumed by the first acquired turn whatever that turn
+   *     is, so at most ONE turn per call can ever be dropped;
+   *   - the WHOLE utterance must be a bare greeting or a bare
+   *     acknowledgement. "Hello? Who is this?" carries a real question
+   *     and is answered after the opening exactly as it is today.
+   *
+   * It changes nothing about STT, the display transcript, voicemail
+   * detection, turn detection or barge-in: the segments are recognised,
+   * shown and fed exactly as before, and this is read at ONE place —
+   * turn release, where the whole utterance is finally known.
+   */
+  private pickupAckAllowance = false;
+  /**
    * Set once, when the live transcript shows we are talking to a
    * machine. From that instant the agent says NOTHING for the rest of
    * the call — see `synthesizeAndPlay`, which is the single choke point
@@ -1206,6 +1250,53 @@ export class ConversationPipeline {
           // eslint-disable-next-line no-console
           console.log(`[PIPELINE:${sid}] voicemail — transcript recorded, nothing answered and nothing spoken`);
           continue;
+        }
+
+        // ── The caller answering the phone, not taking a turn ───────
+        //
+        // "Hello" / "Haan" / "Hi" — the whole utterance — heard while
+        // our opening line was still playing. That is a phone-answer
+        // acknowledgement, and the answer to it is the opening line the
+        // caller is already hearing. See `pickupAckAllowance` for the
+        // full reasoning and for why each bound below is load-bearing.
+        //
+        // Dropped exactly as a backchannel is dropped: no user turn is
+        // recorded, no language-model request is made, nothing is
+        // synthesized and no metrics turn is measured. Nothing that ran
+        // before this point is skipped — the words were recognized,
+        // shown on the dashboard, tested for voicemail and fed to the
+        // turn detector exactly as they always are.
+        //
+        // Placed AFTER the voicemail branch above deliberately: a
+        // machine's greeting is also a "hello", and it must be RECORDED
+        // as the evidence that labels the call, not dropped. That
+        // branch `continue`s, so a voicemail call never reaches here —
+        // and it is ending anyway.
+        //
+        // The allowance is consumed by this turn WHATEVER it is, so at
+        // most one turn per call can ever be dropped and a later
+        // "hello" is untouched.
+        if (this.pickupAckAllowance) {
+          this.pickupAckAllowance = false;
+          const pickup = turn.text.trim();
+          if (BARE_GREETING_ONLY.test(pickup) || isBareAcknowledgement(pickup)) {
+            // Nothing is pre-opened here in practice — the detector's
+            // pending hook only fires while the main loop is awaiting a
+            // turn, and this turn was released before the greeting
+            // finished. Belt to that brace: a request opened for a turn
+            // that is about to be dropped is closed now rather than
+            // left to expire.
+            this.abandonSpeculation("pickup acknowledgement — no reply is generated");
+            // Display-only preview. Cleared because no committed turn
+            // will replace it, and `getTranscript` appends it as a
+            // trailing user turn — exactly as the backchannel path does.
+            this.record.liveUserTranscript = "";
+            // eslint-disable-next-line no-console
+            console.log(
+              `[PIPELINE:${sid}] pickup acknowledgement ignored (not a turn): "${pickup}" — the opening line is the answer to it`,
+            );
+            continue;
+          }
         }
 
         // t0 for this turn's latency trace: the turn detector has just
@@ -2322,6 +2413,14 @@ export class ConversationPipeline {
             // silence watchdog cannot mistake a caller mid-utterance
             // for a silent line.
             this.record.lastConversationActivityAt = Date.now();
+            // OBSERVATION ONLY — see `pickupAckAllowance`. The caller
+            // has been heard while our opening line is still playing,
+            // so the turn this eventually becomes MIGHT be their
+            // phone-answer acknowledgement. Whether it actually is one
+            // is decided at turn release, on the whole utterance, in
+            // the main loop; nothing here inspects the text, filters a
+            // segment, or changes what is fed to the turn detector.
+            if (!this.greetingDone) this.pickupAckAllowance = true;
             // Prefix the finals already accumulated for this turn. A
             // Deepgram interim/final is only the tail since the last
             // final, so without this the preview snaps back to the

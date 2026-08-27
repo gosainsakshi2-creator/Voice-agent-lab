@@ -1242,6 +1242,238 @@ await test("I — a supersession never strands the call: the agent keeps answeri
   }
 });
 
+// ═════════════════════════════════════════════════════════════════
+section("SECTION F — the caller's PICKUP ACKNOWLEDGEMENT is not a turn (FIX A)");
+//
+// THE DEFECT. The STT listener starts BEFORE the fixed opening line (a
+// deliberate latency fix), and its segments are fed to the turn
+// detector unchanged — only barge-in is gated on `greetingDone`. So the
+// "Hello" a caller says as they lift the handset was released by the
+// detector while our opening line was still playing, held in
+// `AdaptiveTurnDetector.pendingEvent` because nobody was subscribed
+// yet, and handed to the main loop's FIRST `onTurnEnd` subscription as
+// the call's first user turn. It reached the language model and was
+// answered conversationally — "Hi! How can I help you?" — immediately
+// after our own opening line. `handleAttentionCheck` could not catch
+// it: that path only answers a turn itself when a barge-in left an
+// unheard script remainder, and nothing had been interrupted.
+//
+// WHAT IS ASSERTED HERE is the property, not the mechanism: for a
+// pickup acknowledgement the language model is never asked (F1-F3, F5),
+// nothing but the opening line is ever synthesized (F1, F2), and no
+// user turn is committed (F1, F3, F5).
+//
+// AND THE BOUNDARY, which is the whole safety case. F4: "Hello? Who is
+// this?" during the opening carries a real question and MUST still be
+// answered after it. F6: a bare "hello" said AFTER the opening has
+// finished is untouched by this and keeps exactly today's behaviour —
+// the allowance is spent by the first turn whatever it is, so at most
+// one turn per call can ever be dropped. F7: a call where the caller
+// stays quiet through the opening is byte-for-byte the call it was.
+//
+// Nothing in `turn-detection.ts` is involved: every window, threshold
+// and release guard is untouched, and these tests deliberately do not
+// assert any timing.
+// ═════════════════════════════════════════════════════════════════
+
+await test("F1 — a bare \"Hello\" as the caller picks up is not a conversational turn", async () => {
+  const h = startHarness({ openingLine: OPENING, replies: ["SHOULD-NOT-BE-GENERATED"] });
+  try {
+    // Said the instant the line opens, before the opening line can even
+    // start — the phone-answer reflex this fix is about.
+    h.say("Hello");
+    await h.waitForReplies(1);
+    // Long enough for the buffered turn to be delivered to the main
+    // loop's first subscription and acted on.
+    await sleep(300);
+
+    assert.equal(
+      h.requests.length,
+      0,
+      `a pickup "Hello" must not reach the language model, got ${JSON.stringify(h.requests.map(lastUserContent))}`,
+    );
+    assert.deepEqual(
+      h.synthesized,
+      [OPENING],
+      `nothing but the opening line may be spoken, got ${JSON.stringify(h.synthesized)}`,
+    );
+    assert.deepEqual(
+      assistantTexts(h.history()),
+      [OPENING],
+      "the opening line must be spoken exactly once",
+    );
+    assert.equal(
+      h.history().filter((turn) => turn.role === "user").length,
+      0,
+      `a pickup "Hello" must not be committed to history, got ${JSON.stringify(h.history().map((t) => `${t.role}:${t.content}`))}`,
+    );
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("F2 — a \"Hello\" landing while the opening line is PLAYING leaves the opening exactly once", async () => {
+  const h = startHarness({ openingLine: OPENING, replies: ["SHOULD-NOT-BE-GENERATED"] });
+  try {
+    await h.waitFor("the opening line to start", () => h.record.state === SessionState.SPEAKING);
+    h.say("Hello");
+    await h.waitForReplies(1);
+    await sleep(300);
+
+    assert.equal(
+      h.synthesized.filter((text) => text === OPENING).length,
+      1,
+      `the opening line must be spoken exactly once, got ${JSON.stringify(h.synthesized)}`,
+    );
+    assert.equal(h.requests.length, 0, "a pickup \"Hello\" must not reach the language model");
+  } finally {
+    await h.stop();
+  }
+});
+
+// The whole vocabulary, both scripts. Every one of these is the WHOLE
+// utterance — which is what makes it an acknowledgement rather than a
+// contribution (see F4 for the other side of that line).
+for (const pickup of ["Hello", "hello hello", "Hi", "Haan.", "Okay.", "Ji haan", "नमस्ते"]) {
+  await test(`F3 — "${pickup}" on pickup is dropped: no request, no reply, no history`, async () => {
+    const h = startHarness({ openingLine: OPENING, replies: ["SHOULD-NOT-BE-GENERATED"] });
+    try {
+      h.say(pickup);
+      await h.waitForReplies(1);
+      await sleep(300);
+
+      assert.equal(h.requests.length, 0, `"${pickup}" must not reach the language model`);
+      assert.deepEqual(
+        h.synthesized,
+        [OPENING],
+        `"${pickup}" must produce no speech of its own, got ${JSON.stringify(h.synthesized)}`,
+      );
+      assert.equal(
+        h.history().filter((turn) => turn.role === "user").length,
+        0,
+        `"${pickup}" must not be committed to history`,
+      );
+    } finally {
+      await h.stop();
+    }
+  });
+}
+
+await test("F4 — \"Hello? Who is this?\" during the opening IS a real turn and is answered after it", async () => {
+  const h = startHarness({
+    openingLine: OPENING,
+    replies: ["It is about the free AI workshop this Sunday."],
+  });
+  try {
+    await h.waitFor("the opening line to start", () => h.record.state === SessionState.SPEAKING);
+    // A greeting with a real question attached to it. The greeting half
+    // is identical to F1's whole utterance; the question is what makes
+    // this a contribution, and dropping it would be the fix eating a
+    // real turn.
+    h.say("Hello? Who is this?");
+    await h.waitForReplies(2);
+
+    assert.equal(
+      h.requests.length,
+      1,
+      "a greeting with content attached must be answered by the normal contextual path",
+    );
+    assert.ok(
+      lastUserContent(h.requests[0] ?? []).includes("Who is this"),
+      `the model must be given the caller's actual question, got ${JSON.stringify(lastUserContent(h.requests[0] ?? []))}`,
+    );
+    assert.deepEqual(
+      assistantTexts(h.history()),
+      [OPENING, "It is about the free AI workshop this Sunday."],
+      "the buffered turn must be answered once the opening line finishes",
+    );
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("F5 — the allowance is spent once: the caller's real first answer is answered normally", async () => {
+  const h = startHarness({ openingLine: OPENING, replies: ["Sure, let me tell you."] });
+  try {
+    h.say("Hello");
+    await h.waitForReplies(1);
+    await sleep(300);
+    // The answer they actually give once they have heard the opening.
+    h.say("Yes, tell me.", { isSpeechFinal: true });
+    await h.waitForReplies(2);
+
+    assert.equal(
+      h.requests.length,
+      1,
+      `exactly one language-model request for the one real turn, got ${JSON.stringify(h.requests.map(lastUserContent))}`,
+    );
+    assert.ok(
+      lastUserContent(h.requests[0] ?? []).includes("Yes, tell me."),
+      `the request must be for the real answer, not the pickup "Hello", got ${JSON.stringify(lastUserContent(h.requests[0] ?? []))}`,
+    );
+    assert.deepEqual(
+      h.history().filter((turn) => turn.role === "user").map((turn) => turn.content),
+      ["Yes, tell me."],
+      "the pickup \"Hello\" is gone and the real answer is the only user turn",
+    );
+    assert.deepEqual(
+      assistantTexts(h.history()),
+      [OPENING, "Sure, let me tell you."],
+      "the opening line, then one reply — nothing else",
+    );
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("F6 — a bare \"hello\" AFTER the opening has finished keeps exactly today's behaviour", async () => {
+  const h = startHarness({ openingLine: OPENING, replies: ["Yes, I am here."] });
+  try {
+    // Nothing said during the opening, so no allowance was ever set.
+    await h.waitForReplies(1);
+    h.say("hello", { isSpeechFinal: true });
+    await h.waitForReplies(2);
+
+    assert.equal(
+      h.requests.length,
+      1,
+      "a hello outside the opening phase is a turn like any other and is answered as it is today",
+    );
+    assert.deepEqual(
+      assistantTexts(h.history()),
+      [OPENING, "Yes, I am here."],
+      "and the opening line is still spoken exactly once",
+    );
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("F7 — a quiet opening: the first real turn is the call it always was", async () => {
+  const h = startHarness({ openingLine: OPENING, replies: ["It is this Sunday at 11 am.", "It is free."] });
+  try {
+    await h.waitForReplies(1);
+    h.say("When is the session?", { isSpeechFinal: true });
+    await h.waitForReplies(2);
+    h.say("Is there any fee?", { isSpeechFinal: true });
+    await h.waitForReplies(3);
+
+    assert.equal(h.requests.length, 2, "one request per turn, exactly as before");
+    assert.deepEqual(
+      assistantTexts(h.history()),
+      [OPENING, "It is this Sunday at 11 am.", "It is free."],
+      "the opening line and both replies, in order",
+    );
+    assert.deepEqual(
+      h.history().filter((turn) => turn.role === "user").map((turn) => turn.content),
+      ["When is the session?", "Is there any fee?"],
+      "both user turns committed, nothing dropped",
+    );
+  } finally {
+    await h.stop();
+  }
+});
+
 // ─────────────────────────────────────────────────────────────────
 console.log(
   `\n${failures.length === 0 ? "ALL PASSED" : "FAILURES"} — ${passed} passed, ${failures.length} failed`,

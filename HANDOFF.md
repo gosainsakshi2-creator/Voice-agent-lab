@@ -18,6 +18,28 @@ below. The FIX #3 sections after it are the previous pass, kept as history.
 
 ---
 
+## REMINDER v2 SCRIPT (2026-08-29) — ATTENDANCE CONFIRMATION FOR THE 30 AUG 11 AM WORKSHOP
+
+**Status: implemented, tested, green. Uncommitted. Nothing dialed.** Three files:
+NEW `src/campaign/script/scripts/reminder.v2.ts`; `script-registry.ts` (+import,
+`REMINDER_V2` placed above `REMINDER_V1` → v2 is now the reminder default);
+`phase8-sheet-tests.ts` (+7 tests, A1f–A1l). `reminder v1` and every
+`registration.*` script are byte-identical (hashes verified unchanged via
+`script-hash-report`). Classifier, sheet integration, call-runner untouched.
+Gate is "Will you be joining us tomorrow at 11 AM?" — matches the existing
+`COMMIT_ANCHORS.reminder` entry `"will you be joining"`. The unsure
+clarification ("…likely to join, or should I leave your seat unconfirmed?")
+deliberately carries no anchor, so a reply to it is never a FINAL_YES.
+reminder v2 hash: `6593de603b2b…`.
+
+**Classifier fix (same day, approved, minimal):** "not sure" contained the
+affirmation token "sure" and was not in `AFFIRMATION_EXCEPTIONS`, so "Not sure."
+/ "Maybe, not sure yet." right after the gate settled as `confirmed_at_gate` →
+FINAL_YES → a sheet row, for BOTH campaign types. Fixed by adding exactly
+`"not sure", "pata nahi", "nahi pata"` to `AFFIRMATION_EXCEPTIONS` in
+`classifier.ts` (one 5-line hunk). Regression test phase8 A1m covers both gates
+and proves a genuine "Sure, I'll be there." still confirms. Rules id unchanged.
+
 ## FIX #10 (2026-08-25) — SMALLEST AI: VENDOR-BAKED EDGE SILENCE BETWEEN SENTENCE CHUNKS
 
 **Status: implemented, tested, green. Uncommitted. Nothing dialed.** Two files:

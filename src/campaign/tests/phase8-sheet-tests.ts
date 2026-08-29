@@ -212,6 +212,191 @@ await test("A1e. a NO to the v4 gate is FINAL_NO and is not written", () => {
   assert.equal(isFinalYes(classification, disposition), false);
 });
 
+// ── The REMINDER v2 script (attendance confirmation) ──────────────
+// Same regression class as A1d, for the reminder campaign type. v2's
+// gate is worded "Will you be joining us tomorrow at 11 AM?" because
+// "will you be joining" is an existing COMMIT_ANCHORS.reminder entry.
+// Read from the script itself so a re-wording fails here, not live.
+
+const reminderV2 = findScript("reminder", "v2");
+assert.ok(reminderV2, "the approved reminder v2 script must be registered");
+const REMINDER_V2_GATE = "Will you be joining us tomorrow at 11 AM?";
+const REMINDER_V2_BLOCK =
+  "You had registered for our session tomorrow at 11 AM, so I'm just calling to confirm whether " +
+  "you'll be joining us. We have limited seats, so I just wanted to make sure we save your seat if " +
+  `you're definitely attending. ${REMINDER_V2_GATE}`;
+const REMINDER_V2_YES_CLOSE = "Perfect, we'll save your seat. We'll see you tomorrow at 11 AM. Have a great day!";
+const REMINDER_V2_CLARIFY =
+  "No problem. Would you say you're likely to join, or should I leave your seat unconfirmed?";
+
+function settleReminder(transcript: readonly Turn[]) {
+  const classification = classifyOutcome({
+    campaignType: "reminder",
+    status: "COMPLETED",
+    failureClass: "COMPLETED",
+    answered: true,
+    transcript,
+    scriptText: reminderV2!.systemPromptAppendix,
+  });
+  const { disposition } = dispositionFor({
+    outcomeType: classification.outcomeType,
+    failureClass: "COMPLETED",
+  });
+  return { classification, disposition };
+}
+
+await test("A1f. the APPROVED reminder v2 gate line is a gate, and v2 is the reminder default", () => {
+  assert.equal(defaultScriptFor("reminder").version, "v2", "v2 must be the default reminder script");
+  assert.ok(
+    reminderV2!.systemPromptAppendix.includes(REMINDER_V2_GATE),
+    "this test's gate line must be the one in the approved reminder v2 script",
+  );
+  // The clarification line is wrapped across two appendix lines, so
+  // check its distinctive fragment rather than the whole sentence.
+  assert.ok(
+    reminderV2!.systemPromptAppendix.includes("Would you say you're likely to join"),
+    "the approved clarification line must be in the reminder v2 script",
+  );
+  // Existing registration defaults and scripts are untouched.
+  assert.equal(defaultScriptFor("registration").version, "v4");
+  assert.ok(findScript("reminder", "v1"), "reminder v1 must stay registered for pinned campaigns");
+
+  const { classification, disposition } = settleReminder([
+    agent(GREETING),
+    agent(REMINDER_V2_BLOCK),
+    caller("Yes, I'll be there."),
+    agent(REMINDER_V2_YES_CLOSE),
+  ]);
+
+  assert.equal(classification.outcomeType, "attendance_confirmed");
+  assert.equal(classification.primaryReason, "confirmed_at_gate");
+  assert.equal(disposition, "FINAL_YES");
+  assert.equal(isFinalYes(classification, disposition), true);
+});
+
+await test("A1g. reminder v2: a bare yes at the gate is FINAL_YES", () => {
+  const { classification, disposition } = settleReminder([
+    agent(GREETING),
+    agent(REMINDER_V2_BLOCK),
+    caller("Yes."),
+    agent(REMINDER_V2_YES_CLOSE),
+  ]);
+  assert.equal(disposition, "FINAL_YES");
+  assert.equal(isFinalYes(classification, disposition), true);
+});
+
+await test("A1h. reminder v2: a NO at the gate is FINAL_NO and is not written", () => {
+  const { classification, disposition } = settleReminder([
+    agent(GREETING),
+    agent(REMINDER_V2_BLOCK),
+    caller("No, I won't be able to join."),
+    agent("No problem at all, thanks for your time. Take care!"),
+  ]);
+  assert.equal(disposition, "FINAL_NO");
+  assert.equal(isFinalYes(classification, disposition), false);
+});
+
+await test("A1i. reminder v2: unsure / 'I'll see' is not confirmed, even after the clarification", () => {
+  const unsure = settleReminder([
+    agent(GREETING),
+    agent(REMINDER_V2_BLOCK),
+    caller("Hmm, I will see how the day goes."),
+    agent(REMINDER_V2_CLARIFY),
+    caller("Yeah, probably."),
+    agent("Okay, I'll leave it as it is. Take care!"),
+  ]);
+  assert.notEqual(unsure.classification.primaryReason, "confirmed_at_gate");
+  assert.notEqual(unsure.disposition, "FINAL_YES");
+  assert.equal(isFinalYes(unsure.classification, unsure.disposition), false);
+
+  const maybe = settleReminder([
+    agent(GREETING),
+    agent(REMINDER_V2_BLOCK),
+    caller("Maybe, I haven't decided yet."),
+  ]);
+  assert.notEqual(maybe.disposition, "FINAL_YES");
+  assert.equal(isFinalYes(maybe.classification, maybe.disposition), false);
+});
+
+await test("A1m. 'not sure' at the gate is NOT a yes — the 'sure' token is an uncertainty exception", () => {
+  // Regression: "sure" is an affirmation and "not sure" contains it, so
+  // before the AFFIRMATION_EXCEPTIONS entry these settled as
+  // confirmed_at_gate / FINAL_YES and would have written a sheet row.
+  const uncertain = [
+    "Not sure.",
+    "Maybe, not sure yet.",
+    "I'm not sure, maybe.",
+    "Pata nahi.",
+    "Abhi nahi pata.",
+  ];
+  for (const reply of uncertain) {
+    const reminder = settleReminder([agent(GREETING), agent(REMINDER_V2_BLOCK), caller(reply)]);
+    assert.notEqual(reminder.classification.primaryReason, "confirmed_at_gate", `reminder: "${reply}"`);
+    assert.notEqual(reminder.disposition, "FINAL_YES", `reminder: "${reply}"`);
+    assert.equal(isFinalYes(reminder.classification, reminder.disposition), false, `reminder: "${reply}"`);
+
+    // Same table, same gap, for the registration gate.
+    const registration = settle([agent(GREETING), agent(GATE), caller(reply)]);
+    assert.notEqual(registration.classification.primaryReason, "confirmed_at_gate", `registration: "${reply}"`);
+    assert.notEqual(registration.disposition, "FINAL_YES", `registration: "${reply}"`);
+    assert.equal(isFinalYes(registration.classification, registration.disposition), false, `registration: "${reply}"`);
+  }
+
+  // The exception must not eat a genuine "sure".
+  const sure = settleReminder([
+    agent(GREETING),
+    agent(REMINDER_V2_BLOCK),
+    caller("Sure, I'll be there."),
+    agent(REMINDER_V2_YES_CLOSE),
+  ]);
+  assert.equal(sure.classification.primaryReason, "confirmed_at_gate");
+  assert.equal(sure.disposition, "FINAL_YES");
+  assert.equal(isFinalYes(sure.classification, sure.disposition), true);
+});
+
+await test("A1j. reminder v2: busy-but-might-attend is not confirmed", () => {
+  const { classification, disposition } = settleReminder([
+    agent(GREETING),
+    agent(REMINDER_V2_BLOCK),
+    caller("I'm busy right now, I might attend."),
+  ]);
+  assert.notEqual(classification.primaryReason, "confirmed_at_gate");
+  assert.notEqual(disposition, "FINAL_YES");
+  assert.equal(isFinalYes(classification, disposition), false);
+});
+
+await test("A1k. reminder v2: a question containing 'yes' at the gate is not a confirmation", () => {
+  const { classification, disposition } = settleReminder([
+    agent(GREETING),
+    agent(REMINDER_V2_BLOCK),
+    caller("Yes, but what is the session about?"),
+  ]);
+  assert.notEqual(disposition, "FINAL_YES");
+  assert.equal(isFinalYes(classification, disposition), false);
+});
+
+await test("A1l. reminder v2: a yes to a side question is not a confirmation, a yes after the gate is re-asked is", () => {
+  const sideQuestion = settleReminder([
+    agent(GREETING),
+    agent(REMINDER_V2_BLOCK),
+    caller("Is it free?"),
+    agent("Yes, the session is free. Is that okay?"),
+    caller("Yes."),
+  ]);
+  assert.notEqual(sideQuestion.disposition, "FINAL_YES");
+
+  const reasked = settleReminder([
+    agent(GREETING),
+    agent(REMINDER_V2_BLOCK),
+    caller("Is it free?"),
+    agent(`Yes, the session is free. ${REMINDER_V2_GATE}`),
+    caller("Yes, I'll join."),
+    agent(REMINDER_V2_YES_CLOSE),
+  ]);
+  assert.equal(reasked.disposition, "FINAL_YES");
+  assert.equal(isFinalYes(reasked.classification, reasked.disposition), true);
+});
+
 await test("A2. an explicit no is FINAL_NO and is not written", () => {
   const { classification, disposition } = settle([
     agent(GREETING),

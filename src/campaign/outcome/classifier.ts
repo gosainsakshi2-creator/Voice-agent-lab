@@ -114,6 +114,11 @@ const AFFIRMATION_EXCEPTIONS = [
   "i will decide", "i will confirm later", "i will get back",
   "dekhta hu", "dekhti hu", "dekhenge", "soch kar", "sochkar", "try karunga", "try karungi",
   "देखता हूँ", "देखती हूँ", "देखेंगे", "सोचकर",
+  // "sure" is in the table above because "Sure." at the gate is a real
+  // yes; it also matches "not sure", which is the opposite. Found on the
+  // reminder v2 gate: "Maybe, not sure yet." settled as confirmed_at_gate
+  // and would have written a sheet row. Same class of fix as "i will see".
+  "not sure", "pata nahi", "nahi pata",
 ];
 
 const CALLBACK = [

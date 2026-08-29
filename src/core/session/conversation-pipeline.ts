@@ -2275,6 +2275,38 @@ export class ConversationPipeline {
     if (segment.confidence > 0 && segment.confidence < BARGE_IN_MIN_CONFIDENCE) {
       return false;
     }
+    // ── The caller finishing their OWN sentence is not an interruption ──
+    //
+    // The caller at the site above is judged on where the words ENDED
+    // (`endedAtMs`), which is right for "did this speech happen while I
+    // was talking". But Deepgram's segments are cumulative within one
+    // utterance: a caller who was already talking when the reply began
+    // — the tail of the turn the reply is answering, released early by
+    // the detector — keeps extending the same utterance, and its end
+    // time crosses `speakingStartedAtStreamMs` a few hundred ms into the
+    // reply. That transcript ended after we started but BEGAN before we
+    // did: they did not interrupt us, we started over them. Treating it
+    // as a barge-in cut replies off at their first sentence on live
+    // Vobiz calls, with the corroboration gate above unable to help
+    // (near-end energy is present either way).
+    //
+    // So a segment whose FIRST word predates the start of this speaking
+    // phase does not corroborate. A genuine interruption begins after
+    // playback started by definition, and Deepgram opens a new utterance
+    // (a new `start`) after any endpointed pause, so nothing a caller
+    // says in reply to what they are hearing is affected.
+    //
+    // Placed on the call-long timeline with the SAME re-base offset
+    // `sttStreamMsOf` maintains for `endedAtMs` — already updated for
+    // this very segment, because that runs first in the STT loop — so
+    // an STT stream reconnect cannot make this test lie in either
+    // direction. It reads the offset and writes nothing. `0` is "no word
+    // timings in this result" (see the Deepgram adapter), never a
+    // position, so it keeps exactly today's behaviour.
+    if (segment.startedAtMs > 0) {
+      const startedOnCallTimelineMs = this.sttClockOffsetMs + segment.startedAtMs;
+      if (startedOnCallTimelineMs <= this.speakingStartedAtStreamMs) return false;
+    }
     return true;
   }
 

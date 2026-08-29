@@ -135,6 +135,12 @@ interface SayOptions {
    * Deepgram adapter reports for a result carrying no word timings.
    */
   readonly endedAtMs?: number;
+  /**
+   * Override the reported FIRST-word time, in the CURRENT STT stream's
+   * own clock. Defaults to 300ms before `endedAtMs`. `0` is what the
+   * Deepgram adapter reports for a result carrying no word timings.
+   */
+  readonly startedAtMs?: number;
 }
 
 interface Harness {
@@ -144,6 +150,8 @@ interface Harness {
   readonly requests: Array<readonly ConversationTurn[]>;
   /** Audio (ms) the STT stream has actually consumed — the pipeline's `inboundStreamMs`. */
   audioMs(): number;
+  /** The live edge of the CURRENT STT stream's own word clock (rewound by `reconnectStt`). */
+  sttClockMs(): number;
   /** Push `ms` of inbound audio and wait until the STT stream has taken all of it. */
   feedAudioMs(ms: number): Promise<void>;
   /** The transport reconnected: the word clock restarts at the audio received from here. */
@@ -321,6 +329,7 @@ function startHarness(input: {
     transitions,
     requests,
     audioMs: () => audioMsConsumed,
+    sttClockMs: () => sttClockNow(),
     async feedAudioMs(ms) {
       const target = audioMsConsumed + ms;
       for (let sent = 0; sent < ms; sent += FRAME_MS) {
@@ -358,7 +367,7 @@ function startHarness(input: {
         isSpeechFinal: isFinal,
         confidence: opts?.confidence ?? 0.95,
         language: SupportedLanguage.ENGLISH,
-        startedAtMs: Math.max(0, endedAtMs - 300),
+        startedAtMs: opts?.startedAtMs ?? Math.max(0, endedAtMs - 300),
         endedAtMs,
       });
       waiters.shift()?.();
@@ -662,6 +671,112 @@ await test("and those words are not lost — they are answered once the opening 
 
     await h.waitForReplies(2);
     assert.equal(h.assistantTexts()[1], SHORT, "the buffered turn must be answered after the opening line");
+  } finally {
+    await h.stop();
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════
+section("SECTION F — words that BEGAN before the reply are the caller finishing, not interrupting");
+// ═════════════════════════════════════════════════════════════════
+//
+// Deepgram's segments are cumulative within an utterance. A caller who
+// was still talking when the reply began keeps extending the utterance
+// the reply is answering, so its END crosses the speaking mark a few
+// hundred ms in while its START predates it. On live Vobiz calls that
+// cut replies off at their first sentence. The guard lives only in
+// `interruptionCorroborated`, reads the existing re-base offset, and
+// changes nothing when the result carries no word timings.
+
+await test("F1. a segment that STARTED before SPEAKING and ENDED after it does NOT interrupt", async () => {
+  const h = startHarness({ openingLine: OPENING, replies: [BLOCK, SHORT] });
+  try {
+    const speakingMark = await speakingAfterAudio(h, 5_000);
+    await h.feedAudioMs(700);
+
+    // Loud, confident, ending 700ms into the reply — everything today's
+    // test looks at says "interruption". But the first word was spoken
+    // 400ms BEFORE we started: this is the tail of their own turn.
+    h.say("please tell me more about it and the timing", {
+      startedAtMs: speakingMark - 400,
+      endedAtMs: h.sttClockMs(),
+    });
+
+    await sleep(600);
+    assert.equal(h.bargedIn(), false, "the caller finishing their sentence must not cancel the reply");
+    await h.waitForReplies(2);
+    assert.equal(h.assistantTexts()[1], BLOCK, "the block must be committed WHOLE");
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("F2. a segment that STARTED after SPEAKING still interrupts — a genuine barge-in is untouched", async () => {
+  const h = startHarness({ openingLine: OPENING, replies: [BLOCK, SHORT] });
+  try {
+    const speakingMark = await speakingAfterAudio(h, 5_000);
+    await h.feedAudioMs(700);
+
+    h.say("No wait, stop.", { startedAtMs: speakingMark + 200, endedAtMs: h.sttClockMs() });
+
+    await h.waitFor("the barge-in transition", () => h.bargedIn());
+    assert.equal(h.bargeInCount(), 1, "exactly one barge-in");
+    assert.ok((h.assistantTexts()[1] ?? "").length < BLOCK.length, "the block must be cut short");
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("F3. a segment with NO start timing (`startedAtMs` 0) keeps today's behaviour exactly", async () => {
+  const h = startHarness({ openingLine: OPENING, replies: [BLOCK, SHORT] });
+  try {
+    await speakingAfterAudio(h, 5_000);
+    await h.feedAudioMs(700);
+
+    // Only the end time is known and it is after the speaking mark —
+    // which is the whole of what the existing test evaluates, so it
+    // must still interrupt.
+    h.say("No wait, stop.", { startedAtMs: 0, endedAtMs: h.sttClockMs() });
+
+    await h.waitFor("the barge-in transition", () => h.bargedIn());
+    assert.equal(h.bargeInCount(), 1, "exactly one barge-in");
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("F4. after an STT stream reconnect the start time is re-based too — both directions stay correct", async () => {
+  const h = startHarness({ openingLine: OPENING, replies: [BLOCK, BLOCK, SHORT] });
+  try {
+    await speakingAfterAudio(h, 5_000);
+
+    // The word clock rewinds to zero mid-reply. On the raw clock every
+    // start time is now tiny and would read as "before SPEAKING"; on the
+    // re-based clock this speech began ~100ms after the reconnect, well
+    // into the reply — a genuine interruption, and it must still fire.
+    h.reconnectStt();
+    await h.feedAudioMs(700);
+    // (Not a bare "hello" — that is answered by the fixed attention line
+    // rather than by the model, and this test needs the SECOND reply to
+    // be the long block so it can check that block was not cut.)
+    h.say("No wait, one question first.", { startedAtMs: 100, endedAtMs: h.sttClockMs() });
+    await h.waitFor("the barge-in after the reconnect", () => h.bargeInCount() === 1);
+
+    // That becomes a turn and a SECOND long reply starts, still on the
+    // rewound clock. The caller was already talking when it began: the
+    // start predates the new reply's mark on the SAME re-based clock,
+    // so this one is their own sentence and must not interrupt.
+    await h.waitForSpeakingWithAudio();
+    const secondReplyClockMark = h.sttClockMs();
+    await h.feedAudioMs(700);
+    h.say("and I was also asking about the recording", {
+      startedAtMs: Math.max(1, secondReplyClockMark - 400),
+      endedAtMs: h.sttClockMs(),
+    });
+    await sleep(600);
+    assert.equal(h.bargeInCount(), 1, "the caller finishing their sentence must not interrupt the second reply");
+    await h.waitForReplies(3);
+    assert.equal(h.assistantTexts()[2], BLOCK, "the second block must be committed WHOLE");
   } finally {
     await h.stop();
   }

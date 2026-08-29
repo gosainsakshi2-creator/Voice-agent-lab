@@ -1,67 +1,52 @@
 /**
  * sarvam-stream-tests.ts — `npm run test:sarvam-stream`
  *
- * THE SARVAM PREMATURE-TRUNCATION DEFECT, AND THE BOUNDED SAFETY
- * MECHANISM THAT REPLACES IT.
+ * HOW A SARVAM UTTERANCE ENDS, AND THE TRUNCATION THAT ENDED WHEN IT
+ * WAS READ FROM THE PROTOCOL INSTEAD OF INFERRED FROM SILENCE.
  *
  * ── THE DEFECT ─────────────────────────────────────────────────────
  *
- * Sarvam's WebSocket TTS protocol has NO end-of-stream marker. Every
- * frame is `{type:"audio"}` with identical keys, the socket is not
- * closed by the server, and the streaming WAV header it opens with
- * declares `0xFFFFFFFF` for both the RIFF size and the `data` subchunk
- * size — verified against the live account, so there is no declared
- * length to read either. Completion can only be inferred from silence.
+ * Sarvam's WebSocket TTS sends no end-of-utterance marker BY DEFAULT.
+ * The streaming WAV header declares `0xFFFFFFFF` for both sizes and the
+ * server never closes, so for a long time completion here was inferred
+ * from an idle gap — first fixed (700ms), then adaptive (300-1200ms,
+ * sized from the frame cadence and the delivery quantum). Every version
+ * of that inference had the same flaw: the vendor's generation rate is
+ * not bounded below by real time. Measured live, a healthy 68-character
+ * utterance paused 786ms mid-stream and then finished; under a 550, 672
+ * or 700ms budget that utterance is declared over and the rest of the
+ * sentence is discarded. Those three numbers are exactly what the live
+ * call logs showed at each truncation.
  *
- * `synthesizeStream` inferred it from an idle gap sized
- * `min(SARVAM_STREAM_IDLE_GAP_MS, max(MIN_IDLE_GAP_MS,
- * widestFrameGapMs * IDLE_GAP_SAFETY_FACTOR))`. Two things were wrong
- * with that, and they compound:
+ * ── THE SIGNAL ─────────────────────────────────────────────────────
  *
- *   1. `widestFrameGapMs` is 0 until two frames have arrived, so
- *      `widest * 4` is 0 and the budget collapsed to the 300ms floor
- *      exactly in the window where nothing about the cadence was known.
- *
- *   2. The 300ms floor is BELOW the vendor's own delivery quantum.
- *      Measured on the live account across 18 runs (8kHz PCM_16, so
- *      16000 bytes/s), frame sizes are quantised multiples of 2200
- *      bytes and which multiple you get varies run to run on identical
- *      text:
- *
- *        2200 B = 138ms of audio      6600 B = 413ms of audio
- *        4400 B = 275ms of audio      8800 B = 550ms of audio
- *
- *      On four of six runs of one 134-character sentence the stream was
- *      mostly 6600- and 8800-byte frames. A vendor that routinely hands
- *      over 413-550ms of audio per frame was being given 300ms to
- *      produce the next one.
- *
- * The audit's worst reproduction delivered `frames=2, audio=0.82s` of a
- * 5.97s sentence — 14%. Two 6600-byte frames is 13200 bytes is 0.825s.
- * The byte count matches the quantum EXACTLY: it was not a short read,
- * it was two ordinary frames followed by one ordinary gap that the
- * budget was too small to survive. The caller heard a fragment and the
- * pipeline recorded the whole text as spoken.
+ * The marker exists; it is opt-in. With `send_completion_event=true` on
+ * the connection url the server follows the last audio frame with
+ * `{type:"event", data:{event_type:"final"}}`. Live, 22/22 completed
+ * utterances (8-201 chars, cold and after a 3s virgin idle): the event
+ * arrived 0-2ms after the final frame, never before it, never followed
+ * by audio. `synthesizeStream` now completes on that event and on
+ * nothing else. Silence after the first frame is no longer completion;
+ * it is only bounded — at `COMPLETION_EVENT_FALLBACK_MS` (2000ms) — for
+ * the vendor-fault case where the stream is dropped and `final` never
+ * comes (observed once in 34 live runs).
  *
  * ── HOW THIS SUITE TESTS IT ────────────────────────────────────────
  *
  * Against the REAL `SarvamTextToSpeechProvider`, over a REAL WebSocket,
  * to a LOCAL fake Sarvam server on 127.0.0.1 whose frame schedule each
- * test writes. Nothing here contacts Sarvam, places a call, reads the
- * database or touches Google. The provider's socket handling, its RIFF
- * stripping, its parity guard, its abort path, its REST fallback and
- * its idle-gap arithmetic are all the shipped code — only the vendor on
- * the other end of the socket is local, which is what makes frame
- * timing exact instead of flaky.
+ * test writes — and which sends the `final` event exactly as the live
+ * vendor does, unless a test turns it off to exercise the fallback.
+ * Nothing here contacts Sarvam, places a call, reads the database or
+ * touches Google. The provider's socket handling, RIFF stripping, parity
+ * guard, abort path, REST fallback, warm-socket lifecycle and completion
+ * logic are all the shipped code.
  *
- * `A1` and `A7` assert their own premise: each recomputes the SHIPPED
- * budget rule over its own schedule and asserts that rule WOULD have
- * truncated, so neither test can quietly stop reproducing the defect it
- * exists for. `A6` is the opposite tripwire — it fails if someone
- * "fixes" truncation by reverting to a fixed 700ms wait, which would
- * hand back the per-chunk-boundary latency the adaptive gap won.
+ * `A1` and `A7` keep the retired budget rule as a pure function and
+ * assert their schedules WOULD have truncated under it, so the suite
+ * cannot quietly stop reproducing the defect it exists for. Section F is
+ * the completion-event contract itself.
  */
-
 import assert from "node:assert/strict";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { WebSocketServer, type WebSocket as WsSocket } from "ws";
@@ -117,19 +102,26 @@ const FRAME_550MS = 8800;
 
 const audioMs = (bytes: number) => (bytes / BYTES_PER_SECOND) * 1000;
 
-/** The shipped constants, restated here so the tripwires can use them. */
+/** The RETIRED idle-gap constants, kept only so the tripwires can restate the old rule. */
 const SHIPPED_MIN_IDLE_GAP_MS = 300;
 const SHIPPED_SAFETY_FACTOR = 4;
 const CONFIGURED_IDLE_GAP_MS = 700;
 const CONFIGURED_START_TIMEOUT_MS = 6000;
-/** `MAX_IDLE_GAP_MS` in the provider — the hard bound on the budget. */
-const HARD_BOUND_MS = 1200;
+/** `COMPLETION_EVENT_FALLBACK_MS` in the provider — reached ONLY when the vendor never sends `final`. */
+const FALLBACK_MS = 2000;
+/**
+ * How long after the last audio frame a stream that ends on the `final`
+ * event may take to return. Live the event trails the last frame by
+ * 0-2ms; this is slack for the local event loop, and is still a fraction
+ * of the 300ms floor the retired idle gap paid at every chunk boundary.
+ */
+const EVENT_TAIL_MAX_MS = 150;
 
 /**
- * The BUDGET RULE AS IT SHIPPED, reimplemented as a pure function over
- * a frame schedule. Used by `A1`/`A7` to assert that their schedule
- * really does trigger the defect, and by `A6` to state what the tail
- * used to be. Not used by production code.
+ * The RETIRED budget rule (the adaptive idle gap), reimplemented as a
+ * pure function over a frame schedule. Used by `A1`/`A7` to assert that
+ * their schedule really does trigger the defect it replaced. Not used by
+ * production code.
  */
 function shippedRuleTruncatesAt(
   schedule: ReadonlyArray<{ readonly bytes: number; readonly gapMsBefore: number }>,
@@ -205,6 +197,8 @@ interface FakeSarvam {
   receivedTypes(): ReadonlyArray<string>;
   /** How many streaming RIFF headers the server has sent, across every socket. */
   headerFrames(): number;
+  /** The request url (path + query) of every connection the provider opened, in order. */
+  connectionUrls(): ReadonlyArray<string>;
   /** Kill every open server-side socket — a vendor dropping a parked connection. */
   closeServerSockets(): void;
   /** Resolves once the provider has opened at least `n` connections. */
@@ -220,6 +214,14 @@ async function startFakeSarvam(input: {
   readonly restClipBytes?: number;
   /** Close the socket after the schedule instead of holding it open. */
   readonly closeAfterSchedule?: boolean;
+  /**
+   * Send `{type:"event", event_type:"final"}` after the last frame, as
+   * the live vendor does when `send_completion_event=true`. Default
+   * true; a test sets false to model a vendor that dropped the stream.
+   */
+  readonly sendFinalEvent?: boolean;
+  /** An `event` of some OTHER type, sent before the header. Must be ignored. */
+  readonly preEventType?: string;
 }): Promise<FakeSarvam> {
   const sent: number[] = [];
   let done = false;
@@ -267,10 +269,12 @@ async function startFakeSarvam(input: {
   let closedConnections = 0;
   let headerFrames = 0;
   const receivedTypes: string[] = [];
+  const connectionUrls: string[] = [];
   const liveSockets = new Set<WsSocket>();
 
-  wss.on("connection", (socket: WsSocket) => {
+  wss.on("connection", (socket: WsSocket, req: IncomingMessage) => {
     connections += 1;
+    connectionUrls.push(req.url ?? "");
     liveSockets.add(socket);
     socket.on("close", () => {
       closedConnections += 1;
@@ -288,6 +292,10 @@ async function startFakeSarvam(input: {
       if (parsed.type === "config") configFrames.push(parsed);
       if (parsed.type !== "flush" || flushed) return;
       flushed = true;
+
+      if (input.preEventType !== undefined) {
+        socket.send(JSON.stringify({ type: "event", data: { event_type: input.preEventType } }));
+      }
 
       // The streaming RIFF header, as its own frame, with the
       // placeholder sizes the live account really sends.
@@ -314,7 +322,12 @@ async function startFakeSarvam(input: {
         );
       }
       done = true;
-      // The real vendor sends nothing further and does NOT close.
+      // The completion event, 0-2ms after the last frame as measured
+      // live. The vendor does NOT close afterwards.
+      if (input.sendFinalEvent !== false && socket.readyState === socket.OPEN) {
+        await sleep(1);
+        socket.send(JSON.stringify({ type: "event", data: { event_type: "final" } }));
+      }
       if (input.closeAfterSchedule) socket.close();
     });
   });
@@ -334,6 +347,7 @@ async function startFakeSarvam(input: {
     closedConnections: () => closedConnections,
     receivedTypes: () => receivedTypes,
     headerFrames: () => headerFrames,
+    connectionUrls: () => connectionUrls,
     closeServerSockets: () => {
       for (const socket of [...liveSockets]) socket.close();
     },
@@ -620,19 +634,18 @@ await test("A4 — a genuinely short utterance completes, and returns bounded", 
     const result = await drain(providerFor(server.baseUrl), TEXT_SHORT);
     assert.equal(result.error, undefined, `unexpected error: ${result.error?.message}`);
     assertSameAudio(result.audio, server.expectedAudio(), "A4 short utterance");
-    // One frame, no gap ever observed, so the budget is the configured
-    // ceiling. It must NOT be the 6s start timeout, and must not hang.
+    // One frame, then `final`. The generator returns on the event —
+    // not on the 6s start timeout, not on any idle budget.
     assert.ok(
-      result.tailMs <= CONFIGURED_IDLE_GAP_MS + 250,
-      `tail ${result.tailMs}ms should be bounded by the configured ceiling ${CONFIGURED_IDLE_GAP_MS}ms`,
+      result.tailMs <= EVENT_TAIL_MAX_MS,
+      `tail ${result.tailMs}ms — should have returned on the final event, not a timer`,
     );
-    assert.ok(result.tailMs >= 200, `tail ${result.tailMs}ms is implausibly short — did the wait vanish?`);
   } finally {
     await server.close();
   }
 });
 
-await test("A5 — genuine completion then long silence with the socket held open: returns on the gap, not on the silence", async () => {
+await test("A5 — genuine completion then long silence with the socket held open: returns on the final event, not on the silence", async () => {
   const frames: Frame[] = Array.from({ length: 12 }, (_, i) => ({
     bytes: FRAME_275MS,
     gapMsBefore: i === 0 ? 20 : 60,
@@ -643,11 +656,10 @@ await test("A5 — genuine completion then long silence with the socket held ope
     assert.equal(result.error, undefined, `unexpected error: ${result.error?.message}`);
     assertSameAudio(result.audio, server.expectedAudio(), "A5 full utterance");
     assert.ok(server.scheduleDone(), "the server should have finished its schedule");
-    // The vendor never closes and never marks the end — the generator
-    // must still return, and promptly.
+    // The vendor never closes — the generator returns on the event.
     assert.ok(
-      result.tailMs <= HARD_BOUND_MS + 250,
-      `tail ${result.tailMs}ms must stay inside the hard bound ${HARD_BOUND_MS}ms`,
+      result.tailMs <= EVENT_TAIL_MAX_MS,
+      `tail ${result.tailMs}ms — should have returned on the final event, not a timer`,
     );
     // The last chunk is the empty final sentinel.
     const last = result.chunks[result.chunks.length - 1];
@@ -659,13 +671,13 @@ await test("A5 — genuine completion then long silence with the socket held ope
 });
 
 /**
- * THE LATENCY TRIPWIRE. This is what fails if the truncation is "fixed"
- * by reverting to a fixed 700ms wait: on the common cadence — 138ms
- * frames, tight gaps — the tail must still be the 300ms floor, because
- * the pipeline awaits this generator once per sentence chunk and that
- * tail is pure serialisation at every chunk boundary.
+ * THE LATENCY TRIPWIRE. The pipeline awaits this generator once per
+ * sentence chunk, so every millisecond between the last frame and the
+ * return is pure serialisation at a chunk boundary. The retired idle gap
+ * paid 300ms here on its best day; the event pays ~1ms. This fails if
+ * anyone reintroduces a wait after the final event.
  */
-await test("A6 — common cadence keeps the ~300ms tail: the adaptive win is NOT given back", async () => {
+await test("A6 — common cadence: the tail is the event, not a timer — no chunk-boundary wait is reintroduced", async () => {
   const frames: Frame[] = Array.from({ length: 14 }, (_, i) => ({
     bytes: FRAME_138MS,
     gapMsBefore: i === 0 ? 20 : 55,
@@ -675,21 +687,19 @@ await test("A6 — common cadence keeps the ~300ms tail: the adaptive win is NOT
     const result = await drain(providerFor(server.baseUrl), TEXT_LONG);
     assert.equal(result.error, undefined, `unexpected error: ${result.error?.message}`);
     assertSameAudio(result.audio, server.expectedAudio(), "A6 full utterance");
-    // 55ms gaps -> adaptive 220ms -> floored to 300ms. The quantum for
-    // a 2200-byte frame is 138ms, below the floor, so the floor governs.
     assert.ok(
-      result.tailMs < 550,
-      `tail ${result.tailMs}ms should be the ~300ms floor, not the ${CONFIGURED_IDLE_GAP_MS}ms ceiling — the adaptive gap was given back`,
+      result.tailMs <= EVENT_TAIL_MAX_MS,
+      `tail ${result.tailMs}ms — a wait after the final event has been reintroduced (the retired floor was ${SHIPPED_MIN_IDLE_GAP_MS}ms)`,
     );
-    assert.ok(result.tailMs >= 250, `tail ${result.tailMs}ms is below the ${SHIPPED_MIN_IDLE_GAP_MS}ms floor`);
   } finally {
     await server.close();
   }
 });
 
 await test("A8 — one enormous frame cannot license an unbounded tail", async () => {
-  // 4 seconds of audio in a single frame. Without the hard bound the
-  // delivery-quantum floor would license a 4s tail.
+  // 4 seconds of audio in a single frame. Under the retired rule the
+  // delivery-quantum floor would have licensed a 4s tail; the event
+  // makes the frame's size irrelevant to the tail.
   const frames: Frame[] = [{ bytes: BYTES_PER_SECOND * 4, gapMsBefore: 20 }];
   const server = await startFakeSarvam({ frames });
   try {
@@ -697,8 +707,8 @@ await test("A8 — one enormous frame cannot license an unbounded tail", async (
     assert.equal(result.error, undefined, `unexpected error: ${result.error?.message}`);
     assertSameAudio(result.audio, server.expectedAudio(), "A8 full utterance");
     assert.ok(
-      result.tailMs <= HARD_BOUND_MS + 300,
-      `tail ${result.tailMs}ms must be bounded by ${HARD_BOUND_MS}ms, not by the 4000ms the frame carried`,
+      result.tailMs <= EVENT_TAIL_MAX_MS,
+      `tail ${result.tailMs}ms — should have returned on the final event, not on anything derived from the 4000ms frame`,
     );
   } finally {
     await server.close();
@@ -849,7 +859,9 @@ await test("C7 — a server that DOES close ends the stream on the close, not on
     { bytes: FRAME_275MS, gapMsBefore: 60 },
     { bytes: FRAME_275MS, gapMsBefore: 60 },
   ];
-  const server = await startFakeSarvam({ frames, closeAfterSchedule: true });
+  // No `final` here on purpose: this test is about the CLOSE ending the
+  // stream, so the event must not be what ends it first.
+  const server = await startFakeSarvam({ frames, closeAfterSchedule: true, sendFinalEvent: false });
   try {
     const result = await drain(providerFor(server.baseUrl), TEXT_LONG);
     assert.equal(result.error, undefined, `unexpected error: ${result.error?.message}`);
@@ -1268,6 +1280,208 @@ await test("E13 — a barge-in on the warm path still aborts, and leaves nothing
       connectionsBefore + 1,
       "the aborted socket must not be reclaimable",
     );
+  } finally {
+    await server.close();
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════
+section("SECTION F — the completion event is THE end of an utterance");
+// ═════════════════════════════════════════════════════════════════
+
+/** The live vendor's common shape: mixed quanta, tight gaps. */
+const COMMON_FRAMES: Frame[] = [
+  { bytes: FRAME_550MS, gapMsBefore: 20 },
+  { bytes: FRAME_413MS, gapMsBefore: 70 },
+  { bytes: FRAME_275MS, gapMsBefore: 80 },
+  { bytes: FRAME_413MS, gapMsBefore: 60 },
+  { bytes: FRAME_138MS, gapMsBefore: 65 },
+];
+
+await test("F1 — `final` event: every byte is delivered and the stream returns on the event", async () => {
+  const server = await startFakeSarvam({ frames: COMMON_FRAMES });
+  try {
+    const result = await drain(providerFor(server.baseUrl), TEXT_LONG);
+    assert.equal(result.error, undefined, `unexpected error: ${result.error?.message}`);
+    assertSameAudio(result.audio, server.expectedAudio(), "F1 full utterance");
+    assert.ok(result.tailMs <= EVENT_TAIL_MAX_MS, `tail ${result.tailMs}ms — did not return on the event`);
+    const last = result.chunks[result.chunks.length - 1];
+    assert.equal(last?.isFinal, true, "the last chunk must be the final sentinel");
+    assert.equal(last?.audio.data.byteLength, 0, "the final sentinel must carry no audio");
+  } finally {
+    await server.close();
+  }
+});
+
+await test("F2 — a 1500ms mid-stream stall does NOT truncate: the utterance ends on `final`, not on the silence", async () => {
+  // Wider than every retired budget (550/672/700/1200ms) and than the
+  // widest stall measured live (786ms). Under any silence-based rule
+  // this is the truncation the call logs showed.
+  const frames: Frame[] = [
+    { bytes: FRAME_550MS, gapMsBefore: 20 },
+    { bytes: FRAME_550MS, gapMsBefore: 60 },
+    { bytes: FRAME_550MS, gapMsBefore: 1500 },
+    { bytes: FRAME_413MS, gapMsBefore: 60 },
+    { bytes: FRAME_275MS, gapMsBefore: 70 },
+  ];
+  assert.ok(shippedRuleTruncatesAt(frames) < frames.length, "premise broken: the retired rule must truncate here");
+  const server = await startFakeSarvam({ frames });
+  try {
+    const result = await drain(providerFor(server.baseUrl), TEXT_LONG);
+    assert.equal(result.error, undefined, `unexpected error: ${result.error?.message}`);
+    assertSameAudio(result.audio, server.expectedAudio(), "F2 full utterance across the stall");
+    assert.ok(result.tailMs <= EVENT_TAIL_MAX_MS, `tail ${result.tailMs}ms — did not return on the event`);
+  } finally {
+    await server.close();
+  }
+});
+
+await test("F3 — no `final` ever (vendor dropped the stream): all delivered audio is kept and the wait is bounded at the fallback", async () => {
+  const server = await startFakeSarvam({ frames: COMMON_FRAMES, sendFinalEvent: false });
+  try {
+    const result = await drain(providerFor(server.baseUrl), TEXT_LONG);
+    assert.equal(result.error, undefined, `unexpected error: ${result.error?.message}`);
+    assertSameAudio(result.audio, server.expectedAudio(), "F3 delivered audio");
+    assert.ok(
+      result.tailMs >= FALLBACK_MS - 50 && result.tailMs <= FALLBACK_MS + 300,
+      `tail ${result.tailMs}ms should be the ${FALLBACK_MS}ms fallback — neither the retired idle gap nor an unbounded hang`,
+    );
+    const last = result.chunks[result.chunks.length - 1];
+    assert.equal(last?.isFinal, true, "the fallback still emits the final sentinel");
+  } finally {
+    await server.close();
+  }
+});
+
+await test("F4 — audio already in `pending` is drained BEFORE the stream ends on `final` (slow consumer)", async () => {
+  // Frames burst out fast and `final` follows within 1ms, while the
+  // consumer takes 150ms over every chunk — so the event is observed
+  // long before the consumer has taken the frames it precedes.
+  const frames: Frame[] = Array.from({ length: 8 }, (_, i) => ({
+    bytes: FRAME_275MS,
+    gapMsBefore: i === 0 ? 20 : 5,
+  }));
+  const server = await startFakeSarvam({ frames });
+  try {
+    const result = await drain(providerFor(server.baseUrl), TEXT_LONG, {
+      onChunk: () => sleep(150),
+    });
+    assert.equal(result.error, undefined, `unexpected error: ${result.error?.message}`);
+    assertSameAudio(result.audio, server.expectedAudio(), "F4 every frame drained before completion");
+    const last = result.chunks[result.chunks.length - 1];
+    assert.equal(last?.isFinal, true, "the final sentinel comes after every audio chunk");
+    assert.equal(
+      result.chunks.filter((c) => c.audio.data.byteLength > 0).length,
+      frames.length,
+      "one yielded chunk per frame — none dropped behind the event",
+    );
+  } finally {
+    await server.close();
+  }
+});
+
+await test("F5 — pre-opened (warm) socket: same url with send_completion_event=true, still virgin, completes on `final`", async () => {
+  const server = await startFakeSarvam({ frames: COMMON_FRAMES });
+  const provider = providerFor(server.baseUrl);
+  try {
+    provider.prepareSession("session-F5");
+    await server.awaitConnections(1);
+    await sleep(150);
+    assert.deepEqual(server.receivedTypes(), [], "a parked socket must carry no config/text/flush");
+
+    const result = await drain(provider, TEXT_LONG, { sessionId: "session-F5" });
+    assert.equal(result.error, undefined, `unexpected error: ${result.error?.message}`);
+    assertSameAudio(result.audio, server.expectedAudio(), "F5 warm-path utterance");
+    assert.equal(server.connections(), 1, "the warm socket was used; no second socket was opened");
+    assert.ok(result.tailMs <= EVENT_TAIL_MAX_MS, `tail ${result.tailMs}ms — warm path did not return on the event`);
+
+    // The url both paths share — the pre-open is to the very same url the
+    // fresh path uses, so the opt-in parameter is present on it.
+    for (const url of server.connectionUrls()) {
+      assert.match(url, /[?&]send_completion_event=true(&|$)/, `connection url lacks the opt-in: ${url}`);
+    }
+  } finally {
+    provider.disposeSession("session-F5");
+    await server.close();
+  }
+});
+
+await test("F6 — virgin-socket rule intact: the warm socket is handed out once, and a second utterance opens its own", async () => {
+  const server = await startFakeSarvam({ frames: COMMON_FRAMES });
+  const provider = providerFor(server.baseUrl);
+  try {
+    provider.prepareSession("session-F6");
+    await server.awaitConnections(1);
+    const first = await drain(provider, TEXT_LONG, { sessionId: "session-F6" });
+    assertSameAudio(first.audio, server.expectedAudio(), "F6 first utterance");
+    const second = await drain(provider, TEXT_LONG, { sessionId: "session-F6" });
+    assertSameAudio(second.audio, server.expectedAudio(), "F6 second utterance");
+    assert.equal(server.connections(), 2, "one warm socket + one fresh socket — never a reuse");
+    assert.equal(server.headerFrames(), 2, "exactly one RIFF header per socket");
+    for (const url of server.connectionUrls()) assert.match(url, /send_completion_event=true/);
+  } finally {
+    provider.disposeSession("session-F6");
+    await server.close();
+  }
+});
+
+await test("F7 — barge-in DURING a stall aborts immediately: the abort wakes the wait, no fallback is paid, no sentinel", async () => {
+  const frames: Frame[] = [
+    { bytes: FRAME_413MS, gapMsBefore: 20 },
+    { bytes: FRAME_413MS, gapMsBefore: 60 },
+    { bytes: FRAME_413MS, gapMsBefore: 3000 }, // the stall the abort lands in
+    { bytes: FRAME_413MS, gapMsBefore: 60 },
+  ];
+  const server = await startFakeSarvam({ frames });
+  try {
+    const controller = new AbortController();
+    let abortedAt = 0;
+    const result = await drain(providerFor(server.baseUrl), TEXT_LONG, {
+      signal: controller.signal,
+      onChunk: async (_chunk, index) => {
+        if (index === 1) {
+          await sleep(300); // well inside the 3000ms stall
+          abortedAt = Date.now();
+          controller.abort();
+        }
+      },
+    });
+    const returnedAfterAbortMs = Date.now() - abortedAt;
+    assert.equal(result.error, undefined, `abort must not surface as an error: ${result.error?.message}`);
+    assert.ok(
+      returnedAfterAbortMs <= 100,
+      `returned ${returnedAfterAbortMs}ms after abort — the abort did not wake the wait (fallback is ${FALLBACK_MS}ms)`,
+    );
+    assert.equal(result.chunks.filter((c) => c.audio.data.byteLength > 0).length, 2, "exactly the two chunks before the abort");
+    assert.equal(result.chunks.some((c) => c.isFinal), false, "an interrupted utterance emits no final sentinel");
+  } finally {
+    await server.close();
+  }
+});
+
+await test("F8 — consecutive sentence chunks each complete fully, each on its own `final`", async () => {
+  const server = await startFakeSarvam({ frames: COMMON_FRAMES });
+  const provider = providerFor(server.baseUrl);
+  try {
+    const texts = ["Haan ji, bilkul.", "Kya aap abhi do minute baat kar sakte hain?", TEXT_LONG];
+    for (const [i, text] of texts.entries()) {
+      const result = await drain(provider, text, { sessionId: "session-F8" });
+      assert.equal(result.error, undefined, `chunk ${i}: ${result.error?.message}`);
+      assertSameAudio(result.audio, server.expectedAudio(), `F8 chunk ${i}`);
+      assert.ok(result.tailMs <= EVENT_TAIL_MAX_MS, `chunk ${i} tail ${result.tailMs}ms — did not return on the event`);
+    }
+    assert.equal(server.connections(), texts.length, "one socket per utterance, as always");
+  } finally {
+    await server.close();
+  }
+});
+
+await test("F9 — an `event` of any other type is ignored: only event_type \"final\" completes the stream", async () => {
+  const server = await startFakeSarvam({ frames: COMMON_FRAMES, preEventType: "start" });
+  try {
+    const result = await drain(providerFor(server.baseUrl), TEXT_LONG);
+    assert.equal(result.error, undefined, `unexpected error: ${result.error?.message}`);
+    assertSameAudio(result.audio, server.expectedAudio(), "F9 full utterance despite a non-final event");
   } finally {
     await server.close();
   }

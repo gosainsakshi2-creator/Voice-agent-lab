@@ -137,6 +137,31 @@ const NEAR_END_SPEECH_FRAMES = 4;
  * door, or the intermittent bursts a background conversation produces.
  */
 const ENERGY_ONLY_BARGE_IN_MS = 700;
+/**
+ * How stale the STT provider's last delivered segment must be before
+ * the energy-only barge-in above is allowed to treat STT as dead.
+ *
+ * That fallback exists for ONE situation — a Deepgram socket that has
+ * stopped delivering — yet it fired on live calls with a healthy socket:
+ * ~700ms of loud non-speech energy (our own audio echoing back out of
+ * the handset, a line burst) that Deepgram, correctly, did not
+ * transcribe. Each time it cleared the whole outbound queue and aborted
+ * the TTS stream, and the caller heard the assistant stop mid-sentence
+ * — reported as "Sarvam truncates sentences". With a live socket, loud
+ * energy that produces no words is by definition not the caller.
+ *
+ * The window is long deliberately: a healthy STT stream legitimately
+ * delivers nothing while the caller sits quietly through a reply, and
+ * campaign replies run 10-20s, so anything shorter would declare a
+ * live socket dead mid-reply and re-open the very false barge-in this
+ * gate exists to close. The cost is that a socket which genuinely dies
+ * leaves the assistant uninterruptible by energy alone for up to this
+ * long after the last segment it delivered — after which the fallback
+ * behaves exactly as before. The transcript-confirmed path in the
+ * pipeline is untouched and still interrupts the moment Deepgram
+ * delivers corroborated words.
+ */
+const STT_UNHEALTHY_AFTER_MS = 30_000;
 
 export function attachVobizMediaBridge(
   socket: BridgeSocket,
@@ -149,6 +174,12 @@ export function attachVobizMediaBridge(
   let pumpTimer: ReturnType<typeof setInterval> | undefined;
   let prerollTimer: ReturnType<typeof setTimeout> | undefined;
   let wasSpeaking = false;
+  /**
+   * `onLoudSpeech` fires on every loud frame once the run is long enough,
+   * so a suppressed energy-only barge-in is logged once per speaking
+   * phase rather than fifty times a second. Reset on entering SPEAKING.
+   */
+  let energyOnlySuppressedLogged = false;
   let closed = false;
 
   /** Vobiz's stream identifier — required in outbound events. */
@@ -239,6 +270,30 @@ export function attachVobizMediaBridge(
 
     if (loudMs < ENERGY_ONLY_BARGE_IN_MS) return;
     if (!wasSpeaking && outboundQueue.length === 0) return;
+
+    // STT IS ALIVE — this is not the fallback's situation. Deepgram has
+    // delivered a segment recently, so it is hearing this line; loud
+    // energy it has produced no words for is not the caller (see
+    // `STT_UNHEALTHY_AFTER_MS`). A genuine interruption is still
+    // handled by the pipeline's transcript-confirmed path the moment its
+    // words land. `undefined` (no segment yet, or the session is gone)
+    // is "no evidence STT is alive", which keeps the previous behaviour.
+    let sttEvidenceAgeMs: number | undefined;
+    try {
+      sttEvidenceAgeMs = manager.sttEvidenceAgeMs(sessionId);
+    } catch {
+      sttEvidenceAgeMs = undefined;
+    }
+    if (sttEvidenceAgeMs !== undefined && sttEvidenceAgeMs < STT_UNHEALTHY_AFTER_MS) {
+      if (!energyOnlySuppressedLogged) {
+        energyOnlySuppressedLogged = true;
+        // eslint-disable-next-line no-console
+        console.log(
+          `[vobiz-bridge:${sessionId}] energy-only barge-in SUPPRESSED: ${loudMs}ms of loud near-end energy with no transcript, but STT delivered a segment ${sttEvidenceAgeMs}ms ago — not the caller (queue=${outboundQueue.length} frames)`,
+        );
+      }
+      return;
+    }
 
     // eslint-disable-next-line no-console
     console.log(
@@ -420,6 +475,7 @@ export function attachVobizMediaBridge(
     if (eventSessionId !== sessionId) return;
     if (transition.to === SessionState.SPEAKING) {
       wasSpeaking = true;
+      energyOnlySuppressedLogged = false;
     } else if (wasSpeaking && transition.to === SessionState.LISTENING) {
       wasSpeaking = false;
       const isBargeIn = transition.reason != null && /barge.?in/i.test(transition.reason);

@@ -2362,6 +2362,16 @@ export class ConversationPipeline {
         for await (const segment of stream) {
           if (loopSignal.aborted) break;
 
+          // STT LIVENESS ONLY — the provider just delivered a segment,
+          // so its connection is demonstrably alive. Stamped before any
+          // routing below because every kind of segment (marker,
+          // interim, final, empty) is equally proof of that. Read by
+          // the transports' energy-only barge-in fallback, which exists
+          // for a dead STT socket and must not fire while this is
+          // fresh. Nothing downstream reads it: no turn, no timer, no
+          // threshold, no state.
+          this.record.lastSttEvidenceAt = Date.now();
+
           // ── An end-of-speech MARKER, not a transcript ────────────
           //
           // The provider's endpointer reporting that the words it has

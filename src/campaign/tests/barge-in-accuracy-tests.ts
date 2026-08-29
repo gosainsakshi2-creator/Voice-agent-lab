@@ -945,6 +945,225 @@ await test("a marker AFTER a real exchange can never silence a person", async ()
 });
 
 // ═════════════════════════════════════════════════════════════════
+section("SECTION I — the energy-only fallback fires only when STT is dead (`vobiz-media-bridge`)");
+// ═════════════════════════════════════════════════════════════════
+//
+// The transport's LAST-RESORT barge-in — 700ms of loud near-end energy
+// with no transcript — exists for a dead Deepgram socket. On live calls
+// it fired with a healthy socket: ~700ms of loud NON-speech energy (our
+// own audio echoing back, a line burst) that Deepgram correctly did not
+// transcribe. It cleared the whole outbound queue (596 frames = 11.9s
+// of already-generated Sarvam audio on the reported call) and aborted
+// the TTS stream, and the caller heard the sentence stop. The bridge now
+// asks the manager how recently STT delivered ANY segment, and stands
+// down while that is fresh. Everything else — the energy gates, the
+// pipeline's transcript-confirmed path, `clearOutboundPlayback` — is
+// unchanged, and these tests pin each of those down.
+
+const { attachVobizMediaBridge } = await import("../../server/vobiz-media-bridge");
+
+interface BridgeSocketFake {
+  readyState: number;
+  readonly sent: string[];
+  send(data: string): void;
+  close(): void;
+  on(event: string, listener: (...args: unknown[]) => void): void;
+  emit(event: string, ...args: unknown[]): void;
+}
+
+function fakeBridgeSocket(): BridgeSocketFake {
+  const listeners = new Map<string, Array<(...args: unknown[]) => void>>();
+  return {
+    readyState: 1,
+    sent: [],
+    send(data) {
+      this.sent.push(data);
+    },
+    close() {
+      this.readyState = 3;
+    },
+    on(event, listener) {
+      listeners.set(event, [...(listeners.get(event) ?? []), listener]);
+    },
+    emit(event, ...args) {
+      for (const listener of listeners.get(event) ?? []) listener(...args);
+    },
+  };
+}
+
+type StateListener = (sessionId: SessionId, transition: { from: unknown; to: unknown; reason?: string }) => void;
+
+/**
+ * The manager reduced to the hooks the bridge uses, with the one fact
+ * under test — how long ago STT last delivered a segment — injectable.
+ * `signalBargeIn` behaves like the real one: it accepts, and the
+ * pipeline's SPEAKING -> LISTENING transition follows synchronously.
+ */
+function fakeBridgeManager(input: { sttEvidenceAgeMs: number | undefined; sessionId: SessionId }) {
+  let stateListener: StateListener | undefined;
+  let outbound: ((chunk: AudioPayload) => void) | undefined;
+  const calls = { signalBargeIn: 0, noteCallerEnergy: 0 };
+  const manager = {
+    onOutboundAudio: (_sid: SessionId, listener: (chunk: AudioPayload) => void) => {
+      outbound = listener;
+      return () => undefined;
+    },
+    onStateChange: (listener: StateListener) => {
+      stateListener = listener;
+      return () => undefined;
+    },
+    setProviderCallId: () => undefined,
+    confirmCallAnswered: () => undefined,
+    pushInboundAudio: () => undefined,
+    noteCallerSpeech: () => undefined,
+    noteCallerEnergy: () => {
+      calls.noteCallerEnergy += 1;
+    },
+    sttEvidenceAgeMs: () => input.sttEvidenceAgeMs,
+    signalBargeIn: () => {
+      calls.signalBargeIn += 1;
+      stateListener?.(input.sessionId, {
+        from: SessionState.SPEAKING,
+        to: SessionState.LISTENING,
+        reason: "external barge-in signal",
+      });
+      return true;
+    },
+    end: async () => undefined,
+  };
+  return {
+    manager: manager as never,
+    calls,
+    /** The pipeline entering SPEAKING for a reply. */
+    enterSpeaking() {
+      stateListener?.(input.sessionId, { from: SessionState.THINKING, to: SessionState.SPEAKING, reason: "reply" });
+    },
+    /** The pipeline's own transcript-confirmed barge-in, as the bridge sees it. */
+    transcriptConfirmedBargeIn() {
+      stateListener?.(input.sessionId, {
+        from: SessionState.SPEAKING,
+        to: SessionState.LISTENING,
+        reason: "external barge-in signal",
+      });
+    },
+    /** Streaming TTS handing the bridge `seconds` of already-synthesized reply audio. */
+    queueReplyAudio(seconds: number) {
+      const pcm = new Int16Array(Math.round(8000 * seconds));
+      for (let i = 0; i < pcm.length; i += 1) pcm[i] = i % 2 === 0 ? 3000 : -3000;
+      outbound?.({ data: new Uint8Array(pcm.buffer), encoding: "PCM_16", sampleRateHz: 8000 });
+    },
+  };
+}
+
+function mediaEvent(frame: Uint8Array): string {
+  return JSON.stringify({ event: "media", media: { track: "inbound", payload: Buffer.from(frame).toString("base64") } });
+}
+
+function clearAudioCount(socket: BridgeSocketFake): number {
+  return socket.sent.filter((raw) => (JSON.parse(raw) as { event?: string }).event === "clearAudio").length;
+}
+
+/** A reply is playing and the transport hears `frames` × 20ms of loud near-end energy over it. */
+function speakingBridgeHearingLoudEnergy(input: { sttEvidenceAgeMs: number | undefined; frames: number }) {
+  const sessionId = "sess_energy_only" as SessionId;
+  const socket = fakeBridgeSocket();
+  const fake = fakeBridgeManager({ sttEvidenceAgeMs: input.sttEvidenceAgeMs, sessionId });
+  attachVobizMediaBridge(socket, sessionId, fake.manager);
+  socket.emit("message", JSON.stringify({ event: "start", start: { streamId: "stream_1", callId: "call_1" } }));
+  fake.enterSpeaking();
+  fake.queueReplyAudio(12);
+  for (let i = 0; i < input.frames; i += 1) socket.emit("message", mediaEvent(LOUD_SPEECH));
+  return { socket, fake };
+}
+
+await test("I1. STT alive: 800ms of loud energy with no transcript does NOT barge in, and the queued reply survives", () => {
+  const { socket, fake } = speakingBridgeHearingLoudEnergy({ sttEvidenceAgeMs: 1_500, frames: 40 });
+  try {
+    assert.ok(fake.calls.noteCallerEnergy > 0, "the loud gate must have fired — otherwise this test proves nothing");
+    assert.equal(fake.calls.signalBargeIn, 0, "the energy-only fallback must stand down while STT is delivering");
+    assert.equal(clearAudioCount(socket), 0, "and the outbound queue must not be cleared");
+  } finally {
+    socket.emit("close");
+  }
+});
+
+await test("I2. STT dead (no segment for longer than the unhealthy window): the fallback still barges in and clears the queue", () => {
+  const { socket, fake } = speakingBridgeHearingLoudEnergy({ sttEvidenceAgeMs: 45_000, frames: 40 });
+  try {
+    assert.ok(fake.calls.signalBargeIn >= 1, "the dead-STT fallback must still interrupt");
+    assert.ok(clearAudioCount(socket) >= 1, "and still clear playback exactly as before");
+  } finally {
+    socket.emit("close");
+  }
+});
+
+await test("I2b. STT never delivered anything on this call: previous behaviour is preserved (fallback fires)", () => {
+  const { socket, fake } = speakingBridgeHearingLoudEnergy({ sttEvidenceAgeMs: undefined, frames: 40 });
+  try {
+    assert.ok(fake.calls.signalBargeIn >= 1, "no evidence STT is alive must keep the old fallback");
+    assert.ok(clearAudioCount(socket) >= 1);
+  } finally {
+    socket.emit("close");
+  }
+});
+
+await test("I3. STT alive: the pipeline's transcript-confirmed barge-in still clears playback through the bridge", () => {
+  const { socket, fake } = speakingBridgeHearingLoudEnergy({ sttEvidenceAgeMs: 1_500, frames: 40 });
+  try {
+    assert.equal(fake.calls.signalBargeIn, 0, "precondition: the energy-only path stood down");
+    fake.transcriptConfirmedBargeIn();
+    assert.equal(clearAudioCount(socket), 1, "a genuine, transcript-confirmed interruption still stops playback");
+  } finally {
+    socket.emit("close");
+  }
+});
+
+await test("I4. STT dead: the fallback fires exactly once — the loud frames that follow do not barge in again", () => {
+  const { socket, fake } = speakingBridgeHearingLoudEnergy({ sttEvidenceAgeMs: undefined, frames: 40 });
+  try {
+    assert.equal(fake.calls.signalBargeIn, 1, "one barge-in per interruption");
+    // The run continues for another second after the reply was cut.
+    for (let i = 0; i < 50; i += 1) socket.emit("message", mediaEvent(LOUD_SPEECH));
+    assert.equal(fake.calls.signalBargeIn, 1, "nothing is playing any more, so there is nothing to interrupt");
+  } finally {
+    socket.emit("close");
+  }
+});
+
+await test("I5. below the 700ms energy-only threshold nothing fires, alive or dead — the threshold is unchanged", () => {
+  const dead = speakingBridgeHearingLoudEnergy({ sttEvidenceAgeMs: undefined, frames: 30 });
+  const alive = speakingBridgeHearingLoudEnergy({ sttEvidenceAgeMs: 1_500, frames: 30 });
+  try {
+    assert.equal(dead.fake.calls.signalBargeIn, 0);
+    assert.equal(alive.fake.calls.signalBargeIn, 0);
+    assert.ok(dead.fake.calls.noteCallerEnergy > 0, "the 80ms corroboration stamp is still reported either way");
+  } finally {
+    dead.socket.emit("close");
+    alive.socket.emit("close");
+  }
+});
+
+await test("I6. the pipeline stamps STT evidence for interim AND final segments, and nothing else changes for them", async () => {
+  const h = startHarness({ openingLine: OPENING, replies: ["The workshop is free and runs this Sunday."] });
+  try {
+    await h.waitFor("the opening line to start", () => h.record.state === SessionState.SPEAKING);
+    assert.equal(h.record.lastSttEvidenceAt, 0, "nothing delivered yet: no evidence, so the fallback keeps its old behaviour");
+    const before = Date.now();
+    h.say("I was", { isFinal: false });
+    await h.waitFor("an interim to be stamped", () => h.record.lastSttEvidenceAt >= before);
+    const afterInterim = h.record.lastSttEvidenceAt;
+    await sleep(30);
+    h.say("I was wondering about the price.", { isFinal: true });
+    await h.waitFor("a final to be stamped", () => h.record.lastSttEvidenceAt > afterInterim);
+    // The stamp is observation only: the turn is still released and answered exactly as before.
+    await h.waitForReplies(2);
+    assert.equal(h.assistantTexts()[1], "The workshop is free and runs this Sunday.");
+  } finally {
+    await h.stop();
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════
 if (failures.length > 0) {
   console.log(`\nFAILED — ${passed} passed, ${failures.length} failed`);
   for (const name of failures) console.log(`  - ${name}`);

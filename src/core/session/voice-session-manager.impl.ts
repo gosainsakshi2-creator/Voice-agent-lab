@@ -546,6 +546,23 @@ getTranscript(sessionId: SessionId): readonly import("../../types/provider.types
     record.lastConversationActivityAt = now;
   }
 
+  /**
+   * ADDITIVE, NOT PART OF `VoiceSessionManager`. Read-only: how long
+   * ago the STT provider last delivered a segment to this session's
+   * transcript loop (see `SessionRecord.lastSttEvidenceAt`), or
+   * `undefined` when it never has — or the session is gone.
+   *
+   * Consulted by the transports' energy-only barge-in fallback, which
+   * exists for a dead STT socket: while this is fresh, STT is
+   * demonstrably alive and loud energy with no words is not the caller.
+   * Reads one timestamp and changes nothing.
+   */
+  sttEvidenceAgeMs(sessionId: SessionId): number | undefined {
+    const record = this.sessions.get(sessionId);
+    if (!record || record.lastSttEvidenceAt === 0) return undefined;
+    return Date.now() - record.lastSttEvidenceAt;
+  }
+
   // ---------------------------------------------------------------
 
   private getRecordOrThrow(sessionId: SessionId): SessionRecord {

@@ -99,6 +99,21 @@ export class SessionRecord {
    */
   lastCallerEnergyAt = 0;
 
+  /**
+   * Epoch-ms at which the STT provider last delivered ANY segment —
+   * interim or final, with or without text — to the pipeline's
+   * transcript loop. Written only there. A statement about the STT
+   * connection being ALIVE, not about the caller: it is read by the
+   * transports' energy-only barge-in fallback, which exists solely for
+   * a dead STT socket and must not fire while Deepgram is demonstrably
+   * still delivering.
+   *
+   * `0` means no segment has arrived on this call yet, which the
+   * fallback treats as "no evidence STT is alive" — i.e. exactly its
+   * previous behaviour.
+   */
+  lastSttEvidenceAt = 0;
+
   readonly memory: ConversationMemory;
   readonly metrics: SessionMetricsCollector;
   /** Grammatical gender of the selected TTS voice — also drives the deterministic Hindi greeting. */

@@ -38,7 +38,7 @@ loadEnvFile({ quiet: true });
 
 const { classifyOutcome } = await import("../outcome/classifier");
 const { dispositionFor } = await import("../outcome/disposition");
-const { findScript, hashScript } = await import("../script/script-registry");
+const { findScript, hashScript, defaultScriptFor } = await import("../script/script-registry");
 const { isFinalYes, syncFinalYesToSheet } = await import("../integrations/final-yes-sheet");
 const { resolveContactEmail } = await import("../integrations/contact-email");
 const { countSheetSyncStates } = await import("../db/repositories/sheet-sync.repo");
@@ -163,6 +163,51 @@ await test("A1c. an INTEREST question with the same words is still not a gate", 
   ]);
 
   assert.notEqual(classification.primaryReason, "confirmed_at_gate");
+  assert.notEqual(disposition, "FINAL_YES");
+  assert.equal(isFinalYes(classification, disposition), false);
+});
+
+await test("A1d. the APPROVED v4 script's own gate line is a gate, and v4 is the default", () => {
+  // Same regression class as A1b, for the next approved version. v4's
+  // gate was deliberately worded "reserve your free seat" because that
+  // phrase is an existing COMMIT_ANCHORS entry; had it been "reserve a
+  // free seat for you" no anchor would match and a real "Yes." would
+  // settle one label short of FINAL_YES. Read from the script itself so
+  // a future re-wording fails here, not on a live campaign.
+  const v4 = findScript("registration", "v4");
+  assert.ok(v4, "the approved registration v4 script must be registered");
+  assert.equal(defaultScriptFor("registration").version, "v4", "v4 must be the default registration script");
+  const V4_GATE = "Would you like me to reserve your free seat?";
+  assert.ok(
+    v4.systemPromptAppendix.includes(V4_GATE),
+    "this test's gate line must be the one in the approved v4 script",
+  );
+
+  const { classification, disposition } = settle([
+    agent(GREETING),
+    agent(
+      "I'm calling to personally invite you to a free live workshop we're doing tomorrow, Sunday, " +
+        "30th August at 11 AM. You'll actually see a complete online business being built live from " +
+        `a phone, including the website, product, checkout and payments. ${V4_GATE}`,
+    ),
+    caller("Yes."),
+    agent("Perfect! I'll get your registration confirmed and send the joining details to you on WhatsApp and email."),
+  ]);
+
+  assert.equal(classification.outcomeType, "registered_confirmed");
+  assert.equal(classification.primaryReason, "confirmed_at_gate");
+  assert.equal(disposition, "FINAL_YES");
+  assert.equal(isFinalYes(classification, disposition), true);
+});
+
+await test("A1e. a NO to the v4 gate is FINAL_NO and is not written", () => {
+  const V4_GATE = "Would you like me to reserve your free seat?";
+  const { classification, disposition } = settle([
+    agent(GREETING),
+    agent(V4_GATE),
+    caller("No, not interested."),
+  ]);
+
   assert.notEqual(disposition, "FINAL_YES");
   assert.equal(isFinalYes(classification, disposition), false);
 });

@@ -463,6 +463,11 @@ export function attachVobizMediaBridge(
         console.log(
           `[vobiz-bridge:${sessionId}] "start" event: streamId=${vobizStreamId ?? "none"} callId=${event.start?.callId ?? "none"} mediaFormat=${JSON.stringify(event.start?.mediaFormat)}, confirming call answered`,
         );
+        // `start.callId` is the call_uuid — the id Vobiz's hangup API is
+        // keyed by, unlike the request_uuid `startCall()` returned. Hand
+        // it to the manager so `end()` -> `endCall()` deletes the right
+        // call. Byte movement only; no conversation logic.
+        if (event.start?.callId) manager.setProviderCallId(sessionId, event.start.callId);
         manager.confirmCallAnswered(sessionId);
         return;
 

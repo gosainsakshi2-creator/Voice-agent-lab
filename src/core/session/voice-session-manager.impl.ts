@@ -189,6 +189,37 @@ export class DefaultVoiceSessionManager implements VoiceSessionManager, Pipeline
     this.beginConversation(record);
   }
 
+  /**
+   * ADDITIVE, NOT PART OF `VoiceSessionManager`. Re-keys the telephony
+   * handle to the vendor's LIVE call identifier once it is known.
+   *
+   * `startCall()` can only return what the placement API returns —
+   * for Vobiz that is the `request_uuid`, while its hangup API
+   * (`DELETE .../Call/{call_uuid}/`) is keyed by the `call_uuid`, an
+   * identifier that exists only once the callee has answered. It
+   * arrives as `start.callId` on the media WebSocket, and the Vobiz
+   * bridge reports it here. Without this every programmatic hangup —
+   * the campaign watchdog's closing / final-answer / silence / duration
+   * endings, the voicemail hangup, the dashboard's End Call — was a
+   * DELETE on the wrong id, a 404 `endCall` logged as "call may already
+   * have ended", and a carrier leg left up until the person hung up.
+   *
+   * Writes one field and nothing else. `end()` -> `telephony.endCall()`
+   * is unchanged and remains the only hangup path. Inert for an unknown
+   * session or one with no handle yet, for the same reason
+   * `noteCallerSpeech` is: socket callbacks can outlive a session.
+   */
+  setProviderCallId(sessionId: SessionId, providerCallId: string): void {
+    const record = this.sessions.get(sessionId);
+    if (!record?.telephonyHandle) return;
+    if (record.telephonyHandle.providerCallId === providerCallId) return;
+    // eslint-disable-next-line no-console
+    console.log(
+      `[session-mgr:${sessionId}] telephony handle re-keyed: ${record.telephonyHandle.providerCallId} -> ${providerCallId}`,
+    );
+    record.telephonyHandle = { sessionId: record.telephonyHandle.sessionId, providerCallId };
+  }
+
   private beginConversation(record: SessionRecord): void {
     // Benchmark clock origin. This is the single point every
     // telephony path converges on once the callee has actually picked

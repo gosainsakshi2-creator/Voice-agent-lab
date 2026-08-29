@@ -62,6 +62,20 @@ interface VobizCallResponse {
   readonly message?: string;
 }
 
+/**
+ * `time_limit` sent with every Start-Recording request, in seconds.
+ *
+ * Vobiz documents the parameter as "Maximum recording duration in
+ * seconds. Default: 60. Increase for longer calls (e.g., 300, 900)."
+ * The request used to omit it, so every recording was cut at the vendor
+ * default while the call carried on — the reported ~60s truncation.
+ * 900 is the largest value Vobiz's documentation names (no maximum is
+ * stated), and it covers the campaign watchdog's `maxCallSeconds` (180)
+ * five times over. The recording still stops when the call ends, so
+ * recording lifetime == call lifetime.
+ */
+export const VOBIZ_RECORDING_TIME_LIMIT_SECONDS = 900;
+
 export class VobizTelephonyProvider implements TelephonyProvider {
   readonly descriptor: ProviderDescriptor = {
     category: ProviderCategory.TELEPHONY,
@@ -104,6 +118,7 @@ export class VobizTelephonyProvider implements TelephonyProvider {
       },
       body: JSON.stringify({
         file_format: "mp3",
+        time_limit: VOBIZ_RECORDING_TIME_LIMIT_SECONDS,
       }),
     });
 

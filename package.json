@@ -40,6 +40,7 @@
     "test:llm-usage-telemetry": "tsx src/campaign/tests/llm-usage-telemetry-tests.ts",
     "test:turn-timing-telemetry": "tsx src/campaign/tests/turn-timing-telemetry-tests.ts",
     "test:speculative-llm": "tsx src/campaign/tests/speculative-llm-start-tests.ts",
+    "test:vobiz-call-control": "tsx src/campaign/tests/vobiz-call-control-tests.ts",
     "preflight:prod": "tsx src/campaign/production-readiness-cli.ts",
     "campaign:audit": "tsx src/campaign/audit-cli.ts"
   },

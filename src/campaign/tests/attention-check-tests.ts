@@ -831,10 +831,15 @@ await test("I1 — the call carries on normally after an attention-check episode
   }
 });
 
-await test("I2 — an attention check with nothing to resume takes the normal path", async () => {
-  // The block finished and the caller heard all of it. There is no
-  // position to carry on from, so the contextual path answers — exactly
-  // as it did before this fix existed.
+await test("I2 — an attention check with nothing to resume, after a block, is acknowledged without the model (FIX 2)", async () => {
+  // The block finished and the caller heard all of it, then said
+  // nothing but "Hello?". Before FIX 2 this took the contextual path,
+  // and the model — shown a completed block and a bare greeting —
+  // restarted the script (real transcript, 2026-08-30 08:52 IST). It is
+  // now answered by the same fixed acknowledgement the remainder path
+  // uses, once, with no language-model request; the caller's NEXT
+  // contribution takes the normal path. `silence-recovery-tests.ts`
+  // section I covers the follow-up and the boundary.
   const h = startHarness({ openingLine: OPENING, replies: ["Short reply.", "Yes, I'm here."] });
   try {
     await h.waitForReplies(1);
@@ -845,8 +850,13 @@ await test("I2 — an attention check with nothing to resume takes the normal pa
     h.say("Hello?");
     await h.waitForReplies(3);
 
-    assert.equal(h.requests.length, requestsBefore + 1, "with nothing held, the model answers as before");
-    assert.equal(ackCount(h.synthesized), 0, "and the fixed acknowledgement is not used");
+    assert.equal(h.requests.length, requestsBefore, "no language-model request for a bare hello after a finished block");
+    assert.equal(ackCount(h.synthesized), 1, "the fixed acknowledgement is spoken once");
+    assert.equal(h.synthesized.filter((t) => t === "Short reply.").length, 1, "the block is not re-spoken");
+
+    h.say("Yes, I can hear you. What is this about?");
+    await h.waitForReplies(4);
+    assert.equal(h.requests.length, requestsBefore + 1, "a real contribution takes the normal path");
   } finally {
     await h.stop();
   }

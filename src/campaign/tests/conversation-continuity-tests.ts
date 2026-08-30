@@ -564,6 +564,17 @@ await test("TEST 1b — only the part that PLAYED is committed, never the queued
 // ignored acknowledgement: the path that used to restart the script.
 const SHORT_BLOCK = "We have created Flexi Genie, which automates your whole online business.";
 
+// FIX 2 — "hi" / "hello" after the interrupted block are HEARING CHECKS
+// and no longer reach the model at all: they get the fixed
+// acknowledgement (see `test:attention`, `test:silence-recovery` I).
+// Exactly as the SECTION A note explains for TEST 1, "must produce a
+// request" was an expectation about the old mechanism; the invariant —
+// script progress is never reset — is asserted below on the next
+// SUBSTANTIVE turn, which is the one that actually reaches the model.
+// "okay" / "haan" are acknowledgements, not hearing checks, and still
+// take the contextual path directly.
+const HEARING_CHECK_WORDS = new Set(["hi", "hello"]);
+
 for (const word of ["okay", "hi", "hello", "haan"]) {
   await test(`TEST 5 — "${word}" never resets script progress`, async () => {
     const h = startHarness({ openingLine: OPENING, replies: [SHORT_BLOCK, "Sure."] });
@@ -581,6 +592,17 @@ for (const word of ["okay", "hi", "hello", "haan"]) {
         spoken[1]?.startsWith("We have created Flexi Genie"),
         `after "${word}" what the caller already heard must still be in history, got ${JSON.stringify(spoken)}`,
       );
+
+      if (HEARING_CHECK_WORDS.has(word)) {
+        // The hearing check is answered by the fixed line, and by nothing
+        // generated: no request, no script, and the block is not re-spoken.
+        await h.waitFor(`the acknowledgement after "${word}"`, () =>
+          assistantTexts(h.history()).some((t) => t.includes("can you hear me")),
+        );
+        assert.equal(h.requests.length, 1, `"${word}" must not spend a language-model request`);
+        // The next substantive turn is the one that reaches the model.
+        h.say("Yes, I can hear you. Go on.");
+      }
 
       await h.waitFor(`the reply after "${word}"`, () => h.requests.length >= 2);
       const shown = (h.requests[h.requests.length - 1] ?? [])

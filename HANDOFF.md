@@ -18,6 +18,96 @@ below. The FIX #3 sections after it are the previous pass, kept as history.
 
 ---
 
+## FIX 2 (2026-08-30) — HUMAN-LIKE SILENCE / NO-RESPONSE / HEARING RECOVERY
+
+**Status: implemented, tested, green. UNCOMMITTED. Nothing dialed, nothing deployed.**
+Built on top of Fix 1 (`e53e86d`, natural backchanneling), which is untouched.
+
+**The two defects (real transcripts, 2026-08-30):**
+1. A caller who said nothing after a block heard dead air until the campaign
+   watchdog hung up 20s later (`CAMPAIGN_MAX_SILENCE_SECONDS`). The pipeline
+   had no silence handling at all; the watchdog can only end a call.
+2. A caller who said only "Hello?" after a FINISHED block went to the LLM
+   (`handleAttentionCheck` only acted when a barge-in left an unheard
+   remainder). 08:52 IST call: "Hello. Hello hello" → the LLM re-spoke the
+   greeting. 14:32 IST call: post-block "Hello." → LLM improvised.
+
+**Files changed (4 + 1 new):**
+- `src/core/session/conversation-pipeline.ts` — the only production file.
+- `src/campaign/tests/silence-recovery-tests.ts` — NEW, `npm run test:silence-recovery` (22 tests).
+- `package.json` — the script entry.
+- `src/campaign/tests/attention-check-tests.ts` — I2 re-pointed (see below).
+- `src/campaign/tests/conversation-continuity-tests.ts` — TEST 5 "hi"/"hello" re-pointed.
+
+**Production logic (all in conversation-pipeline.ts):**
+- `SILENCE_RECOVERY_INTERVAL_MS = 3000`, `SILENCE_RECOVERY_MAX_PROMPTS = 2`.
+- `waitForTurnDetectorEnd(loopSignal, silenceTimeoutMs?)` arms a timer on
+  subscription (i.e. only after `drainPlayback` completed and the loop is
+  idle in LISTENING). It fires only if `max(subscribedAt,
+  lastConversationActivityAt)` is ≥3s old AND `callerHasTurnMaterial()` is
+  false; otherwise re-arms. Any transcript text / caller energy / pending
+  turn / released turn / loop abort cancels or re-arms it. Resolves
+  `SILENCE_ELAPSED` instead of a turn.
+- `acquireNextUserTurn` loops: expiry → `recoverFromSilence()`:
+  prompt 1 "Hello, are you there?", prompt 2 "Hello, is anyone there?"
+  (hi / hi-en variants), spoken via the EXISTING `speakAttentionUtterance`
+  (THINKING → SPEAKING → drain, barge-in-safe, no LLM). Third expiry →
+  `host.end()` — the SAME path the voicemail hangup uses →
+  `manager.end()` → `telephony.endCall(call_uuid)`. Counter
+  `silenceRecoveryPrompts` resets on every released turn.
+- `handleAttentionCheck` no-remainder branch: after a block
+  (`contextualReplyCommitted`), a strict hearing check (`isHearingCheck`:
+  greetings/presence phrases only — "haan ji", "ji", "please" never
+  qualify) gets the existing ack once, then ONE follow-up "I just want to
+  make sure you can hear me. Did you catch what I was saying?"; the next
+  contribution takes the normal path. Before any block, only an EMPHATIC
+  check qualifies (`isEmphaticHearingCheck`: presence phrase or repeated
+  greeting) so a single "Hi." after the opening line still goes to the LLM
+  (the pitch) exactly as today; a confirmation then also goes to the LLM.
+- `startSpeculation` (FIX #8) declines to pre-open a request for a turn
+  the hearing branch will answer — same family as its existing
+  `attentionEpisodeOpen` guard.
+- Untouched: Fix 1 hunks (`replyFullyQueued`, `backchannelInFlight`
+  decline), barge-in, `drainPlayback`, `synthesizeAndPlay`, Sarvam,
+  Deepgram, turn detector, classifier, sheet, call-runner, Vobiz provider,
+  bridges, metrics definitions. `git diff` contains no Fix 1 line.
+
+**Timing:** block drains → LISTENING → 3.0s → prompt 1 (~1.2s) → LISTENING →
+3.0s → prompt 2 → LISTENING → 3.0s → `end()`. ≈11s of caller silence to
+hangup. Each prompt's SPEAKING→LISTENING re-arms the 20s watchdog, so the
+two mechanisms cannot race. Campaign label for this ending is the
+call-runner's existing `remote_hangup`/"conversation completed" (call-runner
+deliberately not modified).
+
+**Campaign safety:** a recovery prompt is a `?` assistant turn, so
+`answersACommitQuestion` stops at it — "Yes" to "are you there?" is NOT a
+FINAL_YES (tests K1/K2). "haan ji" to the gate still reaches the LLM and
+classifies `confirmed_at_gate` (test N).
+
+**Tests re-pointed (not weakened):** attention I2 asserted that a post-block
+"Hello?" produced an LLM request — the OLD mechanism, which is the defect.
+Now asserts: one ack, zero requests, block not re-spoken, next real turn
+reaches the model. Continuity TEST 5 "hi"/"hello": same re-pointing (the
+file's SECTION A note already documents this pattern for TEST 1); "okay"/
+"haan" unchanged.
+
+**Verification (final tree):** `tsc --noEmit --incremental false` clean.
+silence-recovery 22/22 · barge-in 52/52 · speculative-llm 23/23 · attention
+22/23 · continuity 41/41 · stt-clock 14/14 · turn-release 19/19 ·
+end-of-speech 17/17 · sarvam-stream 28/29 · tts-streaming 21/21 ·
+agent-hangup 23/23 · vobiz-call-control 10/10 · speaking-watchdog 6/6 ·
+phase8 31/31 · phase9 20/20 · phase10 12/12.
+**Pre-existing failures (identical on a pristine HEAD snapshot):**
+attention B1 (ack constant has a trailing space since `cba9c0c`, test
+constant does not); sarvam-stream C8 (`pace 1 must be in (1.0, 1.2]`).
+
+**Real-call verification — NOT YET DONE.** Watch for: prompt cadence feeling
+right on a live Vobiz leg; `[PIPELINE] caller silent for 3000ms — recovery
+prompt 1/2`; `[PIPELINE] hearing check with nothing to resume`; the hangup
+line `[Vobiz] endCall: call_uuid=…` after prompt 2.
+
+---
+
 ## REMINDER v2 SCRIPT (2026-08-29) — ATTENDANCE CONFIRMATION FOR THE 30 AUG 11 AM WORKSHOP
 
 **Status: implemented, tested, green. Uncommitted. Nothing dialed.** Three files:
@@ -1637,7 +1727,7 @@ never repeat.
 
 ```
 BEFORE                                   AFTER
-hello #1 -> LLM reply                    hello #1 -> "Hello, can you hear me? I'm here."  (no LLM)
+hello #1 -> LLM reply                    hello #1 -> "Hello, can you hear me? "  (no LLM)
 hello #2 -> LLM reply                    hello #2 -> "We have created Flexi Genie, ..."   (no LLM, exact resume)
 hello #3 -> LLM reply                    hello #3 -> contextual reply, full history shown
 4 LLM requests                           2 LLM requests

@@ -478,6 +478,147 @@ function attentionAcknowledgementFor(language: SupportedLanguage): string {
 }
 
 /**
+ * ---------------- FIX 2: silence and hearing recovery ----------------
+ *
+ * Two gaps, both in the layer that decides what the agent says next:
+ *
+ *   1. A caller who says NOTHING after a block finished heard dead air
+ *      until the campaign watchdog hung up on them 20s later. There was
+ *      no "Hello, are you there?" anywhere: the pipeline awaited the
+ *      next turn indefinitely and the watchdog can only end a call.
+ *
+ *   2. A caller who said only "Hello?" after a block had FINISHED (no
+ *      unheard remainder held) took the normal language-model path, and
+ *      the model — seeing a completed block and a bare greeting — either
+ *      improvised or restarted the script. Real transcripts show both.
+ *
+ * Both are answered here with FIXED lines spoken through the existing
+ * attention utterance path (`speakAttentionUtterance`): no language
+ * model, no script, and the same barge-in-safe THINKING -> SPEAKING ->
+ * drain sequence every other fixed line uses.
+ *
+ * SILENCE RECOVERY runs ONLY while the main loop is idle in LISTENING
+ * awaiting a turn (`waitForTurnDetectorEnd`), which by construction is
+ * after `drainPlayback` has slept out every queued frame of the previous
+ * reply. It never aborts, drains, clears or barges into anything: the
+ * timer is armed on subscription and simply lets the wait return
+ * `SILENCE_ELAPSED` instead of a turn. Any transcript text, any energy
+ * the transport attributes to the caller, and any turn material re-arm
+ * or cancel it — the same `lastConversationActivityAt` stamp the
+ * campaign watchdog already reads.
+ */
+/** Caller silence, in LISTENING, before each recovery step. */
+const SILENCE_RECOVERY_INTERVAL_MS = 3_000;
+/** Recovery prompts spoken before the call is ended: "are you there?", "is anyone there?". */
+const SILENCE_RECOVERY_MAX_PROMPTS = 2;
+/** `waitForTurnDetectorEnd` returning this means the silence window expired with no turn. */
+const SILENCE_ELAPSED: unique symbol = Symbol("silence-elapsed");
+type SilenceElapsed = typeof SILENCE_ELAPSED;
+
+/**
+ * The n-th (1-based) recovery prompt. Fixed text for the same reason
+ * the attention acknowledgement is: it must never be an opportunity to
+ * regenerate the script, and it is spoken within a TTS request.
+ * Every form survives `toSpokenText` unchanged.
+ */
+function silenceRecoveryPromptFor(language: SupportedLanguage, promptIndex: number): string {
+  if (promptIndex <= 1) {
+    switch (language) {
+      case "hi":
+        return "हैलो, क्या आप वहाँ हैं?";
+      case "hi-en":
+        return "Hello, aap wahan hain?";
+      default:
+        return "Hello, are you there?";
+    }
+  }
+  switch (language) {
+    case "hi":
+      return "हैलो, क्या कोई है?";
+    case "hi-en":
+      return "Hello, koi hai wahan?";
+    default:
+      return "Hello, is anyone there?";
+  }
+}
+
+/**
+ * Said once an attention check with NO remainder to resume has been
+ * acknowledged and the caller has come back — either confirming they
+ * can hear, or checking again. It hands the conversation back to them
+ * without restating a word of the script; whatever they answer is then
+ * taken by the normal contextual path.
+ */
+function hearingFollowUpFor(language: SupportedLanguage): string {
+  switch (language) {
+    case "hi":
+      return "बस कन्फ़र्म करना था कि आप मुझे सुन पा रहे हैं। जो मैंने अभी कहा, वो आपने सुना?";
+    case "hi-en":
+      return "Bas confirm karna tha ki aap mujhe sun paa rahe hain. Jo maine abhi kaha, woh aapne suna?";
+    default:
+      return "I just want to make sure you can hear me. Did you catch what I was saying?";
+  }
+}
+
+/**
+ * A presence check STRICT enough to answer when nothing is held.
+ *
+ * `isAttentionCheck` reuses `BARE_GREETING_ONLY`, which deliberately
+ * contains "haan ji" (a phone-answer acknowledgement), and the
+ * `ATTENTION_FILLER` alternation, which lets a lone "ji" or "please"
+ * through. Both are fine when a cancelled reply's remainder is held —
+ * the only question there is "resume or not". They are NOT fine after a
+ * block has finished: a lone "haan ji" to the closing question is the
+ * caller's answer and must reach the classifier through the language
+ * model exactly as it does today. So the no-remainder branch requires
+ * the utterance to be made ONLY of greetings and presence phrases (plus
+ * the filler), and to contain at least one real greeting or presence
+ * phrase — "haan ji", "ji", "please" alone never qualify.
+ *
+ * Exported so a test can assert both sides of the boundary directly.
+ */
+const HEARING_GREETINGS =
+  "hello|hallo|helo|hullo|hi|hii+|hey|namaste|namaskar|हैलो|हेलो|नमस्ते|नमस्कार";
+const HEARING_PRESENCE_REQUIRED = new RegExp(
+  `(?:^|[\\s,.!?…।-])(?:${HEARING_GREETINGS}|${ATTENTION_PRESENCE_PHRASES.join("|")})(?=$|[\\s,.!?…।-])`,
+  "iu",
+);
+export function isHearingCheck(text: string): boolean {
+  const trimmed = text.trim();
+  if (trimmed.length === 0) return false;
+  if (!ATTENTION_PRESENCE_ONLY.test(trimmed)) return false;
+  // "haan ji" is in `BARE_GREETING_ONLY` but not in the filler or the
+  // presence phrases, so it fails `ATTENTION_PRESENCE_ONLY` above unless
+  // stacked with a real greeting — and even then must contain one.
+  return HEARING_PRESENCE_REQUIRED.test(trimmed);
+}
+
+/**
+ * A hearing check that is unmistakable even before any block has been
+ * spoken: an explicit presence phrase ("can you hear me", "are you
+ * there"), or the greeting said more than once ("Hello. Hello hello").
+ *
+ * Needed because a SINGLE "Hi." / "Hello." right after our opening line
+ * is the caller answering the phone, not a hearing problem — and the
+ * right answer to it is the pitch, which the contextual path already
+ * gives (real transcript, 2026-08-30 14:32 IST). Only after a block has
+ * been delivered does a lone "Hello?" mean "I did not hear that".
+ *
+ * Exported for the same reason `isHearingCheck` is.
+ */
+const HEARING_PRESENCE_PHRASE = new RegExp(
+  `(?:^|[\\s,.!?…।-])(?:${ATTENTION_PRESENCE_PHRASES.join("|")})(?=$|[\\s,.!?…।-])`,
+  "iu",
+);
+const HEARING_GREETING_TOKEN = new RegExp(`(?:^|[\\s,.!?…।-])(?:${HEARING_GREETINGS})(?=$|[\\s,.!?…।-])`, "giu");
+export function isEmphaticHearingCheck(text: string): boolean {
+  if (!isHearingCheck(text)) return false;
+  if (HEARING_PRESENCE_PHRASE.test(text)) return true;
+  const greetings = text.match(HEARING_GREETING_TOKEN);
+  return greetings !== null && greetings.length >= 2;
+}
+
+/**
  * ---------------- Reached a machine, not a person ----------------
  *
  * A voicemail greeting opens the media stream exactly like a human
@@ -1026,6 +1167,31 @@ export class ConversationPipeline {
    */
   private attentionEpisodeOpen = false;
   /**
+   * FIX 2 — how many silence-recovery prompts have been spoken since the
+   * caller last produced a turn. Reset to 0 by every released turn, so
+   * "at most once each per unanswered silence episode" is a property of
+   * this counter: 0 -> "are you there?", 1 -> "is anyone there?",
+   * 2 -> the call is ended through the existing `host.end`.
+   */
+  private silenceRecoveryPrompts = 0;
+  /**
+   * FIX 2 — true once a GENERATED reply (a script block, an answer) has
+   * been committed to memory — not the greeting, not a fixed line. Read
+   * by `handleAttentionCheck`'s no-remainder branch to tell "Hello?"
+   * after the pitch (they did not hear it) from "Hi." after the opening
+   * line (they are answering the phone).
+   */
+  private contextualReplyCommitted = false;
+  /**
+   * FIX 2 — the open hearing episode was opened BEFORE any block had
+   * been delivered (a repeated "hello" over nothing but our opening
+   * line). The caller's return then gets the pitch from the contextual
+   * path rather than a "did you catch what I was saying" about nothing.
+   * False for every episode opened after a block, including the
+   * remainder path's.
+   */
+  private hearingEpisodeBeforeBlock = false;
+  /**
    * FIX #8 — the LLM request pre-opened for the turn the detector is
    * currently holding in its evidenced confirmation window, if any. See
    * `SpeculativeCompletion`. At most one at a time; replaced or
@@ -1427,10 +1593,14 @@ export class ConversationPipeline {
           console.log(
             `[PIPELINE:${sid}] Response #${responseId} CANCELLED by barge-in — heard="${heard.slice(0, 80)}${heard.length > 80 ? "..." : ""}" discarded="${result.assistantText.slice(heard.length, heard.length + 80)}${result.assistantText.length > heard.length + 80 ? "..." : ""}"`,
           );
-          if (heard.length > 0) this.record.memory.recordAssistantTurn(heard);
+          if (heard.length > 0) {
+            this.record.memory.recordAssistantTurn(heard);
+            this.contextualReplyCommitted = true;
+          }
           strandedRemainder = unspokenTail(result.assistantText, heard);
         } else {
           this.record.memory.recordAssistantTurn(result.assistantText);
+          this.contextualReplyCommitted = true;
         }
         this.record.bargeIn.reset();
 
@@ -1577,6 +1747,8 @@ export class ConversationPipeline {
     // heard it, so the model must be able to see it and carry on from
     // there instead of starting the block again.
     this.record.memory.recordAssistantTurn(remainder);
+    // FIX 2 — script content the caller heard: a block has been delivered.
+    this.contextualReplyCommitted = true;
     this.record.bargeIn.reset();
     return true;
   }
@@ -1632,6 +1804,7 @@ export class ConversationPipeline {
       // is released — an unheard remainder must never be spoken into a
       // conversation that has moved on to something else.
       this.attentionEpisodeOpen = false;
+      this.hearingEpisodeBeforeBlock = false;
       this.heldScriptRemainder = "";
       return false;
     }
@@ -1652,6 +1825,8 @@ export class ConversationPipeline {
       );
       // Cut off again: whatever is STILL unheard is still the position.
       this.heldScriptRemainder = spoken.unheard;
+      // FIX 2 — script content the caller heard: a block has been delivered.
+      if (spoken.heard.length > 0) this.contextualReplyCommitted = true;
       return true;
     }
 
@@ -1668,11 +1843,72 @@ export class ConversationPipeline {
       return true;
     }
 
-    // An attention check with nothing to resume — the block finished,
-    // or the caller heard all of it. There is no position to carry on
-    // from, so the contextual path answers, exactly as it does today.
+    // ── FIX 2: nothing to resume — the block finished ──────────────
+    //
+    // The caller heard the whole block and is now saying nothing but
+    // "Hello?" / "Can you hear me?". Handing that to the language model
+    // is what regenerated the script (real transcripts: the greeting
+    // spoken twice, the pitch re-pitched). So, with the STRICT
+    // vocabulary (see `isHearingCheck` — a lone "haan ji" is never
+    // this), the episode is opened with one fixed acknowledgement; the
+    // caller's next presence check or hearing confirmation gets one
+    // fixed follow-up that hands the floor back to them; and whatever
+    // they say after that takes the contextual path with both lines in
+    // its history. No script text is spoken by either branch.
+    if (!this.attentionEpisodeOpen) {
+      // Before any block: only an unmistakable check ("can you hear me",
+      // "hello hello"). A single "Hi." after our opening line is the
+      // caller answering the phone and takes the contextual path — the
+      // pitch — exactly as today. After a block: any strict check.
+      const qualifies = this.contextualReplyCommitted
+        ? isHearingCheck(trimmed)
+        : isEmphaticHearingCheck(trimmed);
+      if (qualifies) {
+        this.attentionEpisodeOpen = true;
+        this.hearingEpisodeBeforeBlock = !this.contextualReplyCommitted;
+        const line = attentionAcknowledgementFor(this.record.memory.currentLanguage);
+        // eslint-disable-next-line no-console
+        console.log(
+          `[PIPELINE:${sid}] hearing check with nothing to resume (${this.contextualReplyCommitted ? "after a block" : "before any block"}) — acknowledging once: "${line}"`,
+        );
+        await this.speakAttentionUtterance(line, loopSignal, "acknowledging a hearing check");
+        return true;
+      }
+      // A bare "haan ji"/"ji"/"Hi." — an answer or a pickup, not a
+      // hearing problem. The contextual path (and the classifier) see
+      // it exactly as today.
+      return false;
+    }
+    // Episode open, nothing held: the caller came back.
+    if (this.hearingEpisodeBeforeBlock) {
+      // Opened before any block was delivered. Still checking -> the same
+      // acknowledgement again (a TTS request, never the model, so the
+      // greeting cannot be re-spoken). Confirming they can hear -> the
+      // contextual path continues with the pitch, which is what they
+      // are waiting for; there is nothing to ask "did you catch" about.
+      if (isCheck) {
+        const line = attentionAcknowledgementFor(this.record.memory.currentLanguage);
+        // eslint-disable-next-line no-console
+        console.log(`[PIPELINE:${sid}] hearing check repeated before any block — acknowledging again: "${line}"`);
+        await this.speakAttentionUtterance(line, loopSignal, "acknowledging a repeated hearing check");
+        return true;
+      }
+      this.attentionEpisodeOpen = false;
+      this.hearingEpisodeBeforeBlock = false;
+      return false;
+    }
+    // Opened after a block — by this branch, or by the remainder path
+    // whose remainder has since been resumed in full. One follow-up,
+    // once, that hands the floor back without restating a word of the
+    // script; the episode closes so a further "hello" starts over with
+    // the acknowledgement rather than looping here. The acknowledgement
+    // itself is still spoken exactly once per episode.
     this.attentionEpisodeOpen = false;
-    return false;
+    const followUp = hearingFollowUpFor(this.record.memory.currentLanguage);
+    // eslint-disable-next-line no-console
+    console.log(`[PIPELINE:${sid}] hearing check answered — following up once: "${followUp}"`);
+    await this.speakAttentionUtterance(followUp, loopSignal, "following up a hearing check");
+    return true;
   }
 
   /**
@@ -1696,9 +1932,10 @@ export class ConversationPipeline {
     text: string,
     loopSignal: AbortSignal,
     transitionReason: string,
+    timerLabel = "ATTENTION",
   ): Promise<{ readonly heard: string; readonly unheard: string }> {
     const responseId = this.beginAssistantResponse();
-    const timer = new TurnTimer(this.record.id, "ATTENTION");
+    const timer = new TurnTimer(this.record.id, timerLabel);
     this.beginTurnTiming(timer);
     try {
       await this.speakFixedUtterance(text, loopSignal, transitionReason);
@@ -1883,6 +2120,11 @@ export class ConversationPipeline {
     const loopSignal = this.record.loopAbortController?.signal;
     if (!loopSignal || loopSignal.aborted) return;
     if (text.trim().length === 0) return;
+    // FIX 2 — the same predicate `handleAttentionCheck`'s no-remainder
+    // branch applies: a turn it will answer with a fixed line never
+    // reaches the model, so a request pre-opened for it would only be
+    // abandoned. Same family as the two guards on the line above.
+    if (this.contextualReplyCommitted ? isHearingCheck(text) : isEmphaticHearingCheck(text)) return;
 
     if (this.speculation !== undefined) {
       // The same pending turn re-announced (e.g. `speech_final` on the
@@ -2817,22 +3059,116 @@ export class ConversationPipeline {
   }
 
   private async acquireNextUserTurn(loopSignal: AbortSignal): Promise<AcquiredTurn | null> {
-    if (this.usesStreamingStt) {
-      return this.waitForTurnDetectorEnd(loopSignal);
+    if (!this.usesStreamingStt) {
+      return this.acquireBatchTurn(loopSignal);
     }
-    return this.acquireBatchTurn(loopSignal);
+    // FIX 2 — await the turn with the silence window armed. Each expiry
+    // is one recovery step (a fixed prompt, or the hangup) and then the
+    // wait resumes; a released turn ends the episode.
+    while (!loopSignal.aborted) {
+      const result = await this.waitForTurnDetectorEnd(loopSignal, SILENCE_RECOVERY_INTERVAL_MS);
+      if (result !== SILENCE_ELAPSED) {
+        if (result !== null) this.silenceRecoveryPrompts = 0;
+        return result;
+      }
+      const keepWaiting = await this.recoverFromSilence(loopSignal);
+      if (!keepWaiting) return null;
+    }
+    return null;
   }
 
-  private waitForTurnDetectorEnd(loopSignal: AbortSignal): Promise<AcquiredTurn | null> {
+  /**
+   * FIX 2 — the silence window expired while awaiting a turn.
+   *
+   * Reached ONLY from `acquireNextUserTurn`, i.e. only when the main
+   * loop was idle in LISTENING: the previous reply's `drainPlayback` has
+   * completed, nothing is being synthesized, and no stranded-resume or
+   * attention utterance is in progress (those run to completion before
+   * the loop comes back to await a turn). Nothing here aborts, drains,
+   * clears or barges into anything — it speaks one fixed line through
+   * the same path the attention acknowledgement uses, or ends the call
+   * through the same `host.end` the voicemail path uses, and that is
+   * the one that already resolves to `endCall` on the re-keyed
+   * `call_uuid`.
+   *
+   * @returns whether the caller should keep being awaited. `false` only
+   *   when the call is being ended (or the loop is already aborting).
+   */
+  private async recoverFromSilence(loopSignal: AbortSignal): Promise<boolean> {
+    const sid = this.record.id;
+    if (loopSignal.aborted || this.voicemailDetected) return false;
+    // The loop has moved on (a barge-in unwind, the session ending)
+    // — not a silence to recover from. Wait again, decide nothing.
+    if (this.record.state !== SessionState.LISTENING) return true;
+
+    if (this.silenceRecoveryPrompts >= SILENCE_RECOVERY_MAX_PROMPTS) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[PIPELINE:${sid}] caller unresponsive after ${SILENCE_RECOVERY_MAX_PROMPTS} recovery prompts and ${SILENCE_RECOVERY_INTERVAL_MS}ms more silence — ending the call`,
+      );
+      this.abandonSpeculation("unresponsive caller — the call is ending");
+      try {
+        void Promise.resolve(this.host.end(this.record.id)).catch(() => {
+          // Already ending, or ended by the transport dropping first —
+          // `end` is idempotent and there is nothing left to do here.
+        });
+      } catch (error) {
+        // A host without `end` (a test harness). Production's host is the
+        // manager, which has it. Nothing to recover: the loop exits below
+        // and the campaign watchdog still ends a silent call.
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[PIPELINE:${sid}] host.end unavailable — leaving the hangup to the watchdog: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+      return false;
+    }
+
+    this.silenceRecoveryPrompts += 1;
+    // Cannot be open (a pending turn is turn material and re-arms the
+    // window), but a request pre-opened for a turn that is not coming
+    // must not outlive this.
+    this.abandonSpeculation("silence recovery prompt is spoken without the language model");
+    const line = silenceRecoveryPromptFor(this.record.memory.currentLanguage, this.silenceRecoveryPrompts);
+    // eslint-disable-next-line no-console
+    console.log(
+      `[PIPELINE:${sid}] caller silent for ${SILENCE_RECOVERY_INTERVAL_MS}ms — recovery prompt ${this.silenceRecoveryPrompts}/${SILENCE_RECOVERY_MAX_PROMPTS}: "${line}"`,
+    );
+    await this.speakAttentionUtterance(line, loopSignal, "silence recovery prompt", "RECOVERY");
+    if (loopSignal.aborted) return false;
+    // Back to LISTENING before the window is re-armed, exactly as the
+    // top of the main loop does after any other fixed utterance.
+    if (this.record.state !== SessionState.LISTENING) {
+      this.host.transition(this.record, SessionState.LISTENING, "awaiting user speech after a recovery prompt");
+    }
+    return true;
+  }
+
+  /**
+   * @param silenceTimeoutMs FIX 2 — when given, the wait also resolves
+   *   to `SILENCE_ELAPSED` once the caller has produced nothing for this
+   *   long: no transcript text, no caller energy, no turn material,
+   *   measured from the later of this subscription and the pipeline's
+   *   `lastConversationActivityAt`. Anything the caller does re-arms it;
+   *   a released turn or the loop aborting cancels it. Read-only over
+   *   the detector, exactly like `callerHasTurnMaterial`.
+   */
+  private waitForTurnDetectorEnd(
+    loopSignal: AbortSignal,
+    silenceTimeoutMs?: number,
+  ): Promise<AcquiredTurn | null | SilenceElapsed> {
     return new Promise((resolve) => {
       let settled = false;
       // FIX #8 — the speculation window is exactly this subscription.
       this.awaitingTurn = true;
+      const subscribedAtMs = Date.now();
+      let silenceTimer: ReturnType<typeof setTimeout> | undefined;
 
-      const finish = (result: AcquiredTurn | null): void => {
+      const finish = (result: AcquiredTurn | null | SilenceElapsed): void => {
         if (settled) return;
         settled = true;
         this.awaitingTurn = false;
+        if (silenceTimer !== undefined) clearTimeout(silenceTimer);
         unsubscribe();
         unsubscribePending();
         loopSignal.removeEventListener("abort", onAbort);
@@ -2840,11 +3176,42 @@ export class ConversationPipeline {
         // other than the one speculated on; either way that request is
         // for a turn that will never be sent. Matching text is adopted
         // (or abandoned) in `runThinkingAndSpeaking`, never here.
-        if (result === null || (this.speculation !== undefined && this.speculation.text !== result.text)) {
-          this.abandonSpeculation(result === null ? "turn acquisition ended" : "released turn differs from the speculated text");
+        if (
+          result === null ||
+          result === SILENCE_ELAPSED ||
+          (this.speculation !== undefined && this.speculation.text !== result.text)
+        ) {
+          this.abandonSpeculation(
+            result === null
+              ? "turn acquisition ended"
+              : result === SILENCE_ELAPSED
+                ? "silence window expired with no turn"
+                : "released turn differs from the speculated text",
+          );
         }
         resolve(result);
       };
+
+      // FIX 2 — arm (or re-arm) the silence window. It fires only when
+      // the caller has been quiet for the whole interval AND nothing is
+      // in flight for them; otherwise it re-arms for the remainder.
+      const armSilenceWindow = (): void => {
+        if (silenceTimeoutMs === undefined || settled) return;
+        const quietSinceMs = Math.max(subscribedAtMs, this.record.lastConversationActivityAt);
+        const remainingMs = quietSinceMs + silenceTimeoutMs - Date.now();
+        silenceTimer = setTimeout(() => {
+          if (settled) return;
+          if (
+            this.callerHasTurnMaterial() ||
+            Date.now() - Math.max(subscribedAtMs, this.record.lastConversationActivityAt) < silenceTimeoutMs
+          ) {
+            armSilenceWindow();
+            return;
+          }
+          finish(SILENCE_ELAPSED);
+        }, Math.max(remainingMs, 25));
+      };
+      armSilenceWindow();
 
       // FIX #8 — see `SpeculativeCompletion`. Observation of the
       // detector's evidenced confirmation window; it decides nothing

@@ -469,11 +469,11 @@ const HEARING_CONFIRMATION_ONLY = new RegExp(
 function attentionAcknowledgementFor(language: SupportedLanguage): string {
   switch (language) {
     case "hi":
-      return "हैलो, क्या आप मुझे सुन पा रहे हैं? मैं यहीं हूँ।";
+      return "हैलो, क्या आप मुझे सुन पा रहे हैं? ";
     case "hi-en":
-      return "Hello, aap mujhe sun paa rahe hain? Main yahin hoon.";
+      return "Hello, aap mujhe sun paa rahe hain?";
     default:
-      return "Hello, can you hear me? I'm here.";
+      return "Hello, can you hear me? ";
   }
 }
 

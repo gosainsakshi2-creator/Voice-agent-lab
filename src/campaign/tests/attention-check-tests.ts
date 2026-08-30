@@ -323,7 +323,7 @@ function assistantTexts(history: readonly ConversationTurn[]): string[] {
 }
 
 /** The fixed English acknowledgement, as the pipeline speaks it. */
-const ACK = "Hello, can you hear me? I'm here.";
+const ACK = "Hello, can you hear me?";
 
 /** How many times the acknowledgement was actually SPOKEN. */
 function ackCount(synthesized: readonly string[]): number {

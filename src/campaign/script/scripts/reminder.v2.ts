@@ -47,7 +47,7 @@ import type { CampaignScript } from "../script-types";
 
 const SCRIPT_BODY = `Hi {{customer_name}}, this is {{agent_name}} from Team FlexiFunnels.
 
-You had registered for our session tomorrow at 11 AM, so I'm just calling to confirm whether you'll be joining us. We have limited seats, so I just wanted to make sure we save your seat if you're definitely attending. Will you be joining us tomorrow at 11 AM?
+You had registered for our session today at 11 AM, so I'm just calling to confirm whether you'll be joining us. We have limited seats, so I just wanted to make sure we save your seat if you're definitely attending. Will you be joining us tomorrow at 11 AM?
 
 [YES]
 
@@ -67,7 +67,7 @@ export const REMINDER_V2: CampaignScript = {
     "# THIS CALL",
     "",
     "You are {{agent_name}} from Team FlexiFunnels, calling {{customer_name}}, who has",
-    "ALREADY registered for tomorrow's live session, \"Launch Your Business Online in 10",
+    "ALREADY registered for today's live session, \"Launch Your Business Online in 10",
     "Minutes — From Your Phone\", Sunday, 30 August at 11 AM IST.",
     "",
     "This is a short reminder call, not a sales call. You are not registering them and you",

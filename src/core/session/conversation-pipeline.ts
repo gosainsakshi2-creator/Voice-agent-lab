@@ -2167,8 +2167,22 @@ export class ConversationPipeline {
       return true;
     }
     if (!isBareAcknowledgement(utterance)) return false;
+    // FIX 1 (natural backchanneling) — `!replyFullyQueued` is the second
+    // way of knowing the assistant still has more to say. The
+    // remaining-audio test below measures how far ahead the TRANSPORT
+    // buffer is, and the Plivo bridge deliberately bounds that buffer
+    // with backpressure (high-water 2.8s) — so during a long block
+    // `remainingSpeechMs()` sat at 2.2–2.8s, never crossed the 4s
+    // threshold, and every mid-block "haan ji" / "okay" was a barge-in
+    // that restarted the block. While the reply is still being
+    // generated and handed over sentence by sentence there is, by
+    // construction, more speech to come, whatever the buffer holds.
+    // The 4s rule is unchanged and still decides the end of the block,
+    // once everything has been queued: an answer to the closing question
+    // is heard exactly as before.
     return (
       this.backchannelInFlight ||
+      !this.replyFullyQueued ||
       this.remainingSpeechMs() > BACKCHANNEL_MIN_REMAINING_SPEECH_MS
     );
   }
@@ -2231,6 +2245,36 @@ export class ConversationPipeline {
       // eslint-disable-next-line no-console
       console.log(
         `[PIPELINE:${this.record.id}] barge-in DECLINED — the fixed opening line is still playing`,
+      );
+      return false;
+    }
+    // FIX 1 — A RECOGNISED BACKCHANNEL IS NOT AN INTERRUPTION, FROM THIS
+    // PATH EITHER.
+    //
+    // The transports' energy-only fallback reaches this method after
+    // ~700ms of sustained loud near-end energy with no transcript to
+    // judge. A caller saying "haan ji" / "okay okay" over the assistant
+    // produces exactly that energy — and Deepgram's interim for it has
+    // usually already landed and been absorbed as backchannel above
+    // (`backchannelInFlight` is true from that interim until its final).
+    // Cancelling the reply here would undo that judgement through the
+    // side door and drop the whole outbound queue, which is the
+    // "block restarts after I said okay" defect on the Plivo bridge.
+    //
+    // Narrow by construction: the flag is set ONLY while the assistant
+    // is SPEAKING and ONLY after the STT loop has seen a bare
+    // acknowledgement and nothing else for the current utterance. Any
+    // content at all — "wait", "no", "ok but…" — clears it on the very
+    // segment that carries it (see the STT loop), and the transcript-
+    // confirmed path then reaches this method with the flag false, as
+    // it always has. With no transcript at all (a dead STT socket) the
+    // flag is false and the fallback fires exactly as before. Gated on
+    // SPEAKING so the supersession callers, which run while THINKING,
+    // can never be declined by a stale flag.
+    if (this.record.state === SessionState.SPEAKING && this.backchannelInFlight) {
+      // eslint-disable-next-line no-console
+      console.log(
+        `[PIPELINE:${this.record.id}] barge-in DECLINED — the caller is backchannelling, not interrupting`,
       );
       return false;
     }
@@ -3453,10 +3497,23 @@ await this.drainPlayback(speakingSignal);
    * interrupted reply the caller heard from the part they did not.
    */
   private spokenUtterances: Array<{ readonly text: string; readonly startsAtMs: number }> = [];
+  /**
+   * FIX 1 — true once EVERY utterance of the current reply has been
+   * handed to the transport, i.e. from the moment `drainPlayback` is
+   * entered. Until then the reply is still being generated/synthesized
+   * sentence by sentence and more speech is certainly to come, which
+   * is what `isBackchannel` needs to know and what the bounded
+   * transport buffer cannot tell it. Read only by `isBackchannel`;
+   * changes nothing about what is synthesized, queued, played or
+   * cancelled.
+   */
+  private replyFullyQueued = false;
 
   private resetPlaybackAccounting(): void {
     this.outboundQueuedMs = 0;
     this.outboundPlaybackStartedAt = 0;
+    // A new reply: nothing of it has been handed over yet.
+    this.replyFullyQueued = false;
     // Belongs to one reply, like the two counters above it.
     this.spokenUtterances = [];
     // Called at exactly the two places the session enters SPEAKING, so
@@ -3476,6 +3533,12 @@ await this.drainPlayback(speakingSignal);
    * `signal` aborts, so barge-in cuts the wait with no added latency.
    */
   private async drainPlayback(signal: AbortSignal): Promise<void> {
+    // FIX 1 — every call site reaches here only after the last utterance
+    // of the reply has been handed to the transport, so this is the one
+    // instant "all of the reply is queued" becomes true. Set before the
+    // early returns below: a reply that queued nothing is trivially
+    // fully queued.
+    this.replyFullyQueued = true;
     if (this.outboundPlaybackStartedAt === 0 || this.outboundQueuedMs <= 0) return;
     if (signal.aborted) return;
 

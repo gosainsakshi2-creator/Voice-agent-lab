@@ -47,7 +47,7 @@ import type { CampaignScript } from "../script-types";
 
 const SCRIPT_BODY = `Hi {{customer_name}}, this is {{agent_name}} from Team FlexiFunnels.
 
-I'm calling to personally invite you to a free live workshop we're doing tomorrow, Sunday, 30th August at 11 AM. In this workshop You'll actually see a complete online business being built live from a phone, including the website, product, checkout and payments — without needing coding or design skills. Would you like me to reserve your free seat?
+I'm calling to personally invite you to a free live workshop we're doing tomorrow, Sunday, 30th August at 11 AM. In this workshop, You'll actually see a complete online business being built live from a phone, including the website, product, checkout and payments — without needing coding or design skills. Would you like me to reserve your free seat?
 
 [YES]
 

@@ -324,10 +324,37 @@ interface Harness {
   stop(): Promise<void>;
 }
 
+/**
+ * FIX 1 — a BOUNDED outbound transport, the shape the Plivo bridge has
+ * (`OUTBOUND_HIGH_WATER_FRAMES` 2.8s / `OUTBOUND_LOW_WATER_FRAMES` 2.2s
+ * in plivo-media-bridge.ts). The producer is parked once more than the
+ * high-water mark is queued-but-unplayed, and released at the low-water
+ * mark, so the buffer — and with it `remainingSpeechMs()` — never
+ * reflects how much of the reply is still to come.
+ *
+ * Deliberately TIGHTER than Plivo's marks. The sentence chunker emits
+ * ≥60-character chunks (~2.7s), so with Plivo's 2.2s cushion the
+ * unplayed audio peaks at ~4.9s right after each enqueue and only then
+ * falls below the 4s backchannel threshold — the live exposure is a
+ * window inside every sentence, not a constant. These marks keep the
+ * buffer below 4s for the WHOLE block, so the tests below are
+ * deterministic: every acknowledgement lands with under 4s queued, i.e.
+ * exactly where the remaining-audio rule alone would have barged in.
+ */
+const BOUNDED_HIGH_WATER_MS = 1_000;
+const BOUNDED_LOW_WATER_MS = 600;
+
 function startHarness(input: {
   readonly openingLine: string;
   readonly replies: readonly string[];
   readonly replyDelayMs?: number;
+  /**
+   * FIX 1 — pace the outbound listener like a bounded bridge: once more
+   * than `BOUNDED_HIGH_WATER_MS` of audio is queued-but-unplayed, park
+   * the producer until it drains to `BOUNDED_LOW_WATER_MS`. Off by
+   * default so every existing test keeps its unbounded fake transport.
+   */
+  readonly backpressure?: boolean;
 }): Harness {
   const requests: Array<readonly ConversationTurn[]> = [];
   const synthesized: string[] = [];
@@ -434,7 +461,21 @@ function startHarness(input: {
 
   record.loopAbortController = new AbortController();
   record.state = SessionState.CALLING;
-  record.outboundAudioListeners.add(() => undefined);
+  if (input.backpressure) {
+    // Wall clock at which the audio handed over so far will have played.
+    let queuedUntilMs = 0;
+    record.outboundAudioListeners.add((audio: AudioPayload) => {
+      // 8 kHz μ-law: one byte per sample.
+      const chunkMs = (audio.data.byteLength / 8000) * 1000;
+      const now = Date.now();
+      queuedUntilMs = Math.max(now, queuedUntilMs) + chunkMs;
+      const queuedMs = queuedUntilMs - now;
+      if (queuedMs <= BOUNDED_HIGH_WATER_MS) return undefined;
+      return sleep(queuedMs - BOUNDED_LOW_WATER_MS);
+    });
+  } else {
+    record.outboundAudioListeners.add(() => undefined);
+  }
 
   const host = {
     transition: (r: InstanceType<typeof SessionRecord>, to: (typeof SessionState)[keyof typeof SessionState]) => {
@@ -803,6 +844,194 @@ await test("a backchannel is still ignored, and is still not a barge-in", async 
       `${BLOCK} ${BLOCK} ${BLOCK}`,
       "an acknowledgement must not interrupt, and must not truncate the reply",
     );
+  } finally {
+    await h.stop();
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════
+section("SECTION J — FIX 1: backchannels over a long block on a BOUNDED (backpressured) transport");
+// ═════════════════════════════════════════════════════════════════
+//
+// Eight ~33-character sentences (~12s of fake audio). The chunker pairs
+// them into ~65-character chunks (~3s each); with the bounded transport
+// above the unplayed audio peaks at ~3.6s and `remainingSpeechMs()` is
+// therefore BELOW the 4s backchannel threshold for the whole block —
+// the exact condition under which a mid-block "okay" used to barge in.
+// The pipeline's own `backchannel ignored … Nms of reply still to play`
+// log line carries the measured value for each case.
+const LONG_BLOCK = [
+  "We have created Flexi Genie now.",
+  "It runs your whole business well.",
+  "It builds all your pages for you.",
+  "It writes all your emails as well.",
+  "It handles the payments for you.",
+  "You need no coding skills at all.",
+  "It works right from your phone.",
+  "You will see all of it live today.",
+].join(" ");
+
+/** Waits until the block is mid-flight: SPEAKING, with audio actually playing. */
+async function upToMidBlock(h: Harness): Promise<void> {
+  await h.waitForReplies(1);
+  h.say("Yes, tell me.");
+  await h.waitFor("the block to start", () => h.record.state === SessionState.SPEAKING);
+  await sleep(1_200);
+}
+
+function userTurns(h: Harness): string[] {
+  return h.record.memory
+    .history()
+    .filter((turn) => turn.role === "user")
+    .map((turn) => turn.content);
+}
+
+for (const ack of ["haan", "haan ji", "okay", "yeah", "hmm", "acha", "ji", "right", "Haanji."]) {
+  await test(`J1 — "${ack}" over the block: no interruption, no request, no user turn, block intact`, async () => {
+    const h = startHarness({ openingLine: OPENING, replies: [LONG_BLOCK, "SHOULD-NOT-BE-GENERATED"], backpressure: true });
+    try {
+      await upToMidBlock(h);
+      const requestsBefore = h.requests.length;
+      // Deepgram's shape: an interim first, the final a little later.
+      h.say(ack, { isFinal: false });
+      await sleep(250);
+      h.say(ack, { isFinal: true });
+      await h.waitForReplies(2);
+      assert.equal(h.assistantTexts()[1], LONG_BLOCK, `"${ack}" must not truncate or restart the block`);
+      assert.equal(h.requests.length, requestsBefore, `"${ack}" must not reach the language model`);
+      assert.deepEqual(userTurns(h), ["Yes, tell me."], `"${ack}" must not become a user turn`);
+      assert.ok(!h.synthesized.includes("SHOULD-NOT-BE-GENERATED"), "nothing new is spoken");
+    } finally {
+      await h.stop();
+    }
+  });
+}
+
+await test("J2 — STACKED backchannels across the block ('haan ji' … 'okay' … 'yeah'): block still intact, still one request", async () => {
+  const h = startHarness({ openingLine: OPENING, replies: [LONG_BLOCK, "SHOULD-NOT-BE-GENERATED"], backpressure: true });
+  try {
+    await upToMidBlock(h);
+    const requestsBefore = h.requests.length;
+    for (const ack of ["haan ji", "okay", "yeah", "hmm okay", "haan haan"]) {
+      h.say(ack, { isFinal: false });
+      await sleep(200);
+      h.say(ack, { isFinal: true });
+      await sleep(900);
+    }
+    await h.waitForReplies(2);
+    assert.equal(h.assistantTexts()[1], LONG_BLOCK, "the block must be spoken to the end");
+    assert.equal(h.requests.length, requestsBefore, "no request for any of them");
+    assert.deepEqual(userTurns(h), ["Yes, tell me."]);
+  } finally {
+    await h.stop();
+  }
+});
+
+for (const interruption of [
+  "Wait, what about the price?",
+  "No, I have a question.",
+  "Actually, I wanted to ask about the price.",
+  "Stop for a second.",
+]) {
+  await test(`J3 — "${interruption}" over the same block is a REAL interruption: block cut, question answered`, async () => {
+    const h = startHarness({ openingLine: OPENING, replies: [LONG_BLOCK, "Sure, let me answer that."], backpressure: true });
+    try {
+      await upToMidBlock(h);
+      const requestsBefore = h.requests.length;
+      h.say(interruption, { isFinal: false });
+      await sleep(150);
+      h.say(interruption, { isFinal: true });
+      await h.waitForReplies(3);
+      const spoken = h.assistantTexts();
+      assert.ok(spoken[1] !== undefined && spoken[1].length < LONG_BLOCK.length, "the block must have been cut short");
+      assert.equal(spoken[2], "Sure, let me answer that.", "the interruption is answered by the model");
+      assert.ok(h.requests.length > requestsBefore, "a real interruption produces a request");
+      assert.ok(userTurns(h).includes(interruption), "and becomes a user turn");
+    } finally {
+      await h.stop();
+    }
+  });
+}
+
+await test("J4 — 'ok, but what is the price?' (acknowledgement WITH content) still interrupts — the vocabulary is not widened", async () => {
+  const h = startHarness({ openingLine: OPENING, replies: [LONG_BLOCK, "It is free."], backpressure: true });
+  try {
+    await upToMidBlock(h);
+    h.say("ok", { isFinal: false });
+    await sleep(150);
+    h.say("ok, but what is the price?", { isFinal: false });
+    await sleep(100);
+    h.say("ok, but what is the price?", { isFinal: true });
+    await h.waitForReplies(3);
+    assert.ok(h.assistantTexts()[1]!.length < LONG_BLOCK.length, "the block must have been cut short");
+    assert.equal(h.assistantTexts()[2], "It is free.");
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("J5 — the transport's ENERGY-ONLY fallback cannot cut the block while a recognised backchannel is in flight; with no transcript at all it still can", async () => {
+  const h = startHarness({ openingLine: OPENING, replies: [LONG_BLOCK, "SHOULD-NOT-BE-GENERATED"], backpressure: true });
+  try {
+    await upToMidBlock(h);
+    // The caller's "haan ji" has been recognised (interim) and absorbed;
+    // 700ms of loud energy now makes the bridge ask for a barge-in.
+    h.say("haan ji", { isFinal: false });
+    await sleep(150);
+    assert.equal(h.pipeline.triggerExternalBargeIn(), false, "declined: the caller is backchannelling");
+    h.say("haan ji", { isFinal: true });
+    await h.waitForReplies(2);
+    assert.equal(h.assistantTexts()[1], LONG_BLOCK, "the block must be intact");
+    assert.deepEqual(userTurns(h), ["Yes, tell me."]);
+  } finally {
+    await h.stop();
+  }
+
+  // The last resort for a dead STT socket is untouched: energy with NO
+  // transcript still barges in exactly as before.
+  const g = startHarness({ openingLine: OPENING, replies: [LONG_BLOCK, "Sure."], backpressure: true });
+  try {
+    await upToMidBlock(g);
+    assert.equal(g.pipeline.triggerExternalBargeIn(), true, "accepted: nothing says this is a backchannel");
+    await g.waitFor("the barge-in to leave SPEAKING", () => g.record.state !== SessionState.SPEAKING, 2_000);
+  } finally {
+    await g.stop();
+  }
+});
+
+await test("J6 — after the block ENDS with the gate question, 'Yes.' and 'No.' are ordinary turns and are answered", async () => {
+  const GATE_BLOCK = `${LONG_BLOCK} Will you be joining us tomorrow at 11 AM?`;
+  for (const answer of ["Yes.", "No."]) {
+    const h = startHarness({ openingLine: OPENING, replies: [GATE_BLOCK, "Noted, thank you."], backpressure: true });
+    try {
+      await h.waitForReplies(1);
+      h.say("Yes, tell me.");
+      await h.waitForReplies(2);
+      assert.equal(h.assistantTexts()[1], GATE_BLOCK, "the whole block including the question was spoken");
+      const requestsBefore = h.requests.length;
+      h.say(answer);
+      await h.waitForReplies(3);
+      assert.equal(h.requests.length, requestsBefore + 1, `"${answer}" must reach the model as a normal turn`);
+      assert.deepEqual(userTurns(h), ["Yes, tell me.", answer], `"${answer}" must be committed as the caller's turn`);
+      assert.equal(h.assistantTexts()[2], "Noted, thank you.");
+    } finally {
+      await h.stop();
+    }
+  }
+});
+
+await test("J7 — the existing 4s rule is unchanged on an UNBOUNDED transport: a short reply with <4s left is still interrupted by 'okay'", async () => {
+  // Mirrors continuity TEST 5: everything is queued at once, the reply is
+  // short, so an "okay" 900ms in is a real barge-in exactly as before.
+  const h = startHarness({ openingLine: OPENING, replies: [BLOCK, "Sure."] });
+  try {
+    await h.waitForReplies(1);
+    h.say("Yes, tell me.");
+    await h.waitFor("the block to start", () => h.record.state === SessionState.SPEAKING);
+    await sleep(900);
+    h.say("okay");
+    await h.waitForReplies(3);
+    assert.ok(h.assistantTexts()[1]!.length < BLOCK.length, "cut short, as today");
   } finally {
     await h.stop();
   }

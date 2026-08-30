@@ -397,6 +397,45 @@ await test("A1l. reminder v2: a yes to a side question is not a confirmation, a 
   assert.equal(isFinalYes(reasked.classification, reasked.disposition), true);
 });
 
+await test("A1n. FIX 1: an explicit bare 'Yes.' / 'Haan.' / 'Okay.' at the reminder v2 gate is FINAL_YES — backchannel handling never touches a turn the caller took after the block", () => {
+  for (const answer of ["Yes.", "Haan.", "Okay."]) {
+    const { classification, disposition } = settleReminder([
+      agent(GREETING),
+      agent(REMINDER_V2_BLOCK),
+      caller(answer),
+      agent(REMINDER_V2_YES_CLOSE),
+    ]);
+    assert.equal(classification.primaryReason, "confirmed_at_gate", `${JSON.stringify(answer)} at the gate`);
+    assert.equal(disposition, "FINAL_YES");
+    assert.equal(isFinalYes(classification, disposition), true);
+  }
+});
+
+await test("A1o. FIX 1: 'Okay.' answering a NON-gate question ('…at 11 AM, okay?') is NOT FINAL_YES merely for being affirmative vocabulary", () => {
+  for (const answer of ["Okay.", "Haan.", "Yes."]) {
+    const { classification, disposition } = settleReminder([
+      agent(GREETING),
+      agent(REMINDER_V2_BLOCK),
+      caller("What time is it again?"),
+      agent("The workshop is tomorrow at 11 AM, okay?"),
+      caller(answer),
+    ]);
+    assert.notEqual(classification.primaryReason, "confirmed_at_gate", `${JSON.stringify(answer)} to a side question`);
+    assert.notEqual(disposition, "FINAL_YES");
+    assert.equal(isFinalYes(classification, disposition), false);
+  }
+  // …and the same 'Okay.' IS a confirmation when the gate is what was asked.
+  const atGate = settleReminder([
+    agent(GREETING),
+    agent(REMINDER_V2_BLOCK),
+    caller("What time is it again?"),
+    agent(`Tomorrow at 11 AM. ${REMINDER_V2_GATE}`),
+    caller("Okay."),
+    agent(REMINDER_V2_YES_CLOSE),
+  ]);
+  assert.equal(atGate.disposition, "FINAL_YES");
+});
+
 await test("A2. an explicit no is FINAL_NO and is not written", () => {
   const { classification, disposition } = settle([
     agent(GREETING),

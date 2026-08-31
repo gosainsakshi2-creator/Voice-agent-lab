@@ -703,6 +703,63 @@ const BARGE_IN_ENERGY_WINDOW_MS = 2_000;
 const BARGE_IN_MIN_CONFIDENCE = 0.4;
 
 /**
+ * ---------------- SELF-ECHO: our own voice, transcribed ----------------
+ *
+ * On the live Vobiz leg the caller's handset feeds our own outbound audio
+ * back up the inbound track. Confirmed empirically, not assumed: a whole
+ * call tallied `INBOUND (caller)=7116, distinctTrackValues=1`, so there is
+ * no outbound or mixed track to filter — the echo IS the caller's track,
+ * acoustically, out of their earpiece or speakerphone. Deepgram
+ * transcribes it exactly like speech, and the transcript arrives as a
+ * caller turn the assistant then answers:
+ *
+ *   assistant: "You're welcome. What would you like to talk about?"
+ *   "caller":  "You are welcome. What would you like to talk..."
+ *
+ * The three gates that already exist cannot catch it. The near-end RMS
+ * gate cannot: speakerphone echo is genuinely loud. `isBackchannel`
+ * cannot: the text is not an acknowledgement. And `interruptionCorroborated`
+ * is never even asked, because the echo's Deepgram final lands ~0.4-1.7s
+ * after the words (`endpointing=400`, `utterance_end_ms=1000`), by which
+ * time `drainPlayback` has left SPEAKING and `spokeOverTheAssistant` is
+ * false — so the whole echoed sentence walks straight into the turn
+ * detector.
+ *
+ * WHY WORD-PAIR OVERLAP AND NOT SIMPLE CONTAINMENT. Every word a caller
+ * is likely to say back — "billing", "my account" — appears in the reply
+ * they are answering, so unigram containment would suppress real turns.
+ * Bigrams require word ORDER to agree, which is the property an echo has
+ * and a genuine answer does not: "yes I want to know about billing"
+ * scores 0 against a reply that contains the word "billing".
+ *
+ * Deliberately survives its own thresholds: the two-word echo
+ * ("Nice. Thanks." for "Nice, thanks.") is NOT suppressed, because
+ * nothing distinguishes it from a real two-word caller turn. A missed
+ * echo costs one confused exchange; a suppressed caller turn loses their
+ * words entirely, and that is the worse failure.
+ */
+/**
+ * Words a segment needs before it is eligible to be judged an echo at
+ * all. Four is what keeps every short caller utterance — "wait", "stop",
+ * "hello", "yes", "no", "billing", "haan ji" — categorically
+ * unsuppressible, whatever the assistant happens to be saying.
+ */
+const SELF_ECHO_MIN_WORDS = 4;
+/**
+ * Fraction of the segment's word pairs that must also appear, in the same
+ * order, in the audio the caller has actually heard. 0.7 admits the
+ * mis-recognitions a real acoustic path produces — "I'm here" heard back
+ * as "In here", "You're" as "You are" — while a genuine reply that merely
+ * reuses the reply's vocabulary scores near zero.
+ */
+const SELF_ECHO_MIN_BIGRAM_OVERLAP = 0.7;
+/**
+ * Absolute floor on matched pairs, so a short segment cannot clear the
+ * ratio above on a one- or two-pair coincidence.
+ */
+const SELF_ECHO_MIN_MATCHED_BIGRAMS = 3;
+
+/**
  * ---------------- The STT stream clock can rewind ----------------
  *
  * The interruption test below asks "did these words happen AFTER I
@@ -962,6 +1019,67 @@ const BREVITY_PHRASES = [
 function detectBrevityRequest(userText: string): string | undefined {
   const lower = userText.toLowerCase();
   return BREVITY_PHRASES.find((phrase) => lower.includes(phrase));
+}
+
+/**
+ * Words of `text`, lowercased, punctuation-free, apostrophes removed so
+ * "you're" and "youre" are the same token. Devanagari is preserved
+ * alongside Latin: the campaign runs in English, Hindi and Hinglish, and
+ * an echo of a Hindi reply must normalize just as an English one does.
+ *
+ * See the SELF_ECHO_* constants for why this exists.
+ */
+function selfEchoWords(text: string): string[] {
+  return text
+    .toLowerCase()
+    .replace(/['‘’ʼ]/g, "")
+    .replace(/[^a-z0-9ऀ-ॿ]+/g, " ")
+    .trim()
+    .split(/\s+/)
+    .filter((word) => word.length > 0);
+}
+
+/** Ordered adjacent word pairs — "a b c" -> ["a b", "b c"]. */
+function selfEchoBigrams(words: readonly string[]): string[] {
+  const bigrams: string[] = [];
+  for (let i = 0; i + 1 < words.length; i += 1) bigrams.push(`${words[i]} ${words[i + 1]}`);
+  return bigrams;
+}
+
+/**
+ * How much of `candidate` is word-for-word, in-order, already present in
+ * `spoken` — the fraction of the candidate's word pairs found in the
+ * assistant audio the caller has heard.
+ *
+ * Returns `0` for anything too short to judge, so the caller needs no
+ * length check of its own. Pure function over two strings: it reads no
+ * session state and decides nothing on its own.
+ */
+function selfEchoOverlap(
+  candidate: string,
+  spoken: string,
+): { overlap: number; matched: number; candidateWords: number } {
+  const candidateWords = selfEchoWords(candidate);
+  if (candidateWords.length < SELF_ECHO_MIN_WORDS) {
+    return { overlap: 0, matched: 0, candidateWords: candidateWords.length };
+  }
+  const candidateBigrams = selfEchoBigrams(candidateWords);
+  if (candidateBigrams.length === 0) {
+    return { overlap: 0, matched: 0, candidateWords: candidateWords.length };
+  }
+  const spokenBigrams = new Set(selfEchoBigrams(selfEchoWords(spoken)));
+  if (spokenBigrams.size === 0) {
+    return { overlap: 0, matched: 0, candidateWords: candidateWords.length };
+  }
+  let matched = 0;
+  for (const bigram of candidateBigrams) {
+    if (spokenBigrams.has(bigram)) matched += 1;
+  }
+  return {
+    overlap: matched / candidateBigrams.length,
+    matched,
+    candidateWords: candidateWords.length,
+  };
 }
 
 export class ConversationPipeline {
@@ -2596,6 +2714,48 @@ export class ConversationPipeline {
     return true;
   }
 
+  /**
+   * Is this transcript our OWN audio, coming back up the caller's
+   * inbound track? See the SELF_ECHO_* constants for the evidence and
+   * for why the two existing gates cannot answer this.
+   *
+   * EXISTING PLAYBACK ACCOUNTING FIRST, text second. `heardSoFarText()`
+   * is the whole reason this can be decided at all: it is already
+   * maintained for the barge-in commit site, and it returns precisely
+   * the assistant audio the caller has ACTUALLY HEARD — utterances
+   * behind the play head, never ones still queued. You cannot echo what
+   * has not reached you, so anything outside it is not evidence, and a
+   * reply that has played nothing yet can produce no echo at all. No new
+   * timer, no new window, no new state: the bound is playback itself.
+   *
+   * Deliberately NOT gated on `SPEAKING`. The dominant case is the
+   * echo's final landing after `drainPlayback` has already left
+   * SPEAKING — gating on state is exactly the hole this closes. It is
+   * bounded instead by `spokenUtterances`, which `beginAssistantResponse`
+   * clears the moment the next reply starts.
+   *
+   * Read-only. Decides nothing but its own boolean.
+   */
+  private isSelfEcho(segment: TranscriptSegment): boolean {
+    const text = segment.text.trim();
+    if (text.length === 0) return false;
+    // Existing accounting, first and cheapest: nothing has been played,
+    // so there is nothing that could have echoed.
+    const heard = this.heardSoFarText();
+    if (heard.length === 0) return false;
+
+    const { overlap, matched, candidateWords } = selfEchoOverlap(text, heard);
+    if (candidateWords < SELF_ECHO_MIN_WORDS) return false;
+    if (matched < SELF_ECHO_MIN_MATCHED_BIGRAMS) return false;
+    if (overlap < SELF_ECHO_MIN_BIGRAM_OVERLAP) return false;
+
+    // eslint-disable-next-line no-console
+    console.log(
+      `[TURN:${this.record.id}] SELF-ECHO suppressed (our own audio back up the inbound track): "${text}" — ${matched}/${candidateWords - 1} word pairs (${Math.round(overlap * 100)}%) match assistant audio already played`,
+    );
+    return true;
+  }
+
   // ---------------------------------------------------------------
   // STT
   // ---------------------------------------------------------------
@@ -2914,6 +3074,33 @@ export class ConversationPipeline {
             console.log(
               `[TURN:${this.record.id}] uncorroborated speech ignored (not the caller interrupting): "${segment.text.trim()}" — confidence=${segment.confidence} loudSpeechAgeMs=${this.record.lastCallerEnergyAt === 0 ? "n/a" : Date.now() - this.record.lastCallerEnergyAt}`,
             );
+            continue;
+          }
+
+          // ── Our own voice, not the caller's ───────────────────────
+          //
+          // Acoustic self-echo out of the caller's handset — see the
+          // SELF_ECHO_* constants. Ignored exactly like the two filters
+          // above and by the same mechanism: no barge-in, and NOT fed to
+          // the turn detector, so it creates no turn, opens no LLM
+          // request, and the assistant simply finishes its sentence.
+          //
+          // Placed here, and NOT inside the `spokeOverTheAssistant`
+          // guard the two filters above share, for one reason: the echo's
+          // final usually lands after `drainPlayback` has left SPEAKING,
+          // where that guard is false and both of those filters are
+          // skipped. `isSelfEcho` supplies its own bound — the assistant
+          // audio actually played — so it needs no state gate.
+          //
+          // Above `triggerExternalBargeIn` deliberately: our own audio
+          // must not cut our own reply off. Genuine caller speech does
+          // not reach `isSelfEcho`'s thresholds, so it falls through to
+          // the identical barge-in call below, unchanged.
+          if (this.isSelfEcho(segment)) {
+            // Same reason as the two filters above: no turn will replace
+            // this preview, and `getTranscript` appends a stale one as a
+            // trailing user turn.
+            this.record.liveUserTranscript = "";
             continue;
           }
 

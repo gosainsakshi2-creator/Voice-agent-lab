@@ -508,7 +508,7 @@ function attentionAcknowledgementFor(language: SupportedLanguage): string {
  * campaign watchdog already reads.
  */
 /** Caller silence, in LISTENING, before each recovery step. */
-const SILENCE_RECOVERY_INTERVAL_MS = 3_000;
+const SILENCE_RECOVERY_INTERVAL_MS = 8_000;
 /** Recovery prompts spoken before the call is ended: "are you there?", "is anyone there?". */
 const SILENCE_RECOVERY_MAX_PROMPTS = 2;
 /** `waitForTurnDetectorEnd` returning this means the silence window expired with no turn. */

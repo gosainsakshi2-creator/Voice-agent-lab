@@ -188,6 +188,32 @@ export function attachVobizMediaBridge(
   let inboundFrameCount = 0;
   let utteranceCount = 0;
 
+  // ─── TEMPORARY DIAGNOSTIC — self-echo investigation ────────────────
+  // REMOVE ONCE Vobiz's real media-track behaviour is on record.
+  //
+  // Purpose: answer one question the logs cannot currently answer —
+  // does Vobiz label its media frames, and does it deliver more than
+  // the caller's own audio? The `track` filter in the "media" case
+  // below fails OPEN when `track` is absent, so an unlabelled or mixed
+  // stream would forward our own outbound audio into Deepgram with no
+  // trace. This observes only: no condition, threshold, state
+  // transition, filter or routing decision reads any of it.
+  const DIAG_MEDIA_TRACK_LOG_FRAMES = 20;
+  /** Per-call tally of every distinct `media.track` value seen. */
+  const diagTrackTally = new Map<string, number>();
+
+  /** Classifies a raw `media.track` value into the buckets under investigation. */
+  function diagClassifyTrack(track: string | undefined): string {
+    if (track === undefined) return "MISSING/undefined";
+    const normalized = track.trim().toLowerCase();
+    if (normalized === "") return "EMPTY-STRING";
+    if (normalized === "inbound") return "INBOUND (caller)";
+    if (normalized === "outbound") return "OUTBOUND (ours)";
+    if (normalized === "mixed" || normalized === "both") return "MIXED/BOTH";
+    return `OTHER (raw="${track}")`;
+  }
+  // ─── END TEMPORARY DIAGNOSTIC ──────────────────────────────────────
+
   // Inbound: we configure the answer-URL XML with
   // contentType="audio/x-mulaw;rate=8000", so Vobiz sends mulaw
   // at 8 kHz — same format the MulawVadSegmenter expects.
@@ -519,6 +545,18 @@ export function attachVobizMediaBridge(
         console.log(
           `[vobiz-bridge:${sessionId}] "start" event: streamId=${vobizStreamId ?? "none"} callId=${event.start?.callId ?? "none"} mediaFormat=${JSON.stringify(event.start?.mediaFormat)}, confirming call answered`,
         );
+        // ─── TEMPORARY DIAGNOSTIC — self-echo investigation ──────────
+        // REMOVE ONCE Vobiz's real media-track behaviour is on record.
+        // `start.tracks` has always been declared in the event type but
+        // never read or logged, so no call on record says whether Vobiz
+        // opened a caller-only or a multi/mixed-track stream. Observed
+        // raw, and also as raw JSON in case it is not the string[] the
+        // declared type assumes. Nothing reads this.
+        // eslint-disable-next-line no-console
+        console.log(
+          `[vobiz-DIAG:${sessionId}] start.tracks: raw=${JSON.stringify(event.start?.tracks)} isArray=${Array.isArray(event.start?.tracks)} count=${Array.isArray(event.start?.tracks) ? event.start.tracks.length : "n/a"} values=[${Array.isArray(event.start?.tracks) ? event.start.tracks.map((t) => `"${String(t)}"`).join(", ") : ""}] — whole start payload=${JSON.stringify(event.start)}`,
+        );
+        // ─── END TEMPORARY DIAGNOSTIC ────────────────────────────────
         // `start.callId` is the call_uuid — the id Vobiz's hangup API is
         // keyed by, unlike the request_uuid `startCall()` returned. Hand
         // it to the manager so `end()` -> `endCall()` deletes the right
@@ -528,6 +566,45 @@ export function attachVobizMediaBridge(
         return;
 
       case "media": {
+        // ─── TEMPORARY DIAGNOSTIC — self-echo investigation ──────────
+        // REMOVE ONCE Vobiz's real media-track behaviour is on record.
+        //
+        // Placed ABOVE the filter below deliberately: a frame the filter
+        // drops must still be counted, or a genuine "outbound" track
+        // would be invisible here — which is precisely the thing under
+        // investigation. Purely observational: it reads `event.media`,
+        // writes only to its own tally, and the filter's condition, the
+        // frame, and every downstream call are untouched.
+        {
+          const rawTrack = event.media?.track;
+          const bucket = diagClassifyTrack(rawTrack);
+          diagTrackTally.set(bucket, (diagTrackTally.get(bucket) ?? 0) + 1);
+          const seen = diagTrackTally.get(bucket) ?? 0;
+          const totalSeen = [...diagTrackTally.values()].reduce((a, b) => a + b, 0);
+          if (totalSeen <= DIAG_MEDIA_TRACK_LOG_FRAMES) {
+            // eslint-disable-next-line no-console
+            console.log(
+              `[vobiz-DIAG:${sessionId}] media frame #${totalSeen}/${DIAG_MEDIA_TRACK_LOG_FRAMES}: track=${rawTrack === undefined ? "<undefined>" : `"${rawTrack}"`} -> ${bucket} | bytes=${event.media?.payload?.length ?? 0}(b64) | keys=[${Object.keys(event.media ?? {}).join(",")}]`,
+            );
+            if (totalSeen === DIAG_MEDIA_TRACK_LOG_FRAMES) {
+              // eslint-disable-next-line no-console
+              console.log(
+                `[vobiz-DIAG:${sessionId}] first ${DIAG_MEDIA_TRACK_LOG_FRAMES} media frames TALLY: ${[...diagTrackTally.entries()].map(([k, v]) => `${k}=${v}`).join(" | ")} — distinctTrackValues=${diagTrackTally.size} (1 bucket of INBOUND = caller-only; MISSING/undefined = UNLABELLED, filter below is a no-op; any OUTBOUND/MIXED = SELF-ECHO ON THE WIRE)`,
+              );
+            }
+          } else if (seen === 1) {
+            // A track value seen for the FIRST time after the sample
+            // window closed — the one case worth breaking the 20-frame
+            // cap for, since it is how a late outbound/mixed track
+            // (i.e. one that only appears once we start speaking) shows
+            // up at all. One line per distinct value, per call.
+            // eslint-disable-next-line no-console
+            console.log(
+              `[vobiz-DIAG:${sessionId}] NEW media track value at frame #${totalSeen} (after the ${DIAG_MEDIA_TRACK_LOG_FRAMES}-frame window): track=${rawTrack === undefined ? "<undefined>" : `"${rawTrack}"`} -> ${bucket}`,
+            );
+          }
+        }
+        // ─── END TEMPORARY DIAGNOSTIC ────────────────────────────────
         // Vobiz's bidirectional stream may echo outbound audio as
         // track:"outbound". Only forward the caller's real speech.
         if (event.media?.track && event.media.track !== "inbound") return;
@@ -577,6 +654,17 @@ export function attachVobizMediaBridge(
   function cleanup(): void {
     if (closed) return;
     closed = true;
+    // ─── TEMPORARY DIAGNOSTIC — self-echo investigation ──────────────
+    // REMOVE ONCE Vobiz's real media-track behaviour is on record.
+    // The WHOLE-CALL tally, which the 20-frame window cannot give: an
+    // outbound/mixed track that only appears once we start speaking is
+    // invisible in the opening frames. Logged first so a later throw
+    // cannot lose it. Reads the tally and nothing else.
+    // eslint-disable-next-line no-console
+    console.log(
+      `[vobiz-DIAG:${sessionId}] WHOLE-CALL media track tally: ${diagTrackTally.size === 0 ? "(no media frames received)" : [...diagTrackTally.entries()].map(([k, v]) => `${k}=${v}`).join(" | ")} — distinctTrackValues=${diagTrackTally.size} framesForwardedToStt=${inboundFrameCount}`,
+    );
+    // ─── END TEMPORARY DIAGNOSTIC ────────────────────────────────────
     segmenter.flush();
     unsubscribeOutbound?.();
     unsubscribeState?.();

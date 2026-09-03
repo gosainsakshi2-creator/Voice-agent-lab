@@ -4,17 +4,367 @@
 > It is deliberately short. Stable project truth lives in [MEMORY.md](MEMORY.md);
 > this file only holds *what is happening right now*.
 
-**Updated:** 2026-08-24
-**Branch:** `campaign-layer-phase-0` — **working tree DIRTY.** Uncommitted:
-**FIX #8 (PHASE 3 turn release)** — 4 files: `turn-detection.ts`,
-`conversation-pipeline.ts`, `turn-release-tests.ts`, `end-of-speech-tests.ts`.
-Everything from Fix #3 through Fix #7a has since been committed
-(`b6491ca`…`4424f1d`).
-**Last commit:** `4424f1d` — #Fix 7a (turn-timing telemetry)
+**Updated:** 2026-09-03
+**Branch:** `voice-agent-improvements` — **working tree CLEAN.** Nothing is
+mid-edit. The FIX #8 work this file previously listed as uncommitted has since
+been committed.
+**Last commit:** `8758d05` — Fix (barge-in thinking-gap: `lastTurnReleasedAtStreamMs`)
 **Dialing:** `CAMPAIGN_DIALING_ENABLED=true` — **real calls are live**
-**Latest pass:** **FIX #8 — endpoint evidence outranks punctuation
-(Deepgram turn release, PHASE 3).** See the FIX #8 section immediately
-below. The FIX #3 sections after it are the previous pass, kept as history.
+**Latest pass:** **LATENCY AUDIT (2026-09-03) — read-only, three passes, no code
+changed.** 699 production turns measured; it **refutes three latency claims this
+file previously carried** (LLM ~740ms as the top item, a cold-prefill first-response
+penalty, and the chunker as a major cost) and identifies the real P0. See the
+LATENCY AUDIT section immediately below — read it before opening any latency
+thread. The FIX sections after it are earlier passes, kept as history.
+
+---
+
+## LATENCY AUDIT (2026-09-03) — READ-ONLY, THREE PASSES, NO CODE CHANGED
+
+**Status: audit only. Nothing was modified, nothing dialed, nothing deployed.**
+`git status` clean throughout. Evidence is **699 fully-decomposable production
+turns** from `call_metrics.raw.turnLatencies`, restricted to
+`recorded_at >= 2026-08-28` (i.e. after the last TTS-lane commit `6e289db`, so
+every figure is current-code), plus verbatim Deepgram wire captures and the
+installed OpenAI SDK source.
+
+**Read this section before opening any latency thread. It refutes three claims
+this file previously carried.**
+
+### The measured decomposition — the core result
+
+Per-turn share of `total` (caller speech end → first audio queued), averaged per
+turn rather than percentile-of-percentile:
+
+| Scope | turns | STT lag | LLM TTFT | Residual¹ | TTS TTFA | **Total** |
+|---|---|---|---|---|---|---|
+| **ALL TURNS** | 699 | **1544ms — 41.9%** | 898ms — 28.5% | 1109ms — 17.0% | 409ms — 12.5% | **3961ms** |
+| **SLOW TURNS** (>p90 = 6285ms) | 69 | 3090ms — 34.8% | 995ms — **10.7%** | **7110ms — 49.0%** | 552ms — **5.5%** | **11747ms** |
+
+¹ `residual = total - stt - llm - tts` = detector confirmation hold + chunker +
+**buffered-turn drain wait** (see the P0 below).
+
+Percentiles, same set (686 turns with all four stages present):
+
+| Stage | p50 | p90 | p99 | max |
+|---|---|---|---|---|
+| **total** | 2905 | 6285 | 22539 | 28294 |
+| STT recognition lag | 1100 | 3260 | 5980 | 8180 |
+| LLM TTFT | 767 | 1347 | 2902 | 3861 |
+| TTS TTFA | 328 | 532 | 1715 | 2362 |
+| **Residual** | **246** | **1877** | **19390** | **22026** |
+
+**The shape of the problem: at the median STT dominates; on the turns that
+actually feel broken the residual dominates and LLM/TTS become almost
+irrelevant.**
+
+### THREE CLAIMS IN THIS FILE ARE REFUTED BY THE DATA
+
+1. **"LLM first token ~740ms is the largest remaining item"** (§7, §3.6, §8) —
+   and the later `1.4–3.6s` / `1326ms warm / 2726ms cold` figures in
+   `conversation-pipeline.ts` comments. **Measured: 767ms p50 / 898ms mean /
+   1347ms p90.** Real and second-largest at the median, but only **10.7%** of
+   slow turns. `reasoningTokens = 0` everywhere; cache hit >=90% on 561/778 turns.
+2. **"The first response of the call is the slowest (cold prefill)."**
+   **Cold prefill occurs in 4 of 778 turns — 0.5%.** `primeLlmPrefixCache`
+   works. First-turn vs later-turn LLM TTFT p50: cartesia 770/722, sarvam
+   774/785, smallest-ai 786/727 — **no first-turn penalty on any stage or lane.**
+3. **"Chunk accumulation ~250–450ms before the first TTS request."** Applying the
+   **real chunker algorithm** to 1,210 production replies gives a first cut of
+   **111 chars (pitch block) / 69 chars (later replies)**, and the derived
+   GPT-5.1 output rate is **776 chars/s p50** (303 p10, 2223 p90). So the
+   chunker costs **89–193ms typical, ~366ms slow tail = 3–6% of a turn.**
+   The 88–160-character threshold is **NOT** a significant latency contributor.
+   `MIN_FIRST_CHUNK_LENGTH` etc. need no change.
+
+### P0 — THE PROVEN MAJOR CONTRIBUTOR: buffered-turn drain wait
+
+**49% of all slow turns; 19.1% of second turns exceed 3s of residual; p99 =
+19.4s.** Residual by turn index:
+
+| turnIndex | n | res p50 | res p90 | res max | % of turns >3s |
+|---|---|---|---|---|---|
+| 0 | 295 | 178 | 1028 | 11477 | **1.4%** |
+| **1** | **141** | **322** | **10086** | **22026** | **19.1%** |
+| 2 | 85 | 335 | 1380 | 18190 | 7.1% |
+| 3 | 51 | 464 | 3960 | 19552 | 13.7% |
+| 4 | 37 | 422 | 3690 | 5192 | 13.5% |
+| 5+ | 89 | 330 | 2061 | 8767 | 5.6% |
+
+**Root cause — narrower than "the caller speaks during the block".** A caller who
+speaks over *playing* audio normally does barge in. The wait happens only when
+the barge-in path is never consulted:
+
+```
+spokeOverTheAssistant = greetingDone && state === SPEAKING
+                        && segmentEndedAtStreamMs > speakingStartedAtStreamMs
+```
+
+When that is **false** the segment skips the backchannel filter, the
+corroboration filter and `triggerExternalBargeIn()`, and is fed straight to the
+detector. It is false in the common case: **the caller speaks into the THINKING
+gap**, their words END before `speakingStartedAtStreamMs`, Deepgram delivers
+~1s later once SPEAKING has begun, `emitTurnEnd` fires with
+`listeners.size === 0`, and the turn lands in `pendingEvent` — invisible until
+`drainPlayback` has slept out the whole reply.
+
+**Proven on a stored transcript** (turnIndex 1, residual 22026ms, `total`
+24369ms). The identical millisecond is the signature — the assistant turn is
+committed after the drain and the buffered turn is consumed on the next loop
+iteration:
+
+```
+13:25:21.811  user       "हां, बोलिए."            <- turn 0
+13:25:45.093  assistant  <344-char pitch block>   <- committed after drainPlayback
+13:25:45.093  user       "Hello."                 <- turn 1, buffered, same ms
+```
+
+The block was committed **in full**, not as a heard prefix, which proves no
+barge-in occurred.
+
+**The amplifier is reply length.** Measured across 1,941 production assistant
+turns, at the chunker's own 22 chars/sec of speech:
+
+| Assistant turn | n | chars p50 | p90 | max | speech p50 | p90 | max |
+|---|---|---|---|---|---|---|---|
+| 1 greeting | 731 | 48 | 56 | 77 | 2.2s | 2.5s | 3.5s |
+| **2 THE PITCH BLOCK** | 462 | 208 | **407** | 474 | **9.5s** | **18.5s** | **21.5s** |
+| 3 | 236 | 98 | 356 | 665 | 4.5s | 16.2s | **30.2s** |
+| 4+ | 512 | 87 | 290 | 463 | 4.0s | 13.2s | 21.0s |
+
+**Critical instrumentation gap — why this never showed up in a log review.**
+`TurnTimer`'s t0 is `turnReleasedAtMs`, stamped at *delivery* of the buffered
+event, so `[TIMING:…] TURN#N DELTAS` shows a **fast** release→audio for exactly
+these turns. Only `total` in `call_metrics` exposes the real 22s wait.
+
+### P0 — Deepgram STT recognition lag
+
+**41.9% of average latency (1544ms); p90 3260ms, p99 5980ms; 34.8% of slow
+turns.** The largest single stage at the median. Decomposes as `endpointing: 400`
++ 660–1700ms vendor recognition/delivery + **only 150–300ms of our own detector
+hold**. On noisy lines `speech_final` never rides on the words and release waits
+for `utterance_end_ms: 1000`, which is Deepgram's documented minimum.
+Corroborated independently by the `test:wire-trace` captures (clean 1085ms /
+noise 1733ms / background voice 5686ms). §0b and FIX #8 already took the
+available application-side win; **what remains is a vendor floor.**
+
+### P1 / P2 / P3 — ranked, with evidence
+
+- **P1 LLM TTFT** — 898ms mean, 28.5% of average latency. Genuine vendor floor on
+  a ~14,500-token prompt at 98%+ cache hit, `reasoning=0`. Only lever is prompt
+  size. Not what makes bad turns bad (10.7% of slow turns).
+- **P1 TTS lane assignment** — 12.5% of average latency and **~500ms of p50
+  spread between lanes**: cartesia TTFA **141ms**, sarvam **257ms**,
+  smallest-ai **453ms** (first-turn p90 **1253ms**). `contact.assignedProvider`
+  is locked at import, so ~39% of calls are permanently on the slower lanes.
+- **P2 OpenAI silent SDK retries** — mechanism fully confirmed from the installed
+  source: **openai 7.3.0**, `maxRetries = 2` (`client.mjs:172`), retries on
+  408/409/429/>=500 (`client.mjs:566-577`), backoff 0.5s→1s cap 8s
+  (`client.mjs:609-616`), **and a `stream: true` chat completion IS retryable** —
+  the `!hasStreamingBody` gate at `client.mjs:463` refers to a streaming
+  *request body*, and a JSON body yields `isStreamingBody: false`
+  (`client.mjs:687`). **Retries are silent:** they log at `info`
+  (`client.mjs:467`) while the default `logLevel` is `warn`
+  (`client.mjs:164`), and `OPENAI_LOG` is not set. `withGracefulRetry` is not on
+  the streaming path, and `campaign:audit -> rateLimitedAttempts` reads
+  `call_attempts.failure_reason` (`campaign-audit.ts:299-307`), i.e. **call-level
+  failures only — it is structurally blind to a retry that succeeds.**
+  **Bounded by data: only 11 of 561 warm turns (2.0%) exceeded 2s TTFT.** Real,
+  invisible, small. `maxRetries` deliberately NOT changed.
+- **P2 Render region → vendor RTT** — every measured stage contains Render↔vendor
+  round trips. Plausible, **entirely unmeasured**. See the network test below.
+- **P3 Render CPU / event-loop starvation — NOT SUPPORTED BY EVIDENCE.**
+  Exhaustive repo-wide search: **0 occurrences** of `pump burst capped` or
+  `event loop starved`, because **no production log material exists locally**
+  (the only log file, `.next/dev/logs/next-development.log`, is 0 bytes). The
+  only hits are the two source lines that emit it, three doc lines telling
+  operators to watch for it, and one false positive at `audio-codec.ts:350`
+  (frame-alignment starvation from runt frames, already fixed by
+  `createOutboundMulawFramer`). Neither confirmed nor refuted — resolvable in one
+  Render dashboard log search. Argued against independently: `tts` share *falls*
+  to 5.5% on slow turns, so slow turns are slow *before* audio exists.
+- **P3 Render cold start / sleep / buffering / instance scaling / session-state
+  split** — no supporting evidence; several architecturally impossible (§F.4).
+
+### Render facts — and exactly what is missing
+
+**NOT IN THE REPOSITORY: region, plan, CPU, memory.** Verified absent, not merely
+unsearched — a depth-unlimited search for `render*`, `*.yaml`, `*.yml`,
+`Dockerfile*`, `Procfile`, `*.toml`, `app.json`, `fly*` (excluding
+`node_modules`) returns **nothing**; no `RENDER_*` env var is read anywhere in
+`src/` or `server.ts`; there is no `os.cpus()` / `totalmem()` /
+`--max-old-space-size` anywhere; and `.gitignore` hides no infra file. **These
+four values exist only in the Render dashboard.** Do not let anyone put a guess
+in this file.
+
+Derivable from the repo: a **Web Service** running `tsx server.ts` (`npm start`),
+**single instance, no autoscaling** (§F.4), zero-downtime deploys with two
+instances briefly live (`db/client.ts:66-70`), DB in `aws-0-ap-south-1`.
+
+**Minimum network test** — from Render Dashboard → service → Shell,
+non-destructive, one TLS handshake each (a 404 body is fine; the timings are
+valid regardless of status):
+
+```
+for h in api.openai.com api.deepgram.com api.cartesia.ai \
+         waves-api.smallest.ai api.sarvam.ai api.vobiz.ai; do
+  curl -o /dev/null -s -w "$h  dns=%{time_namelookup}  tcp=%{time_connect}  tls=%{time_appconnect}\n" "https://$h/"
+done
+echo "region=$RENDER_SERVICE_REGION instance=$RENDER_INSTANCE_ID"
+nproc; cat /sys/fs/cgroup/memory.max 2>/dev/null || cat /sys/fs/cgroup/memory/memory.limit_in_bytes
+```
+
+`tcp - dns` is one RTT to that vendor. Then search Render **Logs** for the
+literal string `pump burst capped` over the last 7 days — that settles the
+starvation question permanently.
+
+### First vs later response — by provider, measured
+
+| Provider | Bucket | n | LLM p50 | p90 | TTS p50 | p90 | STT p50 | total p50 | total p90 |
+|---|---|---|---|---|---|---|---|---|---|
+| cartesia | turn 0 | 48 | 770 | 981 | **134** | 253 | 1040 | **2167** | 5425 |
+| cartesia | turn >=1 | 49 | 722 | 940 | **141** | 256 | 1110 | **2332** | 5660 |
+| sarvam | turn 0 | 160 | 774 | 1449 | 282 | 516 | 1190 | **2917** | 5709 |
+| sarvam | turn >=1 | 251 | 785 | 1349 | 257 | 539 | 1050 | **2780** | 7458 |
+| smallest-ai | turn 0 | 104 | 786 | 1496 | **501** | **1253** | 1240 | **3230** | 5499 |
+| smallest-ai | turn >=1 | 150 | 727 | 1022 | **453** | 525 | 1050 | **2836** | 6735 |
+
+### PROPOSED P0 FIX — audited, NOT IMPLEMENTED, awaiting approval
+
+**All required primitives already exist.** `triggerExternalBargeIn()`
+(`conversation-pipeline.ts:2646`) already: declines while `!greetingDone`;
+declines on `backchannelInFlight`; records `cancelledResponseId` +
+`cancelledHeardText`; calls `bargeIn.triggerBargeIn()` which aborts the speaking
+signal so `abortableSleep` **resolves the drain immediately**; and transitions
+`LISTENING` with reason `"external barge-in signal"`, which matches
+`/barge.?in/i` in both bridges and therefore already triggers
+`clearOutboundPlayback()` (drops the frame queue **and** sends `clearAudio`).
+
+**The trap that rules out the obvious design.** You cannot subscribe an extra
+`onTurnEnd` listener during SPEAKING: `emitTurnEnd` buffers **only when
+`listeners.size === 0`**, so a second subscriber would consume the event and the
+main loop would never see it. Already documented at
+`conversation-pipeline.ts:2100-2107`. **The fix must poll a read-only accessor,
+never subscribe.**
+
+**The one genuine gap.** `hasBufferedTurn()` returns a boolean only. The buffered
+TEXT is not exposed, so a buffered bare acknowledgement cannot be filtered out —
+and `newerUserTurnWaiting()` **cannot be reused** because its buffered branch is
+**unfiltered** (`:2545` returns true for any buffered turn, while the
+`pendingFinalText` branch does apply `BARE_GREETING_ONLY` /
+`isBareAcknowledgement`). Reusing it would cut a playing block for a buffered
+"okay" — the exact defect FIX 1 exists to prevent.
+
+**Smallest safe change — 2 files, 1 new method, 1 new parameter, 1 new constant,
+2 call-site arguments:**
+
+1. `turn-detection.ts` — add a pure read-only getter
+   `bufferedTurnText(): string` returning `this.pendingEvent?.text ?? ""`.
+   Arms no timer, clears nothing, touches no window or threshold.
+2. `conversation-pipeline.ts` — `drainPlayback(signal, interruptibleByBufferedTurn = false)`.
+   With the flag `false` the path is byte-identical to today. With it `true`,
+   poll at a coarse **new** interval (~250ms; must NOT reuse
+   `STRANDED_RESUME_POLL_MS` or any detector window) and, when a buffered turn
+   is held whose text is **neither** a bare greeting **nor** a bare
+   acknowledgement, call the existing `triggerExternalBargeIn()`. If it returns
+   `false`, **keep draining** — never assume it succeeded.
+3. Pass `true` from **exactly two** call sites: `:4086` (normal streaming) and
+   `:3827` (batch branch, parity). **Do NOT pass it** from `:3712`
+   (`speakFixedUtterance` — greeting, attention acknowledgement, hearing
+   follow-up, silence-recovery prompts) or `:4041` (contamination fallback).
+
+**Expected effect, from our own data:** the recoverable span is the residual
+above its ~250ms floor — **~860ms off the average turn** and **~6.9s off every
+slow turn**; turnIndex-1 res p90 of 10086ms should collapse toward the floor.
+Measurable with the identical SQL, no new instrumentation.
+
+**Not changed by this fix:** call connect/disconnect, telephony, both media
+bridges, `audio-codec.ts`, `vad-segmenter.ts`, recording, the outbound pump,
+`triggerExternalBargeIn` itself, `interruptionCorroborated`, `isBackchannel`,
+`isSelfEcho`, every turn-detection window/grace/threshold, `emitTurnEnd`,
+silence recovery, `speakAttentionUtterance`, `handleAttentionCheck`,
+`SentenceChunker`, Deepgram config, the LLM prompt, all TTS/STT providers,
+registration/script/classifier/sheet, UI and SSE.
+
+**THE PRODUCT DECISION THIS FORCES — not a technical one.** There is no way to
+answer a buffered turn sooner without **cutting the assistant's block short**.
+The 22s case becomes: caller says "Hello?", the block stops ~2s in, and
+`handleAttentionCheck` + `heldScriptRemainder` resume the unheard remainder — the
+same path a real barge-in takes today. The only alternative that avoids cutting
+blocks is **shortening the block itself** (a script change, §3.7). If cutting
+blocks is unacceptable, do NOT implement this and fix the P0 in the script
+instead.
+
+### Regression risks for that fix — ranked
+
+| # | Risk | Severity | Containment |
+|---|---|---|---|
+| 1 | Opening line truncated by a "hello" on pickup | **Critical** | Blocked twice: `speakFixedUtterance` never passes the flag, AND `triggerExternalBargeIn` returns `false` while `!greetingDone`. `false` must mean "keep draining". |
+| 2 | Buffered backchannel cuts the block ("restarts after I said okay") | **High** | The `BARE_GREETING_ONLY` / `isBareAcknowledgement` filter. Do NOT reuse `newerUserTurnWaiting()`. |
+| 3 | Attention ack / hearing follow-up / recovery prompt gets cut | **High** | All route through `speakFixedUtterance`, which does not pass the flag. |
+| 4 | Extra subscriber steals the buffered turn — words lost forever | **Critical** | Poll a getter, never `onTurnEnd`. See `:2100-2107`. |
+| 5 | Partially-heard chunk credited as fully heard, so the resume skips it | **Medium** | **Pre-existing** for every barge-in (`heardSoFarText` is per-utterance; a 344-char block is ~3 utterances). Becomes more frequent, not new. |
+| 6 | Next turn loses speculative LLM start (+150–300ms) | **Low** | `heldScriptRemainder` non-empty makes `startSpeculation` decline. Existing post-barge-in behaviour. |
+| 7 | 250ms poll adds one timer per reply | **Low** | Against 150 pump ticks/s already running. |
+| 8 | **Interrupted reply not committed whole -> classifier / FINAL_YES / sheet see a shorter transcript** | **Medium** | Correct by design and identical to any barge-in — **but the gate question may no longer be in the transcript.** `answersACommitQuestion` / `COMMIT_ANCHORS` behaviour MUST be re-verified. **Highest-value item to check before approving.** |
+| 9 | Interrupt between "audio queued" and "playback started" | **Low** | `drainPlayback` already early-returns when `outboundPlaybackStartedAt === 0`. |
+| 10 | Voicemail path | **None** | `synthesizeAndPlay` short-circuits on `voicemailDetected`; nothing queued to drain. |
+
+### Tests that must stay green for that fix
+
+`test:barge-in` **C:597**, **C:616** (*"the caller's words during the opening
+line are not lost — they are answered after it"* — asserts the buffered-turn
+behaviour DIRECTLY and must pass unchanged), **C:632**, **D**, **E:728/772**,
+**F:795/828**, **J1–J7** · `test:attention` (22/23; B1 is the known trailing-space
+failure) · `test:silence-recovery` (22; **8/22 are stale at 3s** since `38bae93`
+raised the interval to 8s — compare to that baseline, not zero) ·
+`test:continuity` 41 · `test:self-echo` · `test:turn-release` 19 ·
+`test:end-of-speech` 17 · `test:wire-trace` 19 · `test:stt-clock` 14 (**C1 is
+known-flaky** — a 15s deadline racing a 14.4s drain; one failure != regression) ·
+`test:speculative-llm` 23 · `test:tts-streaming` 21 · `test:agent-hangup` 23 ·
+`test:phase8/9/10` 31/20/12.
+
+**A NEW test is required** (not a modification of an existing one): a buffered
+turn with real content, released during a long generated block, is answered
+within one poll interval rather than after the drain — plus the negative case
+that a buffered bare acknowledgement still is not.
+
+Run `npx tsc --noEmit --incremental false` (the incremental cache can pass on a
+file that does not parse), set `CAMPAIGN_DIALING_ENABLED=false` for the run, and
+split the barge-in suite — the full gate exceeds 10 minutes.
+
+### The one measurement to run next
+
+One SQL query, no calls and no code — it isolates the P0 from everything else:
+
+```sql
+WITH d AS (
+  SELECT (t->>'turnIndex')::int AS ti,
+         (t->'total'->>'milliseconds')::numeric
+           - (t->'stt'->>'milliseconds')::numeric
+           - (t->'llm'->>'milliseconds')::numeric
+           - (t->'tts'->>'milliseconds')::numeric AS residual
+  FROM call_metrics m, jsonb_array_elements(m.raw->'turnLatencies') t
+  WHERE m.recorded_at >= '2026-08-28'
+    AND t->'stt'->>'milliseconds'   IS NOT NULL
+    AND t->'llm'->>'milliseconds'   IS NOT NULL
+    AND t->'tts'->>'milliseconds'   IS NOT NULL
+    AND t->'total'->>'milliseconds' IS NOT NULL
+)
+SELECT count(*) AS turns,
+       count(*) FILTER (WHERE residual > 3000) AS turns_waiting_on_our_own_audio,
+       round(100.0 * count(*) FILTER (WHERE residual > 3000) / count(*), 1) AS pct,
+       percentile_disc(0.5) WITHIN GROUP (ORDER BY residual) AS res_p50,
+       percentile_disc(0.9) WITHIN GROUP (ORDER BY residual) AS res_p90
+FROM d;
+```
+
+The residual is the only stage that is both large (49% of slow turns) and not
+attributable to a vendor. If `pct` is ~10% or higher, the answer to "why is our
+voice latency high" is **the agent's own replies are too long**, and no amount of
+LLM, TTS, STT or Render work will move it. Worth running stratified by
+`campaigns.script_hash` to see whether `registration.v4` already shortened the
+blocks relative to v3.
 
 ---
 
@@ -2442,6 +2792,14 @@ done in this pass.
 - **No auto-resume.** A stopped run must be restarted by hand.
 
 **Remaining latency, after the §0 (Fix #3) and §0b fixes**
+
+> **⚠ SUPERSEDED by the LATENCY AUDIT (2026-09-03) at the top of this file.**
+> The "LLM first token ~740ms is the largest remaining item" reading below is
+> **refuted by 699 production turns**: LLM TTFT measures **767ms p50 / 898ms
+> mean**, and it is only **10.7% of slow turns**. The real P0 is the
+> **buffered-turn drain wait** (49% of slow turns, p99 19.4s), amplified by
+> **9.5-18.5s reply blocks**. The chunker reading is refuted too (**89-193ms**,
+> not 250-450ms). The bullets below are kept only as history of the reasoning.
 
 - **LLM first token, ~740ms — now the largest single stage, ~60-70% of what
   remains.** Measured as a genuine vendor floor: `reasoning=0` (GPT-5.1 emits no

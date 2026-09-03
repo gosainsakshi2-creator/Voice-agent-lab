@@ -293,6 +293,27 @@ const MAX_GREETING_CHARS = 200;
 const PLAYBACK_PREROLL_ALLOWANCE_MS = 150;
 
 /**
+ * How often `drainPlayback` looks for a caller turn that is already
+ * waiting, and ONLY when its call site opted in
+ * (`interruptibleByBufferedTurn`).
+ *
+ * A caller who speaks into the THINKING gap has their words END before
+ * the reply's audio begins, so `spokeOverTheAssistant` is false, no
+ * barge-in path is ever consulted, and the completed turn lands in
+ * `AdaptiveTurnDetector.pendingEvent` with no subscriber to receive it
+ * — invisible until the whole reply has drained. On a long pitch block
+ * that is seconds of dead wait before the caller is answered.
+ *
+ * DELIBERATELY ITS OWN CONSTANT. It must not be tied to
+ * `STRANDED_RESUME_POLL_MS` or to any turn-detection window: this
+ * paces one observation of state that already exists and gates
+ * nothing about how a turn is detected, released or endpointed.
+ * Coarse on purpose — the cost of noticing late is at most one
+ * interval, against a wait measured in seconds.
+ */
+const BUFFERED_TURN_DRAIN_POLL_MS = 250;
+
+/**
  * How much of its own reply the assistant must still have left to
  * speak before a bare acknowledgement counts as backchannel rather
  * than as an answer.
@@ -432,6 +453,94 @@ export function isAttentionCheck(text: string): boolean {
   const trimmed = text.trim();
   if (trimmed.length === 0) return false;
   return BARE_GREETING_ONLY.test(trimmed) || ATTENTION_PRESENCE_ONLY.test(trimmed);
+}
+
+/**
+ * One utterance that takes no floor: a bare greeting, a bare
+ * acknowledgement or hesitation sound, or a pure presence check.
+ *
+ * A THIN DISJUNCTION OF THREE EXISTING PREDICATES AND NOTHING ELSE. It
+ * introduces no table, no phrase, no token and no threshold of its own,
+ * so what counts as non-meaningful here is exactly what already counts
+ * as non-meaningful everywhere those three are used.
+ *
+ * Read ONLY by `bufferedTurnTakesTheFloor` below.
+ */
+function utteranceTakesNoFloor(text: string): boolean {
+  return BARE_GREETING_ONLY.test(text) || isBareAcknowledgement(text) || isAttentionCheck(text);
+}
+
+/**
+ * Cost bound on the split scan below, in words.
+ *
+ * Purely a bound on work, not a judgement about content: the scan runs
+ * the three predicates over each candidate half, and those are
+ * whole-utterance regexes with a repeated alternation. A merge of
+ * floor-taking-nothing utterances is short by nature ("Umm Hello? Are
+ * you there?" is five words), so anything longer than this is content
+ * and is treated as such — which is the ACTIVE direction of this fix,
+ * never a new way to suppress an interruption. A long PURE presence
+ * check is unaffected: `utteranceTakesNoFloor` is tested on the whole
+ * text before the bound applies.
+ */
+const MAX_BUFFERED_TURN_SPLIT_WORDS = 16;
+
+/**
+ * Does this BUFFERED TURN TEXT take the floor — i.e. may the new
+ * buffered-turn drain check cut a generated reply short for it?
+ *
+ * READ AT EXACTLY ONE CALL SITE: the poll inside `drainPlayback`. It
+ * decides nothing anywhere else in the application, and the behaviour
+ * of every phrase it inspects is unchanged in the STT loop, in
+ * `isBackchannel`, in `handleAttentionCheck`, in `newerUserTurnWaiting`
+ * and in `triggerExternalBargeIn`.
+ *
+ * Exported for the same reason `isAttentionCheck` and `unspokenTail`
+ * are, and for no other: the boundary between "Umm Hello? Are you
+ * there?" and "Umm, I have a question about the workshop." is the
+ * entire safety case for this decision, and it is only safe if a test
+ * can assert both sides of it directly.
+ *
+ * WHY A SPLIT IS NEEDED AT ALL. The three predicates above each ask
+ * "is the WHOLE utterance nothing but X?", and a buffered turn is not
+ * always one utterance: `emitTurnEnd` MERGES turns that endpoint while
+ * nothing is subscribed, joining them with a space, which is precisely
+ * the situation this drain check exists for. So the caller's
+ * timing-less "Umm" and their "Hello? Are you there?" arrive as the
+ * single string "Umm Hello? Are you there?" — two halves that each
+ * take no floor, concatenated into something no whole-utterance
+ * predicate recognises. Reading that as a real contribution cut the
+ * block, which `test:stt-clock` asserts must not happen.
+ *
+ * THE RULE: the text takes no floor if it takes none as a whole, OR if
+ * it can be split at ONE word boundary into two parts that each take
+ * none. That is the exact shape a merge produces, it adds no
+ * vocabulary, and it is strictly more conservative than the
+ * whole-utterance test it wraps — it can only ever DECLINE to
+ * interrupt, never cause one.
+ *
+ * It does not over-decline, which is the half that matters for the
+ * latency fix: "Hello? What is this about?", "Umm, I have a question
+ * about the workshop.", "Yes, I have a question." and "I wanted to ask
+ * about the registration." all still take the floor, because no split
+ * of any of them leaves two floor-taking-nothing halves.
+ */
+export function bufferedTurnTakesTheFloor(text: string): boolean {
+  const trimmed = text.trim();
+  if (trimmed.length === 0) return false;
+  if (utteranceTakesNoFloor(trimmed)) return false;
+
+  const words = trimmed.split(/\s+/u);
+  if (words.length > MAX_BUFFERED_TURN_SPLIT_WORDS) return true;
+  for (let k = 1; k < words.length; k += 1) {
+    if (
+      utteranceTakesNoFloor(words.slice(0, k).join(" ")) &&
+      utteranceTakesNoFloor(words.slice(k).join(" "))
+    ) {
+      return false;
+    }
+  }
+  return true;
 }
 
 /**
@@ -1297,6 +1406,13 @@ export class ConversationPipeline {
    * `resumeAfterStrandedBargeIn` did not speak, and cleared by the
    * first turn that is not an attention check — so it can never be
    * spoken into a conversation that has moved on.
+   *
+   * A NON-EMPTY VALUE ALSO MEANS "NOT A SILENCE". It exists only when
+   * the assistant was cut off mid-sentence by something that produced
+   * no turn to answer, so the caller is waiting on the rest of that
+   * sentence rather than being absent — which is why
+   * `recoverFromSilence` speaks the tail at the first expiry instead of
+   * asking whether they are still there. See the note there.
    */
   private heldScriptRemainder = "";
   /**
@@ -3375,6 +3491,81 @@ export class ConversationPipeline {
     // — not a silence to recover from. Wait again, decide nothing.
     if (this.record.state !== SessionState.LISTENING) return true;
 
+    // ── A HELD SCRIPT POSITION IS NOT A SILENCE TO RECOVER FROM ─────
+    //
+    // `heldScriptRemainder` is non-empty for exactly one reason: a
+    // barge-in cut a reply off mid-sentence, the caller then produced
+    // nothing that needed answering, and `resumeAfterStrandedBargeIn`
+    // declined to speak the tail (the line was not quiet yet, or a
+    // turn was in flight that turned out not to be one). The assistant
+    // therefore owes this caller the rest of a sentence it stopped in
+    // the middle of, and they are sitting there waiting for it.
+    //
+    // Speaking "Hello, are you there?" at that moment is the reported
+    // defect. The caller said "Hmm" / "Hello?" over the block, the
+    // block stopped mid-sentence, and the next thing they heard was
+    // the agent asking whether they were still on the line — their own
+    // non-substantive utterance read back to them as absence. This is
+    // the distinction between "the caller said nothing" and "the
+    // caller said nothing that takes the floor": only the first is a
+    // silence, and only the first has no unfinished sentence owed.
+    //
+    // WHAT THEY ARE OWED IS THE TAIL, which is what every other reader
+    // of this field already does with it — `handleAttentionCheck`'s
+    // RESUME branch and `resumeAfterStrandedBargeIn`. Spoken through
+    // the SAME `speakAttentionUtterance` path with the SAME
+    // bookkeeping as that RESUME branch: no language-model request, no
+    // script lookup, no new vocabulary and no new predicate, and the
+    // text is one already generated for this caller that never
+    // reached them.
+    //
+    // TIMING IS UNCHANGED. It runs at the same expiry that would
+    // otherwise have spoken prompt 1, arms no timer of its own, and
+    // does NOT consume a recovery step — a caller who then really is
+    // silent gets prompt 1, prompt 2 and the hangup on exactly the
+    // schedule they get today.
+    //
+    // BOUNDED WITHOUT A COUNTER, by the identical argument the
+    // attention RESUME branch makes: the position is cleared before
+    // the tail is spoken and re-held only as `unheard`, a strict
+    // suffix of what was just spoken. An uninterrupted resume leaves
+    // nothing held; an interrupted one proves the caller is there and
+    // leaves strictly less. So this cannot repeat indefinitely and the
+    // hangup below stays reachable.
+    const held = this.heldScriptRemainder;
+    if (held.length > 0) {
+      // eslint-disable-next-line no-console
+      console.log(
+        `[PIPELINE:${sid}] caller quiet for ${SILENCE_RECOVERY_INTERVAL_MS}ms with a script position HELD — resuming where the reply stopped instead of asking if they are there: "${held.slice(0, 80)}${held.length > 80 ? "..." : ""}"`,
+      );
+      // Cannot be open — `startSpeculation` declines outright while a
+      // position is held — but closed here for the same belt-to-brace
+      // reason the prompt path below closes it.
+      this.abandonSpeculation("resuming a held script position without the language model");
+      this.heldScriptRemainder = "";
+      const spoken = await this.speakAttentionUtterance(
+        held,
+        loopSignal,
+        "resuming a held script position rather than recovering from silence",
+        "RESUME",
+      );
+      // Cut off again: whatever is STILL unheard is still the position.
+      this.heldScriptRemainder = spoken.unheard;
+      // Script content the caller heard: a block has been delivered.
+      if (spoken.heard.length > 0) this.contextualReplyCommitted = true;
+      if (loopSignal.aborted) return false;
+      // Back to LISTENING before the window is re-armed, exactly as the
+      // recovery-prompt path below does after its own fixed utterance.
+      if (this.record.state !== SessionState.LISTENING) {
+        this.host.transition(
+          this.record,
+          SessionState.LISTENING,
+          "awaiting user speech after resuming a held script position",
+        );
+      }
+      return true;
+    }
+
     if (this.silenceRecoveryPrompts >= SILENCE_RECOVERY_MAX_PROMPTS) {
       // eslint-disable-next-line no-console
       console.warn(
@@ -3824,7 +4015,10 @@ const { ttsMs, ttsCostUsd, firstChunkMs } =
 // Streaming TTS only enqueues; hold SPEAKING until playback drains.
 // (The batch-TTS branch already sleeps for its own playback and will
 // simply find nothing left to wait for here.)
-await this.drainPlayback(speakingSignal);
+// Interruptible by an already-waiting caller turn, for parity with the
+// streaming branch below — this is a GENERATED reply, so the same
+// "answer the turn that is already waiting" rule applies.
+await this.drainPlayback(speakingSignal, true);
 
       // A non-streaming provider emits nothing until generation is
       // complete, so time-to-first-token and full generation time are
@@ -4083,7 +4277,12 @@ await this.drainPlayback(speakingSignal);
     // Hold SPEAKING open for the audio still queued on the transport.
     // Aborts instantly on barge-in; the TTS metrics were accumulated
     // from generation time only, so they are unaffected.
-    if (speakingSignal) await this.drainPlayback(speakingSignal);
+    //
+    // Interruptible by an already-waiting caller turn: this is THE long
+    // drain — a generated pitch block is seconds of audio, and a turn
+    // the caller completed into the THINKING gap would otherwise be
+    // invisible until every one of them had played out.
+    if (speakingSignal) await this.drainPlayback(speakingSignal, true);
 
     const assistantText = toSpokenText(finalText ?? fullText);
 
@@ -4177,8 +4376,49 @@ await this.drainPlayback(speakingSignal);
    * Holds SPEAKING open until the audio already handed to the
    * transport has actually played out. Resolves immediately when
    * `signal` aborts, so barge-in cuts the wait with no added latency.
+   *
+   * @param interruptibleByBufferedTurn Opt-in, and OFF by default. With
+   *   it `false` this method is byte-for-byte what it has always been:
+   *   one `abortableSleep` for the whole remaining span. With it `true`
+   *   the same span is slept in `BUFFERED_TURN_DRAIN_POLL_MS` steps and
+   *   a caller turn that is ALREADY COMPLETE and waiting cuts the
+   *   reply short instead of being answered after it.
+   *
+   *   Passed `true` from exactly the two generated-reply drains. The
+   *   fixed-utterance drains (`speakFixedUtterance` — the opening line,
+   *   the attention acknowledgement, the hearing follow-up, the
+   *   silence-recovery prompts, a resumed remainder) and the
+   *   contamination fallback deliberately do NOT pass it and keep
+   *   today's behaviour exactly.
+   *
+   *   Three properties make the polling safe, and all three are
+   *   load-bearing:
+   *
+   *     - It POLLS a read-only getter and never subscribes.
+   *       `emitTurnEnd` buffers only while `listeners.size === 0`, so
+   *       an extra `onTurnEnd` subscriber would consume the event and
+   *       the main loop would never see it (see the note at
+   *       `newerUserTurnWaiting`). Pending-event ownership is
+   *       unchanged.
+   *     - It runs only AFTER the early returns below, so it cannot
+   *       fire before playback has begun. `heardSoFarText()` is empty
+   *       until then, and a barge-in with nothing heard commits
+   *       NOTHING — which erases the reply from history and makes the
+   *       next request generate the block again from the top.
+   *     - It reuses `triggerExternalBargeIn()` unchanged, and treats
+   *       `false` as "keep draining". Declining is a real answer: it
+   *       is how the opening line and a backchannel in flight stay
+   *       uninterruptible.
+   *
+   *   It changes nothing about turn detection: the caller's own
+   *   endpointing, windows, graces and thresholds decide when a turn
+   *   exists, and this only reads one that already does. A caller
+   *   mid-sentence has no buffered turn and so can never be cut by it.
    */
-  private async drainPlayback(signal: AbortSignal): Promise<void> {
+  private async drainPlayback(
+    signal: AbortSignal,
+    interruptibleByBufferedTurn = false,
+  ): Promise<void> {
     // FIX 1 — every call site reaches here only after the last utterance
     // of the reply has been handed to the transport, so this is the one
     // instant "all of the reply is queued" becomes true. Set before the
@@ -4199,7 +4439,57 @@ await this.drainPlayback(speakingSignal);
     console.log(
       `[PLAYBACK:${this.record.id}] draining ${Math.round(remainingMs)}ms of queued audio before leaving SPEAKING (queued=${Math.round(this.outboundQueuedMs)}ms elapsed=${elapsedMs}ms)`,
     );
-    await abortableSleep(remainingMs, signal);
+    if (!interruptibleByBufferedTurn) {
+      await abortableSleep(remainingMs, signal);
+      return;
+    }
+
+    // The same span, slept in steps. The deadline is fixed here from
+    // the same `remainingMs` the single sleep would have used, so an
+    // uninterrupted drain waits exactly as long as it does today and
+    // leaves SPEAKING at the same instant.
+    const drainDeadlineMs = Date.now() + remainingMs;
+    // One line per drain, not one per poll: a barge-in that is DECLINED
+    // is retried on the next tick (declining can stop being true), and
+    // logging each attempt would print four lines a second through a
+    // whole block. The existing "barge-in DECLINED" line says why.
+    let announced = false;
+    for (;;) {
+      const leftMs = drainDeadlineMs - Date.now();
+      if (leftMs <= 0 || signal.aborted) return;
+      await abortableSleep(Math.min(BUFFERED_TURN_DRAIN_POLL_MS, leftMs), signal);
+      if (signal.aborted) return;
+      // The audio has finished. Nothing is gained by cancelling a reply
+      // that has already been spoken in full, and doing so would commit
+      // it as a heard PREFIX instead of a completed turn, so the drain
+      // ends here exactly as the single sleep would have.
+      if (Date.now() >= drainDeadlineMs) return;
+
+      const buffered = this.record.turnDetector.bufferedTurnText().trim();
+      if (buffered.length === 0) continue;
+      // A buffered "hello", "okay", "umm" or "are you there?" is the
+      // caller filling the silence or showing they are listening, not
+      // taking the floor — and so is any MERGE of those, which is what
+      // a buffered turn can be. Cutting the block for one is the "it
+      // restarts after I said okay" defect. See
+      // `bufferedTurnTakesTheFloor`: it composes the three existing
+      // predicates and adds no vocabulary, and it is read here and
+      // nowhere else. `newerUserTurnWaiting()` is deliberately not
+      // reused — its buffered branch is unfiltered.
+      if (!bufferedTurnTakesTheFloor(buffered)) continue;
+
+      if (!announced) {
+        announced = true;
+        // eslint-disable-next-line no-console
+        console.log(
+          `[PLAYBACK:${this.record.id}] a caller turn is already waiting — asking to cut the reply short to answer it: "${buffered.slice(0, 80)}${buffered.length > 80 ? "..." : ""}"`,
+        );
+      }
+      // Accepted: the signal is now aborted, the part the caller heard
+      // is frozen for the commit site, and the buffered turn is picked
+      // up on the next loop iteration. Declined: keep draining.
+      if (this.triggerExternalBargeIn()) return;
+    }
   }
 
   private async synthesizeAndPlay(

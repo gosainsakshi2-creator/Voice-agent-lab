@@ -906,6 +906,37 @@ export class AdaptiveTurnDetector {
     return this.pendingEvent !== null;
   }
 
+  /**
+   * READ-ONLY. The TEXT of the completed turn being held for the next
+   * subscriber, or `""` when nothing is held.
+   *
+   * The companion to `hasBufferedTurn()` above, and it exists for one
+   * reason: a boolean cannot be filtered. `drainPlayback` may cut a
+   * generated reply short so a waiting turn is answered sooner, but it
+   * must NOT do that for a buffered "okay" or "hello" — cancelling a
+   * reply for one restarts the block the acknowledgement was agreeing
+   * with. Judging that needs the words, so they are exposed here and
+   * the existing `BARE_GREETING_ONLY` / `isBareAcknowledgement` /
+   * `isAttentionCheck` predicates decide.
+   *
+   * Pure observation, exactly like `hasBufferedTurn()`: it does not
+   * consume `pendingEvent`, does not clear it, arms no timer, touches
+   * no window or threshold, and changes nothing about `feed`,
+   * `emitTurnEnd`, `onTurnEnd` or endpointing. The buffered turn is
+   * still delivered, whole, to whoever subscribes next — including the
+   * merge `emitTurnEnd` performs when a second turn endpoints before
+   * anyone has subscribed, so the text returned here is the same text
+   * that subscriber will receive.
+   *
+   * It must never be used as a substitute for subscribing:
+   * `emitTurnEnd` buffers only while `listeners.size === 0`, so an
+   * extra subscriber would consume the event and the main loop would
+   * never see it.
+   */
+  bufferedTurnText(): string {
+    return this.pendingEvent?.text ?? "";
+  }
+
   private rearmTimer(delayMs: number = this.silenceTimeoutMs): void {
     this.clearTimer();
     // Whatever window is being armed, it is not the chunk-boundary grace

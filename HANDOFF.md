@@ -40,7 +40,7 @@ Built on top of Fix 1 (`e53e86d`, natural backchanneling), which is untouched.
 - `src/campaign/tests/conversation-continuity-tests.ts` — TEST 5 "hi"/"hello" re-pointed.
 
 **Production logic (all in conversation-pipeline.ts):**
-- `SILENCE_RECOVERY_INTERVAL_MS = 3000`, `SILENCE_RECOVERY_MAX_PROMPTS = 2`.
+- `SILENCE_RECOVERY_INTERVAL_MS = 8000`, `SILENCE_RECOVERY_MAX_PROMPTS = 2`.
 - `waitForTurnDetectorEnd(loopSignal, silenceTimeoutMs?)` arms a timer on
   subscription (i.e. only after `drainPlayback` completed and the loop is
   idle in LISTENING). It fires only if `max(subscribedAt,

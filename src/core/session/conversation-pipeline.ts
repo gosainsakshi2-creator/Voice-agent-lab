@@ -1093,6 +1093,34 @@ export class ConversationPipeline {
   /** Value of `inboundStreamMs` when the current SPEAKING phase began. */
   private speakingStartedAtStreamMs = 0;
   /**
+   * Stream position at which the most recently RELEASED user turn was
+   * handed to the main loop — stamped at the top of the `onTurnEnd`
+   * listener, on the same call-long timeline as
+   * `speakingStartedAtStreamMs`.
+   *
+   * Read by ONE place: the utterance-start guard in
+   * `interruptionCorroborated`. That guard exists for the caller's OWN
+   * sentence-tail — words belonging to the turn a reply is answering,
+   * released early by the detector, whose Deepgram utterance keeps
+   * extending across the reply boundary. Such a tail BEGAN before the
+   * turn was released, so this stamp is the correct reference point for
+   * it. Speech that began AFTER this stamp but BEFORE the reply entered
+   * SPEAKING is something else entirely: the caller starting a NEW
+   * utterance into the THINKING dead air, which the reply then talked
+   * over. Measured on a live call (2026-09-03): both were rejected
+   * alike, so a caller repeating themselves into the gap was muted for
+   * their whole utterance — every segment, finals included, dropped and
+   * never fed to the turn detector.
+   *
+   * `0` until the first turn releases, which is safe: the only reply
+   * before that is the fixed opening line, and `greetingDone` already
+   * blocks every barge-in path while it plays. A turn released while
+   * nobody is subscribed (buffered in `pendingEvent`) is stamped at
+   * DELIVERY, which can only be later than the real release — erring
+   * toward rejecting, i.e. toward exactly today's behaviour.
+   */
+  private lastTurnReleasedAtStreamMs = 0;
+  /**
    * Furthest point the STT stream has reached ON THE CALL-LONG
    * TIMELINE — i.e. after the offset below has been applied. A segment
    * that lands far behind this is the stream having restarted; see
@@ -1837,13 +1865,13 @@ export class ConversationPipeline {
     const deadline = Date.now() + STRANDED_RESUME_MAX_WAIT_MS;
     while (Date.now() < deadline) {
       if (loopSignal.aborted) return false;
-      if (this.callerHasTurnMaterial()) return false;
+      if (this.callerHasTurnMaterial() || this.callerUtteranceInFlight()) return false;
       if (Date.now() - this.record.lastConversationActivityAt >= STRANDED_RESUME_QUIET_MS) break;
       await abortableSleep(STRANDED_RESUME_POLL_MS, loopSignal);
     }
 
     if (loopSignal.aborted) return false;
-    if (this.callerHasTurnMaterial()) return false;
+    if (this.callerHasTurnMaterial() || this.callerUtteranceInFlight()) return false;
     // Anything other than LISTENING means the loop has already moved on
     // (a turn is being answered, or the session is ending).
     if (this.record.state !== SessionState.LISTENING) return false;
@@ -2082,6 +2110,36 @@ export class ConversationPipeline {
       this.record.turnDetector.hasBufferedTurn() ||
       this.record.turnDetector.getPendingTurnText().trim().length > 0
     );
+  }
+
+  /**
+   * READ-ONLY. Is the caller mid-utterance RIGHT NOW — Deepgram has
+   * shown interim words it has not finalised yet?
+   *
+   * `callerHasTurnMaterial` above deliberately counts FINALS only, and
+   * for the supersession sites that is correct (an interim that never
+   * finalises must not discard a reply — see `newerUserTurnWaiting`).
+   * But the stranded-barge-in RESUME asks a different question — "is
+   * the line actually quiet?" — and on a live call (2026-09-03) it
+   * answered wrongly: the caller was mid-sentence ("Wait, can you
+   * please speak to…", interim on screen), Deepgram went >700ms between
+   * interims, `lastConversationActivityAt` aged past
+   * `STRANDED_RESUME_QUIET_MS`, and the resume spoke the remainder over
+   * them. `liveUserTranscript` is the pipeline's own existing record of
+   * exactly that open utterance — set on every non-empty segment,
+   * cleared on commit and by every filter branch — so reading it here
+   * adds no new state.
+   *
+   * Read ONLY by `resumeAfterStrandedBargeIn`, and its failing
+   * direction is benign by construction: declining a resume holds the
+   * remainder (`heldScriptRemainder`), the existing attention-resume
+   * path. The silence-recovery window and every other reader of
+   * `callerHasTurnMaterial` are deliberately untouched — a stale
+   * preview from an interim that never finalises must not be able to
+   * hold the 8s silence recovery open.
+   */
+  private callerUtteranceInFlight(): boolean {
+    return this.record.liveUserTranscript.trim().length > 0;
   }
 
   /** Installs `timer` as the trace for the turn now starting. */
@@ -2709,7 +2767,36 @@ export class ConversationPipeline {
     // position, so it keeps exactly today's behaviour.
     if (segment.startedAtMs > 0) {
       const startedOnCallTimelineMs = this.sttClockOffsetMs + segment.startedAtMs;
-      if (startedOnCallTimelineMs <= this.speakingStartedAtStreamMs) return false;
+      if (startedOnCallTimelineMs <= this.speakingStartedAtStreamMs) {
+        // ── Which "began before we did" is this? ────────────────────
+        //
+        // The rejection above was written for the sentence-TAIL case:
+        // words that belong to the very turn this reply is answering,
+        // released early by the detector, whose utterance keeps
+        // extending across the reply boundary. That utterance began
+        // BEFORE the turn was released, so it fails the test below and
+        // keeps exactly today's behaviour — the first-sentence-cutoff
+        // defect this guard was built against stays fixed.
+        //
+        // An utterance that began AFTER the release but BEFORE the
+        // reply entered SPEAKING is the OTHER case the original
+        // comment already named: "they did not interrupt us, we
+        // started over them." The caller spoke into the THINKING dead
+        // air (measured 1.4–3.6s of LLM latency on live calls) and the
+        // reply landed on top of them. They had the floor first, so
+        // their words corroborate: the energy and confidence gates
+        // above have already passed by this point, which is what keeps
+        // a television or a background voice out of this band exactly
+        // as before. Live call 2026-09-03: "I just said can you please
+        // speak to me in हिंदी?" (confidence 0.99, loud energy 2ms
+        // fresh) was rejected here twice and erased whole — every
+        // segment dropped and never fed to the turn detector.
+        if (startedOnCallTimelineMs <= this.lastTurnReleasedAtStreamMs) return false;
+        // eslint-disable-next-line no-console
+        console.log(
+          `[TURN:${this.record.id}] caller began speaking BEFORE the reply did (started during the thinking gap) — treating as interruption: "${segment.text.trim().slice(0, 80)}"`,
+        );
+      }
     }
     return true;
   }
@@ -3416,6 +3503,11 @@ export class ConversationPipeline {
         // `AdaptiveTurnDetector.emitTurnEnd` invokes synchronously, so
         // this IS the turn-release instant, not an approximation of it.
         const turnReleasedAtMs = Date.now();
+        // Where the release falls on the STT stream clock — the
+        // reference point that separates "the tail of THIS turn, still
+        // extending" from "a new utterance begun after it". Read only
+        // by `interruptionCorroborated`; see the field for why.
+        this.lastTurnReleasedAtStreamMs = this.inboundStreamMs;
         // eslint-disable-next-line no-console
         console.log(
           `[TIMING:${this.record.id}] TURN END turn-release=${turnReleasedAtMs} text="${event.text}" sttMs=${event.turnDurationMs}`,

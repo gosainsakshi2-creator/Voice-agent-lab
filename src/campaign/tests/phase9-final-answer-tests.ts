@@ -40,7 +40,7 @@ import { config as loadEnvFile, parse as parseEnv } from "dotenv";
 loadEnvFile({ path: ".env.local", quiet: true });
 loadEnvFile({ quiet: true });
 
-const { definitiveAnswerIn, runCall } = await import("../dispatch/call-runner");
+const { definitiveAnswerIn, agentClosedIn, runCall } = await import("../dispatch/call-runner");
 const { SessionObserver } = await import("../dispatch/session-observer");
 const { classifyOutcome } = await import("../outcome/classifier");
 const { dispositionFor } = await import("../outcome/disposition");
@@ -355,6 +355,30 @@ await test("B12. a suspected voicemail is never a final answer", () => {
     undefined,
     "a machine must not be able to end a call as a decision",
   );
+});
+
+await test("B13. a yes is not acted on while the agent's latest turn is itself a question", () => {
+  // The agent read the person's "okay" as unclear and asked the gate
+  // again. The classifier still binds that okay to the first asking, so
+  // without the guard the call would be hung up while the re-asked
+  // question is on the line and the person is about to answer it.
+  assert.equal(
+    finalAnswer([agent(GREETING), agent(GATE), caller("Okay."), agent(GATE)]),
+    undefined,
+    "never hang up while the agent is asking",
+  );
+  // Any question, not only the gate: the agent must be done talking.
+  assert.equal(
+    finalAnswer([agent(GATE), caller("Yes, reserve it."), agent("Shall I send the link on WhatsApp?")]),
+    undefined,
+  );
+  // Once the agent has answered instead of asked, the same yes ends the call.
+  assert.equal(
+    finalAnswer([agent(GREETING), agent(GATE), caller("Okay."), agent(CONFIRMED)]),
+    "FINAL_YES",
+  );
+  // The closing-line check already had this guard; the two must agree.
+  assert.equal(agentClosedIn([agent(GATE), caller("Yes."), agent("Thanks for your time. Have a good day?")]), false);
 });
 
 // ═════════════════════════════════════════════════════════════════

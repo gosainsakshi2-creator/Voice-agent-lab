@@ -66,6 +66,7 @@ import {
 } from "./conversation-events";
 import { checkScriptAdherence, type ScriptAdherenceReport } from "./script-adherence";
 import { VOICEMAIL_MARKERS } from "../../core/session/voicemail-detection";
+import { isBareAcknowledgement } from "../../core/session/turn-detection";
 import type { TranscriptTurn } from "./transcript";
 
 // ── Phrase tables ─────────────────────────────────────────────────
@@ -547,8 +548,8 @@ function questionSuffix(conversation: ConversationEvents): string {
 /**
  * Whether a customer turn is answering a question that commits them.
  *
- * Looks back to the nearest assistant turn, and one further if the
- * nearest is a short filler such as "sure" or "right" — a person who
+ * Looks back to the nearest assistant turn, and one further ONLY if the
+ * nearest is a bare filler such as "sure" or "right" — a person who
  * answers a beat late is still answering the question that was asked.
  *
  * The look-back STOPS at any other question the agent asked. That is
@@ -562,6 +563,23 @@ function questionSuffix(conversation: ConversationEvents): string {
  * past it to the seat question turns a courtesy into a registration and
  * closes the contact for good, so a non-anchor question ends the search
  * rather than being skipped as filler.
+ *
+ * It also STOPS at any assistant statement that says something, however
+ * short. "Filler" used to mean "under 40 characters", and that let this
+ * through:
+ *
+ *   Agent:    "...should I reserve your free seat?"
+ *   Customer: "Is it free?"
+ *   Agent:    "Yes, it's completely free."
+ *   Customer: "Okay."
+ *
+ * The okay acknowledges the answer they just got; it is not a
+ * registration, and a 27-character reply is not a filler. Length is
+ * not the test — whether the turn is nothing but acknowledgement is,
+ * and `isBareAcknowledgement` is the predicate the pipeline already
+ * uses for exactly that judgement on the caller's side. The same table
+ * decides both, so an assistant "Sure." is still skipped and an
+ * assistant sentence never is.
  */
 function answersACommitQuestion(
   transcript: readonly TranscriptTurn[],
@@ -578,9 +596,10 @@ function answersACommitQuestion(
     // The agent asked something else. The person is answering THAT.
     if (isQuestionTurn(turn.text)) return false;
     checked += 1;
-    // A substantial assistant turn that contained no anchor ends the
+    // An assistant turn with content of its own, and no anchor, ends the
     // look-back: the person is answering that, not something earlier.
-    if (text.trim().length > 40) break;
+    // Only a bare acknowledgement is stepped over.
+    if (!isBareAcknowledgement(turn.text)) break;
   }
   return false;
 }

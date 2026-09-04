@@ -436,6 +436,60 @@ await test("A1o. FIX 1: 'Okay.' answering a NON-gate question ('…at 11 AM, oka
   assert.equal(atGate.disposition, "FINAL_YES");
 });
 
+await test("A1p. a SHORT assistant statement is not a filler: an 'Okay.' after it is not bound to the earlier gate", () => {
+  // The look-back used to step over any assistant turn under 40
+  // characters as if it were "sure" / "right". A 22-character answer to
+  // the person's own question is not a filler, and the okay that
+  // follows it acknowledges that answer — it is not a registration.
+  const sideAnswer = settle([
+    agent(GREETING),
+    agent(GATE),
+    caller("Is it free?"),
+    agent("Yes, it's completely free."),
+    caller("Okay."),
+  ]);
+  assert.notEqual(sideAnswer.classification.primaryReason, "confirmed_at_gate");
+  assert.notEqual(sideAnswer.disposition, "FINAL_YES");
+  assert.equal(isFinalYes(sideAnswer.classification, sideAnswer.disposition), false);
+  const okay = sideAnswer.classification.detail.signals.find(
+    (signal) => signal.kind === "affirmation" && signal.phrase === "okay",
+  );
+  assert.ok(okay, "the okay is still recorded as evidence");
+  assert.equal(okay.atGate, false, "…but it is not at the gate");
+
+  // The literal reported sequence: a real yes AT the gate, then a short
+  // statement, then an okay. The registration stands on the yes alone;
+  // the okay is not a second gate answer.
+  const yesThenOkay = settle([
+    agent(GREETING),
+    agent(GATE),
+    caller("Yes."),
+    agent("It's completely free."),
+    caller("Okay."),
+  ]);
+  assert.equal(yesThenOkay.disposition, "FINAL_YES", "the yes to the gate is still the answer");
+  const gateAnswers = yesThenOkay.classification.detail.signals.filter(
+    (signal) => signal.kind === "affirmation" && signal.atGate,
+  );
+  assert.deepEqual(
+    gateAnswers.map((signal) => signal.turnIndex),
+    [2],
+    "only the yes that answered the gate is at the gate; the okay after the statement is not",
+  );
+
+  // …and a GENUINE bare filler between the gate and the answer is still
+  // stepped over, exactly as before — a beat-late yes is still a yes.
+  const beatLate = settle([
+    agent(GREETING),
+    agent(GATE),
+    caller("Hmm."),
+    agent("Sure."),
+    caller("Yes, reserve it."),
+  ]);
+  assert.equal(beatLate.classification.primaryReason, "confirmed_at_gate");
+  assert.equal(beatLate.disposition, "FINAL_YES");
+});
+
 await test("A2. an explicit no is FINAL_NO and is not written", () => {
   const { classification, disposition } = settle([
     agent(GREETING),

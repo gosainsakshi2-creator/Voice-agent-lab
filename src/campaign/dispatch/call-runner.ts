@@ -675,7 +675,8 @@ export function definitiveAnswerIn(
   turns: readonly ConversationTurn[],
   campaignType: string,
 ): "FINAL_YES" | "FINAL_NO" | undefined {
-  if (turns.length === 0 || turns[turns.length - 1]?.role !== "assistant") return undefined;
+  const last = turns[turns.length - 1];
+  if (!last || last.role !== "assistant") return undefined;
 
   const stored = toStoredTranscript(turns);
   const classification = classifyOutcome({
@@ -692,7 +693,14 @@ export function definitiveAnswerIn(
     failureClass: "COMPLETED",
   });
 
-  if (isFinalYes(classification, disposition)) return "FINAL_YES";
+  // A yes is acted on only once the agent has ANSWERED it. If the
+  // agent's latest turn is itself a question — it read the person's
+  // "okay" as unclear and asked the gate again — the person is about to
+  // answer that, and hanging up now would cut them off mid-question.
+  // Same guard, same reading of the raw text, as `agentClosedIn`.
+  if (isFinalYes(classification, disposition)) {
+    return asksAQuestion(last.content) ? undefined : "FINAL_YES";
+  }
   if (disposition !== "FINAL_NO") return undefined;
   if (classification.primaryReason === "opt_out") return "FINAL_NO";
   if (
@@ -893,14 +901,22 @@ function endsWithClosing(normalised: string): boolean {
  *
  * Never throws, for the same reason `definitiveAnswerIn` does not.
  */
+/**
+ * Does an assistant turn ask something? Tested on the RAW text:
+ * `normaliseText` strips punctuation, so the question mark is gone by
+ * the time any phrase match runs. Shared by the two live hangup checks
+ * so they can never disagree about what a question is.
+ */
+function asksAQuestion(assistantText: string): boolean {
+  return assistantText.includes("?");
+}
+
 export function agentClosedIn(turns: readonly ConversationTurn[]): boolean {
   const last = turns[turns.length - 1];
   if (!last || last.role !== "assistant") return false;
   if (!turns.some((turn) => turn.role === "user" && turn.content.trim().length > 0)) return false;
 
-  // Tested on the RAW text: `normaliseText` strips punctuation, so the
-  // question mark is gone by the time the phrase match runs.
-  if (last.content.includes("?")) return false;
+  if (asksAQuestion(last.content)) return false;
 
   const normalised = normaliseText(last.content);
   const wordCount = normalised.trim().length === 0 ? 0 : normalised.trim().split(/\s+/).length;

@@ -4,18 +4,124 @@
 > It is deliberately short. Stable project truth lives in [MEMORY.md](MEMORY.md);
 > this file only holds *what is happening right now*.
 
-**Updated:** 2026-09-03
-**Branch:** `voice-agent-improvements` — **working tree CLEAN.** Nothing is
-mid-edit. The FIX #8 work this file previously listed as uncommitted has since
-been committed.
-**Last commit:** `8758d05` — Fix (barge-in thinking-gap: `lastTurnReleasedAtStreamMs`)
+**Updated:** 2026-09-04
+**Branch:** `voice-agent-improvements` — **four campaign-layer files UNCOMMITTED**
+(see the 2026-09-04 section below). Everything else is committed.
+**Last commit:** `a7d20cd` — Hearing check behavior fix hello fix
 **Dialing:** `CAMPAIGN_DIALING_ENABLED=true` — **real calls are live**
-**Latest pass:** **LATENCY AUDIT (2026-09-03) — read-only, three passes, no code
-changed.** 699 production turns measured; it **refutes three latency claims this
-file previously carried** (LLM ~740ms as the top item, a cold-prefill first-response
-penalty, and the chunker as a major cost) and identifies the real P0. See the
-LATENCY AUDIT section immediately below — read it before opening any latency
-thread. The FIX sections after it are earlier passes, kept as history.
+**Latest pass:** **2026-09-04 — buffered-turn / hearing handling (committed) and
+answer-to-question binding hardening (uncommitted).** The LATENCY AUDIT section
+after it is still the reference for any latency thread; the two "latency fix"
+commits made this morning were reverted (`ffcf969`, `a24c50a`) and nothing from
+them was reintroduced.
+
+---
+
+## 2026-09-04 — BUFFERED TURNS DURING PLAYBACK, HEARING FLOW, ANSWER-TO-QUESTION BINDING
+
+**Status: pipeline work COMMITTED (`4b6876b`, `0b32593`, `a7d20cd`). Classifier /
+call-runner hardening IMPLEMENTED, TESTED, GREEN, UNCOMMITTED. Nothing dialed,
+nothing deployed.** Approved scope was campaign outcome correctness only: no
+change to STT, endpointing, turn detection, TTS, LLM, barge-in, hearing-check,
+silence recovery, self-echo, playback, telephony or latency.
+
+### A. Buffered hearing / attention handling during generated playback (committed)
+
+A caller who speaks into the THINKING gap ends before the reply's audio starts,
+so it is never a barge-in; the finished turn sat in the detector's buffer until
+the whole block drained (~16s on a pitch block). `drainPlayback` now polls the
+read-only `bufferedTurnText()` every 250ms while a GENERATED reply plays and
+cuts the reply through the EXISTING `triggerExternalBargeIn()` when the waiting
+turn either takes the floor (meaningful speech) or **demands attention**
+(`bufferedTurnDemandsAttention`: a repeated greeting "Hello? Hello?", or a
+hearing check after a block was already delivered). A buffered bare "okay",
+"hello" or single presence check does NOT cut the block — cancelling a reply for
+one of those restarted the block it was agreeing with. The cut prefix is
+committed BEFORE the buffered caller turn, and the attention cut enters the
+existing hearing flow ("Hey, can you hear me okay?" → resume / repeat), with no
+language-model request.
+
+### B. Repeated "Hello" / thinking-gap buffered-turn handling (committed)
+
+"Hello." answered by a long block, then a buffered "Hello?" — the block is cut
+and the hearing question asked at once (buffered-turn D1/D2). A single buffered
+"Hello?" after a substantive turn still lets the block finish (D3). "Yes,
+continue from where you stopped." resumes the HELD remainder and "Start from the
+beginning." replays the full block, neither one generating anything (D5/D6).
+`isRepeatedGreeting` is asserted on both sides (D4): presence questions and
+hesitation merges ("Umm hello? are you there?") are NOT it. The `4b6876b`
+one-liner is the silence-recovery interval fix that the earlier hearing work
+depended on.
+
+### C. Answer-to-question binding hardening (UNCOMMITTED — four files)
+
+Investigation first (read-only), then two narrow approved fixes. The invariant —
+*an affirmative / negative response is the answer to the most recent relevant
+agent question, and an earlier "yes / okay / haan ji" is never reused as the
+answer to a later question* — was already guaranteed structurally:
+`answersACommitQuestion` in `classifier.ts` computes at-gate per user turn by
+looking BACKWARD only, so a yes said before the gate can never be attached to
+it; the live reply layer has no deterministic yes/no branching and the LLM sees
+the ordered 20-pair window with the latest user turn marked by
+`CURRENT_TURN_NOTE`. Both live vocabulary readers (`isBackchannel`, the
+pickup-ack drop, `HEARING_CONFIRMATION_ONLY` inside an open attention episode)
+either never record the token or bind it to a `?` line the look-back stops at.
+Two forward-direction gaps were found by running edge cases and are now closed:
+
+1. **Short substantive assistant statements are no longer skipped by character
+   length** — `src/campaign/outcome/classifier.ts`, `answersACommitQuestion`.
+   The look-back stepped over ANY non-question assistant turn ≤ 40 chars as if
+   it were "sure" / "right", so *gate → "Is it free?" → "Yes, it's completely
+   free." (27 chars) → "Okay."* settled `confirmed_at_gate` / FINAL_YES / a
+   sheet row. It now steps over an assistant turn only when
+   `isBareAcknowledgement` (the pipeline's existing predicate, imported
+   read-only from `core/session/turn-detection.ts`) says the whole turn is
+   filler. Length is no longer the test. A genuine assistant "Sure." between
+   gate and answer is still skipped, so a beat-late yes still counts.
+2. **Live FINAL_YES question guard** — `src/campaign/dispatch/call-runner.ts`,
+   `definitiveAnswerIn`. If the agent read an "okay" as unclear and RE-ASKED the
+   gate, the transcript ended on an assistant turn, the classifier still bound
+   the okay to the first asking, and the runner hung up while the re-asked
+   question was on the line. A FINAL_YES is now acted on only when the agent's
+   latest turn asks nothing. The `?` test is the one `agentClosedIn` already
+   used, factored into one shared helper `asksAQuestion` so the two hangup
+   checks cannot disagree. The FINAL_NO path is unchanged.
+
+**Tests added:** phase8 **A1p** (short statement not a filler; the literal
+*gate → Yes → short statement → Okay* keeps FINAL_YES on the yes alone with only
+turn 2 at the gate; assistant "Sure." still stepped over). phase9 **B13** (yes
+not acted on while the agent's latest turn is a question — gate re-asked, or any
+"Shall I send the link?"; the same okay + confirmation line still FINAL_YES;
+closing-line check shares the guard). No existing expectation changed.
+
+**Verification (final tree):** `tsc --noEmit --incremental false` clean.
+phase8 32/32 · phase9 21/21 · agent-hangup 23/23 · phase7 38/38 ·
+continuity 41/41 (gate tests 6/6b/7/7b/G/H green) · phase7b 15/24.
+The six approved scenarios (A–F: fresh yes, early yes then gate, early okay then
+"yeah I should join", early haan ji then no, okay to a non-gate question, long
+affirmative) all settle exactly as before the change.
+
+**Known pre-existing failures (unchanged, not caused by this work):**
+- phase7b's same nine — A, A2, B, C, C2, J, K, L, L2 — all `script-adherence`
+  report assertions ("a faithful call must raise no adherence flag"), none about
+  outcome. Same set as recorded in memory since 2026-08-19.
+- `test:continuity` harness tests time out at 15s when another process (tsc, a
+  DB suite) runs alongside; a DIFFERENT test fails each run (TEST 1, then D) and
+  a pristine tree passed 41/41, as did the changed tree once run alone. Run it
+  alone and re-run once before reading a single failure as a regression.
+
+**Known issue, deliberately NOT fixed (separate item):** *gate → "No." → [NO]
+closing line → caller "Okay, thanks."* settles `interested_not_confirmed` /
+UNRESOLVED instead of `declined` / FINAL_NO. Rule 6 in `classifyOutcome` ("a no
+that nothing positive followed") is defeated by the courtesy okay, which is not
+at the gate but is positioned after the no. Same family as the two fixes above
+(a courtesy token read as an answer) but the opposite direction; left for its
+own investigation so this pass stayed within its approved scope.
+
+**Files UNCOMMITTED:** `src/campaign/outcome/classifier.ts`,
+`src/campaign/dispatch/call-runner.ts`, `src/campaign/tests/phase8-sheet-tests.ts`,
+`src/campaign/tests/phase9-final-answer-tests.ts` (+123 / −10). Not committed and
+not pushed, by instruction.
 
 ---
 

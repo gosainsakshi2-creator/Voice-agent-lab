@@ -582,7 +582,10 @@ await test("a transcript whose words ended before SPEAKING began does NOT interr
 
     await sleep(600);
     assert.equal(h.bargedIn(), false, "pre-speaking words must never cancel the reply");
-    await h.waitForReplies(2);
+    // 20s, not the 15s default: the ~14.4s block is followed by the fixed
+    // after-block hearing acknowledgement for the buffered presence check
+    // (FIX 2), and its ~1.2s drain must finish before LISTENING.
+    await h.waitForReplies(2, 20_000);
     assert.equal(h.assistantTexts()[1], BLOCK, "the block must be committed WHOLE");
   } finally {
     await h.stop();

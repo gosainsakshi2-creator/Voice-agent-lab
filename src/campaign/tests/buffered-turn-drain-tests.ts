@@ -45,7 +45,7 @@
 
 import assert from "node:assert/strict";
 
-const { ConversationPipeline, bufferedTurnTakesTheFloor } = await import(
+const { ConversationPipeline, bufferedTurnTakesTheFloor, isRepeatedGreeting } = await import(
   "../../core/session/conversation-pipeline"
 );
 const { SessionRecord } = await import("../../core/session/session-record");
@@ -235,6 +235,12 @@ interface Harness {
    */
   sayThenWaitForReply(text: string): Promise<number>;
   assistantTexts(): string[];
+  /** Conversational language-model requests opened so far (the prefix-cache prime is not one). */
+  requestCount(): number;
+  /** Every text handed to the text-to-speech provider, in order. */
+  readonly synthesized: string[];
+  /** Every host state transition, in order, with the pipeline's stated reason. */
+  readonly transitions: Array<{ readonly from: string; readonly to: string; readonly reason?: string | undefined }>;
   /** Committed user + assistant turns, in order, as `role|text` rows. */
   conversation(): string[];
   stop(): Promise<void>;
@@ -252,6 +258,9 @@ function startHarness(input: {
   let micStreamMs = 0;
   let outboundChunks = 0;
   let hangups = 0;
+  let requests = 0;
+  const synthesized: string[] = [];
+  const transitions: Array<{ readonly from: string; readonly to: string; readonly reason?: string | undefined }> = [];
 
   const record = newRecord("buffered-turn-test", input.openingLine);
 
@@ -326,6 +335,7 @@ function startHarness(input: {
       // Keyed off what the caller said rather than off a call counter,
       // so a speculative pre-open for the same pending turn yields the
       // same reply and cannot shift what a later turn is answered with.
+      requests += 1;
       const reply = input.replyFor(lastUserTextIn(request.history));
       await sleep(input.replyDelayMs ?? 10);
       if (signal?.aborted) return;
@@ -343,7 +353,10 @@ function startHarness(input: {
 
   const tts = {
     descriptor: descriptor(ProviderCategory.TEXT_TO_SPEECH, "fake-tts"),
-    synthesize: async (task: { request: { text: string } }) => clipFor(task.request.text),
+    synthesize: async (task: { request: { text: string } }) => {
+      synthesized.push(task.request.text);
+      return clipFor(task.request.text);
+    },
     checkHealth: async () => healthy(descriptor(ProviderCategory.TEXT_TO_SPEECH, "fake-tts")),
   };
 
@@ -365,7 +378,9 @@ function startHarness(input: {
     transition: (
       r: InstanceType<typeof SessionRecord>,
       to: (typeof SessionState)[keyof typeof SessionState],
+      reason?: string,
     ) => {
+      transitions.push({ from: r.state, to, reason });
       r.state = to;
     },
     markError: () => undefined,
@@ -389,6 +404,9 @@ function startHarness(input: {
     record,
     pipeline,
     hangupCount: () => hangups,
+    requestCount: () => requests,
+    synthesized,
+    transitions,
     outboundChunks: () => outboundChunks,
     streamMs: () => micStreamMs,
     say(text, opts) {
@@ -1055,6 +1073,209 @@ await test("C4. the gate survives a cut that lands AFTER it, mid-confirmation", 
 });
 
 // ═════════════════════════════════════════════════════════════════
+// ═════════════════════════════════════════════════════════════════
+section("SECTION D — a REPEATED hello behind a playing block demands attention (the thinking-gap case)");
+// ═════════════════════════════════════════════════════════════════
+//
+// Real call, 2026-09-04 08:52 UTC (Vobiz): the caller answered "Hello.",
+// the model took ~2.8s to first audio, the caller said "Hello?" into
+// that silence, and the pitch block then played for 18s before the
+// buffered hello was answered. A bare greeting buffered behind a block
+// still does NOT cut it (B3 — the caller filling the silence). What
+// cuts it now is the caller REPEATING themselves: "Hello? Hello?" in one
+// utterance, or "Hello." answered by this very reply and "Hello?" again
+// behind it. The cut is the EXISTING external barge-in; what follows is
+// the EXISTING hearing flow (`test:attention` sections B/C/J).
+
+/** The fixed hearing question, as the pipeline speaks it. */
+const HEARING_QUESTION = "Hey, can you hear me okay?";
+
+/** Whitespace-insensitive equality, the way `unspokenTail` compares text. */
+const sameWords = (a: string, b: string): boolean => a.replace(/\s+/gu, "") === b.replace(/\s+/gu, "");
+
+/**
+ * The pitch is the reply to the caller's bare "Hello."; anything else gets
+ * the follow-up. An `includes`-style test, like the B-series helpers: the
+ * current user turn reaches the model with a note and a language hint
+ * prefixed to it (`buildRequestHistory`), so an anchored match never fires.
+ */
+const pitchForHello = (last: string): string => (/hello/iu.test(last) ? LONG_BLOCK : FOLLOW_UP);
+
+/**
+ * Drives the real call's shape: opening line, the caller answers with a
+ * bare "Hello.", the pitch block starts, and a second "Hello?" — whose
+ * words ended in the thinking gap — lands as a buffered turn behind it.
+ * Returns the request count once the block was in flight.
+ */
+async function helloThenHelloBehindTheBlock(h: Harness): Promise<{ requestsBefore: number; drainStartedAt: number }> {
+  await h.waitForReplies(1);
+  const spokeAtStreamMs = await h.sayThenWaitForReply("Hello.");
+  const requestsBefore = h.requestCount();
+  const drainStartedAt = Date.now();
+  h.say("Hello?", { endedAtStreamMs: spokeAtStreamMs });
+  return { requestsBefore, drainStartedAt };
+}
+
+await test('D1 (spec B4). "Hello." answered by a long block, then a buffered "Hello?" — the block is CUT through the existing barge-in and the hearing question is asked at once', async () => {
+  const h = startHarness({ openingLine: OPENING, replyFor: pitchForHello, replyDelayMs: 200 });
+  try {
+    const { requestsBefore, drainStartedAt } = await helloThenHelloBehindTheBlock(h);
+
+    await h.waitForReplies(3);
+    const askedAfterMs = Date.now() - drainStartedAt;
+    const texts = h.assistantTexts();
+    const spokenBlock = texts[1] ?? "";
+
+    // The old response did not finish: a heard PREFIX is committed.
+    assert.ok(spokenBlock.length > 0, "the part the caller heard must be committed, not dropped");
+    assert.ok(
+      spokenBlock.length < LONG_BLOCK.length,
+      `the block must have been cut short (committed ${spokenBlock.length} of ${LONG_BLOCK.length} chars)`,
+    );
+    assert.ok(LONG_BLOCK.startsWith(spokenBlock.slice(0, 40)), "and it must be a PREFIX of the block, never invented text");
+    assert.ok(
+      askedAfterMs < LONG_BLOCK_AUDIO_MS * 0.75,
+      `the hearing question must not wait for the block (${askedAfterMs}ms against ${Math.round(LONG_BLOCK_AUDIO_MS)}ms of audio)`,
+    );
+    // The EXISTING external barge-in did the cutting: the transition the
+    // bridges clear playback on, before the question was synthesized.
+    const bargeInIndex = h.transitions.findIndex(
+      (t) => t.from === SessionState.SPEAKING && t.to === SessionState.LISTENING && /barge.?in/iu.test(t.reason ?? ""),
+    );
+    assert.ok(bargeInIndex >= 0, `expected the external barge-in transition, got ${JSON.stringify(h.transitions)}`);
+    assert.ok(h.synthesized.includes(HEARING_QUESTION), "the hearing question was synthesized");
+    assert.equal(texts[2], HEARING_QUESTION, "and committed as the reply to the repeated hello");
+    assert.equal(h.requestCount(), requestsBefore, "the hearing question spends no language-model request");
+    // Nothing of the old response is synthesized after the question: the
+    // streaming path had already handed every sentence of the block to
+    // TTS before the cut (a batch provider synthesizes ahead of playback),
+    // and no sentence is handed over again once the question is asked.
+    const questionIndex = h.synthesized.indexOf(HEARING_QUESTION);
+    assert.deepEqual(h.synthesized.slice(questionIndex + 1), [], "nothing is synthesized after the hearing question");
+    assert.equal(
+      h.synthesized.filter((t) => t.startsWith(LONG_BLOCK.slice(0, 30))).length,
+      1,
+      "the block's first sentence was synthesized exactly once — never restarted",
+    );
+    assert.equal(h.record.state, SessionState.LISTENING, "then the pipeline LISTENS");
+  } finally {
+    await h.stop();
+  }
+});
+
+await test('D2 (spec B5). a buffered "Hello? Hello?" after a SUBSTANTIVE turn also cuts the block and enters the hearing flow', async () => {
+  const h = startHarness({
+    openingLine: OPENING,
+    replyFor: (last) => (last.includes("tell me") ? LONG_BLOCK : FOLLOW_UP),
+    replyDelayMs: 200,
+  });
+  try {
+    await h.waitForReplies(1);
+    const spokeAtStreamMs = await h.sayThenWaitForReply("Yes, please tell me.");
+    const requestsBefore = h.requestCount();
+    h.say("Hello? Hello?", { endedAtStreamMs: spokeAtStreamMs });
+
+    await h.waitForReplies(3);
+    const texts = h.assistantTexts();
+    assert.ok((texts[1] ?? "").length < LONG_BLOCK.length, "the block was cut");
+    assert.equal(texts[2], HEARING_QUESTION, "the hearing question follows");
+    assert.equal(h.requestCount(), requestsBefore, "without a language-model request");
+    assert.equal(h.record.state, SessionState.LISTENING);
+  } finally {
+    await h.stop();
+  }
+});
+
+await test('D3 (spec B6). a buffered SINGLE "Hello?" after a substantive turn still does NOT cut the block (B3, restated beside D1/D2)', async () => {
+  const h = startHarness({
+    openingLine: OPENING,
+    replyFor: (last) => (last.includes("tell me") ? SHORT_BLOCK : FOLLOW_UP),
+    replyDelayMs: 200,
+  });
+  try {
+    await h.waitForReplies(1);
+    const spokeAtStreamMs = await h.sayThenWaitForReply("Yes, please tell me.");
+    h.say("Hello?", { endedAtStreamMs: spokeAtStreamMs });
+    await h.waitFor(
+      "the bare greeting to be buffered as a completed turn",
+      () => h.record.turnDetector.bufferedTurnText().trim().length > 0,
+    );
+    await h.waitForReplies(2);
+    assert.equal(h.assistantTexts()[1], SHORT_BLOCK, "a single hello after a real turn must not destroy the block");
+    assert.ok(
+      !h.transitions.some((t) => /barge.?in/iu.test(t.reason ?? "")),
+      "and no barge-in of any kind was triggered for it",
+    );
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("D4. the repeated-greeting predicate, asserted on both sides — presence questions and hesitation merges are NOT it", () => {
+  for (const text of ["Hello? Hello?", "hello hello", "Hello. Hello hello", "हैलो हैलो", "Hi, hello?"]) {
+    assert.equal(isRepeatedGreeting(text), true, `should be a repeated greeting: ${JSON.stringify(text)}`);
+  }
+  for (const text of [
+    "Hello?",
+    "Hello.",
+    "Hello? Are you there?", // B3b — stays with today's behaviour
+    "Umm Hello? Are you there?", // B3d — stays with today's behaviour
+    "Can you hear me?",
+    "Are you there?",
+    "Hello? What is this about?",
+    "haan ji",
+    "okay",
+    "",
+  ]) {
+    assert.equal(isRepeatedGreeting(text), false, `must NOT be a repeated greeting: ${JSON.stringify(text)}`);
+  }
+});
+
+await test('D5. after the attention cut, "Yes, continue from where you stopped." resumes the HELD remainder — no generation, nothing restarted', async () => {
+  const h = startHarness({ openingLine: OPENING, replyFor: pitchForHello, replyDelayMs: 200 });
+  try {
+    const { requestsBefore } = await helloThenHelloBehindTheBlock(h);
+    await h.waitForReplies(3);
+    const heard = h.assistantTexts()[1] ?? "";
+
+    h.say("Yes, continue from where you stopped.");
+    await h.waitForReplies(4, 30_000);
+    const resumed = h.assistantTexts()[3] ?? "";
+    assert.ok(resumed.length > 0, "the unheard tail was spoken");
+    assert.ok(!LONG_BLOCK.startsWith(resumed.slice(0, 30)) || resumed.length < LONG_BLOCK.length, "not the block from the top");
+    assert.ok(sameWords(heard + resumed, LONG_BLOCK), `heard + resumed must be exactly the block, got ${JSON.stringify([heard, resumed])}`);
+    assert.equal(h.requestCount(), requestsBefore, "no language-model request for the question or the resume");
+    assert.equal(h.record.state, SessionState.LISTENING);
+  } finally {
+    await h.stop();
+  }
+});
+
+await test('D6. after the attention cut, "Start from the beginning." replays the FULL original block — no generation', async () => {
+  const h = startHarness({ openingLine: OPENING, replyFor: pitchForHello, replyDelayMs: 200 });
+  try {
+    const { requestsBefore } = await helloThenHelloBehindTheBlock(h);
+    await h.waitForReplies(3);
+
+    h.say("Start from the beginning.");
+    await h.waitForReplies(4, 40_000);
+    const replayed = h.assistantTexts()[3] ?? "";
+    assert.ok(sameWords(replayed, LONG_BLOCK), `the whole block again, got ${JSON.stringify(replayed)}`);
+    // The reply was synthesized sentence by sentence; the replay is one
+    // fixed utterance. So the block's opening words go to TTS exactly
+    // twice: once at the top of the original reply, once for the replay.
+    assert.equal(
+      h.synthesized.filter((t) => t.startsWith(LONG_BLOCK.slice(0, 30))).length,
+      2,
+      "the block's opening was synthesized once for the reply and once for the replay",
+    );
+    assert.equal(h.requestCount(), requestsBefore, "no language-model request");
+    assert.equal(h.record.state, SessionState.LISTENING);
+  } finally {
+    await h.stop();
+  }
+});
+
 console.log(`\n${passed} passed, ${failures.length} failed`);
 if (failures.length > 0) {
   console.log(`\nFailed:\n${failures.map((name) => `  - ${name}`).join("\n")}`);

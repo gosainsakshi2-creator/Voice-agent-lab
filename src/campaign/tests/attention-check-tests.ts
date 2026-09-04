@@ -37,7 +37,7 @@
  *   G  a meaningful interruption, unchanged
  *   H  already-heard text is never spoken twice
  *   I  normal conversation continues afterwards
- *   J  the acknowledgement ANSWERS the caller — it never asks the question back
+ *   J  a hearing check OVER a playing block: stop, ask, listen; then resume / restart / repeat
  *
  * NOTHING HERE PLACES A CALL, OPENS A SOCKET, CONTACTS A VENDOR, READS
  * THE DATABASE OR TOUCHES GOOGLE. Every provider is a local fake; the
@@ -47,7 +47,7 @@
 
 import assert from "node:assert/strict";
 
-const { ConversationPipeline, isAttentionCheck } = await import(
+const { ConversationPipeline, isAttentionCheck, isContinueRequest, isRestartRequest } = await import(
   "../../core/session/conversation-pipeline"
 );
 const { SessionRecord } = await import("../../core/session/session-record");
@@ -122,6 +122,8 @@ interface Harness {
   readonly requests: Array<readonly ConversationTurn[]>;
   /** Every text handed to the text-to-speech provider, in order. */
   readonly synthesized: string[];
+  /** Every host state transition, in order, with the pipeline's stated reason. */
+  readonly transitions: Array<{ readonly from: string; readonly to: string; readonly reason?: string | undefined }>;
   /** Feed one transcript segment, exactly as the streaming STT would. */
   say(text: string, opts?: { isFinal?: boolean; isSpeechFinal?: boolean }): void;
   /**
@@ -145,6 +147,7 @@ function startHarness(input: {
 }): Harness {
   const requests: Array<readonly ConversationTurn[]> = [];
   const synthesized: string[] = [];
+  const transitions: Array<{ readonly from: string; readonly to: string; readonly reason?: string | undefined }> = [];
   const segments: TranscriptSegment[] = [];
   const waiters: Array<() => void> = [];
   let closed = false;
@@ -251,7 +254,8 @@ function startHarness(input: {
   record.outboundAudioListeners.add(() => undefined);
 
   const host = {
-    transition: (r: InstanceType<typeof SessionRecord>, to: (typeof SessionState)[keyof typeof SessionState]) => {
+    transition: (r: InstanceType<typeof SessionRecord>, to: (typeof SessionState)[keyof typeof SessionState], reason?: string) => {
+      transitions.push({ from: r.state, to, reason });
       r.state = to;
     },
     markError: () => undefined,
@@ -279,6 +283,7 @@ function startHarness(input: {
     record,
     requests,
     synthesized,
+    transitions,
     say(text, opts) {
       const isFinal = opts?.isFinal ?? true;
       push(text, isFinal, opts?.isSpeechFinal ?? isFinal, 0.95);
@@ -324,11 +329,11 @@ function assistantTexts(history: readonly ConversationTurn[]): string[] {
 }
 
 /** The fixed English acknowledgement, as the pipeline speaks it. */
-const ACK = "Yes, I can hear you. Go ahead.";
+const ACK = "Hey, can you hear me okay?";
 
 /** How many times the acknowledgement was actually SPOKEN. */
 function ackCount(synthesized: readonly string[]): number {
-  return synthesized.filter((text) => text.includes("I can hear you")).length;
+  return synthesized.filter((text) => text.includes("hear me okay")).length;
 }
 
 // The approved script's own shape: an opening the caller has already
@@ -477,7 +482,7 @@ await test('B3 — "Hello? Hello? Hello?" produces exactly ONE acknowledgement',
       1,
       `the acknowledgement must be spoken exactly once, spoken=${JSON.stringify(h.synthesized)}`,
     );
-    const committedAcks = assistantTexts(h.history()).filter((t) => t.includes("I can hear you")).length;
+    const committedAcks = assistantTexts(h.history()).filter((t) => t.includes("hear me okay")).length;
     assert.equal(committedAcks, 1, "and committed exactly once");
   } finally {
     await h.stop();
@@ -508,13 +513,7 @@ await test("B4 — a repeated hello NEVER re-speaks the campaign opening", async
 section("SECTION C — resume from the EXACT point the reply stopped");
 // ═════════════════════════════════════════════════════════════════
 
-// The confirmation is a SHORT one on purpose. The acknowledgement now says
-// "Yes, I can hear you. Go ahead.", so a caller who parrots "Yes, I can
-// hear you." back would match every word pair of audio just played and be
-// dropped by the existing self-echo guard — which is untouched here. Real
-// callers answer the new line with "yes" / "okay" / "haan", not with our
-// sentence; `HEARING_CONFIRMATION_ONLY` still accepts every one of those.
-await test('C1 — a hearing confirmation ("Yes, loud and clear.") resumes the block, without a language-model request', async () => {
+await test('C1 — "Yes, I can hear you." resumes the block, without a language-model request', async () => {
   const h = startHarness({ openingLine: OPENING, replies: [BLOCK, "SHOULD-NOT-BE-GENERATED"] });
   try {
     await upToMidBlock(h);
@@ -522,7 +521,7 @@ await test('C1 — a hearing confirmation ("Yes, loud and clear.") resumes the b
     await h.waitForReplies(3);
     const requestsAfterAck = h.requests.length;
 
-    h.say("Yes, loud and clear.");
+    h.say("Yes, I can hear you.");
     await h.waitForReplies(4);
 
     const resumed = assistantTexts(h.history())[3] ?? "";
@@ -589,7 +588,7 @@ await test("C4 — the resumed text is in the history the model is next shown", 
     await upToMidBlock(h);
     h.say("Hello?");
     await h.waitForReplies(3);
-    h.say("Yes, loud and clear.");
+    h.say("Yes, I can hear you.");
     await h.waitForReplies(4);
 
     // A real question now — the model must be able to see everything
@@ -766,7 +765,7 @@ await test("H1 — no sentence the caller has heard is ever synthesized a second
     await upToMidBlock(h);
     h.say("Hello?");
     await h.waitForReplies(3);
-    h.say("Yes, loud and clear.");
+    h.say("Yes, I can hear you.");
     await h.waitForReplies(4);
     await sleep(500);
 
@@ -795,7 +794,7 @@ await test("H2 — the resume is a strict suffix of the interrupted reply", asyn
     await upToMidBlock(h);
     h.say("Hello?");
     await h.waitForReplies(3);
-    h.say("Yes, loud and clear.");
+    h.say("Yes, I can hear you.");
     await h.waitForReplies(4);
 
     const heardBefore = assistantTexts(h.history())[1] ?? "";
@@ -824,7 +823,7 @@ await test("I1 — the call carries on normally after an attention-check episode
     await upToMidBlock(h);
     h.say("Hello?");
     await h.waitForReplies(3);
-    h.say("Yes, loud and clear.");
+    h.say("Yes, I can hear you.");
     await h.waitForReplies(4);
 
     h.say("Is it free?");
@@ -870,130 +869,242 @@ await test("I2 — an attention check with nothing to resume, after a block, is 
 });
 
 // ═════════════════════════════════════════════════════════════════
-section("SECTION J — the acknowledgement ANSWERS the caller; it never asks the question back");
+section("SECTION J — a hearing check OVER a playing block: stop, ask, listen; then resume / restart / repeat");
 // ═════════════════════════════════════════════════════════════════
 //
-// "Hello? Can you hear me?" is the CALLER asking whether WE can hear
-// THEM. The fixed line used to be "Hello, can you hear me?" — the same
-// question asked straight back — which is exactly wrong. It must
-// confirm the line is alive and hand the floor back, and the pipeline
-// must then LISTEN rather than carry on with the interrupted block on
-// its own. Detection, the barge-in, the once-per-episode rule and the
-// resume-on-confirmation path are all the existing ones and are
-// re-asserted here only in passing.
+// The natural-phone-call shape. "Hello? Hello?" / "Can you hear me?"
+// over a long block must not wait for the block: the EXISTING barge-in
+// cancels playback (the SPEAKING -> LISTENING transition whose reason
+// names the barge-in is what the Plivo/Vobiz bridges clear their
+// outbound queue and send `clearAudio` on), the fixed question is
+// asked, and the pipeline LISTENS. What the caller answers decides:
+// "yes" resumes the unheard tail, "continue from where you stopped"
+// resumes it too, "start from the beginning" / "I couldn't hear you"
+// repeats the whole cut-off reply, and anything substantive takes the
+// normal path. None of it reaches the language model.
 
-/** Any form of the question asked back, in any supported language. */
-const ASKS_BACK = /can you hear me|sun paa rahe|sun pa rahe|सुन पा रहे/iu;
+/** The block text committed as heard, if any. */
+function heardBlock(h: Harness): string {
+  return assistantTexts(h.history())[1] ?? "";
+}
 
-await test('J1 — mid-block "Hello? Hello? Can you hear me?" is interrupted and ANSWERED, not asked back', async () => {
+/** Whitespace-insensitive equality, the way `unspokenTail` compares text. */
+function sameWords(a: string, b: string): boolean {
+  return a.replace(/\s+/gu, "") === b.replace(/\s+/gu, "");
+}
+
+await test('J1 — "Hello? Hello?" over a playing block STOPS it at once, asks the fixed question, and listens', async () => {
   const h = startHarness({ openingLine: OPENING, replies: [BLOCK, "SHOULD-NOT-BE-GENERATED"] });
   try {
     await upToMidBlock(h);
     const requestsBefore = h.requests.length;
+    const saidAt = Date.now();
 
-    h.say("Hello? Hello? Can you hear me?");
+    h.say("Hello? Hello?");
+    await h.waitFor("the question to be spoken", () => h.synthesized.includes(ACK));
+    const askedAfterMs = Date.now() - saidAt;
     await h.waitForReplies(3);
 
-    const spoken = assistantTexts(h.history());
-    // The existing barge-in cut the block: what was committed is a proper prefix of it.
-    assert.ok(
-      spoken[1] !== undefined && spoken[1].length < BLOCK.length && BLOCK.startsWith(spoken[1]),
-      `the block must have been interrupted, got ${JSON.stringify(spoken[1])}`,
+    // ORDER: detection -> the barge-in transition (which is what the
+    // bridges clear playback on) -> the question -> LISTENING.
+    const bargeIn = h.transitions.find(
+      (t) => t.from === SessionState.SPEAKING && t.to === SessionState.LISTENING && /barge.?in/iu.test(t.reason ?? ""),
     );
-    assert.equal(spoken[2], ACK, `expected the answering acknowledgement, got ${JSON.stringify(spoken[2])}`);
-    assert.ok(!h.synthesized.some((t) => ASKS_BACK.test(t)), `must never ask the caller's question back, spoken=${JSON.stringify(h.synthesized)}`);
-    assert.equal(ackCount(h.synthesized), 1, "acknowledged exactly once");
-    assert.equal(h.requests.length, requestsBefore, "and without a language-model request");
-    assert.equal(h.record.state, SessionState.LISTENING, "then the session is LISTENING again");
+    assert.ok(bargeIn, `the block must be cancelled through the existing barge-in, transitions=${JSON.stringify(h.transitions)}`);
+    // The block still had ~10s of audio to play; the question did not queue behind it.
+    assert.ok(askedAfterMs < 3000, `the question must not wait for the block, asked after ${askedAfterMs}ms`);
+    const heard = heardBlock(h);
+    assert.ok(
+      heard.length > 0 && heard.length < BLOCK.length && BLOCK.startsWith(heard),
+      `only the part the caller heard is committed, got ${JSON.stringify(heard)}`,
+    );
+    assert.equal(assistantTexts(h.history())[2], ACK, "then the fixed question");
+    assert.equal(ackCount(h.synthesized), 1, "asked exactly once");
+    assert.equal(h.requests.length, requestsBefore, "and no language-model request");
+    assert.equal(h.record.state, SessionState.LISTENING, "and the pipeline is LISTENING");
   } finally {
     await h.stop();
   }
 });
 
-await test("J2 — after the acknowledgement the agent LISTENS; it does not carry on with the block by itself, and the caller's next real speech takes the normal path", async () => {
-  const h = startHarness({ openingLine: OPENING, replies: [BLOCK, "It costs nothing at all."] });
+await test('J2 — "Hello? Hello? Can you hear me?" over the block: cut, asked once, no generation', async () => {
+  const h = startHarness({ openingLine: OPENING, replies: [BLOCK, "SHOULD-NOT-BE-GENERATED"] });
   try {
     await upToMidBlock(h);
-    h.say("Hello? Can you hear me?");
+    const requestsBefore = h.requests.length;
+    h.say("Hello? Hello? Can you hear me?");
     await h.waitForReplies(3);
-    const synthesizedAfterAck = h.synthesized.length;
-    const requestsAfterAck = h.requests.length;
-
-    // Nothing is said while the caller is given the floor.
-    await sleep(2000);
-    assert.equal(h.synthesized.length, synthesizedAfterAck, `nothing may be spoken unprompted after the acknowledgement, spoken=${JSON.stringify(h.synthesized.slice(synthesizedAfterAck))}`);
-    assert.equal(h.record.state, SessionState.LISTENING, "still listening");
-
-    // The caller goes ahead with something real: the normal contextual path, once.
-    h.say("How much does it cost?");
-    await h.waitForReplies(4);
-    assert.equal(h.requests.length, requestsAfterAck + 1, "the real question reaches the model exactly once");
-    const reply = assistantTexts(h.history())[3] ?? "";
-    assert.ok(reply.startsWith("It costs nothing"), `expected the normal contextual reply, got ${JSON.stringify(reply)}`);
+    assert.ok(heardBlock(h).length < BLOCK.length, "the block was cut");
+    assert.equal(assistantTexts(h.history())[2], ACK);
+    assert.equal(ackCount(h.synthesized), 1);
+    assert.equal(h.requests.length, requestsBefore);
     assert.equal(h.record.state, SessionState.LISTENING);
   } finally {
     await h.stop();
   }
 });
 
-await test('J3 — "Can you hear me?" after a finished block (nothing held) is answered with the same line, without the model', async () => {
-  const h = startHarness({ openingLine: OPENING, replies: ["Short reply.", "The session is free."] });
+await test('J3 — a single "Hello" over the block keeps the EXISTING decision: it already interrupts and is asked about once', async () => {
+  // Scenario 6. The existing detection (`isAttentionCheck`) decides. A
+  // lone "hello" over audio the caller is hearing means the line may
+  // have gone bad, and it has always interrupted (B1); nothing here
+  // widens or narrows that, and nothing is a second mechanism.
+  const h = startHarness({ openingLine: OPENING, replies: [BLOCK, "SHOULD-NOT-BE-GENERATED"] });
+  try {
+    await upToMidBlock(h);
+    const requestsBefore = h.requests.length;
+    h.say("Hello");
+    await h.waitForReplies(3);
+    assert.equal(assistantTexts(h.history())[2], ACK);
+    assert.equal(ackCount(h.synthesized), 1);
+    assert.equal(h.requests.length, requestsBefore);
+  } finally {
+    await h.stop();
+  }
+});
+
+await test('J4 — "Yes." after the question RESUMES the block from where it stopped, without the model', async () => {
+  const h = startHarness({ openingLine: OPENING, replies: [BLOCK, "SHOULD-NOT-BE-GENERATED"] });
+  try {
+    await upToMidBlock(h);
+    h.say("Hello? Hello?");
+    await h.waitForReplies(3);
+    const requestsBefore = h.requests.length;
+    const heard = heardBlock(h);
+
+    h.say("Yes.");
+    await h.waitForReplies(4, 25_000);
+    const resumed = assistantTexts(h.history())[3] ?? "";
+    assert.ok(resumed.length > 0, "the unheard tail was spoken");
+    assert.ok(!resumed.startsWith(BLOCK_SENTENCE_1), `not the block from the top, got ${JSON.stringify(resumed)}`);
+    assert.ok(sameWords(heard + resumed, BLOCK), `heard + resumed must be exactly the block, got ${JSON.stringify([heard, resumed])}`);
+    assert.equal(h.requests.length, requestsBefore, "no language-model request");
+    assert.equal(h.record.state, SessionState.LISTENING);
+  } finally {
+    await h.stop();
+  }
+});
+
+await test('J5 — "Yes, continue from where you stopped." RESUMES from the stopping point, not from the top', async () => {
+  const h = startHarness({ openingLine: OPENING, replies: [BLOCK, "SHOULD-NOT-BE-GENERATED"] });
+  try {
+    await upToMidBlock(h);
+    h.say("Hello? Hello?");
+    await h.waitForReplies(3);
+    const requestsBefore = h.requests.length;
+    const heard = heardBlock(h);
+
+    h.say("Yes, continue from where you stopped.");
+    await h.waitForReplies(4, 25_000);
+    const resumed = assistantTexts(h.history())[3] ?? "";
+    assert.ok(!resumed.startsWith(BLOCK_SENTENCE_1), `must not restart the script, got ${JSON.stringify(resumed)}`);
+    assert.ok(sameWords(heard + resumed, BLOCK), `heard + resumed must be exactly the block, got ${JSON.stringify([heard, resumed])}`);
+    assert.equal(h.requests.length, requestsBefore, "no language-model request");
+    assert.equal(h.synthesized.filter((t) => t.startsWith(BLOCK_SENTENCE_1)).length, 1, "the first sentence is never synthesized again");
+  } finally {
+    await h.stop();
+  }
+});
+
+await test('J6 — "Start from the beginning." REPEATS the whole cut-off reply from its first word, without the model', async () => {
+  const h = startHarness({ openingLine: OPENING, replies: [BLOCK, "SHOULD-NOT-BE-GENERATED"] });
+  try {
+    await upToMidBlock(h);
+    h.say("Hello? Hello?");
+    await h.waitForReplies(3);
+    const requestsBefore = h.requests.length;
+    const firstSentencesBefore = h.synthesized.filter((t) => t.startsWith(BLOCK_SENTENCE_1)).length;
+
+    h.say("Start from the beginning.");
+    await h.waitForReplies(4, 30_000);
+    const repeated = assistantTexts(h.history())[3] ?? "";
+    assert.ok(sameWords(repeated, BLOCK), `the whole reply again, got ${JSON.stringify(repeated)}`);
+    assert.equal(
+      h.synthesized.filter((t) => t.startsWith(BLOCK_SENTENCE_1)).length,
+      firstSentencesBefore + 1,
+      "its first sentence is synthesized once more",
+    );
+    assert.equal(h.synthesized.filter((t) => t === OPENING).length, 1, "the opening line is not part of it");
+    assert.equal(h.requests.length, requestsBefore, "no language-model request");
+    assert.equal(h.record.state, SessionState.LISTENING);
+  } finally {
+    await h.stop();
+  }
+});
+
+await test('J7 — "No, I couldn\'t hear you." also REPEATS the cut-off reply from the beginning', async () => {
+  const h = startHarness({ openingLine: OPENING, replies: [BLOCK, "SHOULD-NOT-BE-GENERATED"] });
+  try {
+    await upToMidBlock(h);
+    h.say("Hello? Hello?");
+    await h.waitForReplies(3);
+    const requestsBefore = h.requests.length;
+
+    h.say("No, I couldn't hear you.");
+    await h.waitForReplies(4, 30_000);
+    assert.ok(sameWords(assistantTexts(h.history())[3] ?? "", BLOCK), "the whole reply again");
+    assert.equal(h.requests.length, requestsBefore, "no language-model request");
+    assert.equal(h.record.state, SessionState.LISTENING);
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("J8 — a substantive answer after the question takes the NORMAL path, and the held position is released", async () => {
+  // Scenario 7 inside the hearing flow: a real question is answered by
+  // the model, once, and the unheard tail is never spoken into it.
+  const h = startHarness({ openingLine: OPENING, replies: [BLOCK, "The price is two thousand rupees."] });
+  try {
+    await upToMidBlock(h);
+    h.say("Hello? Hello?");
+    await h.waitForReplies(3);
+    const requestsBefore = h.requests.length;
+
+    h.say("Wait, I have a question about the price.");
+    await h.waitForReplies(4);
+    assert.equal(h.requests.length, requestsBefore + 1, "the real question reaches the model exactly once");
+    assert.ok((assistantTexts(h.history())[3] ?? "").startsWith("The price is"), "and is answered contextually");
+    assert.equal(h.synthesized.filter((t) => t.startsWith(BLOCK_SENTENCE_3)).length, 1, "the unheard tail is not spoken later");
+    assert.equal(h.record.state, SessionState.LISTENING);
+  } finally {
+    await h.stop();
+  }
+});
+
+await test('J9 — the same words OUTSIDE a hearing episode are untouched: "continue" / "no" in open conversation reach the model', async () => {
+  const h = startHarness({ openingLine: OPENING, replies: ["Short reply.", "Sure, here is more.", "Okay, noted."] });
   try {
     await h.waitForReplies(1);
     h.say("Yes, tell me.");
     await h.waitForReplies(2);
     const requestsBefore = h.requests.length;
 
-    h.say("Can you hear me?");
+    h.say("Please continue.");
     await h.waitForReplies(3);
-
-    assert.equal(assistantTexts(h.history())[2], ACK, "answered with the acknowledgement");
-    assert.ok(!h.synthesized.some((t) => ASKS_BACK.test(t)), "never asked back");
-    assert.equal(h.requests.length, requestsBefore, "no language-model request");
-    assert.equal(h.synthesized.filter((t) => t === "Short reply.").length, 1, "the block is not re-spoken");
-
-    h.say("Okay, is it free?");
+    assert.equal(h.requests.length, requestsBefore + 1, '"continue" with no episode open is an ordinary turn');
+    h.say("No.");
     await h.waitForReplies(4);
-    assert.equal(h.requests.length, requestsBefore + 1, "the next real turn takes the normal path");
-    assert.ok((assistantTexts(h.history())[3] ?? "").startsWith("The session is free"));
+    assert.equal(h.requests.length, requestsBefore + 2, '"no" with no episode open is an ordinary turn');
+    assert.equal(h.synthesized.filter((t) => t === "Short reply.").length, 1, "nothing was repeated by the fixed path");
   } finally {
     await h.stop();
   }
 });
 
-await test('J4 — "Hello? Can you hear me?" right after the opening line (before any block) is answered, not asked back', async () => {
-  const h = startHarness({ openingLine: OPENING, replies: ["SHOULD-NOT-BE-GENERATED"] });
-  try {
-    await h.waitForReplies(1);
-    const requestsBefore = h.requests.length;
-
-    h.say("Hello? Can you hear me?");
-    await h.waitForReplies(2);
-
-    assert.equal(assistantTexts(h.history())[1], ACK, "answered with the acknowledgement");
-    assert.ok(!h.synthesized.some((t) => ASKS_BACK.test(t)), "never asked back");
-    assert.equal(h.requests.length, requestsBefore, "no language-model request");
-    assert.equal(h.synthesized.filter((t) => t === OPENING).length, 1, "the opening is not re-spoken");
-  } finally {
-    await h.stop();
+await test("J10 — the instruction vocabulary, asserted directly on both sides", () => {
+  for (const u of ["Yes, continue from where you stopped.", "Continue.", "Go on.", "Please carry on", "Haan, aage bolo", "आगे बताइए", "Yes, go ahead"]) {
+    assert.equal(isContinueRequest(u), true, `should be a continue request: ${JSON.stringify(u)}`);
   }
-});
-
-await test('J5 — a single "Hello." right after the opening line is NOT a hearing check: it takes the normal path (unchanged)', async () => {
-  const h = startHarness({ openingLine: OPENING, replies: ["Great, let me tell you why I called."] });
-  try {
-    await h.waitForReplies(1);
-    const requestsBefore = h.requests.length;
-
-    h.say("Hello.");
-    await h.waitForReplies(2);
-
-    assert.equal(h.requests.length, requestsBefore + 1, "a lone hello after the opening reaches the model as today");
-    assert.equal(ackCount(h.synthesized), 0, "no acknowledgement is spoken for it");
-    assert.ok((assistantTexts(h.history())[1] ?? "").startsWith("Great, let me tell you"), "the contextual reply is spoken");
-  } finally {
-    await h.stop();
+  for (const u of ["Start from the beginning.", "No, I couldn't hear you.", "No.", "Can you repeat that?", "Say that again", "Shuru se bolo", "Sunai nahi diya", "फिर से बोलिए", "नहीं", "I can't hear you properly"]) {
+    assert.equal(isRestartRequest(u), true, `should be a restart request: ${JSON.stringify(u)}`);
   }
+  for (const u of ["Yes.", "Yes, I can hear you.", "What is the price?", "Wait, I have a question.", "Not interested.", "Hello?", "haan ji"]) {
+    assert.equal(isContinueRequest(u), false, `must NOT be a continue request: ${JSON.stringify(u)}`);
+    assert.equal(isRestartRequest(u), false, `must NOT be a restart request: ${JSON.stringify(u)}`);
+  }
+  // Restart wins over continue.
+  assert.equal(isRestartRequest("Continue from the beginning."), true);
+  assert.equal(isContinueRequest("Continue from the beginning."), true);
 });
 
 // ═════════════════════════════════════════════════════════════════

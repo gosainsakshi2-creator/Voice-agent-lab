@@ -343,7 +343,7 @@ function assistantTexts(history: readonly ConversationTurn[]): string[] {
 
 /** The fixed English attention-check acknowledgement, as the pipeline speaks it (see `speakAttentionUtterance`). */
 function isAck(text: string): boolean {
-  return text.toLowerCase().includes("i can hear you");
+  return text.toLowerCase().includes("hear me okay");
 }
 
 const OPENING = "Hi Sakshi, this is Rohan from Team FlexiFunnels.";

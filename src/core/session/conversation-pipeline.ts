@@ -544,15 +544,14 @@ export function bufferedTurnTakesTheFloor(text: string): boolean {
 }
 
 /**
- * "Yes, I can hear you." / "okay" / "haan" — the caller confirming the
- * line is fine after the acknowledgement, which is the cue to carry on
- * from where the reply stopped.
+ * "Yes, I can hear you." — the caller answering the acknowledgement's
+ * own question ("Hey, can you hear me okay?"), which is the cue to carry
+ * on from where the reply stopped.
  *
  * Read at ONE place and only while an attention episode is open, i.e.
- * only in the turn immediately after the assistant's acknowledgement
- * ("Yes, I can hear you. Go ahead."). A bare "yes" anywhere else is
- * untouched by this and reaches the classifier and the registration
- * gate exactly as it does today.
+ * only in the turn immediately after the assistant asked. A bare "yes"
+ * anywhere else is untouched by this and reaches the classifier and
+ * the registration gate exactly as it does today.
  */
 const HEARING_CONFIRMATION_ONLY = new RegExp(
   "^(?:(?:yes|yeah|yep|yup|ya|yaa|yes i can|yes i can hear you|i can hear you|" +
@@ -566,20 +565,78 @@ const HEARING_CONFIRMATION_ONLY = new RegExp(
 );
 
 /**
+ * "Continue from where you stopped." — the caller, asked whether they
+ * can hear, telling us to carry on. Read ONLY inside an open attention
+ * episode that has a cut-off reply on record (`heldScriptFull`), i.e.
+ * in the turn right after "Hey, can you hear me okay?". Anywhere else
+ * the same words reach the language model exactly as they do today.
+ *
+ * A CONTAINS test, not a whole-utterance one, because the answer to a
+ * yes/no question is routinely prefixed: "Yes, continue from where you
+ * stopped." The context is what bounds it — one turn, one question.
+ *
+ * Exported for the same reason `isHearingCheck` is: a table is only
+ * safe if a test can assert both sides of it directly.
+ */
+const HEARING_CONTINUE_REQUEST = new RegExp(
+  "(?:^|[\\s,.!?…।-])(?:continue|carry on|go on|go ahead|keep going|resume|proceed|" +
+    "where you stopped|where you left|where you were|" +
+    "aage bolo|aage batao|aage boliye|aage bataiye|aage badho|aage badhiye|continue karo|continue kijiye|" +
+    "jahan ruke|jahan the|wahan se|" +
+    "आगे बोलो|आगे बताओ|आगे बोलिए|आगे बताइए|आगे बढ़ो|आगे बढ़िए|जारी रखो|जारी रखें|जहाँ रुके|जहां रुके|वहाँ से|वहां से)" +
+    "(?=$|[\\s,.!?…।-])",
+  "iu",
+);
+export function isContinueRequest(text: string): boolean {
+  const trimmed = text.trim();
+  if (trimmed.length === 0) return false;
+  return HEARING_CONTINUE_REQUEST.test(trimmed);
+}
+
+/**
+ * "Start from the beginning." / "No, I couldn't hear you." — the caller
+ * telling us they missed what was said. Both mean the same thing for
+ * the reply that was cut: say it again from its first word. Read under
+ * exactly the same bound as `HEARING_CONTINUE_REQUEST`, and checked
+ * FIRST, so "continue from the beginning" restarts.
+ *
+ * A bare "no" / "nahi" is included ONLY as a whole utterance: in this
+ * one position it is the direct answer to "can you hear me okay?", and
+ * it means "not well". With any content around it, it is not read here.
+ */
+const HEARING_RESTART_REQUEST = new RegExp(
+  "(?:^|[\\s,.!?…।-])(?:from the beginning|from the start|from the top|start over|start again|" +
+    "once again|once more|repeat|say that again|say it again|come again|" +
+    "couldn'?t hear|could not hear|can'?t hear|cannot hear|didn'?t hear|did not hear|" +
+    "not able to hear|unable to hear|missed that|i missed|what did you say|didn'?t catch|did not catch|couldn'?t catch|" +
+    "shuru se|shuruat se|shuruaat se|dobara|dubara|phir se|fir se|firse|wapas se|repeat karo|repeat kijiye|" +
+    "sunai nahi|sunayi nahi|suna nahi|nahi suna|nahi sun|awaaz nahi|awaz nahi|aawaz nahi|kya bola|kya kaha|" +
+    "शुरू से|शुरुआत से|दोबारा|दुबारा|फिर से|सुनाई नहीं|नहीं सुना|नहीं सुन|आवाज़ नहीं|आवाज नहीं|क्या बोला|क्या कहा)" +
+    "(?=$|[\\s,.!?…।-])",
+  "iu",
+);
+const HEARING_DENIAL_ONLY = /^(?:(?:no|nope|nah|nahi|nahin|नहीं)[\s,.!?…।-]*)+$/iu;
+export function isRestartRequest(text: string): boolean {
+  const trimmed = text.trim();
+  if (trimmed.length === 0) return false;
+  return HEARING_DENIAL_ONLY.test(trimmed) || HEARING_RESTART_REQUEST.test(trimmed);
+}
+
+/**
  * The one short line an attention check is answered with. Deliberately
  * fixed text, for the same reason the greeting is: it must be said
  * within a TTS request rather than a language-model round trip, and it
  * must never be an opportunity to regenerate the campaign script.
  *
- * It ANSWERS the caller's question rather than asking it back. "Hello?
- * Can you hear me?" is the caller asking whether WE can hear THEM, so
- * the line used to be exactly backwards ("Hello, can you hear me?"),
- * and it also asked a question, which invited the caller to answer it
- * instead of carrying on. This form confirms the line is alive and
- * hands the floor straight back; the pipeline then returns to LISTENING
- * as before and whatever the caller says next takes its normal path.
- * Gender-neutral in every language — the agent persona's gender is
- * configurable, and no fixed line may assume it.
+ * It is a QUESTION on purpose. Over a reply the caller is talking
+ * across with "Hello? Hello?", the line may have gone bad in either
+ * direction, and asking is what turns the next turn into an
+ * instruction the pipeline can act on without the model: "yes" or
+ * "continue" resumes the unheard tail, "start from the beginning" or
+ * "I couldn't hear you" repeats the cut-off reply (see
+ * `handleAttentionCheck`). Gender-neutral in every language — the
+ * agent persona's gender is configurable, and no fixed line may
+ * assume it.
  *
  * Every form survives `toSpokenText` unchanged — none of the leading
  * fillers, stacked acknowledgements or phrase substitutions in
@@ -589,11 +646,11 @@ const HEARING_CONFIRMATION_ONLY = new RegExp(
 function attentionAcknowledgementFor(language: SupportedLanguage): string {
   switch (language) {
     case "hi":
-      return "हाँ, आपकी आवाज़ आ रही है। बोलिए।";
+      return "हाँ, क्या आपको मेरी आवाज़ ठीक से सुनाई दे रही है?";
     case "hi-en":
-      return "Haan, aapki awaaz aa rahi hai. Boliye.";
+      return "Haan, aap mujhe theek se sun paa rahe ho?";
     default:
-      return "Yes, I can hear you. Go ahead.";
+      return "Hey, can you hear me okay?";
   }
 }
 
@@ -734,6 +791,19 @@ const HEARING_GREETING_TOKEN = new RegExp(`(?:^|[\\s,.!?…।-])(?:${HEARING_GR
 export function isEmphaticHearingCheck(text: string): boolean {
   if (!isHearingCheck(text)) return false;
   if (HEARING_PRESENCE_PHRASE.test(text)) return true;
+  const greetings = text.match(HEARING_GREETING_TOKEN);
+  return greetings !== null && greetings.length >= 2;
+}
+
+/**
+ * The greeting said more than once in ONE utterance — "Hello? Hello?",
+ * "hello hello". The second half of `isEmphaticHearingCheck`, on its
+ * own: a caller repeating themselves to get a response, with no
+ * presence question attached. Read by `bufferedTurnDemandsAttention`.
+ * Exported for the same reason the other vocabulary predicates are.
+ */
+export function isRepeatedGreeting(text: string): boolean {
+  if (!isHearingCheck(text)) return false;
   const greetings = text.match(HEARING_GREETING_TOKEN);
   return greetings !== null && greetings.length >= 2;
 }
@@ -1427,6 +1497,19 @@ export class ConversationPipeline {
    */
   private heldScriptRemainder = "";
   /**
+   * THE WHOLE REPLY the held position belongs to — `heldScriptRemainder`
+   * is its unheard suffix. Kept so that, asked "can you hear me okay?",
+   * a caller who answers "start from the beginning" or "no, I couldn't
+   * hear you" can be given that reply again from its first word without
+   * a language-model request, exactly as the RESUME branch gives them
+   * the unheard tail. Set at the same site as `heldScriptRemainder`,
+   * outlives a complete resume (the position is then "" but the reply
+   * is still the one they may ask to hear again), and is cleared by the
+   * first turn that is not an attention check, by the same rule — so it
+   * can never be spoken into a conversation that has moved on.
+   */
+  private heldScriptFull = "";
+  /**
    * An acknowledgement has been given and the caller has said nothing
    * since but more attention checks. This is what coalesces a repeated
    * "Hello? Hello? Hello?" into ONE acknowledgement.
@@ -1923,6 +2006,11 @@ export class ConversationPipeline {
           // the next iteration (see `handleAttentionCheck`), so it can
           // never be spoken into a conversation that has moved on.
           this.heldScriptRemainder = resumed ? "" : strandedRemainder;
+          this.heldScriptFull = resumed ? "" : result.assistantText;
+        } else {
+          // A reply that completed, or whose tail was resumed in full:
+          // no position is held, so no reply is on record to repeat.
+          this.heldScriptFull = "";
         }
       } catch (error) {
         if (error instanceof RecoverableTurnError) {
@@ -2047,6 +2135,11 @@ export class ConversationPipeline {
    *     fixed line, exactly once, and the episode is then open so no
    *     further "hello" can produce a second one.
    *
+   *   REPEAT — the caller, asked whether they can hear, says "start
+   *     from the beginning" or "no, I couldn't hear you". Speak the
+   *     whole cut-off reply again (`heldScriptFull`), by the same fixed
+   *     path as RESUME: no language-model request, nothing regenerated.
+   *
    *   DECLINE — everything else. A real question, an objection, a
    *     backchannel that reached a turn, an attention check with
    *     nothing held to resume. The episode closes, the held position
@@ -2071,20 +2164,69 @@ export class ConversationPipeline {
     // in open conversation, which is never seen by this method.
     const confirmsHearing =
       this.attentionEpisodeOpen && HEARING_CONFIRMATION_ONLY.test(trimmed);
+    // The caller's INSTRUCTION after the question, read only while a
+    // cut-off reply is on record (`heldScriptFull`) to act on. "Start
+    // from the beginning" / "I couldn't hear you" wins over "continue",
+    // so "continue from the beginning" restarts. Neither is ever read
+    // outside an open episode, so the same words in open conversation
+    // reach the language model exactly as today.
+    const replyOnRecord = this.attentionEpisodeOpen && this.heldScriptFull.length > 0;
+    const wantsRestart = replyOnRecord && isRestartRequest(trimmed);
+    const wantsContinue = replyOnRecord && !wantsRestart && isContinueRequest(trimmed);
 
-    if (!isCheck && !confirmsHearing) {
+    if (!isCheck && !confirmsHearing && !wantsRestart && !wantsContinue) {
       // A real contribution. The episode is over and the held position
       // is released — an unheard remainder must never be spoken into a
       // conversation that has moved on to something else.
       this.attentionEpisodeOpen = false;
       this.hearingEpisodeBeforeBlock = false;
       this.heldScriptRemainder = "";
+      this.heldScriptFull = "";
       return false;
     }
 
     const remainder = this.heldScriptRemainder;
 
+    // ── Say the cut-off reply again, from its first word ───────────
+    //
+    // "Start from the beginning." / "No, I couldn't hear you." Spoken
+    // through the same fixed-utterance path as the RESUME below, so
+    // there is no language-model request and nothing can be restated
+    // differently or regenerated: the text is the reply already
+    // generated for this caller. Whatever they hear of it is committed
+    // as heard; whatever they cut off again is re-held as the position.
+    if (wantsRestart) {
+      const full = this.heldScriptFull;
+      // eslint-disable-next-line no-console
+      console.log(
+        `[PIPELINE:${sid}] hearing check answered "${trimmed.slice(0, 40)}" — REPEATING the interrupted reply from the beginning: "${full.slice(0, 80)}${full.length > 80 ? "..." : ""}"`,
+      );
+      this.heldScriptRemainder = "";
+      const spoken = await this.speakAttentionUtterance(
+        full,
+        loopSignal,
+        "repeating the interrupted reply from the beginning",
+      );
+      // Cut off again: whatever is STILL unheard is still the position.
+      this.heldScriptRemainder = spoken.unheard;
+      if (spoken.heard.length > 0) this.contextualReplyCommitted = true;
+      return true;
+    }
+
+    // "Continue" with nothing left to continue — the tail was already
+    // resumed in full. The conversation carries on through the
+    // contextual path, which sees both lines in its history.
+    if (wantsContinue && remainder.length === 0) {
+      this.attentionEpisodeOpen = false;
+      this.hearingEpisodeBeforeBlock = false;
+      this.heldScriptFull = "";
+      return false;
+    }
+
     // ── Carry on from exactly where the reply stopped ───────────────
+    //
+    // Reached by a second "hello", by a confirmation ("yes", "haan")
+    // and by an explicit "continue from where you stopped".
     if (this.attentionEpisodeOpen && remainder.length > 0) {
       // eslint-disable-next-line no-console
       console.log(
@@ -4487,13 +4629,24 @@ await this.drainPlayback(speakingSignal, true);
       // predicates and adds no vocabulary, and it is read here and
       // nowhere else. `newerUserTurnWaiting()` is deliberately not
       // reused — its buffered branch is unfiltered.
-      if (!bufferedTurnTakesTheFloor(buffered)) continue;
+      // EXCEPT a caller repeating themselves to get our attention —
+      // "Hello? Hello?", or "Hello." answered by this very reply and
+      // now "Hello?" again after the thinking gap. They are not filling
+      // the silence; they are asking whether anyone is there, and the
+      // rest of the block is not the answer. Cutting here enters the
+      // existing hearing flow: the heard prefix is committed, the tail
+      // is held, and the waiting hello is answered with the fixed
+      // question on the next iteration (see `handleAttentionCheck`).
+      const demandsAttention = this.bufferedTurnDemandsAttention(buffered);
+      if (!bufferedTurnTakesTheFloor(buffered) && !demandsAttention) continue;
 
       if (!announced) {
         announced = true;
         // eslint-disable-next-line no-console
         console.log(
-          `[PLAYBACK:${this.record.id}] a caller turn is already waiting — asking to cut the reply short to answer it: "${buffered.slice(0, 80)}${buffered.length > 80 ? "..." : ""}"`,
+          demandsAttention
+            ? `[PLAYBACK:${this.record.id}] the caller is repeating a hello to get our attention — cutting the reply to answer it: "${buffered.slice(0, 80)}"`
+            : `[PLAYBACK:${this.record.id}] a caller turn is already waiting — asking to cut the reply short to answer it: "${buffered.slice(0, 80)}${buffered.length > 80 ? "..." : ""}"`,
         );
       }
       // Accepted: the signal is now aborted, the part the caller heard
@@ -4501,6 +4654,37 @@ await this.drainPlayback(speakingSignal, true);
       // up on the next loop iteration. Declined: keep draining.
       if (this.triggerExternalBargeIn()) return;
     }
+  }
+
+  /**
+   * Does the turn waiting behind a playing GENERATED reply demand our
+   * attention rather than fill the silence? Two shapes, both the caller
+   * repeating themselves because nothing came back:
+   *
+   *   (a) "Hello? Hello?" in one utterance (`isRepeatedGreeting`);
+   *   (b) across the thinking gap — the turn this reply answers was
+   *       itself nothing but a greeting / attention check ("Hello."),
+   *       and now another strict hearing check is waiting ("Hello?").
+   *       Real call 2026-09-04 08:52 UTC: 2.8s to first audio, the
+   *       caller said hello again, and waited through an 18s block
+   *       before being asked whether they could hear.
+   *
+   * Read ONLY by the `drainPlayback` poll, so only while a generated
+   * reply is playing and something has already been heard. Reads the
+   * buffered text and the committed history; adds no state, no timer,
+   * no vocabulary. A single "Hello?" after a substantive turn, a
+   * presence question ("are you there?") and any merge with a
+   * hesitation sound are NOT this and keep today's behaviour.
+   */
+  private bufferedTurnDemandsAttention(buffered: string): boolean {
+    if (isRepeatedGreeting(buffered)) return true;
+    if (!isHearingCheck(buffered)) return false;
+    const history = this.record.memory.history();
+    for (let i = history.length - 1; i >= 0; i -= 1) {
+      const turn = history[i];
+      if (turn?.role === "user") return isAttentionCheck(turn.content);
+    }
+    return false;
   }
 
   private async synthesizeAndPlay(

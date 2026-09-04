@@ -1207,12 +1207,12 @@ await test("B6 — a bare Hello over the block is acknowledged once, with ZERO l
     h.say("Hello?");
     await h.waitFor(
       "the acknowledgement was spoken",
-      () => h.synthesized.some((t) => t.includes("I can hear you")),
+      () => h.synthesized.some((t) => t.includes("hear me okay")),
       20000,
     );
 
     assert.equal(
-      h.synthesized.filter((t) => t.includes("I can hear you")).length,
+      h.synthesized.filter((t) => t.includes("hear me okay")).length,
       1,
       "acknowledged exactly once",
     );
@@ -1247,11 +1247,11 @@ await test("B7 — after the Hello, a confirmation RESUMES the unheard remainder
     h.say("Hello?");
     await h.waitFor(
       "acknowledgement",
-      () => h.synthesized.some((t) => t.includes("I can hear you")),
+      () => h.synthesized.some((t) => t.includes("hear me okay")),
       20000,
     );
     const requestsBefore = h.requests.length;
-    h.say("Yes, loud and clear.");
+    h.say("Yes, I can hear you.");
     await h.waitFor(
       "the remainder was resumed",
       () => h.synthesized.some((t) => t.includes("Flexi Genie") || t.includes("plain instructions")),

@@ -448,7 +448,7 @@ await test('TEST 1 — "hello" over the middle of a block does not erase the blo
       `the part of the block the caller heard must be committed, got ${JSON.stringify(spoken[1])}`,
     );
     assert.ok(
-      spoken[2]?.includes("can you hear me"),
+      spoken[2]?.includes("I can hear you"),
       `the hello is answered by the short attention line, got ${JSON.stringify(spoken[2])}`,
     );
 
@@ -470,7 +470,7 @@ await test('TEST 1 — "hello" over the middle of a block does not erase the blo
     // with the reply that was cancelled. The caller confirms, and the
     // block carries on from exactly where it stopped — still with no
     // generation, because this is text already produced for this caller.
-    h.say("Yes, I can hear you.");
+    h.say("Yes, loud and clear.");
     await h.waitForReplies(4);
     const resumed = assistantTexts(h.history())[3] ?? "";
     assert.ok(
@@ -597,11 +597,11 @@ for (const word of ["okay", "hi", "hello", "haan"]) {
         // The hearing check is answered by the fixed line, and by nothing
         // generated: no request, no script, and the block is not re-spoken.
         await h.waitFor(`the acknowledgement after "${word}"`, () =>
-          assistantTexts(h.history()).some((t) => t.includes("can you hear me")),
+          assistantTexts(h.history()).some((t) => t.includes("I can hear you")),
         );
         assert.equal(h.requests.length, 1, `"${word}" must not spend a language-model request`);
         // The next substantive turn is the one that reaches the model.
-        h.say("Yes, I can hear you. Go on.");
+        h.say("Yes, loud and clear. Go on.");
       }
 
       await h.waitFor(`the reply after "${word}"`, () => h.requests.length >= 2);

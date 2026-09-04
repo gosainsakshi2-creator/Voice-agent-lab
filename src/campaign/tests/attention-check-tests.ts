@@ -37,6 +37,7 @@
  *   G  a meaningful interruption, unchanged
  *   H  already-heard text is never spoken twice
  *   I  normal conversation continues afterwards
+ *   J  the acknowledgement ANSWERS the caller — it never asks the question back
  *
  * NOTHING HERE PLACES A CALL, OPENS A SOCKET, CONTACTS A VENDOR, READS
  * THE DATABASE OR TOUCHES GOOGLE. Every provider is a local fake; the
@@ -323,11 +324,11 @@ function assistantTexts(history: readonly ConversationTurn[]): string[] {
 }
 
 /** The fixed English acknowledgement, as the pipeline speaks it. */
-const ACK = "Hello, can you hear me?";
+const ACK = "Yes, I can hear you. Go ahead.";
 
 /** How many times the acknowledgement was actually SPOKEN. */
 function ackCount(synthesized: readonly string[]): number {
-  return synthesized.filter((text) => text.includes("can you hear me")).length;
+  return synthesized.filter((text) => text.includes("I can hear you")).length;
 }
 
 // The approved script's own shape: an opening the caller has already
@@ -476,7 +477,7 @@ await test('B3 — "Hello? Hello? Hello?" produces exactly ONE acknowledgement',
       1,
       `the acknowledgement must be spoken exactly once, spoken=${JSON.stringify(h.synthesized)}`,
     );
-    const committedAcks = assistantTexts(h.history()).filter((t) => t.includes("can you hear me")).length;
+    const committedAcks = assistantTexts(h.history()).filter((t) => t.includes("I can hear you")).length;
     assert.equal(committedAcks, 1, "and committed exactly once");
   } finally {
     await h.stop();
@@ -507,7 +508,13 @@ await test("B4 — a repeated hello NEVER re-speaks the campaign opening", async
 section("SECTION C — resume from the EXACT point the reply stopped");
 // ═════════════════════════════════════════════════════════════════
 
-await test('C1 — "Yes, I can hear you." resumes the block, without a language-model request', async () => {
+// The confirmation is a SHORT one on purpose. The acknowledgement now says
+// "Yes, I can hear you. Go ahead.", so a caller who parrots "Yes, I can
+// hear you." back would match every word pair of audio just played and be
+// dropped by the existing self-echo guard — which is untouched here. Real
+// callers answer the new line with "yes" / "okay" / "haan", not with our
+// sentence; `HEARING_CONFIRMATION_ONLY` still accepts every one of those.
+await test('C1 — a hearing confirmation ("Yes, loud and clear.") resumes the block, without a language-model request', async () => {
   const h = startHarness({ openingLine: OPENING, replies: [BLOCK, "SHOULD-NOT-BE-GENERATED"] });
   try {
     await upToMidBlock(h);
@@ -515,7 +522,7 @@ await test('C1 — "Yes, I can hear you." resumes the block, without a language-
     await h.waitForReplies(3);
     const requestsAfterAck = h.requests.length;
 
-    h.say("Yes, I can hear you.");
+    h.say("Yes, loud and clear.");
     await h.waitForReplies(4);
 
     const resumed = assistantTexts(h.history())[3] ?? "";
@@ -582,7 +589,7 @@ await test("C4 — the resumed text is in the history the model is next shown", 
     await upToMidBlock(h);
     h.say("Hello?");
     await h.waitForReplies(3);
-    h.say("Yes, I can hear you.");
+    h.say("Yes, loud and clear.");
     await h.waitForReplies(4);
 
     // A real question now — the model must be able to see everything
@@ -759,7 +766,7 @@ await test("H1 — no sentence the caller has heard is ever synthesized a second
     await upToMidBlock(h);
     h.say("Hello?");
     await h.waitForReplies(3);
-    h.say("Yes, I can hear you.");
+    h.say("Yes, loud and clear.");
     await h.waitForReplies(4);
     await sleep(500);
 
@@ -788,7 +795,7 @@ await test("H2 — the resume is a strict suffix of the interrupted reply", asyn
     await upToMidBlock(h);
     h.say("Hello?");
     await h.waitForReplies(3);
-    h.say("Yes, I can hear you.");
+    h.say("Yes, loud and clear.");
     await h.waitForReplies(4);
 
     const heardBefore = assistantTexts(h.history())[1] ?? "";
@@ -817,7 +824,7 @@ await test("I1 — the call carries on normally after an attention-check episode
     await upToMidBlock(h);
     h.say("Hello?");
     await h.waitForReplies(3);
-    h.say("Yes, I can hear you.");
+    h.say("Yes, loud and clear.");
     await h.waitForReplies(4);
 
     h.say("Is it free?");
@@ -857,6 +864,133 @@ await test("I2 — an attention check with nothing to resume, after a block, is 
     h.say("Yes, I can hear you. What is this about?");
     await h.waitForReplies(4);
     assert.equal(h.requests.length, requestsBefore + 1, "a real contribution takes the normal path");
+  } finally {
+    await h.stop();
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════
+section("SECTION J — the acknowledgement ANSWERS the caller; it never asks the question back");
+// ═════════════════════════════════════════════════════════════════
+//
+// "Hello? Can you hear me?" is the CALLER asking whether WE can hear
+// THEM. The fixed line used to be "Hello, can you hear me?" — the same
+// question asked straight back — which is exactly wrong. It must
+// confirm the line is alive and hand the floor back, and the pipeline
+// must then LISTEN rather than carry on with the interrupted block on
+// its own. Detection, the barge-in, the once-per-episode rule and the
+// resume-on-confirmation path are all the existing ones and are
+// re-asserted here only in passing.
+
+/** Any form of the question asked back, in any supported language. */
+const ASKS_BACK = /can you hear me|sun paa rahe|sun pa rahe|सुन पा रहे/iu;
+
+await test('J1 — mid-block "Hello? Hello? Can you hear me?" is interrupted and ANSWERED, not asked back', async () => {
+  const h = startHarness({ openingLine: OPENING, replies: [BLOCK, "SHOULD-NOT-BE-GENERATED"] });
+  try {
+    await upToMidBlock(h);
+    const requestsBefore = h.requests.length;
+
+    h.say("Hello? Hello? Can you hear me?");
+    await h.waitForReplies(3);
+
+    const spoken = assistantTexts(h.history());
+    // The existing barge-in cut the block: what was committed is a proper prefix of it.
+    assert.ok(
+      spoken[1] !== undefined && spoken[1].length < BLOCK.length && BLOCK.startsWith(spoken[1]),
+      `the block must have been interrupted, got ${JSON.stringify(spoken[1])}`,
+    );
+    assert.equal(spoken[2], ACK, `expected the answering acknowledgement, got ${JSON.stringify(spoken[2])}`);
+    assert.ok(!h.synthesized.some((t) => ASKS_BACK.test(t)), `must never ask the caller's question back, spoken=${JSON.stringify(h.synthesized)}`);
+    assert.equal(ackCount(h.synthesized), 1, "acknowledged exactly once");
+    assert.equal(h.requests.length, requestsBefore, "and without a language-model request");
+    assert.equal(h.record.state, SessionState.LISTENING, "then the session is LISTENING again");
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("J2 — after the acknowledgement the agent LISTENS; it does not carry on with the block by itself, and the caller's next real speech takes the normal path", async () => {
+  const h = startHarness({ openingLine: OPENING, replies: [BLOCK, "It costs nothing at all."] });
+  try {
+    await upToMidBlock(h);
+    h.say("Hello? Can you hear me?");
+    await h.waitForReplies(3);
+    const synthesizedAfterAck = h.synthesized.length;
+    const requestsAfterAck = h.requests.length;
+
+    // Nothing is said while the caller is given the floor.
+    await sleep(2000);
+    assert.equal(h.synthesized.length, synthesizedAfterAck, `nothing may be spoken unprompted after the acknowledgement, spoken=${JSON.stringify(h.synthesized.slice(synthesizedAfterAck))}`);
+    assert.equal(h.record.state, SessionState.LISTENING, "still listening");
+
+    // The caller goes ahead with something real: the normal contextual path, once.
+    h.say("How much does it cost?");
+    await h.waitForReplies(4);
+    assert.equal(h.requests.length, requestsAfterAck + 1, "the real question reaches the model exactly once");
+    const reply = assistantTexts(h.history())[3] ?? "";
+    assert.ok(reply.startsWith("It costs nothing"), `expected the normal contextual reply, got ${JSON.stringify(reply)}`);
+    assert.equal(h.record.state, SessionState.LISTENING);
+  } finally {
+    await h.stop();
+  }
+});
+
+await test('J3 — "Can you hear me?" after a finished block (nothing held) is answered with the same line, without the model', async () => {
+  const h = startHarness({ openingLine: OPENING, replies: ["Short reply.", "The session is free."] });
+  try {
+    await h.waitForReplies(1);
+    h.say("Yes, tell me.");
+    await h.waitForReplies(2);
+    const requestsBefore = h.requests.length;
+
+    h.say("Can you hear me?");
+    await h.waitForReplies(3);
+
+    assert.equal(assistantTexts(h.history())[2], ACK, "answered with the acknowledgement");
+    assert.ok(!h.synthesized.some((t) => ASKS_BACK.test(t)), "never asked back");
+    assert.equal(h.requests.length, requestsBefore, "no language-model request");
+    assert.equal(h.synthesized.filter((t) => t === "Short reply.").length, 1, "the block is not re-spoken");
+
+    h.say("Okay, is it free?");
+    await h.waitForReplies(4);
+    assert.equal(h.requests.length, requestsBefore + 1, "the next real turn takes the normal path");
+    assert.ok((assistantTexts(h.history())[3] ?? "").startsWith("The session is free"));
+  } finally {
+    await h.stop();
+  }
+});
+
+await test('J4 — "Hello? Can you hear me?" right after the opening line (before any block) is answered, not asked back', async () => {
+  const h = startHarness({ openingLine: OPENING, replies: ["SHOULD-NOT-BE-GENERATED"] });
+  try {
+    await h.waitForReplies(1);
+    const requestsBefore = h.requests.length;
+
+    h.say("Hello? Can you hear me?");
+    await h.waitForReplies(2);
+
+    assert.equal(assistantTexts(h.history())[1], ACK, "answered with the acknowledgement");
+    assert.ok(!h.synthesized.some((t) => ASKS_BACK.test(t)), "never asked back");
+    assert.equal(h.requests.length, requestsBefore, "no language-model request");
+    assert.equal(h.synthesized.filter((t) => t === OPENING).length, 1, "the opening is not re-spoken");
+  } finally {
+    await h.stop();
+  }
+});
+
+await test('J5 — a single "Hello." right after the opening line is NOT a hearing check: it takes the normal path (unchanged)', async () => {
+  const h = startHarness({ openingLine: OPENING, replies: ["Great, let me tell you why I called."] });
+  try {
+    await h.waitForReplies(1);
+    const requestsBefore = h.requests.length;
+
+    h.say("Hello.");
+    await h.waitForReplies(2);
+
+    assert.equal(h.requests.length, requestsBefore + 1, "a lone hello after the opening reaches the model as today");
+    assert.equal(ackCount(h.synthesized), 0, "no acknowledgement is spoken for it");
+    assert.ok((assistantTexts(h.history())[1] ?? "").startsWith("Great, let me tell you"), "the contextual reply is spoken");
   } finally {
     await h.stop();
   }

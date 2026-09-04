@@ -95,7 +95,7 @@ const SLACK_MS = 250;
 
 const PROMPT_1 = "Hello, are you there?";
 const PROMPT_2 = "Hello, is anyone there?";
-const ACK = "Hello, can you hear me?";
+const ACK = "Yes, I can hear you. Go ahead.";
 const FOLLOW_UP = "I just want to make sure you can hear me. Did you catch what I was saying?";
 
 // ═════════════════════════════════════════════════════════════════

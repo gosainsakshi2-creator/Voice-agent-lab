@@ -544,14 +544,15 @@ export function bufferedTurnTakesTheFloor(text: string): boolean {
 }
 
 /**
- * "Yes, I can hear you." — the caller answering the acknowledgement's
- * own question, which is the cue to carry on from where the reply
- * stopped.
+ * "Yes, I can hear you." / "okay" / "haan" — the caller confirming the
+ * line is fine after the acknowledgement, which is the cue to carry on
+ * from where the reply stopped.
  *
  * Read at ONE place and only while an attention episode is open, i.e.
- * only in the turn immediately after the assistant asked "can you hear
- * me?". A bare "yes" anywhere else is untouched by this and reaches the
- * classifier and the registration gate exactly as it does today.
+ * only in the turn immediately after the assistant's acknowledgement
+ * ("Yes, I can hear you. Go ahead."). A bare "yes" anywhere else is
+ * untouched by this and reaches the classifier and the registration
+ * gate exactly as it does today.
  */
 const HEARING_CONFIRMATION_ONLY = new RegExp(
   "^(?:(?:yes|yeah|yep|yup|ya|yaa|yes i can|yes i can hear you|i can hear you|" +
@@ -570,6 +571,16 @@ const HEARING_CONFIRMATION_ONLY = new RegExp(
  * within a TTS request rather than a language-model round trip, and it
  * must never be an opportunity to regenerate the campaign script.
  *
+ * It ANSWERS the caller's question rather than asking it back. "Hello?
+ * Can you hear me?" is the caller asking whether WE can hear THEM, so
+ * the line used to be exactly backwards ("Hello, can you hear me?"),
+ * and it also asked a question, which invited the caller to answer it
+ * instead of carrying on. This form confirms the line is alive and
+ * hands the floor straight back; the pipeline then returns to LISTENING
+ * as before and whatever the caller says next takes its normal path.
+ * Gender-neutral in every language — the agent persona's gender is
+ * configurable, and no fixed line may assume it.
+ *
  * Every form survives `toSpokenText` unchanged — none of the leading
  * fillers, stacked acknowledgements or phrase substitutions in
  * `speech-formatter.ts` matches any of them — which is what lets the
@@ -578,11 +589,11 @@ const HEARING_CONFIRMATION_ONLY = new RegExp(
 function attentionAcknowledgementFor(language: SupportedLanguage): string {
   switch (language) {
     case "hi":
-      return "हैलो, क्या आप मुझे सुन पा रहे हैं? ";
+      return "हाँ, आपकी आवाज़ आ रही है। बोलिए।";
     case "hi-en":
-      return "Hello, aap mujhe sun paa rahe hain?";
+      return "Haan, aapki awaaz aa rahi hai. Boliye.";
     default:
-      return "Hello, can you hear me? ";
+      return "Yes, I can hear you. Go ahead.";
   }
 }
 
@@ -2056,8 +2067,8 @@ export class ConversationPipeline {
     const trimmed = userText.trim();
     const isCheck = isAttentionCheck(trimmed);
     // Only ever read inside an open episode: this is the caller
-    // answering OUR "can you hear me?", not a bare "yes" in open
-    // conversation, which is never seen by this method.
+    // confirming the line after OUR acknowledgement, not a bare "yes"
+    // in open conversation, which is never seen by this method.
     const confirmsHearing =
       this.attentionEpisodeOpen && HEARING_CONFIRMATION_ONLY.test(trimmed);
 

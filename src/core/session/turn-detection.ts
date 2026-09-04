@@ -547,11 +547,13 @@ export class AdaptiveTurnDetector {
   ) {}
 
   /**
-   * OBSERVATION ONLY: the detector has just armed a window it expects
-   * to release `text` at the end of, and nothing more is owed for that
-   * text except — at one of the four sites — the provider's endpoint
-   * claim. Unless new speech arrives inside that window, `onTurnEnd`
-   * will fire with exactly this text when it expires.
+   * OBSERVATION ONLY: the detector has just armed the EVIDENCED
+   * confirmation window for `text` — i.e. at this instant the
+   * provider's OWN endpointer has explicitly declared end of speech
+   * (`speech_final: true` on the words, or the standalone end-of-speech
+   * marker), no interim is outstanding, and the text reads as a
+   * finished thought. Unless new speech arrives inside that window,
+   * `onTurnEnd` will fire with exactly this text when it expires.
    *
    * It is NOT a release and must not be treated as one: `onTurnEnd` is
    * still the only release. New speech of any kind cancels the pending
@@ -559,36 +561,27 @@ export class AdaptiveTurnDetector {
    * is sent for that — a subscriber sees the cancellation as the fed
    * segment itself, or as `onTurnEnd` delivering different text.
    *
-   * FOUR call sites fire it, and they split into two classes:
-   *
-   *   EVIDENCED — the provider's OWN endpointer has explicitly declared
-   *   end of speech (`speech_final: true` on the words, or the
-   *   standalone marker). `feed`'s fast path, `noteEndOfSpeech`, and
-   *   `emitTurnEnd`'s confirmation branch (reached only by the
-   *   chunk-boundary-grace collapse). Predicate:
-   *   `lastFinalWasEndpoint && !pendingInterim && isReleasableThought()`.
-   *
-   *   QUIET — `emitTurnEnd`'s chunk-boundary-grace branch. No endpoint
-   *   claim has arrived; the grace armed there exists to wait for one.
-   *   What stands in its place is the full adaptive silence window
-   *   having already expired with no segment of any kind, plus the
-   *   filler / hold-phrase / mid-thought guards `emitTurnEnd` runs
-   *   above that branch. Predicate: the same one minus
-   *   `lastFinalWasEndpoint`, which is `false` by construction there.
-   *   It exists because that is the earliest instant a turn's text is
-   *   both known and quiet, and therefore the earliest a speculative
-   *   request can be built at all.
-   *
    * Deliberately NOT fired for: an interim, an `is_final` chunk boundary
-   * on arrival (the QUIET site fires a full silence window later, not
-   * on the segment), a continuation or hold grace, the pending-interim
-   * re-wait, or a provider that reports no endpoint claim at all
-   * (`isSpeechFinal` absent — such a provider never reaches the
-   * chunk-boundary branch, since `lastFinalWasEndpoint` defaults true).
+   * without `speech_final`, the adaptive silence window expiring, a
+   * continuation/hold/chunk-boundary grace, the pending-interim re-wait,
+   * or a provider that reports no endpoint claim at all (`isSpeechFinal`
+   * absent). Those turns are released by inference, and inference is
+   * not the evidence this hook exists to announce.
+   *
+   * THREE call sites arm an evidenced window and therefore fire this:
+   * `feed`'s fast path, `noteEndOfSpeech`, and `emitTurnEnd`'s
+   * confirmation branch — the last of these reached ONLY by the
+   * chunk-boundary-grace collapse, where `noteEndOfSpeech` hands the
+   * decision back rather than deciding itself (see the comment there).
+   * All three apply the identical predicate
+   * `lastFinalWasEndpoint && !pendingInterim && isReleasableThought()`,
+   * so the class announced is one class, whichever site announces it.
+   * The exclusion list above is unchanged by that: the grace itself is
+   * still never announced — only the evidenced window that replaces it
+   * once the claim it was waiting for has actually arrived.
    *
    * Arms no timer, consumes nothing, clears nothing and touches no
-   * threshold — every window in this file is byte-for-byte what it was,
-   * and every release lands at the instant it always did.
+   * threshold — every window in this file is byte-for-byte what it was.
    */
   onTurnPending(listener: (text: string) => void): () => void {
     this.pendingListeners.add(listener);
@@ -1033,45 +1026,6 @@ export class AdaptiveTurnDetector {
         // abandon it (see `noteEndOfSpeech`). Must follow `rearmTimer`,
         // which clears the flag.
         this.chunkBoundaryGraceArmed = true;
-        // ── The one announcement NOT gated on an endpoint claim ──────
-        //
-        // Everything above waits for the provider to say "they stopped".
-        // Here it has not said so — and the grace exists precisely to
-        // give that claim time to arrive. But the claim is the ONLY
-        // thing still missing: the full adaptive silence window has
-        // already expired with no segment of any kind, and `emitTurnEnd`
-        // has already run FILLER_ONLY, HOLD_PHRASE_ONLY and
-        // `looksIncomplete` ABOVE this branch. What is held is a
-        // complete thought the caller stopped speaking 1100ms ago.
-        //
-        // So this is the earliest point in the call at which the turn's
-        // TEXT is both known and quiet — and it is the earliest signal a
-        // speculative request can be built from at all. Earlier ones
-        // carry no text: the transport's energy VAD fires ~400ms after
-        // the caller stops, when `pendingFinalText` is still empty and
-        // there is nothing to open a request for.
-        //
-        // ANNOUNCEMENT ONLY, and the distinction is the whole safety
-        // case. `onTurnPending` returns nothing, no code in this file
-        // reads `pendingListeners`, and this line arms no timer,
-        // consumes nothing, clears nothing and touches no threshold.
-        // The grace armed above is the same 700ms it always was and
-        // expires at the same instant; release is still `onTurnEnd`,
-        // from this method, on that timer. A caller who turns out to be
-        // mid-utterance cancels the pending turn exactly as before —
-        // the fed segment abandons the pre-opened request through the
-        // pipeline's existing `caller resumed speaking` path — and the
-        // merged turn then gets its own request, as it does today.
-        //
-        // The gate is the other three call sites' predicate minus
-        // `lastFinalWasEndpoint`, which is `false` by construction in
-        // this branch. It is not redundant with the guards above: a
-        // mid-thought turn that has EXHAUSTED both continuation graces
-        // falls through to here, and `isReleasableThought()` is what
-        // still declines it.
-        if (!this.pendingInterim && this.isReleasableThought()) {
-          this.notifyTurnPending();
-        }
         return;
       }
 

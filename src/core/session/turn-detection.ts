@@ -568,6 +568,18 @@ export class AdaptiveTurnDetector {
    * absent). Those turns are released by inference, and inference is
    * not the evidence this hook exists to announce.
    *
+   * THREE call sites arm an evidenced window and therefore fire this:
+   * `feed`'s fast path, `noteEndOfSpeech`, and `emitTurnEnd`'s
+   * confirmation branch — the last of these reached ONLY by the
+   * chunk-boundary-grace collapse, where `noteEndOfSpeech` hands the
+   * decision back rather than deciding itself (see the comment there).
+   * All three apply the identical predicate
+   * `lastFinalWasEndpoint && !pendingInterim && isReleasableThought()`,
+   * so the class announced is one class, whichever site announces it.
+   * The exclusion list above is unchanged by that: the grace itself is
+   * still never announced — only the evidenced window that replaces it
+   * once the claim it was waiting for has actually arrived.
+   *
    * Arms no timer, consumes nothing, clears nothing and touches no
    * threshold — every window in this file is byte-for-byte what it was.
    */
@@ -1028,6 +1040,43 @@ export class AdaptiveTurnDetector {
         if (confirmationMs > 0) {
           this.stage = "confirming";
           this.rearmTimer(confirmationMs);
+          // ── The THIRD route into an evidenced confirmation window ──
+          //
+          // `feed` and `noteEndOfSpeech` both announce the window they
+          // arm (see `onTurnPending`). This branch could arm the SAME
+          // window on the SAME evidence and announce nothing, so an
+          // observer that exists to overlap work with it got nothing to
+          // overlap — and the turn paid the window anyway.
+          //
+          // The route is the chunk-boundary-grace COLLAPSE. Deepgram
+          // withheld `speech_final` from the words, the grace below was
+          // armed for the claim to arrive, the claim then arrived inside
+          // it, and `noteEndOfSpeech` handed the decision straight back
+          // here with `rearmTimer(0)` rather than deciding itself —
+          // deliberately, so every guard in this method still runs. It
+          // therefore returns BEFORE its own `notifyTurnPending()`, and
+          // the window `confirmationWindowMs` grants a moment later (the
+          // `lastFinalWasEndpoint` tiers, i.e. `evidencedConfirmationWindowMs`
+          // or `EVIDENCED_CONFIRMATION_OPEN_MS`) is announced by nobody.
+          //
+          // The gate is the two existing call sites' predicate, verbatim
+          // and unwidened — the provider's own endpoint claim, no
+          // outstanding interim, and text that reads as finished — so
+          // this announces exactly the class `onTurnPending` documents
+          // and nothing else. In particular it cannot announce a
+          // mid-thought turn that merely exhausted its continuation
+          // graces: `isReleasableThought()` is false for that text, and
+          // it is false for a hesitation sound or a hold phrase, which
+          // is the same reason `feed`'s fast path declines them.
+          //
+          // Observation only, exactly like the other two: it arms no
+          // timer (the window above is already armed and is not touched),
+          // consumes nothing, clears nothing, and reads no threshold.
+          // Release is still this method, on the timer set above, at the
+          // same instant it fired before.
+          if (this.lastFinalWasEndpoint && !this.pendingInterim && this.isReleasableThought()) {
+            this.notifyTurnPending();
+          }
           return;
         }
       } else if (this.pendingInterim && this.interimConfirmations < MAX_INTERIM_CONFIRMATIONS) {

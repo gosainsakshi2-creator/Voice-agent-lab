@@ -669,6 +669,185 @@ await test("C7. a marker never moves the adaptive silence threshold", async () =
   );
 });
 
+// ═════════════════════════════════════════════════════════════════
+// SECTION D — the collapsed grace ANNOUNCES the window it arms
+// ═════════════════════════════════════════════════════════════════
+
+section("D. COLLAPSED GRACE — the evidenced window it arms is announced (P0-1)");
+
+/**
+ * The gap this section exists for. `noteEndOfSpeech` deliberately does
+ * NOT decide the collapsed-grace case itself: it calls `rearmTimer(0)`
+ * and hands the decision back to `emitTurnEnd`, so every guard —
+ * filler, continuation, hold phrase, the interim re-wait — still runs.
+ * That early return is BEFORE its own `notifyTurnPending()`, so the
+ * evidenced window `emitTurnEnd` then arms on the identical evidence
+ * used to be announced by nobody, and the observers that exist to
+ * overlap work with that window (the speculative LLM pre-open and the
+ * TTS transport hint) got nothing to overlap while the turn paid the
+ * window anyway.
+ *
+ * Every test here asserts release TIMING as well as the notification,
+ * because the whole claim of this change is that it moves no window.
+ */
+
+/** As `graceScenario`, but also reports what `onTurnPending` saw. */
+async function gracePendingScenario(
+  text: string,
+  opts: { deliverMarker: boolean; isSpeechFinal?: boolean; interimAfterMarker?: boolean } = {
+    deliverMarker: true,
+  },
+): Promise<{ delayMs: number; text: string; pending: string[] }> {
+  const detector = new AdaptiveTurnDetector();
+  const pending: string[] = [];
+  const start = Date.now();
+  detector.onTurnPending((t) => pending.push(t));
+  const released = new Promise<{ delayMs: number; text: string }>((resolve, reject) => {
+    const bail = setTimeout(() => reject(new Error("no turn released within 9000ms")), 9_000);
+    detector.onTurnEnd((event) => {
+      clearTimeout(bail);
+      resolve({ delayMs: Date.now() - start, text: event.text });
+    });
+  });
+
+  detector.feed({
+    text,
+    isFinal: true,
+    isSpeechFinal: opts.isSpeechFinal ?? false,
+    confidence: 0.92,
+    language: SupportedLanguage.ENGLISH,
+    startedAtMs: 0,
+    endedAtMs: 1_000,
+  });
+
+  if (opts.deliverMarker) {
+    // Land 250ms INTO the grace, i.e. after the silence window expired —
+    // the same instant `graceScenario` above uses.
+    await deliverAt(start, SILENCE_WINDOW_MS + 250);
+    if (opts.interimAfterMarker) {
+      detector.feed({
+        text: "and one more",
+        isFinal: false,
+        confidence: 0.9,
+        language: SupportedLanguage.ENGLISH,
+        startedAtMs: 1_000,
+        endedAtMs: 1_400,
+      });
+    }
+    detector.noteEndOfSpeech();
+  }
+  const result = await released;
+  return { ...result, pending };
+}
+
+await test("D1. a marker collapsing the grace ANNOUNCES the evidenced window it arms", async () => {
+  const text = "Yeah, actually I wanted to tell you that I was interested in the webinar.";
+  const r = await gracePendingScenario(text, { deliverMarker: true });
+  assert.deepEqual(r.pending, [text], "exactly one announcement, carrying the held text");
+  assert.equal(r.text, text, "and the turn released is that same text");
+});
+
+await test("D2. the announcement changes NO timing — release is where C1 already measured it", async () => {
+  const text = "Yeah, actually I wanted to tell you that I was interested in the webinar.";
+  const without = await gracePendingScenario(text, { deliverMarker: false });
+  const withMarker = await gracePendingScenario(text, { deliverMarker: true });
+  console.log(`        collapse: ${without.delayMs}ms -> ${withMarker.delayMs}ms`);
+  // Byte-for-byte the bounds C1 asserts. If announcing moved a window,
+  // one of these would break.
+  atLeast(
+    without.delayMs,
+    SILENCE_WINDOW_MS + CHUNK_BOUNDARY_GRACE_MS,
+    "the grace must still be paid when no endpoint claim ever arrives",
+  );
+  atMost(withMarker.delayMs, SILENCE_WINDOW_MS + 250 + CONFIRMATION_MS, "collapsed grace");
+  assert.deepEqual(without.pending, [], "no claim ever arrived, so nothing may be announced");
+});
+
+await test("D3. it announces the UNPUNCTUATED collapse too — the C2 case", async () => {
+  const text = "yeah actually I wanted to tell you that I was interested in the webinar";
+  const r = await gracePendingScenario(text, { deliverMarker: true });
+  assert.deepEqual(r.pending, [text]);
+  atMost(r.delayMs, SILENCE_WINDOW_MS + 250 + CONFIRMATION_MS, "collapsed grace, unpunctuated");
+});
+
+await test("D4. a MID-THOUGHT turn is never announced, however the grace ends", async () => {
+  // `isReleasableThought()` is false for a dangling conjunction, so the
+  // gate excludes it at every one of the three call sites. It takes its
+  // continuation graces and is released by inference, unannounced —
+  // which is the whole reason the gate is the predicate it is.
+  const detector = new AdaptiveTurnDetector();
+  const pending: string[] = [];
+  const start = Date.now();
+  let releasedAt = 0;
+  detector.onTurnPending((t) => pending.push(t));
+  detector.onTurnEnd(() => {
+    releasedAt = Date.now() - start;
+  });
+  detector.feed({
+    text: "I was going to ask about the timing and",
+    isFinal: true,
+    isSpeechFinal: false,
+    confidence: 0.92,
+    language: SupportedLanguage.ENGLISH,
+    startedAtMs: 0,
+    endedAtMs: 1_000,
+  });
+  await deliverAt(start, SILENCE_WINDOW_MS + 250);
+  detector.noteEndOfSpeech();
+  await sleep(3_400);
+  assert.deepEqual(pending, [], "a mid-thought turn must never be announced as pending");
+  assert.ok(releasedAt > 0, "the turn must eventually be released");
+  atLeast(
+    releasedAt,
+    SILENCE_WINDOW_MS + CONTINUATION_GRACE_MS,
+    "…and it must still get its continuation grace, exactly as C3 asserts",
+  );
+});
+
+await test("D5. a HOLD PHRASE is never announced either", async () => {
+  const r = await gracePendingScenario("Wait.", { deliverMarker: true });
+  assert.deepEqual(r.pending, [], "a caller who asked for a moment is not a pending turn");
+  atLeast(r.delayMs, SILENCE_WINDOW_MS + 1_200, "and keeps its longer grace, as C4 asserts");
+});
+
+await test("D6. an OUTSTANDING INTERIM blocks the announcement — the `!pendingInterim` clause", async () => {
+  // Deepgram has shown words it has not finalised, so the detector holds
+  // less of this turn than the model would be asked about. The window is
+  // still armed; announcing it would pre-open a request for half a
+  // sentence.
+  const text = "Yes that is right.";
+  const r = await gracePendingScenario(text, { deliverMarker: true, interimAfterMarker: true });
+  assert.deepEqual(r.pending, [], "words still awaiting their final must not be announced");
+});
+
+await test("D7. the already-announcing routes are unchanged — still exactly one announcement each", async () => {
+  // `feed`'s fast path: `speech_final` rides on the words, so the grace
+  // is never armed and this branch is never reached.
+  const fast = await gracePendingScenario("Haan.", { deliverMarker: false, isSpeechFinal: true });
+  assert.deepEqual(fast.pending, ["Haan."], "feed's fast path still announces once");
+  atMost(fast.delayMs, 150, "…and still releases on the short evidenced window");
+
+  // `noteEndOfSpeech`'s own route: the marker lands while the ADAPTIVE
+  // SILENCE window is armed, before any grace exists. It decides there
+  // and announces there; `emitTurnEnd` must not announce a second time.
+  const detector = new AdaptiveTurnDetector();
+  const pending: string[] = [];
+  detector.onTurnPending((t) => pending.push(t));
+  detector.feed({
+    text: "Yes I would like to attend.",
+    isFinal: true,
+    isSpeechFinal: false,
+    confidence: 0.92,
+    language: SupportedLanguage.ENGLISH,
+    startedAtMs: 0,
+    endedAtMs: 1_000,
+  });
+  await sleep(120);
+  detector.noteEndOfSpeech();
+  await sleep(900);
+  assert.deepEqual(pending, ["Yes I would like to attend."], "exactly one announcement, not two");
+});
+
 // ---------------------------------------------------------------
 
 console.log(`\n${"=".repeat(78)}`);

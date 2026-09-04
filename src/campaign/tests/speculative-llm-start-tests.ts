@@ -11,18 +11,23 @@
  *
  * What is proved here, in order:
  *
- *   SECTION A — the detector's `onTurnPending` hook fires ONLY on explicit
- *     endpoint evidence, and only for text the detector would release on
- *     that evidence. Interim, bare `is_final`, a provider that reports no
- *     claim, fillers, hold phrases and incomplete thoughts never fire it.
+ *   SECTION A — what the detector's `onTurnPending` hook fires on, and
+ *     what it never fires on. Explicit endpoint evidence (`feed`'s fast
+ *     path, `noteEndOfSpeech`, the P0-1 collapse), plus ONE site with no
+ *     claim at all: arming the chunk-boundary grace, a full adaptive
+ *     silence window after the boundary, on text that survived every
+ *     mid-thought guard. An interim, the boundary ON ARRIVAL, a provider
+ *     that reports no claim, fillers, hold phrases and incomplete
+ *     thoughts never fire it.
  *
- *   SECTION B — the pipeline: no request on interim-only input; no request
- *     on `is_final` without `speech_final` until the ordinary release; a
- *     request opened within milliseconds of `speech_final` / the marker,
- *     BEFORE the user turn is committed, then adopted — ONE request per
- *     turn; caller resuming speech aborts it; attention-check turns spend
- *     zero requests; barge-in takes exactly today's path; a provider
- *     without streaming is untouched.
+ *   SECTION B — the pipeline: no request on interim-only input; no
+ *     request on an `is_final` as it arrives; a request opened within
+ *     milliseconds of `speech_final` / the marker, or a silence window
+ *     after an unendpointed boundary — in every case BEFORE the user
+ *     turn is committed, then adopted, ONE request per turn however many
+ *     times the detector announced it; caller resuming speech aborts it;
+ *     attention-check turns spend zero requests; barge-in takes exactly
+ *     today's path; a provider without streaming is untouched.
  *
  *   SECTION C — the adopted request is identical, role for role and
  *     content for content, to the request the non-speculative path builds
@@ -166,7 +171,23 @@ interface Harness {
   readonly requests: SeenRequest[];
   readonly synthesized: string[];
   readonly transitions: Array<{ readonly to: string; readonly reason: string }>;
-  say(text: string, opts?: { isFinal?: boolean; isSpeechFinal?: boolean }): void;
+  say(
+    text: string,
+    opts?: {
+      isFinal?: boolean;
+      isSpeechFinal?: boolean;
+      /**
+       * Omit `isSpeechFinal` from the segment ENTIRELY — the shape a
+       * provider that reports no endpoint claim produces. The detector
+       * reads absent as "assume endpointed", so such a turn never takes
+       * the chunk-boundary grace AND is never announced (`feed` notifies
+       * only on `isSpeechFinal === true`). It is the only remaining way
+       * to drive a genuinely non-speculative release through the
+       * pipeline, which is what C1 needs to compare against.
+       */
+      omitSpeechFinal?: boolean;
+    },
+  ): void;
   markEndOfSpeech(): void;
   bargedIn(): boolean;
   waitFor(what: string, predicate: () => boolean, timeoutMs?: number): Promise<void>;
@@ -384,15 +405,19 @@ function startHarness(input: {
       const isFinal = opts?.isFinal ?? true;
       const startedAtMs = clockMs;
       clockMs += Math.max(200, (text.length / CHARS_PER_SECOND) * 1000);
-      push({
+      const base = {
         text,
         isFinal,
-        isSpeechFinal: opts?.isSpeechFinal ?? false,
         confidence: 0.95,
         language: SupportedLanguage.ENGLISH,
         startedAtMs,
         endedAtMs: clockMs,
-      });
+      };
+      push(
+        opts?.omitSpeechFinal === true
+          ? base
+          : { ...base, isSpeechFinal: opts?.isSpeechFinal ?? false },
+      );
     },
     markEndOfSpeech() {
       // Byte-for-byte the shape the Deepgram adapter emits.
@@ -472,12 +497,26 @@ await test("A1 — an interim never fires onTurnPending, and releases nothing", 
   assert.deepEqual(r.released, []);
 });
 
-await test("A2 — `is_final` WITHOUT `speech_final` never fires onTurnPending, even though the turn is later released by inference", async () => {
+await test("A2 — `is_final` WITHOUT `speech_final` fires nothing ON ARRIVAL; the grace-arm announcement comes a full silence window later, and release is unchanged", async () => {
+  // RE-POINTED. This test previously asserted that a chunk boundary
+  // NEVER announces. The grace-arm site (see `onTurnPending`, the QUIET
+  // class) intentionally announces one adaptive silence window after
+  // that boundary — with no endpoint claim, on the strength of the
+  // window having expired silently. What the test protects is unchanged
+  // and is now pinned more precisely: the SEGMENT itself still
+  // announces nothing, and the release is still by inference.
+  const onArrival = await observe(
+    [{ seg: segment("Yes, that's right.", { isFinal: true, isSpeechFinal: false }) }],
+    600,
+  );
+  assert.deepEqual(onArrival.pending, [], "a chunk boundary on arrival is not evidence and announces nothing");
+  assert.deepEqual(onArrival.released, [], "…and releases nothing that early either");
+
   const r = await observe(
     [{ seg: segment("Yes, that's right.", { isFinal: true, isSpeechFinal: false }) }],
     SILENCE_WINDOW_MS + 700 + 400,
   );
-  assert.deepEqual(r.pending, [], "no explicit endpoint claim, so no pending notification");
+  assert.deepEqual(r.pending, ["Yes, that's right."], "the grace-arm announcement, once");
   assert.deepEqual(r.released, ["Yes, that's right."], "the inference path still releases it");
 });
 
@@ -550,7 +589,14 @@ await test("B1 — interim-only input produces NO language-model request", async
   }
 });
 
-await test("B2 — `is_final` WITHOUT `speech_final` opens nothing until the ordinary (inferred) release; that release then takes the normal path", async () => {
+await test("B2 — `is_final` WITHOUT `speech_final` opens nothing on arrival; the grace-arm pre-open follows a silence window later, and it is still ONE request", async () => {
+  // RE-POINTED alongside A2, and only where it conflicts. The
+  // "nothing on the chunk boundary" assertion below is unchanged and is
+  // still the meaningful boundary — 600ms is inside the adaptive
+  // silence window, before the grace exists. What changed is the LAST
+  // assertion: the request for this turn is now pre-opened at grace-arm
+  // and adopted, so it is made BEFORE the commit rather than after.
+  // The one-request-per-turn invariant is untouched and still asserted.
   const h = startHarness({ openingLine: OPENING, replies: ["R1"] });
   try {
     await h.waitForReplies(1);
@@ -558,8 +604,13 @@ await test("B2 — `is_final` WITHOUT `speech_final` opens nothing until the ord
     await sleep(600);
     assert.equal(h.requests.length, 0, "a chunk boundary is not evidence — nothing pre-opened");
     await h.waitForReplies(2);
-    assert.equal(h.requests.length, 1);
-    assert.equal(h.requests[0]!.userTurnCommitted, true, "sent AFTER the turn was committed — the normal path");
+    assert.equal(h.requests.length, 1, "still exactly one request for the turn");
+    assert.equal(
+      h.requests[0]!.userTurnCommitted,
+      false,
+      "pre-opened at grace-arm, then adopted — requested before the commit",
+    );
+    assert.deepEqual(h.history().map((t) => t.content), [OPENING, "Yes, that's right.", "R1"]);
   } finally {
     await h.stop();
   }
@@ -741,9 +792,14 @@ await test("B11 — P0-1: a marker collapsing the CHUNK-BOUNDARY GRACE now pre-o
   try {
     await h.waitForReplies(1);
     h.say(TURN, { isFinal: true, isSpeechFinal: false });
-    // Past the silence window, into the grace.
-    await sleep(SILENCE_WINDOW_MS + 250);
+    // RE-POINTED: the zero-check moved inside the adaptive silence
+    // window. Past it, grace-arm has legitimately pre-opened the
+    // request (B13) — so the assertion that a bare `is_final` opens
+    // nothing is now only true ON ARRIVAL, which is where it belongs.
+    await sleep(600);
     assert.equal(h.requests.length, 0, "a bare `is_final` must still open nothing on its own");
+    // Past the silence window, into the grace.
+    await sleep(SILENCE_WINDOW_MS + 250 - 600);
     const markerAt = Date.now();
     h.markEndOfSpeech();
 
@@ -794,6 +850,104 @@ await test("B12 — P0-1 announces nothing for a MID-THOUGHT turn on the same pa
   }
 });
 
+/**
+ * The turn used by B13-B15. Longer than `SHORT_COMPLETE_TURN_MAX_WORDS`
+ * on purpose: a short punctuated turn is granted a ZERO confirmation
+ * window and released the instant the grace ends, which leaves no window
+ * to observe an adoption in.
+ */
+const GRACE_TURN = "Yes I would like to attend the session today.";
+
+await test("B13 — GRACE-ARM: the request is pre-opened a silence window BEFORE any endpoint claim, and adopted", async () => {
+  // The chunk-boundary grace is armed when the full adaptive silence
+  // window has expired on a final Deepgram did NOT endpoint. No claim
+  // ever arrives in this test, so the turn takes the ordinary inference
+  // path to release — unchanged — while the request runs during it.
+  const h = startHarness({ openingLine: OPENING, replies: ["R1"] });
+  try {
+    await h.waitForReplies(1);
+    h.say(GRACE_TURN, { isFinal: true, isSpeechFinal: false });
+
+    await sleep(600);
+    assert.equal(h.requests.length, 0, "nothing on the chunk boundary itself — the window must run first");
+
+    await h.waitFor("a request pre-opened at grace-arm", () => h.requests.length >= 1, 1_200);
+    assert.equal(
+      h.requests[0]!.userTurnCommitted,
+      false,
+      "pre-opened: the normal path commits the user turn first and requests second",
+    );
+
+    await h.waitForReplies(2);
+    assert.equal(h.requests.length, 1, "adopted — ONE request for the turn");
+    assert.equal(h.requests[0]!.aborted(), false, "the adopted stream must not have been abandoned");
+    assert.deepEqual(h.history().map((t) => t.content), [OPENING, GRACE_TURN, "R1"]);
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("B14 — GRACE-ARM: the caller RESUMING inside the grace abandons it; the merged turn gets its own request", async () => {
+  const h = startHarness({
+    openingLine: OPENING,
+    replies: ["FIRST-SHOULD-BE-ABANDONED", "SECOND"],
+    replyDelayMs: 40,
+  });
+  try {
+    await h.waitForReplies(1);
+    h.say(GRACE_TURN, { isFinal: true, isSpeechFinal: false });
+    await h.waitFor("a request pre-opened at grace-arm", () => h.requests.length >= 1, 1_800);
+
+    h.say("and one more thing.", { isFinal: true, isSpeechFinal: true });
+    await h.waitFor("the pre-opened request to be aborted", () => h.requests[0]!.aborted(), 400);
+
+    await h.waitForReplies(2);
+    assert.equal(h.requests.length, 2, "one abandoned, one real");
+    assert.equal(
+      h.requests[1]!.userText,
+      `${GRACE_TURN} and one more thing.`,
+      "the real request carries the MERGED turn",
+    );
+    assert.equal(h.requests[1]!.aborted(), false);
+    const texts = h.history().map((t) => t.content);
+    assert.ok(!texts.includes("FIRST-SHOULD-BE-ABANDONED"), "the abandoned reply must never be committed");
+    assert.ok(
+      !h.synthesized.some((t) => t.includes("FIRST-SHOULD-BE-ABANDONED")),
+      "…nor spoken",
+    );
+    assert.deepEqual(texts, [OPENING, `${GRACE_TURN} and one more thing.`, "SECOND"]);
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("B15 — GRACE-ARM then the P0-1 COLLAPSE: two announcements, EXACTLY ONE request", async () => {
+  // The detector announces at both sites with identical text (asserted
+  // at that level by `test:wire-trace` E6). `startSpeculation` returns
+  // early on `speculation.text === text`, so the second announcement
+  // opens nothing. This is the assertion that proves it.
+  const h = startHarness({ openingLine: OPENING, replies: ["R1"] });
+  try {
+    await h.waitForReplies(1);
+    h.say(GRACE_TURN, { isFinal: true, isSpeechFinal: false });
+    await h.waitFor("a request pre-opened at grace-arm", () => h.requests.length >= 1, 1_800);
+    const afterGraceArm = h.requests.length;
+    assert.equal(afterGraceArm, 1, "one request at grace-arm");
+
+    // The endpoint claim lands inside the grace — the P0-1 collapse.
+    h.markEndOfSpeech();
+    await sleep(300);
+    assert.equal(h.requests.length, 1, "the collapse announcement must NOT open a second request");
+
+    await h.waitForReplies(2);
+    assert.equal(h.requests.length, 1, "still exactly one request for the turn, and it was adopted");
+    assert.equal(h.requests[0]!.aborted(), false);
+    assert.deepEqual(h.history().map((t) => t.content), [OPENING, GRACE_TURN, "R1"]);
+  } finally {
+    await h.stop();
+  }
+});
+
 // ═════════════════════════════════════════════════════════════════
 section("SECTION C — the adopted request IS the normal request");
 // ═════════════════════════════════════════════════════════════════
@@ -805,13 +959,17 @@ await test("C1 — role-for-role, content-for-content identical to the request t
     await a.waitForReplies(1);
     await b.waitForReplies(1);
     // A: two evidenced turns (pre-opened + adopted). B: the same two
-    // turns released by inference (no evidence, no speculation).
+    // turns with NO endpoint claim reported at all, which is now the
+    // only shape that still reaches the model non-speculatively — a
+    // chunk boundary is pre-opened at grace-arm (see B2/B13), so it can
+    // no longer serve as the control arm. Everything C1 actually
+    // asserts below is unchanged.
     a.say("Yes, tell me.", { isSpeechFinal: true });
-    b.say("Yes, tell me.", { isSpeechFinal: false });
+    b.say("Yes, tell me.", { omitSpeechFinal: true });
     await a.waitForReplies(2);
     await b.waitForReplies(2);
     a.say("How much does it cost?", { isSpeechFinal: true });
-    b.say("How much does it cost?", { isSpeechFinal: false });
+    b.say("How much does it cost?", { omitSpeechFinal: true });
     await a.waitForReplies(3);
     await b.waitForReplies(3);
 
@@ -894,7 +1052,10 @@ await test("E1 — a late end-of-speech MARKER for an already-answered turn is n
     assert.equal(endpointToRelease, "NOT DIRECTLY MEASURABLE", `a turn released without evidence must not inherit stale evidence (got ${endpointToRelease})`);
     // Behaviour is byte-for-byte what it was: same requests, same history.
     assert.equal(h.requests.length, 2);
-    assert.equal(h.requests[1]!.userTurnCommitted, true, "the inferred release still takes the normal path");
+    // RE-POINTED: the inferred release is now pre-opened at grace-arm
+    // (B13). E1's subject — that stale evidence is not attributed to
+    // this turn — is the assertion above and is untouched.
+    assert.equal(h.requests[1]!.userTurnCommitted, false, "pre-opened at grace-arm, then adopted");
     assert.deepEqual(h.history().map((t) => t.content), [OPENING, "Yes.", "R1", "Tell me more about it.", "R2"]);
   } finally {
     await h.stop();

@@ -743,7 +743,17 @@ async function gracePendingScenario(
 await test("D1. a marker collapsing the grace ANNOUNCES the evidenced window it arms", async () => {
   const text = "Yeah, actually I wanted to tell you that I was interested in the webinar.";
   const r = await gracePendingScenario(text, { deliverMarker: true });
-  assert.deepEqual(r.pending, [text], "exactly one announcement, carrying the held text");
+  // RE-POINTED for the grace-arm announcement (SECTION E): arming the
+  // grace now announces too, a full silence window before the marker
+  // lands. So this scenario announces TWICE — once for the grace, once
+  // for the evidenced window that replaces it — and what D1 exists to
+  // prove is the SECOND one. The count is what discriminates: D2 pairs
+  // this against the same scenario with no marker, which announces once.
+  assert.deepEqual(
+    r.pending,
+    [text, text],
+    "grace-arm announces, then the collapse announces the evidenced window it arms",
+  );
   assert.equal(r.text, text, "and the turn released is that same text");
 });
 
@@ -760,13 +770,20 @@ await test("D2. the announcement changes NO timing — release is where C1 alrea
     "the grace must still be paid when no endpoint claim ever arrives",
   );
   atMost(withMarker.delayMs, SILENCE_WINDOW_MS + 250 + CONFIRMATION_MS, "collapsed grace");
-  assert.deepEqual(without.pending, [], "no claim ever arrived, so nothing may be announced");
+  // RE-POINTED for the grace-arm announcement (SECTION E). The claim
+  // still adds an announcement — that is D's whole subject — and the
+  // COUNT is now what proves it: one for the grace either way, plus a
+  // second only when the claim arrives. Both timing bounds above are
+  // untouched.
+  assert.deepEqual(without.pending, [text], "no claim arrived: the grace-arm announcement only");
+  assert.deepEqual(withMarker.pending, [text, text], "the claim adds the evidenced-window announcement");
 });
 
 await test("D3. it announces the UNPUNCTUATED collapse too — the C2 case", async () => {
   const text = "yeah actually I wanted to tell you that I was interested in the webinar";
   const r = await gracePendingScenario(text, { deliverMarker: true });
-  assert.deepEqual(r.pending, [text]);
+  // RE-POINTED for the grace-arm announcement — see D1.
+  assert.deepEqual(r.pending, [text, text]);
   atMost(r.delayMs, SILENCE_WINDOW_MS + 250 + CONFIRMATION_MS, "collapsed grace, unpunctuated");
 });
 
@@ -817,7 +834,16 @@ await test("D6. an OUTSTANDING INTERIM blocks the announcement — the `!pending
   // sentence.
   const text = "Yes that is right.";
   const r = await gracePendingScenario(text, { deliverMarker: true, interimAfterMarker: true });
-  assert.deepEqual(r.pending, [], "words still awaiting their final must not be announced");
+  // RE-POINTED for the grace-arm announcement (SECTION E). The grace is
+  // armed BEFORE the interim arrives, with no interim outstanding at
+  // that instant, so that announcement is correct and expected. The
+  // interim then lands, and the clause under test is what stops the
+  // SECOND (evidenced) announcement: exactly one, not two.
+  assert.deepEqual(
+    r.pending,
+    [text],
+    "the grace-arm announcement stands; the interim blocks the evidenced one",
+  );
 });
 
 await test("D7. the already-announcing routes are unchanged — still exactly one announcement each", async () => {
@@ -846,6 +872,244 @@ await test("D7. the already-announcing routes are unchanged — still exactly on
   detector.noteEndOfSpeech();
   await sleep(900);
   assert.deepEqual(pending, ["Yes I would like to attend."], "exactly one announcement, not two");
+});
+
+// ═════════════════════════════════════════════════════════════════
+// SECTION E — the QUIET announcement: the grace ARMING itself
+// ═════════════════════════════════════════════════════════════════
+
+section("E. GRACE ARMING — announced without an endpoint claim, releasing at the same instant");
+
+/**
+ * Section D announced the window that REPLACES the grace once the
+ * endpoint claim arrives. This section announces the grace ITSELF, a
+ * full adaptive silence window earlier — the only site that fires
+ * without an endpoint claim in hand.
+ *
+ * What stands in the claim's place: the whole 1100ms silence window has
+ * expired with no segment of any kind, and `emitTurnEnd` has already
+ * run its filler, hold-phrase and mid-thought guards above the branch.
+ *
+ * EVERY test here pairs the run with an identical one that has NO
+ * pending subscriber, and requires the release delays to match. That
+ * pairing is the proof, not a bound: the two runs differ ONLY in
+ * whether `notifyTurnPending` short-circuits on an empty listener set,
+ * so a matching release time is direct evidence that announcing moves
+ * no window.
+ */
+
+/** Release delays are real timers; two runs of the same scenario can differ by this much. */
+const PAIR_TOLERANCE_MS = 200;
+
+interface GraceRun {
+  readonly delayMs: number;
+  readonly text: string;
+  readonly pending: string[];
+}
+
+/**
+ * Feeds one chunk-boundary final (no endpoint claim) and lets the
+ * silence window expire so the CHUNK-BOUNDARY GRACE is armed.
+ *
+ * @param subscribe when false, no `onTurnPending` listener is attached,
+ *   so `notifyTurnPending` returns on its empty-set check — i.e. the
+ *   code path as it behaved before this change.
+ * @param markerAfterGraceArmMs deliver a late endpoint claim this long
+ *   after the grace is armed (the P0-1 collapse), or omit for none.
+ */
+async function graceArmScenario(
+  text: string,
+  opts: { subscribe: boolean; markerAfterGraceArmMs?: number; resumeAfterGraceArmMs?: number },
+): Promise<GraceRun> {
+  const detector = new AdaptiveTurnDetector();
+  const pending: string[] = [];
+  const start = Date.now();
+  if (opts.subscribe) detector.onTurnPending((t) => pending.push(t));
+  const released = new Promise<{ delayMs: number; text: string }>((resolve, reject) => {
+    const bail = setTimeout(() => reject(new Error("no turn released within 9000ms")), 9_000);
+    detector.onTurnEnd((event) => {
+      clearTimeout(bail);
+      resolve({ delayMs: Date.now() - start, text: event.text });
+    });
+  });
+
+  detector.feed({
+    text,
+    isFinal: true,
+    isSpeechFinal: false,
+    confidence: 0.92,
+    language: SupportedLanguage.ENGLISH,
+    startedAtMs: 0,
+    endedAtMs: 1_000,
+  });
+
+  if (opts.resumeAfterGraceArmMs !== undefined) {
+    await deliverAt(start, SILENCE_WINDOW_MS + opts.resumeAfterGraceArmMs);
+    detector.feed({
+      text: "and one more thing.",
+      isFinal: true,
+      isSpeechFinal: true,
+      confidence: 0.92,
+      language: SupportedLanguage.ENGLISH,
+      startedAtMs: 1_400,
+      endedAtMs: 2_000,
+    });
+  }
+  if (opts.markerAfterGraceArmMs !== undefined) {
+    await deliverAt(start, SILENCE_WINDOW_MS + opts.markerAfterGraceArmMs);
+    detector.noteEndOfSpeech();
+  }
+
+  const result = await released;
+  return { ...result, pending };
+}
+
+/** Runs the scenario twice — announced and unannounced — and proves release did not move. */
+async function pairedGraceArm(
+  what: string,
+  text: string,
+  opts: { markerAfterGraceArmMs?: number; resumeAfterGraceArmMs?: number } = {},
+): Promise<GraceRun> {
+  const announced = await graceArmScenario(text, { ...opts, subscribe: true });
+  const silent = await graceArmScenario(text, { ...opts, subscribe: false });
+  console.log(`        ${what}: release announced=${announced.delayMs}ms unannounced=${silent.delayMs}ms`);
+  assert.ok(
+    Math.abs(announced.delayMs - silent.delayMs) <= PAIR_TOLERANCE_MS,
+    `${what}: announcing moved the release — ${silent.delayMs}ms -> ${announced.delayMs}ms`,
+  );
+  assert.equal(announced.text, silent.text, `${what}: announcing altered the turn text`);
+  assert.deepEqual(silent.pending, [], `${what}: the unannounced control must observe nothing`);
+  return announced;
+}
+
+const LONG_COMPLETE = "Yes I would like to attend the session today.";
+
+await test("E1. arming the grace announces EXACTLY ONCE, with the held text", async () => {
+  const r = await pairedGraceArm("plain grace", LONG_COMPLETE);
+  assert.deepEqual(r.pending, [LONG_COMPLETE], "one announcement, carrying the held text");
+  assert.equal(r.text, LONG_COMPLETE, "and the released turn is that same text");
+});
+
+await test("E2. release timing is unchanged — no claim ever arrives, the inference path stands", async () => {
+  // silence window + the whole grace + the inferred confirmation window.
+  // Byte-for-byte the path this turn took before the change; only the
+  // announcement is new, and E1's pairing proves it costs nothing.
+  const r = await pairedGraceArm("grace expires unclaimed", LONG_COMPLETE);
+  atLeast(
+    r.delayMs,
+    SILENCE_WINDOW_MS + CHUNK_BOUNDARY_GRACE_MS,
+    "the grace must still be paid in full when no endpoint claim arrives",
+  );
+  atMost(
+    r.delayMs,
+    SILENCE_WINDOW_MS + CHUNK_BOUNDARY_GRACE_MS + CONFIRMATION_MS,
+    "…and the inferred confirmation window on top of it, and nothing more",
+  );
+});
+
+await test("E3. a MID-THOUGHT turn reaching the grace is NOT announced", async () => {
+  // A dangling conjunction exhausts BOTH continuation graces and then
+  // falls through to the chunk-boundary branch. `isReleasableThought()`
+  // is what declines it there — which is why the gate is not redundant
+  // with the guards above the branch.
+  const r = await pairedGraceArm("mid-thought", "I was going to ask about the timing and");
+  assert.deepEqual(r.pending, [], "an unfinished thought must never be announced");
+  atLeast(
+    r.delayMs,
+    SILENCE_WINDOW_MS + CONTINUATION_GRACE_MS * 2,
+    "…and it must still be given both continuation graces",
+  );
+});
+
+await test("E4. a HOLD PHRASE reaching the grace is NOT announced", async () => {
+  const r = await pairedGraceArm("hold phrase", "Wait.");
+  assert.deepEqual(r.pending, [], "a caller who asked for a moment is not a pending turn");
+});
+
+await test("E5. a FILLER never reaches the branch at all", async () => {
+  const detector = new AdaptiveTurnDetector();
+  const pending: string[] = [];
+  detector.onTurnPending((t) => pending.push(t));
+  detector.feed({
+    text: "Hmm.",
+    isFinal: true,
+    isSpeechFinal: false,
+    confidence: 0.92,
+    language: SupportedLanguage.ENGLISH,
+    startedAtMs: 0,
+    endedAtMs: 400,
+  });
+  await sleep(SILENCE_WINDOW_MS + CHUNK_BOUNDARY_GRACE_MS + 400);
+  assert.deepEqual(pending, [], "a hesitation sound is dropped, never announced");
+});
+
+await test("E6. grace-arm THEN the P0-1 collapse: two announcements, identical text, release unmoved", async () => {
+  // The detector announces at both sites. That is correct and harmless:
+  // the text is the same, and the pipeline's `startSpeculation` returns
+  // early on `speculation.text === text`, so it is ONE request. That
+  // half of the claim is asserted in `test:speculative-llm` B15, which
+  // counts real requests through the real pipeline.
+  const r = await pairedGraceArm("grace-arm + collapse", LONG_COMPLETE, {
+    markerAfterGraceArmMs: 250,
+  });
+  assert.deepEqual(
+    r.pending,
+    [LONG_COMPLETE, LONG_COMPLETE],
+    "both sites announce, and both carry the same text",
+  );
+  atMost(
+    r.delayMs,
+    SILENCE_WINDOW_MS + 250 + CONFIRMATION_MS,
+    "the collapse still shortens the wait exactly as C1 measures it",
+  );
+});
+
+await test("E7. the caller RESUMING inside the grace still cancels the pending turn", async () => {
+  // The announcement claims nothing about the caller having finished.
+  // New speech cancels the turn exactly as it always did, and the turn
+  // that is eventually released is the MERGED one — a subscriber sees
+  // the cancellation as `onTurnEnd` delivering different text, as
+  // `onTurnPending` documents.
+  const r = await pairedGraceArm("caller resumes", LONG_COMPLETE, { resumeAfterGraceArmMs: 250 });
+  const merged = `${LONG_COMPLETE} and one more thing.`;
+  assert.equal(r.pending[0], LONG_COMPLETE, "announced for the text held at the time");
+  // The resuming segment carries `speech_final`, so `feed`'s fast path
+  // announces the MERGED text — the pre-existing evidenced site, not
+  // this change. What matters is the invariant `onTurnPending`
+  // documents: an announcement is not a release, and the turn that IS
+  // released is whatever the caller actually finished saying.
+  assert.deepEqual(r.pending, [LONG_COMPLETE, merged], "the merged turn gets its own announcement");
+  assert.equal(r.text, merged, "the released turn is the MERGED text, not the first announced text");
+});
+
+await test("E8. a provider reporting NO endpoint claim never reaches the branch", async () => {
+  // `isSpeechFinal` absent means "assume endpointed", so
+  // `lastFinalWasEndpoint` stays true and the chunk-boundary branch is
+  // unreachable — such a provider is byte-for-byte unaffected.
+  const detector = new AdaptiveTurnDetector();
+  const pending: string[] = [];
+  const start = Date.now();
+  let releasedAt = 0;
+  detector.onTurnPending((t) => pending.push(t));
+  detector.onTurnEnd(() => {
+    releasedAt = Date.now() - start;
+  });
+  detector.feed({
+    text: LONG_COMPLETE,
+    isFinal: true,
+    confidence: 0.92,
+    language: SupportedLanguage.ENGLISH,
+    startedAtMs: 0,
+    endedAtMs: 1_000,
+  });
+  await sleep(SILENCE_WINDOW_MS + CONFIRMATION_MS + 500);
+  assert.ok(releasedAt > 0, "the turn must be released");
+  atMost(
+    releasedAt,
+    SILENCE_WINDOW_MS + CONFIRMATION_MS,
+    "no grace is taken, so no grace announcement is possible",
+  );
+  assert.deepEqual(pending, [], "an absent claim is not an endpoint claim and never was");
 });
 
 // ---------------------------------------------------------------

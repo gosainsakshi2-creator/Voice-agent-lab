@@ -3,8 +3,43 @@ import { NextResponse } from "next/server";
 import { claimPendingSession } from "../../../../../server/pending-call";
 import { getPublicWsBaseUrl } from "../../../../../server/public-url";
 import { buildStreamAnswerXml } from "../../../../../server/plivo-xml";
+import { PlivoTelephonyProvider } from "../../../../../providers/telephony/plivo.provider";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * Fire-and-forget: kicks off server-side recording without making the
+ * webhook response wait on it.
+ *
+ * Recording is a separate REST call keyed by the CallUUID (see
+ * `PlivoTelephonyProvider.startRecording`), not a `<Stream>` attribute,
+ * so it cannot ride along on the XML below. Everything here is
+ * therefore deliberately detached: nothing is awaited on the response
+ * path, and every failure — including a missing-env throw from
+ * constructing the provider — is swallowed after logging. A recording
+ * problem can never delay or break the Stream XML the call depends on.
+ */
+function startRecordingInBackground(callUuid: string | undefined, sessionId: string): void {
+  if (!callUuid) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[plivo-answer] no CallUUID in webhook payload — recording NOT started for session=${sessionId}`,
+    );
+    return;
+  }
+
+  void (async () => {
+    try {
+      await new PlivoTelephonyProvider().startRecording(callUuid);
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.error(
+        `[plivo-answer] startRecording failed for CallUUID=${callUuid} session=${sessionId}:`,
+        error,
+      );
+    }
+  })();
+}
 
 /**
  * Plivo POSTs `application/x-www-form-urlencoded` to the
@@ -33,6 +68,12 @@ async function respondToAnswer(callUuid: string | undefined): Promise<NextRespon
   // callee picks up), but the conversation pipeline itself is NOT
   // started here — see plivo-media-bridge.ts's "start" event handler
   // for why.
+
+  // Both the CallUUID and the session are known now, and this webhook
+  // is the earliest point at which the CallUUID exists at all. Started
+  // after the guard above so the calls we are about to `<Hangup/>` are
+  // not recorded. Detached — see `startRecordingInBackground`.
+  startRecordingInBackground(callUuid, sessionId);
 
   const streamUrl = `${getPublicWsBaseUrl()}/api/voice/plivo/stream?sessionId=${encodeURIComponent(sessionId)}`;
   const xml = buildStreamAnswerXml(streamUrl);

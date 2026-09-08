@@ -7,8 +7,8 @@
  * never imports this file directly; it is resolved through the
  * `ProviderRegistry` by `ProviderIdentifier`.
  *
- * Scope note: this adapter only places/ends calls via Plivo's REST
- * Call API. Answer-URL/XML webhook handling, media streaming, and
+ * Scope note: this adapter only places/ends/records calls via Plivo's
+ * REST Call API. Answer-URL/XML webhook handling, media streaming, and
  * WebSocket audio bridging are out of scope for the Provider Layer
  * (see task boundaries) and belong to a future API-routes package.
  */
@@ -44,6 +44,20 @@ function loadEnvConfig(): PlivoEnvConfig {
     answerUrl: requireEnv("PLIVO_ANSWER_URL", TELEPHONY_PROVIDER_IDS.PLIVO),
   };
 }
+
+/**
+ * `time_limit` sent with every Start-Recording request, in seconds.
+ *
+ * Plivo's Record API defaults this to 60 seconds, so omitting it cuts
+ * every recording at one minute while the call carries on — the exact
+ * silent truncation `VOBIZ_RECORDING_TIME_LIMIT_SECONDS` was raised to
+ * fix. Held at the same 900 as Vobiz so a recording's lifetime does not
+ * depend on which telephony provider placed the call; it covers the
+ * campaign watchdog's `maxCallSeconds` (180) five times over, and the
+ * recording still stops when the call ends, so in practice recording
+ * lifetime == call lifetime.
+ */
+export const PLIVO_RECORDING_TIME_LIMIT_SECONDS = 900;
 
 /**
  * Normalizes a dialled number to E.164.
@@ -92,6 +106,38 @@ export class PlivoTelephonyProvider implements TelephonyProvider {
   constructor(config: PlivoEnvConfig = loadEnvConfig()) {
     this.config = config;
     this.client = new PlivoClient(config.authId, config.authToken);
+  }
+
+  /**
+   * Starts server-side recording for an ALREADY-ANSWERED call.
+   *
+   * IMPORTANT: this needs the CallUUID, NOT the `requestUuid` that
+   * `startCall()` returns. The two are different identifiers — the
+   * CallUUID only exists once the callee actually answers, so it is
+   * only available from the Answer-URL webhook payload. That webhook
+   * (`/api/voice/plivo/answer`) is what calls this method.
+   *
+   * Recording is deliberately NOT expressed in the Answer XML:
+   * it is not an attribute of `<Stream>` (a `record="true"` there is
+   * silently ignored), it is this separate REST call
+   * (POST .../Call/{call_uuid}/Record/). The `<Stream>` verb the call
+   * depends on is left exactly as it was.
+   */
+  async startRecording(callUuid: string): Promise<void> {
+    // The SDK rewrites request params camelCase -> snake_case and
+    // response keys snake_case -> camelCase (see `camelCaseRequestWrapper`),
+    // so `timeLimit` goes out as `time_limit` and Plivo's `recording_id`
+    // comes back as `recordingId`. Rejects on a non-2xx, which is what
+    // the caller's catch is for.
+    const response = (await this.client.calls.record(callUuid, {
+      fileFormat: "mp3",
+      timeLimit: PLIVO_RECORDING_TIME_LIMIT_SECONDS,
+    })) as { recordingId?: string; url?: string };
+
+    // eslint-disable-next-line no-console
+    console.log(
+      `[Plivo] recording started: call_uuid=${callUuid} recording_id=${response.recordingId ?? "n/a"} url=${response.url ?? "n/a"}`,
+    );
   }
 
  async startCall(

@@ -345,6 +345,85 @@ await test("B11. the hangup and the sheet cannot disagree about a FINAL_YES", ()
   assert.equal(isFinalYes(classification, disposition), true, "the sheet gate must agree");
 });
 
+await test("B11b. an unrelated later NO cannot make the live path and the sheet disagree", () => {
+  // The confirmation-binding defect, read at BOTH ends. The gate rule
+  // used to compare the yes against the last negation anywhere in the
+  // call, so a registered person answering "no" to any other question
+  // flipped to `declined` / FINAL_NO: the live hangup named itself
+  // `final_no` and the sheet row was never written. Both readings go
+  // through `classifyOutcome`, so the only way they can be right is
+  // together — that is what this asserts, in both directions.
+  const settled = (turns: readonly ConversationTurn[]) => {
+    const stored = turns.map((t) => ({ role: t.role as "user" | "assistant", text: t.content, at: null }));
+    const classification = classifyOutcome({
+      campaignType: "registration",
+      status: "COMPLETED",
+      failureClass: "COMPLETED",
+      answered: true,
+      transcript: stored,
+    });
+    const { disposition } = dispositionFor({
+      outcomeType: classification.outcomeType,
+      failureClass: "COMPLETED",
+    });
+    return { live: finalAnswer(turns), disposition, sheet: isFinalYes(classification, disposition) };
+  };
+
+  // A no to a question that is not the gate. Still a registration.
+  const unrelated = settled([
+    agent(GATE),
+    caller("Yes, reserve it."),
+    agent(CONFIRMED),
+    agent("Have you attended one of our workshops before?"),
+    caller("No."),
+    agent("No problem at all. Take care."),
+  ]);
+  assert.equal(unrelated.disposition, "FINAL_YES", "an unrelated no must not undo the registration");
+  assert.equal(unrelated.live, "FINAL_YES", "the live path must read it the same way");
+  assert.equal(unrelated.sheet, true, "and the row must be written");
+
+  // The same shape in Hinglish, about how to receive the details.
+  const delivery = settled([
+    agent(GATE),
+    caller("Haan, kar dijiye."),
+    agent(CONFIRMED),
+    agent("Shall I also send it to your email?"),
+    caller("Nahi, WhatsApp theek hai."),
+    agent("Sure, WhatsApp only. Take care."),
+  ]);
+  assert.equal(delivery.disposition, "FINAL_YES");
+  assert.equal(delivery.live, "FINAL_YES");
+  assert.equal(delivery.sheet, true);
+
+  // An EXPLICIT refusal of an unrelated offer. This is the case the
+  // first version of the rule still got wrong in BOTH places at once:
+  // "no need" is in the refusal table, so the live watchdog hung up and
+  // named itself `final_no` while the sheet row was withheld.
+  const unrelatedRefusal = settled([
+    agent(GATE),
+    caller("Yes, reserve it."),
+    agent(CONFIRMED),
+    agent("Should I send a reminder SMS as well?"),
+    caller("No need, WhatsApp is fine."),
+    agent("Sure, WhatsApp only. Take care."),
+  ]);
+  assert.equal(unrelatedRefusal.disposition, "FINAL_YES", "the SMS was refused, not the event");
+  assert.equal(unrelatedRefusal.live, "FINAL_YES", "the live path must not hang up as a refusal");
+  assert.equal(unrelatedRefusal.sheet, true);
+
+  // ...and a real retraction still agrees the other way.
+  const retracted = settled([
+    agent(GATE),
+    caller("Yes, reserve it."),
+    agent(CONFIRMED),
+    caller("Sorry, I am not interested after all."),
+    agent(CLOSING),
+  ]);
+  assert.equal(retracted.disposition, "FINAL_NO", "a retraction must still close the contact");
+  assert.equal(retracted.live, "FINAL_NO", "and the live path must still hang up on it");
+  assert.equal(retracted.sheet, false, "and nothing may be written");
+});
+
 await test("B12. a suspected voicemail is never a final answer", () => {
   assert.equal(
     finalAnswer([

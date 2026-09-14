@@ -42,7 +42,7 @@ import type { TextToSpeechProvider, SynthesisTaskRequest } from "../../interface
 import type { TelephonyProvider } from "../../interfaces/providers/telephony-provider.interface";
 
 import type { SessionRecord } from "./session-record";
-import { detectLanguage, type LanguageDetectionResult } from "./language-detector";
+import { detectLanguage, isLockGradeEvidence, type LanguageDetectionResult } from "./language-detector";
 import { currentTurnNote, languageHintFor, openingLineFor } from "./system-prompt";
 import { SentenceChunker } from "./sentence-chunker";
 import { isBareAcknowledgement } from "./turn-detection";
@@ -464,7 +464,11 @@ export function isAttentionCheck(text: string): boolean {
  * so what counts as non-meaningful here is exactly what already counts
  * as non-meaningful everywhere those three are used.
  *
- * Read ONLY by `bufferedTurnTakesTheFloor` below.
+ * Read by `bufferedTurnTakesTheFloor` below and by
+ * `qualifiesForLanguageLock`, which is the same question — "did this
+ * utterance take the floor?" — asked of the language lock. Reusing it
+ * is deliberate: the lock must not introduce a second, drifting
+ * definition of a meaningful utterance.
  */
 function utteranceTakesNoFloor(text: string): boolean {
   return BARE_GREETING_ONLY.test(text) || isBareAcknowledgement(text) || isAttentionCheck(text);
@@ -738,6 +742,50 @@ function hearingFollowUpFor(language: SupportedLanguage): string {
 }
 
 /**
+ * ---------------- The hearing check that never ends ----------------
+ *
+ * Every branch of `handleAttentionCheck` that speaks a FIXED line
+ * (`attentionAcknowledgementFor`, `hearingFollowUpFor`) answers the
+ * caller without saying anything new: no script content, no
+ * language-model request, nothing that advances the call. That is
+ * exactly right once or twice — and it is a trap, because each of those
+ * lines is itself a question, and the caller's answer to it is another
+ * presence check, which the same branches answer with another fixed
+ * line. Nothing in the handler counted them, so:
+ *
+ *   caller "Hello? Hello?"  -> "Hey, can you hear me okay?"
+ *   caller "Hello? Hello?"  -> "Hey, can you hear me okay?"          (before a block)
+ *   caller "Hello?"         -> "I just want to make sure..."          (after one)
+ *   caller "Hello?"         -> "Hey, can you hear me okay?"
+ *   ... for as long as the caller keeps saying it
+ *
+ * — the caller-sustainable hearing loop the audit records as an open
+ * gap. It is sustainable from BOTH sides: the fixed lines share their
+ * vocabulary with `ATTENTION_PRESENCE_PHRASES`, so a fragment of our
+ * own line coming back up the inbound track ("can you hear", three
+ * words — under `SELF_ECHO_MIN_WORDS`, so the self-echo guard may not
+ * judge it at all) is a presence check too, and the agent then answers
+ * its own echo, forever, with no caller involved.
+ *
+ * The bound is therefore on the AGENT'S OWN CONTENTLESS LINES, not on
+ * the caller's utterances and not on the echo guard — the one thing
+ * both failure modes have in common is that the agent said a fixed
+ * hearing line and nothing changed. Two of them is the most any
+ * existing path produces (acknowledgement, then one follow-up), so
+ * this caps the third and every one after it; the turn takes the
+ * normal contextual path instead, which is where a caller who still
+ * cannot hear after two attempts belongs.
+ *
+ * RESUME and REPEAT are deliberately NOT counted and reset the counter:
+ * both speak the interrupted reply itself, which is script content the
+ * caller asked for and is already bounded (see `handleAttentionCheck`).
+ * The counter is reset by any turn that is not answered with a fixed
+ * line — i.e. by the caller contributing something meaningful — so a
+ * hearing check later in the same call is answered normally again.
+ */
+const MAX_HEARING_LINES_WITHOUT_PROGRESS = 2;
+
+/**
  * A presence check STRICT enough to answer when nothing is held.
  *
  * `isAttentionCheck` reuses `BARE_GREETING_ONLY`, which deliberately
@@ -948,6 +996,41 @@ const SELF_ECHO_MIN_BIGRAM_OVERLAP = 0.7;
  * ratio above on a one- or two-pair coincidence.
  */
 const SELF_ECHO_MIN_MATCHED_BIGRAMS = 3;
+
+/**
+ * ---------------- PHASE 1.3: THE LANGUAGE LOCK ----------------
+ *
+ * How many words the caller's utterance must have before the call's
+ * language may be FIXED to it.
+ *
+ * DERIVED FROM `SELF_ECHO_MIN_WORDS`, not chosen independently, and the
+ * derivation is the safety case. Four words is the floor below which
+ * the self-echo guard is not permitted to judge a segment at all (see
+ * the constant above — that floor is deliberate and is not being
+ * touched). So a shorter utterance is exactly one the pipeline CANNOT
+ * rule out as our own audio coming back up the inbound track. Locking
+ * the whole call's language to a three-word fragment of our own
+ * English reply is the worst failure this feature can produce, and
+ * tying the two constants together is what makes it unreachable: any
+ * utterance long enough to lock on is long enough to have been checked
+ * for echo first.
+ *
+ * It also gives the detector's ratios something to be a ratio OF. Below
+ * four words `HINGLISH_MARKER_RATIO` (0.2) cannot be distinguished from
+ * "one marker word", and a lone "Sorry?" or "One minute" — which every
+ * Hindi speaker on a phone call says in English — would otherwise be
+ * enough to lock the call into English.
+ *
+ * Counted with `selfEchoWords`, the same tokenizer the echo guard uses,
+ * so "at least as many words as the echo guard needs" is exact rather
+ * than approximate.
+ *
+ * COST OF BEING WRONG IN THIS DIRECTION IS ZERO. An utterance that does
+ * not qualify does not lock and does not change anything: the turn is
+ * detected, hinted and answered exactly as it is today, and the next
+ * qualifying turn takes the lock instead.
+ */
+const LANGUAGE_LOCK_MIN_WORDS = SELF_ECHO_MIN_WORDS;
 
 /**
  * ---------------- The STT stream clock can rewind ----------------
@@ -1548,6 +1631,22 @@ export class ConversationPipeline {
    */
   private hearingEpisodeBeforeBlock = false;
   /**
+   * How many FIXED hearing lines — the acknowledgement, the follow-up —
+   * have been spoken in a row without anything else happening in
+   * between. See `MAX_HEARING_LINES_WITHOUT_PROGRESS` for why this is
+   * counted on the agent's lines rather than on the caller's
+   * utterances.
+   *
+   * Incremented at exactly the four sites that speak one of those two
+   * lines, and reset at every other exit of `handleAttentionCheck` —
+   * the caller contributing something real, confirming they can hear,
+   * or asking for the interrupted reply to be resumed or repeated.
+   * Survives the episode flags on purpose: a loop is sustained by
+   * opening a NEW episode per "hello", so a counter cleared with the
+   * episode would count to one forever.
+   */
+  private hearingLinesWithoutProgress = 0;
+  /**
    * FIX #8 — the LLM request pre-opened for the turn the detector is
    * currently holding in its evidenced confirmation window, if any. See
    * `SpeculativeCompletion`. At most one at a time; replaced or
@@ -1766,8 +1865,10 @@ export class ConversationPipeline {
         // to the pipeline, exactly as before.
         if (this.voicemailDetected) {
           this.abandonSpeculation("voicemail — no reply is generated");
-          const machineLanguage = detectLanguage(turn.text, this.record.memory.currentLanguage);
-          this.record.memory.recordUserTurn(turn.text, machineLanguage.language);
+          // PHASE 1.3 — a recording is not a caller, so this can never
+          // take the language lock: `commitTurnLanguage` is not called
+          // here and `effectiveLanguageFor` only reads.
+          this.record.memory.recordUserTurn(turn.text, this.effectiveLanguageFor(turn.text));
           this.record.liveUserTranscript = "";
           // eslint-disable-next-line no-console
           console.log(`[PIPELINE:${sid}] voicemail — transcript recorded, nothing answered and nothing spoken`);
@@ -1843,8 +1944,11 @@ export class ConversationPipeline {
         }
         this.beginTurnTiming(timer);
 
-        const detected = detectLanguage(turn.text, this.record.memory.currentLanguage);
-        this.record.memory.recordUserTurn(turn.text, detected.language);
+        // PHASE 1.3 — the ONE site that can fix the call's language.
+        // Before the lock is taken this is exactly the per-turn
+        // `detectLanguage` call it replaces; after it, the lock.
+        const turnLanguage = this.commitTurnLanguage(turn.text);
+        this.record.memory.recordUserTurn(turn.text, turnLanguage);
         // The committed turn now carries this text — drop the
         // display-only preview so it is not rendered twice.
         this.record.liveUserTranscript = "";
@@ -1896,7 +2000,7 @@ export class ConversationPipeline {
         // a barge-in (discarded below). Taken BEFORE generation starts so
         // the id belongs to this response and no other.
         const responseId = this.beginAssistantResponse();
-        const result = await this.runThinkingAndSpeaking(turn.text, detected, loopSignal);
+        const result = await this.runThinkingAndSpeaking(turn.text, turnLanguage, loopSignal);
         timer.summarize();
         timer.printLatencyBreakdown({
           speechEndAtMs: turn.userSpeechEndedAtMs,
@@ -2182,6 +2286,9 @@ export class ConversationPipeline {
       this.hearingEpisodeBeforeBlock = false;
       this.heldScriptRemainder = "";
       this.heldScriptFull = "";
+      // The caller said something. Whatever came before, the hearing
+      // lines are no longer being spoken into a void.
+      this.hearingLinesWithoutProgress = 0;
       return false;
     }
 
@@ -2210,6 +2317,8 @@ export class ConversationPipeline {
       // Cut off again: whatever is STILL unheard is still the position.
       this.heldScriptRemainder = spoken.unheard;
       if (spoken.heard.length > 0) this.contextualReplyCommitted = true;
+      // Script content, not a fixed hearing line: the call advanced.
+      this.hearingLinesWithoutProgress = 0;
       return true;
     }
 
@@ -2220,6 +2329,7 @@ export class ConversationPipeline {
       this.attentionEpisodeOpen = false;
       this.hearingEpisodeBeforeBlock = false;
       this.heldScriptFull = "";
+      this.hearingLinesWithoutProgress = 0;
       return false;
     }
 
@@ -2242,15 +2352,19 @@ export class ConversationPipeline {
       this.heldScriptRemainder = spoken.unheard;
       // FIX 2 — script content the caller heard: a block has been delivered.
       if (spoken.heard.length > 0) this.contextualReplyCommitted = true;
+      // Script content, not a fixed hearing line: the call advanced.
+      this.hearingLinesWithoutProgress = 0;
       return true;
     }
 
     // ── One short acknowledgement, once per episode ─────────────────
     if (isCheck && !this.attentionEpisodeOpen && remainder.length > 0) {
+      if (this.hearingLineCapReached()) return this.declineExhaustedHearingCheck(trimmed);
       // Set BEFORE the line is spoken. A second "hello" over the
       // acknowledgement itself must find the episode already open, or
       // it produces the second acknowledgement this exists to prevent.
       this.attentionEpisodeOpen = true;
+      this.hearingLinesWithoutProgress += 1;
       const line = attentionAcknowledgementFor(this.record.memory.currentLanguage);
       // eslint-disable-next-line no-console
       console.log(`[PIPELINE:${sid}] attention check — acknowledging once: "${line}"`);
@@ -2279,8 +2393,10 @@ export class ConversationPipeline {
         ? isHearingCheck(trimmed)
         : isEmphaticHearingCheck(trimmed);
       if (qualifies) {
+        if (this.hearingLineCapReached()) return this.declineExhaustedHearingCheck(trimmed);
         this.attentionEpisodeOpen = true;
         this.hearingEpisodeBeforeBlock = !this.contextualReplyCommitted;
+        this.hearingLinesWithoutProgress += 1;
         const line = attentionAcknowledgementFor(this.record.memory.currentLanguage);
         // eslint-disable-next-line no-console
         console.log(
@@ -2292,6 +2408,7 @@ export class ConversationPipeline {
       // A bare "haan ji"/"ji"/"Hi." — an answer or a pickup, not a
       // hearing problem. The contextual path (and the classifier) see
       // it exactly as today.
+      this.hearingLinesWithoutProgress = 0;
       return false;
     }
     // Episode open, nothing held: the caller came back.
@@ -2302,6 +2419,8 @@ export class ConversationPipeline {
       // contextual path continues with the pitch, which is what they
       // are waiting for; there is nothing to ask "did you catch" about.
       if (isCheck) {
+        if (this.hearingLineCapReached()) return this.declineExhaustedHearingCheck(trimmed);
+        this.hearingLinesWithoutProgress += 1;
         const line = attentionAcknowledgementFor(this.record.memory.currentLanguage);
         // eslint-disable-next-line no-console
         console.log(`[PIPELINE:${sid}] hearing check repeated before any block — acknowledging again: "${line}"`);
@@ -2310,6 +2429,8 @@ export class ConversationPipeline {
       }
       this.attentionEpisodeOpen = false;
       this.hearingEpisodeBeforeBlock = false;
+      // They answered the question rather than asking it again.
+      this.hearingLinesWithoutProgress = 0;
       return false;
     }
     // Opened after a block — by this branch, or by the remainder path
@@ -2318,12 +2439,53 @@ export class ConversationPipeline {
     // script; the episode closes so a further "hello" starts over with
     // the acknowledgement rather than looping here. The acknowledgement
     // itself is still spoken exactly once per episode.
+    if (this.hearingLineCapReached()) return this.declineExhaustedHearingCheck(trimmed);
     this.attentionEpisodeOpen = false;
+    this.hearingLinesWithoutProgress += 1;
     const followUp = hearingFollowUpFor(this.record.memory.currentLanguage);
     // eslint-disable-next-line no-console
     console.log(`[PIPELINE:${sid}] hearing check answered — following up once: "${followUp}"`);
     await this.speakAttentionUtterance(followUp, loopSignal, "following up a hearing check");
     return true;
+  }
+
+  /**
+   * Have the fixed hearing lines already been spent with nothing to
+   * show for them? See `MAX_HEARING_LINES_WITHOUT_PROGRESS`.
+   *
+   * Read at the four sites in `handleAttentionCheck` that speak one of
+   * those lines, and nowhere else. It decides nothing about RESUME or
+   * REPEAT, which speak the interrupted reply rather than a fixed line.
+   */
+  private hearingLineCapReached(): boolean {
+    return this.hearingLinesWithoutProgress >= MAX_HEARING_LINES_WITHOUT_PROGRESS;
+  }
+
+  /**
+   * The cap is reached and this turn would have been a third fixed
+   * hearing line. Decline it exactly the way a real contribution is
+   * declined — the episode closes and the held position is released,
+   * because the turn is about to be answered by the contextual path and
+   * an unheard remainder must never be spoken into a reply generated
+   * after it.
+   *
+   * THE COUNTER IS DELIBERATELY NOT RESET HERE. It is reset only by
+   * something actually happening (see the sites in
+   * `handleAttentionCheck`), so a caller — or an echo — that keeps
+   * producing presence checks keeps taking the contextual path rather
+   * than alternating between the model and a canned line, which is the
+   * same loop one period longer.
+   */
+  private declineExhaustedHearingCheck(trimmed: string): boolean {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[PIPELINE:${this.record.id}] ${MAX_HEARING_LINES_WITHOUT_PROGRESS} hearing lines already spoken with nothing in between — "${trimmed.slice(0, 40)}" takes the contextual path instead of another`,
+    );
+    this.attentionEpisodeOpen = false;
+    this.hearingEpisodeBeforeBlock = false;
+    this.heldScriptRemainder = "";
+    this.heldScriptFull = "";
+    return false;
   }
 
   /**
@@ -2583,10 +2745,15 @@ export class ConversationPipeline {
     const evidenceAtMs = this.lastEndpointEvidenceAtMs;
     const evidenceKind = this.lastEndpointEvidenceKind;
     try {
-      const detected = detectLanguage(text, this.record.memory.currentLanguage);
+      // PHASE 1.3 — the same answer `commitTurnLanguage` will give for
+      // this text when the turn is released, WITHOUT taking the lock
+      // (nothing is committed here). Reading the lock rather than the
+      // raw detection is what keeps the pre-opened request identical to
+      // the one built at release, so `adoptSpeculation` still matches.
+      const turnLanguage = this.effectiveLanguageFor(text);
       const request: CompletionRequest = {
         sessionId: sid,
-        history: this.buildRequestHistory(detected.language, this.record.memory.previewRecentHistory(text)),
+        history: this.buildRequestHistory(turnLanguage, this.record.memory.previewRecentHistory(text)),
       };
       const abort = new AbortController();
       const stream = generate.call(this.providers.llm, request, combineSignals([abort.signal, loopSignal]));
@@ -3588,10 +3755,10 @@ export class ConversationPipeline {
     // See (2) above: the evidence, committed before the call ends.
     const machineText = heard.trim();
     if (machineText.length > 0) {
-      this.record.memory.recordUserTurn(
-        machineText,
-        detectLanguage(machineText, this.record.memory.currentLanguage).language,
-      );
+      // PHASE 1.3 — read-only, exactly as the main loop's voicemail
+      // branch: the machine's words are evidence for the outcome
+      // classifier, never a language decision.
+      this.record.memory.recordUserTurn(machineText, this.effectiveLanguageFor(machineText));
       this.record.liveUserTranscript = "";
     }
 
@@ -3977,6 +4144,151 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
   }
 
   // ---------------------------------------------------------------
+  // LANGUAGE
+  // ---------------------------------------------------------------
+
+  /**
+   * ---------------- PHASE 1.3: THE LANGUAGE LOCK ----------------
+   *
+   * THE LANGUAGE THIS TURN IS ANSWERED IN. Read by everything that has
+   * to produce words: the per-turn hint on the language-model request,
+   * the TTS synthesis request, the fixed hearing lines, the
+   * silence-recovery prompt and the fallback greeting (all of which
+   * read `memory.currentLanguage`, which this writes through
+   * `recordUserTurn`).
+   *
+   * BEFORE THE LOCK IS TAKEN this is byte-for-byte what the pipeline
+   * always did: `detectLanguage` over the caller's latest turn, with
+   * the language already in play as the fallback for an utterance that
+   * carries no signal. AFTER it is taken, the lock is returned and the
+   * detection is not consulted.
+   *
+   * WHY A LOCK AT ALL. `detectLanguage` re-decides every turn by
+   * design, which is right for a per-turn hint and wrong for a call:
+   * one "okay", one English product name, one mis-scored fragment and
+   * the agent answers the rest of a Hindi call in English. That is the
+   * reported defect (MEETING_NOTES: "agent switched to English mid-call
+   * when user responded in English") and roadmap §4.3.
+   *
+   * DEEPGRAM'S LANGUAGE IDENTIFICATION IS ALREADY WHAT FEEDS THIS, and
+   * no request parameter changed for this feature. The live socket runs
+   * Nova-3 with `language: "multi"` — Deepgram's multilingual mode — so
+   * Hindi speech arrives as Devanagari and English as Latin, and the
+   * `devanagari` / `mixed-script` bases below ARE that identification,
+   * read off the script of the transcript it returns. Nova-3 also
+   * reports a per-word `language` tag in that mode; plumbing it through
+   * would mean changing `TranscriptSegment` and the turn detector, and
+   * the audit (§D item 4) has that field's real-call behaviour on this
+   * account listed as unvalidated. Not needed for the lock, so not
+   * done.
+   */
+  private effectiveLanguageFor(text: string): SupportedLanguage {
+    return (
+      this.record.memory.languageLock ??
+      detectLanguage(text, this.record.memory.currentLanguage).language
+    );
+  }
+
+  /**
+   * `effectiveLanguageFor`, plus the one side effect: if the call has
+   * no language yet and THIS utterance is the caller's first meaningful
+   * one, the call's language is fixed to it here.
+   *
+   * Called from exactly one place — the main loop, immediately before
+   * the turn is committed to memory. Every other language site either
+   * reads the memory or calls `effectiveLanguageFor`, so this is the
+   * only line in the pipeline that can take a lock.
+   *
+   * IDENTICAL RETURN VALUE TO `effectiveLanguageFor` FOR THE SAME TEXT,
+   * and that is load-bearing rather than incidental: `startSpeculation`
+   * pre-opens the language-model request from `effectiveLanguageFor`
+   * before the turn is released, and `adoptSpeculation` compares the
+   * two requests content-for-content. If locking changed the answer for
+   * the very turn that took the lock, every first meaningful utterance
+   * would throw its pre-opened request away and pay full latency. It
+   * cannot: the lock is taken TO `detected.language`, which is what
+   * both paths return.
+   */
+  private commitTurnLanguage(text: string): SupportedLanguage {
+    const locked = this.record.memory.languageLock;
+    if (locked !== undefined) return locked;
+
+    const detected = detectLanguage(text, this.record.memory.currentLanguage);
+    if (this.qualifiesForLanguageLock(text, detected)) {
+      this.record.memory.lockLanguage(detected.language);
+      // eslint-disable-next-line no-console
+      console.log(
+        `[LANGUAGE:${this.record.id}] call language LOCKED to ${detected.language} on the first meaningful utterance` +
+          ` (basis=${detected.basis} confidence=${detected.confidence} hindiMarkers=${detected.hindiMarkerHits}):` +
+          ` "${text.trim().slice(0, 80)}"`,
+      );
+    }
+    return detected.language;
+  }
+
+  /**
+   * ---------------- WHAT COUNTS AS "THE FIRST MEANINGFUL
+   *                  UTTERANCE" ----------------
+   *
+   * Every clause is a REFUSAL, and each one is a case where locking
+   * would fix the call's language on something that is not the caller
+   * choosing a language. Nothing here introduces a phrase table, a
+   * token list or a language rule of its own — each clause delegates to
+   * a predicate or constant that already exists for another reason,
+   * which is what keeps this from becoming a second, drifting
+   * definition of "meaningful".
+   *
+   *   1. NOT INSIDE A HEARING EPISODE. The same two flags
+   *      `startSpeculation` declines on. Inside an episode the agent
+   *      has just spoken a FIXED line — "Hey, can you hear me okay?" —
+   *      and the natural answer to a fixed line repeats its words, in
+   *      its language. Locking there would let the agent's own script
+   *      choose the call's language, and a Hindi caller answering an
+   *      English hearing line with "Yes I can hear you" would lock the
+   *      call into English. It also covers every branch
+   *      `handleAttentionCheck` answers without the model
+   *      (confirmations, restart/continue requests), which are replies
+   *      to our line rather than the caller's own subject.
+   *
+   *   2. IT TOOK THE FLOOR. `utteranceTakesNoFloor` — the existing
+   *      disjunction of bare greeting, bare acknowledgement/filler and
+   *      pure presence check. "Hello?", "Haan ji.", "Okay", "Can you
+   *      hear me?" are noise for this purpose whatever language they
+   *      appear to be in. Note the pickup acknowledgement never even
+   *      reaches here: the main loop drops it before the turn is
+   *      committed.
+   *
+   *   3. LONG ENOUGH TO HAVE BEEN CHECKED FOR ECHO. See
+   *      `LANGUAGE_LOCK_MIN_WORDS`. This is the silence/noise/self-echo
+   *      clause: an empty or unintelligible turn has no words, and a
+   *      fragment too short for the self-echo guard to judge is one the
+   *      pipeline cannot swear is not our own audio.
+   *
+   *   4. THE DETECTION IS LOCK-GRADE. See `isLockGradeEvidence`. This
+   *      is the ambiguity clause — it refuses a result that merely
+   *      carried the previous language forward, refuses an English
+   *      fall-through that had Hindi words in it, and refuses an
+   *      utterance that NAMES a language ("please speak in Hindi"),
+   *      which is a request about language rather than the caller
+   *      choosing one by speaking it.
+   *
+   * WHAT IT DELIBERATELY DOES NOT REFUSE: a genuinely code-mixed first
+   * utterance. That locks to HINGLISH, which is a first-class
+   * `SupportedLanguage` here and whose prompt hint is "mirror their mix
+   * naturally". Collapsing a mixed opener onto one of the two pure
+   * languages would be inventing a policy; the architecture already has
+   * the right answer for it.
+   */
+  private qualifiesForLanguageLock(text: string, detected: LanguageDetectionResult): boolean {
+    if (this.attentionEpisodeOpen || this.heldScriptRemainder.length > 0) return false;
+    const trimmed = text.trim();
+    if (trimmed.length === 0) return false;
+    if (utteranceTakesNoFloor(trimmed)) return false;
+    if (selfEchoWords(trimmed).length < LANGUAGE_LOCK_MIN_WORDS) return false;
+    return isLockGradeEvidence(detected);
+  }
+
+  // ---------------------------------------------------------------
   // LLM + TTS
   // ---------------------------------------------------------------
 
@@ -4058,7 +4370,11 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
 
   private async runThinkingAndSpeaking(
     userText: string,
-    detected: LanguageDetectionResult,
+    // PHASE 1.3 — was the whole `LanguageDetectionResult`, of which
+    // only `.language` was ever read. Narrowed to the language itself
+    // so the CALL'S language (which may be the lock rather than this
+    // turn's detection) is what reaches the request.
+    turnLanguage: SupportedLanguage,
     loopSignal: AbortSignal,
   ): Promise<ThinkingAndSpeakingResult> {
     const sid = this.record.id;
@@ -4066,7 +4382,7 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
 
     this.host.transition(this.record, SessionState.THINKING, "generating a reply");
     const thinkingSignal = combineSignals([this.record.bargeIn.beginThinking(), loopSignal]);
-    const request: CompletionRequest = { sessionId: this.record.id, history: this.buildRequestHistory(detected.language) };
+    const request: CompletionRequest = { sessionId: this.record.id, history: this.buildRequestHistory(turnLanguage) };
     const llmProviderId = this.providers.llm.descriptor.id;
     // FIX #8 — the request above is STILL built, exactly as before, and
     // is the reference a pre-opened request must match to be adopted.

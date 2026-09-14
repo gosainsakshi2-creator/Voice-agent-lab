@@ -58,7 +58,9 @@ import {
 } from "./outcome-types";
 import {
   answerReadability,
+  containsPhrase,
   findPhrases,
+  hasExplicitRefusal,
   isQuestionTurn,
   normaliseText,
   summariseConversation,
@@ -80,6 +82,26 @@ const AFFIRMATIONS = [
   // Hindi / Hinglish, transliterated and in Devanagari.
   "haan", "haa", "han ji", "ji haan", "ji", "bilkul", "zaroor", "jarur",
   "theek hai", "thik hai", "kar dijiye", "kar do", "kara dijiye", "pakka",
+  // ── The UNSPACED spellings of the same two words ────────────────
+  //
+  // Deepgram returns "haan ji" as one token as often as two — the rest
+  // of this codebase already knows that and treats the spellings as one
+  // family: `ACKNOWLEDGEMENT_TOKENS` and `BARE_GREETING_ONLY` in the
+  // pipeline both carry "hanji"/"haanji"/"han", and the barge-in and
+  // silence-recovery suites feed "Haanji." as a literal.
+  //
+  // This table did not, and `containsPhrase` matches WHOLE words, so
+  // " haanji " never matched " haan " or " ji ". The single commonest
+  // Hinglish yes therefore reached the model, was answered, sat in the
+  // transcript — and then settled `unclear` / `no_decisive_signal`: no
+  // `confirmed_at_gate`, no FINAL_YES, no registrations-sheet row and
+  // no auto-hangup. A recognised answer, lost at the last step.
+  //
+  // These are SPELLINGS of words already in this table, not new
+  // vocabulary, which is the whole of the safety case. Bare "ha" is
+  // deliberately NOT added: it collides with laughter ("ha ha"), and
+  // "haa" above already covers the elongated form.
+  "haanji", "hanji", "han",
   "हाँ", "हां", "जी", "जी हाँ", "बिल्कुल", "ज़रूर", "जरूर", "ठीक है", "पक्का",
 ];
 
@@ -102,6 +124,167 @@ const NEGATION_EXCEPTIONS = [
 ];
 
 /**
+ * Phrases that say "we are finished talking".
+ *
+ * At least one of these must be present before a turn may be read as a
+ * courtesy sign-off. Without that requirement a bare "No." would be one
+ * — it is made entirely of courtesy tokens — and a refusal would stop
+ * deciding anything, which is the opposite of the point.
+ */
+const COURTESY_CLOSERS = [
+  "thanks", "thank you", "thanks a lot", "thanks so much", "thank you so much",
+  "many thanks", "thankyou", "appreciate it", "i appreciate it",
+  "that s all", "that is all", "thats all", "that s it", "that is it", "thats it",
+  "that s everything", "that is everything", "nothing else", "nothing more", "no more",
+  "i m good", "i am good", "im good", "we re good", "we are good", "all good",
+  "i m fine", "i am fine", "im fine", "all set", "i m all set", "i am all set",
+  "bye", "goodbye", "good bye", "bye bye", "take care", "have a good day",
+  "have a nice day", "see you", "see you there", "see you soon", "cheers",
+  // Hindi / Hinglish, transliterated and in Devanagari.
+  "bas", "bas itna", "bas itna hi", "itna hi", "aur kuch nahi", "aur kuch nahin",
+  "kuch nahi", "dhanyavaad", "dhanyawad", "shukriya", "namaste", "alvida", "khuda hafiz",
+  "बस", "बस इतना", "बस इतना ही", "इतना ही", "और कुछ नहीं",
+  "धन्यवाद", "शुक्रिया", "नमस्ते", "अलविदा",
+];
+
+/**
+ * EVERY phrase a turn may consist of and still be nothing but a
+ * courtesy close. The closers above, plus the acknowledgement and
+ * politeness tokens that surround them.
+ *
+ * This is an ALLOW-LIST matched against the WHOLE turn, which is what
+ * makes the rule safe. A turn is a sign-off only if it decomposes
+ * entirely into these — so "No thanks, that's all." is one and "No
+ * thanks, cancel it." is not, because "cancel" appears nowhere here.
+ * Nothing that names an action, a subject or a reason is a member, and
+ * that is deliberate: the moment a turn says something about the
+ * registration it stops being a sign-off and goes back to the ordinary
+ * rules.
+ *
+ * Note what is NOT a member: "not", "do", "want", "cancel", "reserve",
+ * "register", "join", "attend", "interested", "mind", "for", "me". They
+ * are left out so that "No thanks, not for me." — a real refusal that
+ * happens to open with courtesy — cannot decompose.
+ */
+const COURTESY_TOKENS = [
+  ...COURTESY_CLOSERS,
+  "ok", "okay", "okey", "k", "alright", "all right", "right", "sure", "fine",
+  "good", "great", "cool", "nice", "perfect", "lovely",
+  "yes", "yeah", "yep", "yup", "ya", "no", "nope", "nah",
+  "please", "welcome", "you re welcome", "your welcome", "of course", "sorry",
+  "no problem", "no worries", "not at all", "no need", "not required",
+  "and", "then", "so", "just", "for now", "for your time", "anyway",
+  // Hindi / Hinglish, transliterated and in Devanagari.
+  // "haanji"/"hanji" are here for ONE reason: to keep the unspaced
+  // spellings in step with the spaced ones now that `AFFIRMATIONS`
+  // carries them. This list is an allow-list read only by
+  // `COURTESY_SIGNOFF_ONLY`, and without them "Haanji, thanks." stopped
+  // decomposing while "Haan ji, thanks." still did — so the same
+  // sentence, spelled the other way, silently lost the courtesy reading
+  // and out-positioned an earlier no. No rule changes; two spellings of
+  // words already in this list do.
+  "haan", "haa", "han", "han ji", "haan ji", "haanji", "hanji", "ji", "ji haan",
+  "theek", "theek hai", "thik hai", "achha", "accha", "acha",
+  "bilkul", "sahi", "sahi hai", "samajh gaya", "samajh gayi",
+  "nahi", "nahin", "nai", "koi baat nahi", "koi baat nahin",
+  "ठीक है", "ठीक", "हाँ", "हां", "जी", "जी हाँ", "अच्छा", "बिल्कुल", "नहीं", "नही",
+];
+
+/**
+ * The WHOLE normalised turn is a sequence of courtesy tokens and
+ * nothing else.
+ *
+ * Same shape, and the same reason, as `ACKNOWLEDGEMENT_ONLY` in
+ * `turn-detection.ts`: anchored at both ends, so a single word the list
+ * does not contain fails the whole match. Longest phrases are tried
+ * first, which only affects how quickly the match is found — the engine
+ * backtracks, so a turn that CAN decompose always does.
+ */
+const COURTESY_SIGNOFF_ONLY = new RegExp(
+  `^(?: (?:${[...COURTESY_TOKENS].sort((a, b) => b.length - a.length).join("|")}))+ $`,
+  "u",
+);
+
+/**
+ * A turn that ends the conversation politely and decides nothing.
+ *
+ * "Okay, thanks.", "No thanks, that's all.", "Nahi, bas itna hi." Every
+ * one of them contains a token the phrase tables read as a verdict, and
+ * not one of them is a verdict: they are what a person says when the
+ * business of the call is already over. Read as keywords they flip the
+ * call in whichever direction the last token happened to point —
+ * a "no" already given is reopened by the "okay", and a registration
+ * already given is taken back by the "no".
+ *
+ * Two conditions, both required. The turn must SAY it is closing (a
+ * phrase from `COURTESY_CLOSERS`), and it must say nothing else at all
+ * (`COURTESY_SIGNOFF_ONLY`). Neither alone is enough: "Thanks, but I
+ * changed my mind" has the closer and fails the second, "No." has
+ * neither.
+ *
+ * Where this is allowed to apply is decided at the call site, and never
+ * at the commitment question — see the loop in `classifyOutcome`.
+ */
+function isCourtesySignOff(normalisedTurn: string): boolean {
+  return (
+    containsPhrase(normalisedTurn, COURTESY_CLOSERS) &&
+    COURTESY_SIGNOFF_ONLY.test(normalisedTurn)
+  );
+}
+
+/**
+ * Ways a person TAKES BACK a registration they have already given,
+ * which carry no token from `NEGATIONS` above and none from the shared
+ * `EXPLICIT_REFUSALS` table in `conversation-events.ts`.
+ *
+ * Read by `retractsTheGate` and by nothing else, and only in the
+ * `STATEMENT_OR_NONE` context — a turn volunteered after the agent made
+ * a statement. It cannot widen `record("negation", ...)`, cannot move
+ * `lastNegationPosition`, and therefore cannot change the label of any
+ * call that never reached the gate.
+ *
+ * Deliberately tiny. It exists because two shapes of genuine retraction
+ * are invisible to both existing tables:
+ *
+ *   "I changed my mind. Please do not reserve it."
+ *   "I don't want to join anymore."
+ *
+ * The first contains no negation token at all — "do not" on its own is
+ * in neither table, and "do not want" does not occur. The second is the
+ * same sentence as "I do not want to join anymore", which both tables
+ * already match, written with an apostrophe: `normaliseText` reduces
+ * every non-letter to a space, so "don't" arrives as "don t" and the
+ * entry "dont want" can never match a contraction. That is why the
+ * spellings below look wrong — they are the normalised forms, and the
+ * apostrophe spelling is the one people actually say.
+ *
+ * Nothing here is a general vocabulary fix: the shared refusal table is
+ * untouched, because it also decides the live mid-call hangup in
+ * `call-runner.ts`.
+ */
+const GATE_RETRACTIONS = [
+  "changed my mind", "change my mind",
+  "do not reserve", "dont reserve", "don t reserve",
+  "do not register", "dont register", "don t register",
+  "do not book", "dont book", "don t book",
+  "don t want",
+  // Cancelling the thing by name. The negation table carries "cancel
+  // it" and nothing longer, so "Please cancel my registration." — as
+  // plain a cancellation as exists — contained no negation phrase, no
+  // refusal phrase and no retraction phrase, and stayed
+  // `registered_confirmed` all the way to the sheet.
+  "cancel my registration", "cancel the registration", "cancel my seat",
+  "cancel my spot", "cancel my booking", "cancel my place", "cancel that",
+  "cancel my naam", "registration cancel", "seat cancel",
+  // Hindi / Hinglish, transliterated and in Devanagari — every other
+  // table in this file is bilingual, and a retraction table that only
+  // understood English would be a defect on exactly the calls this
+  // campaign makes.
+  "man badal", "mann badal", "irada badal",
+  "मन बदल", "इरादा बदल",
+];
+
+/**
  * Phrases that begin with an affirmation token but commit to nothing.
  *
  * The mirror of NEGATION_EXCEPTIONS, and needed for the same reason.
@@ -110,6 +293,43 @@ const NEGATION_EXCEPTIONS = [
  * the commitment question the difference is the whole outcome, so these
  * are removed before affirmations are matched.
  */
+/**
+ * ── "<no> ji" — THE POLITE REFUSAL, IN EVERY SPELLING OF BOTH HALVES ──
+ *
+ * GENERATED as a cross-product on purpose, because an incomplete
+ * cross-product is precisely what the defect was. "ji" is in
+ * `AFFIRMATIONS` because a bare "Ji." at the gate is a real yes — and
+ * it also sits inside "nahi ji", the commonest polite Hinglish NO.
+ * Rule 4 (a yes at the gate) runs before rule 6 (a no that nothing
+ * followed) and short-circuits, so measured on the live tables:
+ *
+ *   gate -> "Ji nahi."  -> declined / explicit_no          (correct)
+ *   gate -> "Nahi ji."  -> registered_confirmed            (WRONG)
+ *   gate -> "नहीं जी"    -> registered_confirmed            (WRONG)
+ *
+ * The two orders differ only in which token lands last: the retraction
+ * position is read off the negation, so "ji nahi" puts the "ji" BEFORE
+ * it and the gate affirmation is filtered out, while "nahi ji" puts it
+ * after and survives. A person who declined was written to the
+ * registrations sheet and hung up on with FINAL_YES.
+ *
+ * BOTH HALVES VARY INDEPENDENTLY, which is why this is not a literal
+ * list. Deepgram runs here in `multi` mode and can return either half
+ * in either script — including mixed, "नहीं ji" — so a hand-written
+ * list of the romanized pairs left eight of the twelve combinations
+ * broken. Enumerating the product cannot miss one, and a spelling added
+ * to either row is automatically covered in both scripts.
+ *
+ * The negation row is exactly the bare-negation spellings from
+ * `NEGATIONS`; the honorific row is the two spellings of "ji" from
+ * `AFFIRMATIONS`. Nothing new is introduced by either.
+ */
+const POLITE_REFUSAL_NEGATIONS = ["nahi", "nahin", "nai", "no", "नहीं", "नही"];
+const POLITE_REFUSAL_HONORIFICS = ["ji", "जी"];
+const POLITE_REFUSALS = POLITE_REFUSAL_NEGATIONS.flatMap((negation) =>
+  POLITE_REFUSAL_HONORIFICS.map((honorific) => `${negation} ${honorific}`),
+);
+
 const AFFIRMATION_EXCEPTIONS = [
   "i will see", "i will try", "i will check", "i will think", "i will let you know",
   "i will decide", "i will confirm later", "i will get back",
@@ -120,6 +340,17 @@ const AFFIRMATION_EXCEPTIONS = [
   // reminder v2 gate: "Maybe, not sure yet." settled as confirmed_at_gate
   // and would have written a sheet row. Same class of fix as "i will see".
   "not sure", "pata nahi", "nahi pata",
+  // The polite refusal, both scripts, both orders of script — see
+  // `POLITE_REFUSALS`. Stripped here rather than anywhere else for the
+  // same reason "not sure" is: this list is the one place a phrase can
+  // stop being read as an affirmation WITHOUT touching how negations,
+  // retractions, courtesy sign-offs or the gate binding are computed.
+  // `forNegations` is a separate string and is untouched, so the turn
+  // still declines on its own "nahi" exactly as it always did.
+  //
+  // Bounded: every entry contains a negation token, so no affirmative
+  // turn can lose a phrase to this.
+  ...POLITE_REFUSALS,
 ];
 
 const CALLBACK = [
@@ -209,6 +440,107 @@ const COMMIT_ANCHORS: Readonly<Record<string, readonly string[]>> = {
     "aap aayenge", "join karenge",
   ],
 };
+
+/**
+ * The agent OFFERING to do something on the person's behalf.
+ *
+ * Half of the paraphrased-gate test below, and useless on its own —
+ * "Can I tell you in 20 seconds..." and "Shall I send the link on
+ * WhatsApp?" both open this way and neither commits anybody.
+ */
+const GATE_OFFERS = [
+  "should i", "shall i", "can i", "could i", "may i", "should we", "shall we",
+  "would you like me to", "would you like us to", "do you want me to",
+  "want me to", "do you want us to", "would you like", "do you want",
+  "are you happy for me to", "is it ok if i", "is it okay if i",
+  // Hindi / Hinglish, transliterated and in Devanagari.
+  "kya main", "main aapko", "main aapka", "main aapki", "main aapke",
+  "kar du", "kar doon", "kar dun", "kardu", "karu", "karoon",
+  "likh du", "likh doon", "kya aap chahte", "kya aap chahti",
+  "क्या मैं", "मैं आपका", "मैं आपकी", "मैं आपको", "कर दूँ", "कर दूं", "लिख दूँ",
+];
+
+/**
+ * ...and the act of registering THIS PERSON, bound to them.
+ *
+ * The other half, and the half that carries the safety. Every entry
+ * names the person the action is done to or for — "reserve YOUR",
+ * "register YOU", "put YOU down", "reserve this FOR YOU". A bare verb
+ * is deliberately absent: "book", "reserve", "register" and "join" on
+ * their own turn "Should I explain how to book a seat?" and "Do you
+ * want me to send the booking link?" into commitment questions, which
+ * is the false positive that matters most here — it would close a
+ * contact as registered on a question about a link.
+ *
+ * Tense matters too, and whole-word matching gives it for free: "book
+ * your" does not match "Have you booked your seat already?", which asks
+ * about the past and commits to nothing.
+ */
+const GATE_ACTIONS = [
+  "reserve your", "reserve you", "reserve this for you", "reserve it for you",
+  "reserve that for you", "reserve a spot for you", "reserve a seat for you",
+  "book your", "book you", "book this for you", "book it for you",
+  "book that for you", "book a place for you", "book a seat for you",
+  "register you", "registering you", "get you registered", "get you signed up",
+  "get you booked", "get you a seat", "get you a spot",
+  "sign you up", "signing you up", "put you down", "putting you down",
+  "put your name down", "add you to the list", "add your name to the list",
+  "save your seat", "save your spot", "save your place",
+  "hold your seat", "hold your spot", "hold your place",
+  "block your seat", "block your spot", "block your place",
+  "confirm your seat", "confirm your spot", "confirm your place",
+  "enroll you", "enrol you", "registered for this", "registered for it",
+  // Hindi / Hinglish, transliterated and in Devanagari.
+  //
+  // Verb-bound, never possessive-bound. "aapka naam" alone looked like
+  // the natural mirror of "your name", and it also matches "Kya main
+  // aapka naam sahi bol raha hoon?" — am I saying your name right —
+  // which is a spelling check, not a gate. So is "aapki seat", which
+  // turns "Kya main aapki seat number bata du?" into a registration.
+  // The Hindi possessive carries none of the commitment; the verb
+  // after it does, so the verb is what these match.
+  "aapko register", "aapko book", "aapko enroll", "aapko add",
+  "seat reserve", "seat book", "seat pakki", "seat confirm",
+  "jagah reserve", "jagah book", "jagah pakki",
+  "naam likh", "naam note", "naam darj", "naam add", "naam likhwa",
+  "register kar du", "register kar doon", "register kar dun",
+  "registration kar du", "booking kar du",
+  "आपको रजिस्टर", "नाम लिख", "नाम दर्ज", "सीट रिज़र्व", "सीट बुक", "जगह बुक",
+];
+
+/**
+ * A commitment question the anchor table does not spell out.
+ *
+ * `COMMIT_ANCHORS` lists the wordings the approved scripts actually
+ * use, which is right for a script the campaign controls and wrong the
+ * moment the agent paraphrases — and it does. "Would you like me to put
+ * you down for it?", "Should I go ahead and reserve this for you?",
+ * "Can I get you registered for this?" are all the gate, and a "Yes."
+ * to any of them landed as `affirmative_not_at_gate` /
+ * `interested_not_confirmed`: one label short of FINAL_YES, so neither
+ * the sheet mirror nor the end-of-call check ever saw the registration.
+ * Same failure the v3 re-wording caused, one step more general.
+ *
+ * THREE conditions, all required, and the conjunction is the whole
+ * safety argument:
+ *
+ *   1. The turn ASKS. A gate is a question put to the person. This is
+ *      what keeps the agent's own confirmation out — "Great, I'll
+ *      reserve that for you." is a statement, and reading it as the
+ *      gate would make the next "Yes." a registration and bind every
+ *      later refusal to it.
+ *   2. The agent OFFERS to act (`GATE_OFFERS`).
+ *   3. The act is registering THIS PERSON (`GATE_ACTIONS`).
+ *
+ * Only the LITERAL anchors are unconditional, exactly as before, so
+ * this can add a gate and never take one away: every transcript that
+ * matched an anchor still matches it, on the same line, with the same
+ * `atGate`.
+ */
+function isParaphrasedGate(rawText: string, normalised: string): boolean {
+  if (!isQuestionTurn(rawText)) return false;
+  return containsPhrase(normalised, GATE_OFFERS) && containsPhrase(normalised, GATE_ACTIONS);
+}
 
 // ── Normalisation ─────────────────────────────────────────────────
 // `normaliseText` and `findPhrases` live in `conversation-events.ts` so
@@ -315,6 +647,20 @@ export function classifyOutcome(input: ClassifyOutcomeInput): OutcomeClassificat
   const signals: OutcomeSignal[] = [];
   const positions = new Map<OutcomeSignal, number>();
   const anchors = COMMIT_ANCHORS[input.campaignType] ?? COMMIT_ANCHORS["registration"] ?? [];
+  /**
+   * Where, in the ordering key below, each turn that TAKES BACK a yes
+   * already given at the gate did so. See `retractsTheGate` —
+   * everything else the person says "no" to during the rest of the call
+   * is an answer to that other thing.
+   *
+   * A map of positions rather than a set of turn indices because a
+   * retraction no longer has to contain a phrase from `NEGATIONS`: "I
+   * changed my mind. Please do not reserve it." retracts and contributes
+   * no negation signal, so there is nothing else to read a position off.
+   * Turns that DO carry negations keep the position they had before —
+   * see `retractionOffset`.
+   */
+  const retractionPositions = new Map<number, number>();
 
   input.transcript.forEach((turn, turnIndex) => {
     if (turn.role !== "user" || turn.text.length === 0) return;
@@ -331,13 +677,69 @@ export function classifyOutcome(input: ClassifyOutcomeInput): OutcomeClassificat
       forAffirmations = forAffirmations.split(` ${exception} `).join(" ");
     }
 
-    const atGate = answersACommitQuestion(input.transcript, turnIndex, anchors);
+    const negationHits = findPhrases(forNegations, NEGATIONS);
+
+    const commitContext = commitQuestionContext(input.transcript, turnIndex, anchors);
+    const atGate = commitContext.answering === "ANCHOR";
 
     // Was this turn an ANSWER at all? A question and a sentence that was
     // cut off are conversational events, not verdicts — the phrases in
     // them are still recorded, for audit, but marked non-decisive so no
     // rule below can close a contact on one.
     const readability = answerReadability(turn.text, raw);
+
+    // ...and was it a COURTESY CLOSE rather than an answer? "Okay,
+    // thanks." and "No thanks, that's all." carry a verdict token each
+    // and neither is a verdict; they are how a finished call ends.
+    //
+    // Where that is allowed to matter depends on what was asked, for
+    // the same reason the retraction binding does:
+    //
+    //   ANCHOR             nothing is suppressed. The person is
+    //                      answering the question that commits them,
+    //                      and "Okay, thanks." there is a registration
+    //                      — it is the single most common way one is
+    //                      given. "No thanks." there is a refusal.
+    //
+    //   anywhere else      the AFFIRMATION stops deciding, and the
+    //                      negation stops RETRACTING but still counts
+    //                      as an ordinary no.
+    //
+    // The asymmetry is the safe half of the rule, and it is deliberate.
+    // Away from the gate a courtesy affirmation can do exactly two
+    // things, and both are wrong: out-position an earlier no so that a
+    // `declined` call reads as unresolved, or land as
+    // `affirmative_not_at_gate`. It can never be a registration —
+    // `atGate` is already false — so nothing is lost by silencing it.
+    //
+    // A courtesy negation is not silenced the same way, because on a
+    // call that never reached the gate "No thanks, that's all." said to
+    // a pitch IS the refusal, and turning that into `unclear` would put
+    // a person who declined back in the retry queue. All it loses is
+    // the power to TAKE BACK a registration already given, which is the
+    // only thing this issue is about.
+    //
+    // Nothing here touches `opt_out`, `wrong_number`, `voicemail` or
+    // `callback`: a compliance signal a polite word could switch off
+    // would not be a compliance signal, so "No thanks, take me off your
+    // list." is still an opt-out and still outranks everything.
+    const courtesyClose =
+      commitContext.answering !== "ANCHOR" && isCourtesySignOff(raw);
+    const affirmationDecisive = readability.affirmationDecisive && !courtesyClose;
+
+    // ...and if it IS an answer, is it an answer that takes back a
+    // registration already given? Recorded per turn, next to the four
+    // facts it is derived from, and read by rule 4 below.
+    if (
+      readability.negationDecisive &&
+      !courtesyClose &&
+      retractsTheGate(raw, commitContext.retraction, negationHits.length > 0)
+    ) {
+      retractionPositions.set(
+        turnIndex,
+        positionOf(turnIndex, retractionOffset(raw, negationHits)),
+      );
+    }
 
     const record = (
       kind: OutcomeSignal["kind"],
@@ -370,9 +772,9 @@ export function classifyOutcome(input: ClassifyOutcomeInput): OutcomeClassificat
     // them landing after the commitment question would otherwise read
     // as a high-confidence registration.
     if (voicemailHits.length === 0) {
-      record("affirmation", findPhrases(forAffirmations, AFFIRMATIONS), readability.affirmationDecisive);
+      record("affirmation", findPhrases(forAffirmations, AFFIRMATIONS), affirmationDecisive);
     }
-    record("negation", findPhrases(forNegations, NEGATIONS), readability.negationDecisive);
+    record("negation", negationHits, readability.negationDecisive);
   });
 
   const positionFor = (signal: OutcomeSignal) => positions.get(signal) ?? 0;
@@ -444,8 +846,16 @@ export function classifyOutcome(input: ClassifyOutcomeInput): OutcomeClassificat
     (latest, signal) => Math.max(latest, positionFor(signal)),
     -1,
   );
+  // Only a RETRACTION takes back a yes at the gate — not every later
+  // "no". `lastNegationPosition` above is deliberately left alone and
+  // still drives rule 6, so a call that never reached the gate is
+  // classified exactly as it was before this distinction existed.
+  const lastRetractionPosition = [...retractionPositions.values()].reduce(
+    (latest, position) => Math.max(latest, position),
+    -1,
+  );
   const gateAffirmations = affirmations.filter(
-    (signal) => signal.atGate && positionFor(signal) > lastNegationPosition,
+    (signal) => signal.atGate && positionFor(signal) > lastRetractionPosition,
   );
 
   if (gateAffirmations.length > 0) {
@@ -486,6 +896,39 @@ export function classifyOutcome(input: ClassifyOutcomeInput): OutcomeClassificat
       primaryReason: "explicit_no",
       confidence: "high",
       explanation: `The person declined ("${negations[negations.length - 1]?.phrase}") and said nothing positive after it.`,
+    });
+  }
+
+  // ── 6b. A yes at the gate that was then taken back ──────────────
+  // Rule 4 already refuses to call this a registration. Without this
+  // rule it would fall through to "positive but not at the gate" and be
+  // filed as UNRESOLVED — a person who said "actually no" after
+  // confirming would stay in the retry queue and be called again.
+  //
+  // Rule 6 catches most retractions on position alone and runs first,
+  // so every label it already produced is unchanged. It cannot catch
+  // the two that matter here: a retraction carrying no negation phrase
+  // ("I changed my mind. Please do not reserve it."), and one whose own
+  // words end on an affirmation token ("Actually nahi, cancel kar
+  // dijiye" — "kar dijiye" sits after "nahi" in the same turn, so the
+  // last affirmation outranks the last negation).
+  //
+  // Narrow by construction: it fires only when an at-gate affirmation
+  // was recorded BEFORE the retraction, so a call that never reached
+  // the gate can never reach this branch.
+  const retractedGateYes = affirmations.find(
+    (signal) => signal.atGate && positionFor(signal) < lastRetractionPosition,
+  );
+  if (retractedGateYes) {
+    return build({
+      ...shared,
+      outcomeType: "declined",
+      succeeded: false,
+      primaryReason: "explicit_no",
+      confidence: "high",
+      explanation:
+        `The person agreed ("${retractedGateYes.phrase}") at the question that commits them and then ` +
+        `took it back, so this is a decision against rather than an unfinished conversation.`,
     });
   }
 
@@ -546,6 +989,56 @@ function questionSuffix(conversation: ConversationEvents): string {
 }
 
 /**
+ * What the customer turn was answering, as far as the look-back can
+ * tell:
+ *
+ *   ANCHOR             the question that commits them — the gate.
+ *   OTHER_QUESTION     a different question the agent asked.
+ *   STATEMENT_OR_NONE  volunteered: the agent had made a statement, or
+ *                      had not spoken at all.
+ *
+ * This used to be a boolean, and the last two cases were both `false`.
+ * They mean different things to the retraction rule — see
+ * `retractsTheGate` — and nothing else about the look-back changed:
+ * `ANCHOR` is returned exactly where `true` was returned before, so
+ * `atGate` is identical for every transcript.
+ */
+type CommitQuestionContext = "ANCHOR" | "OTHER_QUESTION" | "STATEMENT_OR_NONE";
+
+/**
+ * The same look-back, read for its two different purposes.
+ *
+ * `answering` is what the walk has always returned and is the ONLY
+ * thing `atGate` is derived from, so every transcript produces exactly
+ * the `atGate` it produced before this split existed.
+ *
+ * `retraction` is the context the confirmation binding uses, and
+ * differs from `answering` in one case: the walk stepped over an
+ * assistant acknowledgement — "Understood.", "Got it." — before it
+ * found the question. An acknowledgement is the agent CLOSING a
+ * response; whatever the person says next starts a new exchange and is
+ * no longer an answer to the question two exchanges back:
+ *
+ *   Agent:    "...should I reserve your free seat?"
+ *   Customer: "Yes, reserve it."
+ *   Agent:    "Email bhi bhej du?"
+ *   Customer: "No need."
+ *   Agent:    "Understood."
+ *   Customer: "Actually, cancel it."
+ *
+ * The walk skipped "Understood." as filler, reached the email question
+ * and called the cancellation an answer to THAT, so the registration
+ * survived a caller who had just cancelled it. Only the retraction
+ * reading is bounded: `answering` still returns `OTHER_QUESTION` there,
+ * and `isBareAcknowledgement` itself is untouched — it is the
+ * pipeline's backchannel predicate and several live paths read it.
+ */
+interface CommitContexts {
+  readonly answering: CommitQuestionContext;
+  readonly retraction: CommitQuestionContext;
+}
+
+/**
  * Whether a customer turn is answering a question that commits them.
  *
  * Looks back to the nearest assistant turn, and one further ONLY if the
@@ -581,27 +1074,210 @@ function questionSuffix(conversation: ConversationEvents): string {
  * decides both, so an assistant "Sure." is still skipped and an
  * assistant sentence never is.
  */
-function answersACommitQuestion(
+function commitQuestionContext(
   transcript: readonly TranscriptTurn[],
   customerTurnIndex: number,
   anchors: readonly string[],
-): boolean {
-  if (anchors.length === 0) return false;
+): CommitContexts {
+  const both = (context: CommitQuestionContext): CommitContexts => ({
+    answering: context,
+    retraction: context,
+  });
+  if (anchors.length === 0) return both("STATEMENT_OR_NONE");
   let checked = 0;
+  /** The walk has stepped over an assistant acknowledgement. */
+  let crossedAcknowledgement = false;
+  /**
+   * ...and over the customer turn that acknowledgement was answering.
+   * BOTH halves are required. An acknowledgement is a boundary because
+   * it closes an exchange, and an exchange is only closed once somebody
+   * answered: an agent turn that asks and then acknowledges with
+   * nothing said in between ("Should I send the SMS?" / "Sure.") has
+   * acknowledged nothing, and the person is still answering the
+   * question.
+   */
+  let closedExchange = false;
   for (let index = customerTurnIndex - 1; index >= 0 && checked < 2; index -= 1) {
     const turn = transcript[index];
-    if (!turn || turn.role !== "assistant" || turn.text.trim().length === 0) continue;
+    if (!turn || turn.text.trim().length === 0) continue;
+    if (turn.role !== "assistant") {
+      if (crossedAcknowledgement) closedExchange = true;
+      continue;
+    }
     const text = normalise(turn.text);
-    if (findPhrases(text, anchors).length > 0) return true;
-    // The agent asked something else. The person is answering THAT.
-    if (isQuestionTurn(turn.text)) return false;
+    // The script's own wording, or a paraphrase of it. The literal
+    // anchors are tried first and unconditionally, so this only ever
+    // adds a gate the table missed — see `isParaphrasedGate`.
+    if (findPhrases(text, anchors).length > 0 || isParaphrasedGate(turn.text, text)) {
+      return both("ANCHOR");
+    }
+    // The agent asked something else. The person is answering THAT —
+    // unless the agent has since acknowledged their answer to it, which
+    // closed that exchange. See `CommitContexts`.
+    if (isQuestionTurn(turn.text)) {
+      return {
+        answering: "OTHER_QUESTION",
+        retraction: closedExchange ? "STATEMENT_OR_NONE" : "OTHER_QUESTION",
+      };
+    }
     checked += 1;
     // An assistant turn with content of its own, and no anchor, ends the
     // look-back: the person is answering that, not something earlier.
     // Only a bare acknowledgement is stepped over.
     if (!isBareAcknowledgement(turn.text)) break;
+    crossedAcknowledgement = true;
   }
-  return false;
+  return both("STATEMENT_OR_NONE");
+}
+
+/**
+ * May a negation in this turn TAKE BACK a registration already given at
+ * the gate?
+ *
+ * The rule this replaces was positional and nothing else: the latest
+ * negation anywhere in the call had to sit before the gate yes, so any
+ * "no" said afterwards — to any question, on any subject — erased the
+ * registration. A confirmed person who then answered
+ *
+ *   Agent:    "Have you attended one of our workshops before?"
+ *   Customer: "No."
+ *
+ * was classified `declined`, closed as FINAL_NO, and never reached the
+ * registrations sheet. The same held for "Nahi, WhatsApp theek hai" to
+ * an offer to email the details: a preference about delivery, read as a
+ * refusal of the event.
+ *
+ * So a later "no" is now only allowed to overturn the gate when it is
+ * one of the two things that actually mean the person changed their
+ * mind:
+ *
+ *   1. It answers the commitment question itself (`ANCHOR`). The agent
+ *      re-asking the gate and hearing "no" is a retraction whatever
+ *      words it is phrased in, which is what keeps a bare "No." at the
+ *      gate a refusal.
+ *
+ *   2. It states a refusal that cannot mean anything else — the same
+ *      `hasExplicitRefusal` table the live hangup check already uses to
+ *      decide whether a mid-call "no" is final ("not interested",
+ *      "cancel it", "leave it", "mujhe nahi chahiye") — AND it was not
+ *      answering some other question the agent asked.
+ *
+ * That last clause is what the first version of this rule was missing.
+ * `hasExplicitRefusal` reads one turn's words and knows nothing about
+ * what was asked, so on its own it re-created the original bug one
+ * vocabulary item further along:
+ *
+ *   Agent:    "Should I send you a reminder SMS as well?"
+ *   Customer: "No need, WhatsApp is fine."
+ *
+ * "no need" is in the refusal table, so a registered person declining a
+ * text message was classified `declined` and closed as FINAL_NO. The
+ * same held for "No, I do not want that" to a newsletter offer and
+ * "Nahi, mujhe email nahi chahiye" to an offer to email the details.
+ * None of those is about the event. The refusal vocabulary is
+ * deliberately context-free and is shared with `call-runner.ts`, so the
+ * binding belongs here, at the point of use: a refusal that is ANSWERING
+ * a different question is a refusal of that question.
+ *
+ * A refusal volunteered after a statement still retracts, which is the
+ * shape every genuine retraction takes — the agent confirms the seat,
+ * and the person says "actually, cancel it".
+ *
+ * `hasExplicitRefusal` was the ONLY signal here, and that was too
+ * narrow in the other direction. It is a shared, deliberately
+ * context-free table, and a decisive registration retraction routinely
+ * misses it entirely:
+ *
+ *   Agent:    "Great, I'll reserve that for you."
+ *   Customer: "Actually no."
+ *
+ * "actually no" is not a refusal phrase, so a person who had just
+ * cancelled stayed `registered_confirmed` and reached the sheet. So do
+ * "No, do not reserve it", "No, forget it", "Ab nahi karna hai" and
+ * "Main nahi aaunga" — every one of them a plain, decisive no that the
+ * refusal vocabulary was never built to carry.
+ *
+ * The negation table is what carries those, and the classifier already
+ * reads it, already strips "no problem" from it, and already knows
+ * through `answerReadability` whether this turn may be read as an
+ * answer at all — `retractsTheGate` is only consulted when
+ * `negationDecisive` is true. `hasDecisiveNegation` is that existing
+ * reading handed in, not a second parser: it is `findPhrases(...,
+ * NEGATIONS)` on the same turn, from the same line that records the
+ * negation signals.
+ *
+ * Crucially this widens only the STATEMENT_OR_NONE branch. Fix #2's
+ * whole point was that `OTHER_QUESTION` returns false BEFORE any
+ * vocabulary is consulted, so "No.", "Nahi, WhatsApp theek hai" and
+ * "No, I do not want that" answering an unrelated question still leave
+ * the registration standing. The old "any later negation invalidates
+ * the gate" behaviour is not reachable from here.
+ *
+ * `GATE_RETRACTIONS` covers the last gap: retractions that carry no
+ * negation token at all. See that table for why it is not a vocabulary
+ * fix to either shared list.
+ *
+ * Deliberately NOT solved here: "No thanks, that is all." said as a
+ * courtesy sign-off after a confirmed registration follows a statement,
+ * matches `hasExplicitRefusal`, and therefore still retracts. That is
+ * the separate courtesy-sign-off question, and narrowing the refusal
+ * table would change the live FINAL_NO hangup in `call-runner.ts` too.
+ *
+ * This can only ever PRESERVE a gate yes that the rules already found.
+ * It widens nothing: a turn with no gate affirmation before it reaches
+ * rule 6 on the unchanged `lastNegationPosition`.
+ */
+function retractsTheGate(
+  normalisedTurn: string,
+  context: CommitQuestionContext,
+  hasDecisiveNegation: boolean,
+): boolean {
+  // Nothing is taken back by a turn that does not say no. This used to
+  // be implicit rather than stated: the ANCHOR branch returned `true`
+  // for every answer, and the only thing that made "Yes, reserve it."
+  // harmless there was that the retraction's POSITION was read off a
+  // negation signal the turn did not have. The position is now recorded
+  // per turn, so the condition has to be where it belongs.
+  const saysNo =
+    hasDecisiveNegation ||
+    hasExplicitRefusal(normalisedTurn) ||
+    findPhrases(normalisedTurn, GATE_RETRACTIONS).length > 0;
+  if (!saysNo) return false;
+  if (context === "ANCHOR") return true;
+  if (context === "OTHER_QUESTION") return false;
+  return true;
+}
+
+/**
+ * Where in a retraction turn the retraction happened, as an offset into
+ * the normalised text.
+ *
+ * Turns that carry negation phrases keep the position they had when
+ * `lastRetractionPosition` was computed from the negation signals
+ * themselves — the last of them — so no transcript that already
+ * retracted changes the turn-internal ordering it retracted at. That
+ * ordering is load-bearing: a gate affirmation LATER in the same turn
+ * than the negation ("No — actually yes, reserve it") still outranks
+ * it, exactly as before.
+ *
+ * The fallbacks are for the retractions that carry no negation phrase:
+ * the first retraction phrase if there is one, and otherwise the start
+ * of the turn, which is the only honest answer for a turn whose
+ * retraction is an explicit refusal the classifier matched without
+ * recording an offset.
+ */
+function retractionOffset(
+  normalisedTurn: string,
+  negationHits: readonly { phrase: string; offset: number }[],
+): number {
+  if (negationHits.length > 0) {
+    return negationHits.reduce((latest, hit) => Math.max(latest, hit.offset), 0);
+  }
+  const retractionHits = findPhrases(normalisedTurn, GATE_RETRACTIONS);
+  if (retractionHits.length > 0) {
+    return retractionHits.reduce((earliest, hit) => Math.min(earliest, hit.offset), Infinity);
+  }
+  return 0;
 }
 
 function notConnectedReason(input: ClassifyOutcomeInput): PrimaryReason {

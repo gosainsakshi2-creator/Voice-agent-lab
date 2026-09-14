@@ -23,6 +23,7 @@ loadEnvFile({ path: ".env.local", quiet: true });
 loadEnvFile({ quiet: true });
 
 const { classifyOutcome } = await import("../outcome/classifier");
+const { dispositionFor } = await import("../outcome/disposition");
 const { toStoredTranscript, fromStoredTranscript } = await import("../outcome/transcript");
 const { isSuccessOutcome, RULES_CLASSIFIER_ID } = await import("../outcome/outcome-types");
 const { describeCallCeiling, isPilotStage, pilotStageCeiling, PILOT_LADDER } = await import(
@@ -167,6 +168,161 @@ await test("8. an opt-out outranks every friendly word before it", () => {
   assert.equal(outcome.outcomeType, "do_not_call", "a compliance signal must not be overwritable");
   assert.equal(outcome.primaryReason, "opt_out");
   assert.equal(outcome.succeeded, false);
+});
+
+// ─────────────────────────────────────────────────────────────────
+// 8a-8f — CONFIRMATION BINDING: ONLY A RETRACTION TAKES BACK A YES.
+//
+// The defect these cover: the gate rule compared the yes against the
+// LAST NEGATION ANYWHERE IN THE CALL, so a confirmed person who then
+// said "no" to any other question at all was reclassified `declined`,
+// closed as FINAL_NO, and never written to the registrations sheet.
+//
+// Tests 7 and 8 above are the other half of this boundary and must
+// stay green: a real retraction, and an opt-out after a gate yes, both
+// still overturn the registration. They are the reason this is not
+// "once yes, always yes".
+// ─────────────────────────────────────────────────────────────────
+
+const disposition = (transcript: readonly Turn[]) =>
+  dispositionFor({
+    outcomeType: classifyConnected(transcript).outcomeType,
+    failureClass: "COMPLETED",
+  }).disposition;
+
+await test("8a. a later NO to an UNRELATED question does not undo the registration", () => {
+  const transcript = [
+    agent(REGISTRATION_GATE),
+    caller("Yes."),
+    agent("Perfect, I will get your registration done."),
+    agent("Have you attended one of our workshops before?"),
+    caller("No."),
+  ];
+  const outcome = classifyConnected(transcript);
+  assert.equal(
+    outcome.outcomeType,
+    "registered_confirmed",
+    "the no answers the attendance question, not the gate",
+  );
+  assert.equal(outcome.succeeded, true);
+  assert.equal(outcome.primaryReason, "confirmed_at_gate");
+  assert.equal(disposition(transcript), "FINAL_YES");
+});
+
+await test("8b. a later Hinglish NO about DELIVERY does not undo the registration", () => {
+  // "Nahi, WhatsApp theek hai" rejects the email, not the event.
+  const transcript = [
+    agent(REGISTRATION_GATE),
+    caller("Haan, kar dijiye."),
+    agent("Perfect, I will get your registration done."),
+    agent("Shall I also send it to your email?"),
+    caller("Nahi, WhatsApp theek hai."),
+  ];
+  const outcome = classifyConnected(transcript);
+  assert.equal(outcome.outcomeType, "registered_confirmed");
+  assert.equal(disposition(transcript), "FINAL_YES");
+});
+
+await test("8b2. an EXPLICIT refusal of an unrelated offer does not undo the registration", () => {
+  // The defect the first version of this rule left behind. Tests 8a and
+  // 8b above use a bare "No", which never matched the refusal table —
+  // so they passed while this did not. `hasExplicitRefusal` reads one
+  // turn's words and knows nothing about what was asked, so a
+  // registered person declining a text message ("no need") was closed
+  // as FINAL_NO. Every offer below is something OTHER than the event.
+  const offers: ReadonlyArray<readonly [string, string]> = [
+    ["Shall I also add you to our daily newsletter?", "No, I do not want that."],
+    ["Should I send a reminder SMS as well?", "No need, WhatsApp is fine."],
+    ["Would a paid mentorship interest you later?", "That is not for me."],
+    ["Kya main aapko email bhi bhej du?", "Nahi, mujhe email nahi chahiye."],
+    ["Kya main aapko reminder call karu?", "Uski zaroorat nahi, WhatsApp kaafi hai."],
+  ];
+  for (const [offer, refusal] of offers) {
+    const transcript = [
+      agent(REGISTRATION_GATE),
+      caller("Yes, reserve it."),
+      agent("Perfect, I will get your registration done."),
+      agent(offer),
+      caller(refusal),
+    ];
+    const outcome = classifyConnected(transcript);
+    assert.equal(
+      outcome.outcomeType,
+      "registered_confirmed",
+      `"${refusal}" refuses the offer, not the registration`,
+    );
+    assert.equal(disposition(transcript), "FINAL_YES", `"${refusal}" must not close the contact`);
+  }
+});
+
+await test("8c. an explicit retraction still overturns the gate yes", () => {
+  // Three ways people actually take it back. Test 7 above holds the
+  // first of them at the outcome level; these also assert the
+  // contact-level disposition, which is what closes the contact.
+  for (const retraction of [
+    "Actually no, cancel it, I am not interested.",
+    "Sorry, I am not interested after all.",
+    "Actually, cancel it.",
+  ]) {
+    const transcript = [
+      agent(REGISTRATION_GATE),
+      caller("Yes."),
+      agent("Perfect, I will get your registration done."),
+      caller(retraction),
+    ];
+    const outcome = classifyConnected(transcript);
+    assert.equal(outcome.outcomeType, "declined", `"${retraction}" must still retract`);
+    assert.equal(outcome.succeeded, false);
+    assert.equal(disposition(transcript), "FINAL_NO", `"${retraction}" must close the contact`);
+  }
+});
+
+await test("8d. a NO to the commitment question ITSELF retracts, whatever words it uses", () => {
+  // The agent re-asking the gate and hearing a bare "no" is a genuine
+  // change of mind: no explicit-refusal phrase is needed, because the
+  // question the no answers is the one that commits them.
+  const transcript = [
+    agent(REGISTRATION_GATE),
+    caller("Yes."),
+    agent("Perfect, I will get your registration done."),
+    agent(REGISTRATION_GATE),
+    caller("No."),
+  ];
+  assert.equal(classifyConnected(transcript).outcomeType, "declined");
+  assert.equal(disposition(transcript), "FINAL_NO");
+});
+
+await test("8e. an earlier NO never becomes sticky — a later yes at the gate still registers", () => {
+  // The boundary in the other direction. The new rule must not make an
+  // earlier refusal outrank a yes the person gave afterwards.
+  const transcript = [
+    agent(REGISTRATION_GATE),
+    caller("No."),
+    agent(`It is completely free, no cost at all. ${REGISTRATION_GATE}`),
+    caller("Oh, okay then, yes reserve it."),
+  ];
+  assert.equal(classifyConnected(transcript).outcomeType, "registered_confirmed");
+  assert.equal(disposition(transcript), "FINAL_YES");
+});
+
+await test("8f. a call with no gate yes is classified exactly as it was before", () => {
+  // The containment check. Every rule below the gate still reads the
+  // unchanged last-negation position, so nothing about an ordinary
+  // refusal, or a no to a non-gate question, has moved.
+  assert.equal(classifyConnected([agent(REGISTRATION_GATE), caller("No.")]).outcomeType, "declined");
+  assert.equal(
+    classifyConnected([agent("Have you heard about the live event?"), caller("No.")]).outcomeType,
+    "declined",
+  );
+  assert.equal(
+    classifyConnected([
+      agent(PERMISSION_GATE),
+      caller("Sure, go ahead."),
+      agent("It is a live reveal of the Funnel Builder Agent."),
+    ]).outcomeType,
+    "interested_not_confirmed",
+    "a courtesy yes away from the gate is still not a registration",
+  );
 });
 
 await test("9. wrong number and callback are their own outcomes, not failures of the pitch", () => {

@@ -57,6 +57,31 @@ export class ConversationMemory {
   private readonly preferences = new Map<string, string>();
   private readonly askedQuestions = new Set<string>();
   private language: SupportedLanguage;
+  /**
+   * ---------------- THE CALL'S LANGUAGE, ONCE DECIDED ----------------
+   *
+   * `undefined` until the caller's first MEANINGFUL utterance has been
+   * heard; from then on it is the language of the whole rest of the
+   * call. `ConversationPipeline` owns the decision of WHICH utterance
+   * qualifies (see `qualifiesForLanguageLock`) — this class owns only
+   * the fact that, once made, the decision holds.
+   *
+   * WHY IT LIVES HERE. `language` is already read by every consumer
+   * that has to speak in the caller's language: the per-turn hint on
+   * the language-model request, the TTS synthesis request, the fixed
+   * hearing/attention lines, the silence-recovery prompt and the
+   * fallback greeting. Clamping the ONE field they all read is what
+   * makes the lock hold everywhere without any of them learning about
+   * it.
+   *
+   * WHY IT IS WRITE-ONCE. A lock that later turns can move is not a
+   * lock; it is the per-turn detection this replaces. The escape hatch
+   * for a caller who genuinely wants a different language is the one
+   * that already exists and is deliberately NOT in this heuristic: the
+   * system prompt's "an explicit language request from the caller
+   * always wins", which the model answers from the caller's own words.
+   */
+  private lockedLanguage: SupportedLanguage | undefined;
   private topic: string | undefined;
   private turnCount = 0;
 
@@ -65,9 +90,19 @@ export class ConversationMemory {
     this.turns.push({ role: "system", content: systemPrompt, timestamp: new Date() });
   }
 
-  /** Records a user utterance, updates the tracked language, and extracts entities. */
+  /**
+   * Records a user utterance, updates the tracked language, and
+   * extracts entities.
+   *
+   * `detectedLanguage` is what the caller BELIEVES this turn to be in.
+   * Once the call's language is locked it is ignored: the lock is the
+   * whole point, and clamping here rather than at each call site means
+   * a path that still passes a raw per-turn detection (the two
+   * voicemail-transcript paths do) cannot move the call's language by
+   * accident.
+   */
   recordUserTurn(text: string, detectedLanguage: SupportedLanguage): ConversationTurn {
-    this.language = detectedLanguage;
+    this.language = this.lockedLanguage ?? detectedLanguage;
     const turn: ConversationTurn = { role: "user", content: text, timestamp: new Date() };
     this.turns.push(turn);
     this.extractEntities(text);
@@ -108,6 +143,26 @@ export class ConversationMemory {
 
   get currentLanguage(): SupportedLanguage {
     return this.language;
+  }
+
+  /**
+   * The call's locked language, or `undefined` while no meaningful
+   * caller utterance has been heard yet. See `lockedLanguage`.
+   */
+  get languageLock(): SupportedLanguage | undefined {
+    return this.lockedLanguage;
+  }
+
+  /**
+   * Fix the call's language. FIRST WRITE WINS — a second call is a
+   * no-op and returns `false`, so no later code path can move a lock
+   * that has already been taken.
+   */
+  lockLanguage(language: SupportedLanguage): boolean {
+    if (this.lockedLanguage !== undefined) return false;
+    this.lockedLanguage = language;
+    this.language = language;
+    return true;
   }
 
   /** Full turn history in Language-Model-ready order, including the leading system turn. */

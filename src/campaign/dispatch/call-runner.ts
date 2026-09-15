@@ -53,9 +53,14 @@ import { recordClassifyMs, saveOutcome } from "../db/repositories/outcome.repo";
 import { classifyOutcome } from "../outcome/classifier";
 import { isFinalYes, syncFinalYesToSheet } from "../integrations/final-yes-sheet";
 import { dispositionFor } from "../outcome/disposition";
-import { containsPhrase, hasExplicitRefusal, normaliseText } from "../outcome/conversation-events";
+import {
+  containsPhrase,
+  hasExplicitRefusal,
+  isQuestionTurn,
+  normaliseText,
+} from "../outcome/conversation-events";
 import type { OutcomeClassification } from "../outcome/outcome-types";
-import { toStoredTranscript, type StoredTranscript } from "../outcome/transcript";
+import { toStoredTranscript, type StoredTranscript, type TranscriptTurn } from "../outcome/transcript";
 import type { ConversationTurn } from "../../types/provider.types";
 import { buildCampaignContext, CampaignContextError } from "../domain/campaign-context";
 import { classifyError, type CallStatus, type FailureClass } from "../domain/call-status";
@@ -627,6 +632,130 @@ const UNMISTAKABLE_WRONG_NUMBER = [
 ] as const;
 
 /**
+ * A question NAMED but not yet PUT.
+ *
+ * The reported defect, verbatim from a real call:
+ *
+ *   agent    "Would you like me to reserve your free seat?"
+ *   caller   "Yes, I am registering, but I have a question."
+ *   agent    "Okay, I'll register you, and you can ask your questions."
+ *   -> confirmed_at_gate, FINAL_YES, line dropped
+ *
+ * Every step of that is correct except the last. The person DID commit
+ * — the classifier is right, the sheet row is owed, and none of that
+ * changes here. What they also did is keep the floor: they said a
+ * question is coming, and the agent said to go ahead. Hanging up at
+ * that moment cuts them off mid-conversation on the strength of an
+ * answer they had already finished giving.
+ *
+ * So this table gates the HANGUP and nothing else. `classifyOutcome`,
+ * `dispositionFor` and `isFinalYes` are untouched, the call still
+ * settles `registered_confirmed` / `confirmed_at_gate` / FINAL_YES when
+ * it ends, and it ends the way every undecided call already does — on
+ * the agent's closing (`AGENT_CLOSED`) or on the silence window. The
+ * only thing withdrawn is the EARLY ending.
+ *
+ * Deliberately a phrase table and NOT "the turn contains a question".
+ * "Yes, register me — how do I join?" asks its question outright, the
+ * agent's next turn answers it, and that call is finished; it must
+ * still hang up exactly as it does today. The distinction is drawn in
+ * `announcesAnUnaskedQuestion` below, not here.
+ *
+ * Entries that contain a question-marker word of their own ("can i
+ * ask") are fine and deliberate: the phrase is REMOVED before the
+ * remainder is tested, so it cannot mask itself.
+ */
+const ANNOUNCED_QUESTION = [
+  // English — a question named.
+  "i have a question", "i have one question", "i have another question",
+  "i have a doubt", "i have one doubt", "i have a query",
+  "i have questions", "i have some questions", "i have a few questions",
+  "i have two questions", "i have some doubts",
+  "i have a small question", "i have a quick question", "i had a question",
+  "i have got a question", "i ve got a question",
+  "one question", "a question", "quick question", "small question",
+  // Bare " a doubt " is deliberately ABSENT where its question twin is
+  // present: "without a doubt" is how people say YES, and it would
+  // have held the line open on a plain confirmation. The bigram is
+  // spelled out with its verb instead. " a question " has no such
+  // idiom and stays.
+  "one doubt", "quick doubt", "small doubt", "little doubt",
+  "just a doubt", "got a doubt",
+  "one query", "small query",
+  // English — a question announced as an intention.
+  "i want to ask", "i wanted to ask", "i want to know", "i wanted to know",
+  "i just want to ask", "i just wanted to ask", "i need to ask",
+  "can i ask", "may i ask", "let me ask",
+  // Hindi / Hinglish, transliterated.
+  "ek sawaal", "ek sawal", "ek question", "ek doubt", "ek baat", "ek prashn",
+  "sawaal hai", "sawal hai", "question hai", "doubt hai", "prashn hai",
+  "poochna hai", "puchna hai", "poochna tha", "puchna tha",
+  "poochni hai", "puchni hai", "poochni thi", "puchni thi",
+  "poochna chahta", "poochna chahti", "puchna chahta", "puchna chahti",
+  "pooch sakta", "pooch sakti", "puch sakta", "puch sakti",
+  // Devanagari.
+  "एक सवाल", "एक प्रश्न", "एक बात", "सवाल है", "प्रश्न है",
+  "पूछना है", "पूछना था", "पूछनी है", "पूछनी थी",
+  "पूछना चाहता", "पूछना चाहती", "पूछ सकता", "पूछ सकती",
+] as const;
+
+/**
+ * Did the person ANNOUNCE a question without yet ASKING it?
+ *
+ * Two readings of the same turn, and the second is what keeps this from
+ * becoming "a question anywhere means never hang up":
+ *
+ *   1. the turn names a question (the table above), and
+ *   2. what is LEFT of the turn once that phrase is removed does not
+ *      itself ask anything.
+ *
+ * Which separates the two shapes that matter:
+ *
+ *   "Yes, I am registering, but I have a question."
+ *        remainder "yes i am registering but"   -> asks nothing
+ *        -> announced, not asked. Hold the line.
+ *
+ *   "Yes register me, I have a question. What time is it?"
+ *        remainder "yes register me what time is it"  -> asks
+ *        -> asked in the same breath, and the agent's reply answered
+ *           it. Unchanged: this still ends the call.
+ *
+ * The remainder is re-normalised after the removal so the word
+ * boundaries `containsPhrase` matches on survive it, and it is tested
+ * with the same `isQuestionTurn` the classifier uses — on text
+ * `normaliseText` has already stripped, so it is the marker words that
+ * decide and never a question mark belonging to the announcement
+ * itself ("Can I ask you something?").
+ */
+function announcesAnUnaskedQuestion(rawText: string): boolean {
+  const normalised = normaliseText(rawText);
+  if (!containsPhrase(normalised, ANNOUNCED_QUESTION)) return false;
+
+  let remainder = normalised;
+  for (const phrase of ANNOUNCED_QUESTION) {
+    if (!remainder.includes(` ${phrase} `)) continue;
+    remainder = normaliseText(remainder.split(` ${phrase} `).join(" "));
+  }
+  return !isQuestionTurn(remainder);
+}
+
+/**
+ * The same reading, against the person's MOST RECENT turn only.
+ *
+ * Last turn, and only the last, is the whole of the release mechanism:
+ * the moment the person speaks again — to ask the question they
+ * announced, or to say anything else — the announcement is no longer
+ * what they last said, this returns false, and the hangup it was
+ * holding back fires on the very next watchdog tick. Nothing is
+ * remembered between ticks and no state is added to the call.
+ */
+function announcedQuestionPending(turns: readonly TranscriptTurn[]): boolean {
+  const lastCustomerTurn = [...turns].reverse().find((turn) => turn.role === "user");
+  if (!lastCustomerTurn) return false;
+  return announcesAnUnaskedQuestion(lastCustomerTurn.text);
+}
+
+/**
  * Has the person given a FINAL answer, with the agent's reply to it
  * already spoken?
  *
@@ -699,7 +828,15 @@ export function definitiveAnswerIn(
   // answer that, and hanging up now would cut them off mid-question.
   // Same guard, same reading of the raw text, as `agentClosedIn`.
   if (isFinalYes(classification, disposition)) {
-    return asksAQuestion(last.content) ? undefined : "FINAL_YES";
+    if (asksAQuestion(last.content)) return undefined;
+    // ...and the mirror of that guard, on the other speaker. The agent
+    // has answered, but the PERSON said a question was coming and has
+    // not asked it yet. The verdict above stands untouched — this
+    // withdraws the early hangup only, so the call ends on the agent's
+    // closing or the silence window and `finalize` settles the same
+    // FINAL_YES from the finished transcript. See `ANNOUNCED_QUESTION`.
+    if (announcedQuestionPending(stored.turns)) return undefined;
+    return "FINAL_YES";
   }
   if (disposition !== "FINAL_NO") return undefined;
   if (classification.primaryReason === "opt_out") return "FINAL_NO";

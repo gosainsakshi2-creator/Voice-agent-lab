@@ -24,6 +24,8 @@
     "test:phase8": "tsx src/campaign/tests/phase8-sheet-tests.ts",
     "test:phase9": "tsx src/campaign/tests/phase9-final-answer-tests.ts",
     "test:confirmation-binding": "tsx src/campaign/tests/confirmation-binding-tests.ts",
+    "test:contractions": "tsx src/campaign/tests/contraction-vocabulary-tests.ts",
+    "test:event-date": "tsx src/campaign/tests/event-date-tests.ts",
     "test:short-utterance": "tsx src/campaign/tests/short-utterance-tests.ts",
     "test:phase10": "tsx src/campaign/tests/phase10-disconnect-tests.ts",
     "test:turn-release": "tsx src/campaign/tests/turn-release-tests.ts",

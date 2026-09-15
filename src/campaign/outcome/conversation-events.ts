@@ -186,6 +186,18 @@ const EXPLICIT_REFUSALS = [
   "not interested", "i am not interested", "no thanks", "no thank you",
   "dont want", "do not want", "not for me", "leave it", "cancel it",
   "i will not", "never", "no need", "not required",
+  // The split spellings of the two contractions this table already
+  // means. `normaliseText` turns "don't" into "don t", so "dont want"
+  // matches nothing spoken, and "I don't want it." ended the call
+  // differently from "I do not want it." — which this table reads —
+  // purely on the apostrophe. Read by `hasExplicitRefusal`, so both
+  // spellings now cut the live call short identically.
+  //
+  // "i can t attend" is deliberately NOT here: its expansion
+  // "i cannot" is not in this table either, so adding it would give
+  // the contraction a mid-call hangup the spelled-out form does not
+  // have. Spellings are corrected here; meanings are not.
+  "don t want", "i won t be able",
   "mujhe nahi chahiye", "interest nahi", "nahi chahiye", "zaroorat nahi",
   "मुझे नहीं चाहिए", "नहीं चाहिए", "ज़रूरत नहीं", "जरूरत नहीं",
 ];

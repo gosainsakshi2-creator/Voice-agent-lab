@@ -464,6 +464,71 @@ await test("A4. a greeting, a question back, or noise is unclear", () => {
   }
 });
 
+await test("A6. the natural English confirmations are confirmed (§4.5 F3)", () => {
+  // `normaliseText` reduces every non-letter to a space, so "That's
+  // me." arrives as " that s me " and the table's "thats me" matched
+  // nothing a caller ever says — the commonest English answer to "Am I
+  // speaking with Sakshi?" read as `unclear`, cost a re-ask, and three
+  // of those end the call on the right person.
+  //
+  // "this is she" / "this is he" are the nominative forms of "this is
+  // her" / "this is him", which were already here.
+  for (const said of [
+    "That's me.",
+    "Yes, that's me.",
+    "That's me, yes.",
+    "This is she.",
+    "This is he.",
+    // Already worked, via "right" in CONFIRMATIONS. Pinned so a future
+    // edit to that table cannot quietly take it away.
+    "That's right.",
+    // The spellings that already worked, asserted alongside so the two
+    // forms can never diverge again.
+    "Thats me.",
+    "That is me.",
+    "This is her.",
+    "This is him.",
+  ]) {
+    assert.equal(classifyIdentityAnswer(said, "Sakshi"), "confirmed", `"${said}"`);
+  }
+});
+
+await test("A6b. ...and the denial they contain still wins", () => {
+  // `DENIALS` is checked BEFORE the self-identification table, so a
+  // sentence that contains "that s me" and a negation is still a
+  // denial. That ordering is the existing design; adding a spelling
+  // must not invert it.
+  for (const said of ["That's not me.", "No, that's not me."]) {
+    assert.equal(classifyIdentityAnswer(said, "Sakshi"), "denied", `"${said}"`);
+  }
+  // PRE-EXISTING GAP, recorded rather than fixed: `DENIALS` carries
+  // "not me", "she is not" and "he is not", but not "not her" / "not
+  // him", so "That's not her." reads `unclear` and costs a re-ask. It
+  // read `unclear` before §4.5 F3 too — none of the three spellings
+  // that batch added occurs in it — so this is a note for a later
+  // vocabulary batch, not a regression. Pinned so the day someone fixes
+  // it, they see this line.
+  assert.equal(classifyIdentityAnswer("That's not her.", "Sakshi"), "unclear");
+});
+
+await test("A6c. a hearing answer wrapped around one of them is still not an identity answer", () => {
+  // "That's right, I can hear you." answers the HEARING question. The
+  // hearing exclusion runs before the bare confirmations and must keep
+  // doing so, or the identity gate reopens the defect this file exists
+  // for.
+  assert.equal(classifyIdentityAnswer("That's right, I can hear you.", "Sakshi"), "unclear");
+});
+
+await test("A6d. the ambiguous \"No, I'm busy.\" is deliberately UNCHANGED", () => {
+  // Out of scope by decision (§4.5 audit): a bare "No" to "Am I
+  // speaking with Sakshi?" is a genuine denial far more often than it
+  // is a brush-off, and nothing in one turn separates them. Pinned so
+  // the current behaviour is a recorded decision rather than an
+  // accident, and so a later batch that changes it has to do so
+  // deliberately.
+  assert.equal(classifyIdentityAnswer("No, I'm busy.", "Sakshi"), "denied");
+});
+
 await test("A5. one turn that answers BOTH questions confirms identity", () => {
   // "Yes, I can hear you, this is Sakshi" carries a hearing answer and
   // an identity answer. Reading only the first would re-ask a question

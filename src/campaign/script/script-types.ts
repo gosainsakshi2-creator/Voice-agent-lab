@@ -29,6 +29,32 @@ export interface CampaignScript {
 
   /** True until the approved wording is installed. Blocks READY. */
   readonly isPlaceholder: boolean;
+
+  /**
+   * When the event this script invites people to actually happens, as
+   * an ISO 8601 instant WITH an offset — "2026-10-04T11:00:00+05:30".
+   *
+   * WHY THIS EXISTS. A script states its date in prose, inside text
+   * that is immutable and pinned by content hash. There was therefore
+   * no machine-readable form of it and nothing could check it, and the
+   * shipping script spent nine days telling every caller the workshop
+   * was "this Sunday, 6th September" after 6 September had passed. A
+   * confident, specific, wrong fact is the one failure the whole
+   * no-invention policy exists to prevent, and it arrived through the
+   * one channel that policy trusts absolutely.
+   *
+   * NOT PART OF THE CONTENT HASH, and deliberately so: `hashScript`
+   * covers the words that reach the caller — the appendix and the
+   * opening line — so declaring a date on a script neither changes its
+   * hash nor invalidates a campaign pinned to it.
+   *
+   * OPTIONAL, AND ABSENCE MEANS "NOT CHECKED". Every script that
+   * predates this field behaves exactly as it did: no date is declared,
+   * so `validateCampaignScript` has nothing to compare and adds no
+   * blocker. Only a script that declares one is held to it. The cost of
+   * that choice is stated in the validator.
+   */
+  readonly eventAt?: string;
 }
 
 /** A script bound to one campaign, with its content hash pinned. */

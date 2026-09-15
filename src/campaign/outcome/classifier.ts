@@ -109,6 +109,40 @@ const NEGATIONS = [
   "no", "nope", "nah", "not interested", "no thanks", "no thank you",
   "i am not interested", "not now", "dont want", "do not want", "not for me",
   "leave it", "cancel it", "i cant", "i cannot", "i will not",
+  // ── The SPLIT spellings of the contractions above ───────────────
+  //
+  // `normaliseText` reduces every non-letter to a space, so "don't"
+  // arrives as "don t" and "can't" as "can t". The entries "dont want"
+  // and "i cant" therefore match nothing a caller ever says: they can
+  // only fire on text that already lacks the apostrophe, which STT
+  // does not produce. Measured on the live tables, the same sentence
+  // one apostrophe apart:
+  //
+  //   "I do not want it."  -> declined / explicit_no    (correct)
+  //   "I don't want it."   -> unclear                   (WRONG)
+  //
+  // and `unclear` is UNRESOLVED, which for a registration campaign is
+  // a redial 30 minutes later. A person who refused was called back.
+  //
+  // `GATE_RETRACTIONS` already carries the split spellings for exactly
+  // this reason (see "don t want" there, and the note in
+  // `confirmation-binding-tests` group B); this table was never
+  // brought into line.
+  //
+  // THE TWO VERB ENTRIES ARE BOUND, AND THE BARE MIRRORS ARE
+  // DELIBERATELY ABSENT. "i cannot" above is bare, which already makes
+  // "I cannot hear you." settle `declined` — a hearing complaint read
+  // as a refusal, and after a gate yes it retracts the registration.
+  // That is a pre-existing defect on a spelling people rarely use.
+  // Adding bare "i can t" would move it onto the spelling they always
+  // use, so what is added is the phrase the refusal actually needs.
+  // Same reasoning for "i won t be able" against bare "i won t", which
+  // would otherwise capture "I won't be at home, but I'll join from my
+  // phone."
+  //
+  // These are SPELLINGS of phrases already in this table, not new
+  // vocabulary, which is the whole of the safety case.
+  "don t want", "i can t attend", "i won t be able",
   "nahi", "nahin", "nai", "mujhe nahi chahiye", "interest nahi",
   "नहीं", "नही", "मुझे नहीं चाहिए",
 ];
@@ -276,6 +310,42 @@ const GATE_RETRACTIONS = [
   "cancel my registration", "cancel the registration", "cancel my seat",
   "cancel my spot", "cancel my booking", "cancel my place", "cancel that",
   "cancel my naam", "registration cancel", "seat cancel",
+  // ── "I won't be there" — the withdrawal that names no action ────
+  //
+  // Every entry above cancels something by name. A person who has
+  // already been confirmed usually does not: they say they cannot come.
+  // Measured after a gate yes and the [YES] block, all of these stayed
+  // `registered_confirmed` and wrote a sheet row for somebody who had
+  // just withdrawn:
+  //
+  //   "Actually I can't make it."            -> registered_confirmed
+  //   "I'm not going to be able to attend."  -> registered_confirmed
+  //   "I am not able to attend."             -> registered_confirmed
+  //
+  // while "Actually I cannot make it." and "Actually I will not be able
+  // to attend." already retracted, through `NEGATIONS`. So the same
+  // withdrawal was recorded or lost on the spelling alone.
+  //
+  // BOUND, NEVER GENERIC. Not "can't", not "won't", not "not": every
+  // entry names attending or making it, which is the only thing this
+  // call asked them to do. A bare verb here would retract on "I can't
+  // hear you." and on "I won't need a laptop".
+  //
+  // CONTEXT IS UNCHANGED AND IS WHAT CARRIES THE SAFETY. This table is
+  // read only through `retractsTheGate`, which returns false for
+  // `OTHER_QUESTION` BEFORE any vocabulary is consulted — so "I won't
+  // be able to attend that one." answering "would you like the
+  // follow-up session too?" still leaves the registration standing,
+  // exactly as `confirmation-binding-tests` group A requires. And
+  // because this table feeds no `record("negation", ...)`, a call that
+  // never reached the gate is classified exactly as it was: a
+  // withdrawal with no registration behind it stays `unclear`.
+  //
+  // Both spellings of each contraction, the same way "dont reserve" /
+  // "don t reserve" are carried above.
+  "can t make it", "cant make it", "cannot make it",
+  "won t make it", "wont make it", "will not make it",
+  "not able to attend", "not going to be able", "not going to make it",
   // Hindi / Hinglish, transliterated and in Devanagari — every other
   // table in this file is bilingual, and a retraction table that only
   // understood English would be a defect on exactly the calls this
@@ -364,6 +434,12 @@ const CALLBACK = [
   // generic unresolved one.
   "call me tomorrow", "call tomorrow", "call me in the evening",
   "call me after", "call after", "try me later", "later in the day",
+  // "im busy" above is unreachable for the same normalisation reason
+  // the negation table documents: "I'm busy." arrives as " i m busy ".
+  // Its expansion "I am busy." is already a callback here, so without
+  // this the same sentence is a callback or an UNRESOLVED redial
+  // depending only on whether the caller used a contraction.
+  "i m busy",
   "baad me", "baad mein", "abhi busy", "abhi vyast", "phir call", "baad me call",
   "baad mein call", "baad me call karna", "baad mein call karna",
   "thodi der baad", "thodi der bad", "kal call", "kal phone", "kal baat",
@@ -382,6 +458,27 @@ const OPT_OUT = [
   "do not call", "dont call", "stop calling", "never call", "remove my number",
   "remove me", "unsubscribe", "take me off", "report you", "harassing",
   "call mat karo", "phone mat karo", "number hata do", "mat call",
+  // ── The SPLIT spelling, and the other Hindi imperative ──────────
+  //
+  // The same normalisation gap as `NEGATIONS`, and this is the table
+  // where it costs the most. "dont call" cannot match speech, so:
+  //
+  //   "Do not call me again."  -> do_not_call / FINAL_NO, hangs up
+  //   "Don't call me again."   -> unclear / UNRESOLVED, KEEPS PITCHING
+  //                               and redials 30 minutes later
+  //
+  // A do-not-call request an apostrophe can switch off is not a
+  // compliance control. "do nt call" is the other tokenisation some
+  // recognisers produce for the same word.
+  //
+  // "karna" is the imperative this table was missing next to "karo":
+  // "Aage se call mat karna." is as plain an opt-out as "call mat
+  // karo" and settled `unclear`. BOUND TO call/phone, exactly like
+  // every other Hindi entry here — bare "mat karna" would make
+  // "Fikar mat karna, main aa jaunga." ("don't worry, I'll come") an
+  // opt-out, and this table outranks a yes at the gate, so a false
+  // positive closes a registered contact permanently.
+  "don t call", "do nt call", "call mat karna", "phone mat karna",
   "कॉल मत", "नंबर हटा",
 ];
 

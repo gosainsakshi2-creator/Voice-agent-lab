@@ -210,13 +210,21 @@ await test("A1g. the APPROVED v5 script's gate line is a gate, and v5 is the def
   assert.ok(v5, "the approved registration v5 script must be registered");
   assert.equal(
     defaultScriptFor("registration").version,
-    "v5",
-    "v5 must be the default registration script",
+    "v6",
+    "v6 (v5 with the event date corrected) must be the default registration script",
   );
   const V5_GATE = "Would you like me to reserve your free seat?";
   assert.ok(
     v5.systemPromptAppendix.includes(V5_GATE),
     "this test's gate line must be the one in the approved v5 script",
+  );
+  // The point of this test is that the SHIPPING script's gate is the
+  // COMMIT_ANCHORS entry. v6 changed only the date, so the assertion
+  // has to hold there too, or a future version could drift the gate
+  // while v5 kept this test green.
+  assert.ok(
+    defaultScriptFor("registration").systemPromptAppendix.includes(V5_GATE),
+    "the shipping script's gate must still be the anchor the sheet mirror reads",
   );
 
   // The v5 shape: invitation, a question about THEM, their answer, then
@@ -298,7 +306,10 @@ await test("A1f. the APPROVED reminder v2 gate line is a gate, and v2 is the rem
     "the approved clarification line must be in the reminder v2 script",
   );
   // Existing registration defaults and scripts are untouched.
-  assert.equal(defaultScriptFor("registration").version, "v5");
+  // v6 is v5 with the event date corrected (§4.5 F2) and is now the
+  // default; v5 stays registered for campaigns pinned to it.
+  assert.equal(defaultScriptFor("registration").version, "v6");
+  assert.ok(findScript("registration", "v5"), "registration v5 must stay registered for pinned campaigns");
   assert.ok(findScript("registration", "v4"), "registration v4 must stay registered for pinned campaigns");
   assert.ok(findScript("reminder", "v1"), "reminder v1 must stay registered for pinned campaigns");
 

@@ -48,7 +48,7 @@ loadEnvFile({ path: ".env.local", quiet: true });
 loadEnvFile({ quiet: true });
 
 const { getDispatchConfig } = await import("../config/dispatch.config");
-const { runCall, agentClosedIn } = await import("../dispatch/call-runner");
+const { runCall, agentClosedIn, definitiveAnswerIn } = await import("../dispatch/call-runner");
 const { SessionObserver } = await import("../dispatch/session-observer");
 const { findScript, hashScript } = await import("../script/script-registry");
 const { claimContacts } = await import("../db/repositories/call-attempt.repo");
@@ -566,12 +566,28 @@ try {
   // already worked. This is the one that did not: same path, same
   // verdict, same hangup reason, and the closing still spoken through
   // to its end before anything hangs up.
+  //
+  // THE CALLER LINE IS A1's, AND HAS TO BE. This fixture is about the
+  // CLOSING's shape — a trailing vocative — so everything before it
+  // must leave the call non-definitive, or `definitiveAnswerIn` fires
+  // first and `agentClosedIn` is never consulted at all.
+  //
+  // It used to be "No, I don't want to join.", which is a refusal, and
+  // it reached the closing path only because `EXPLICIT_REFUSALS`
+  // carried "dont want" — a spelling `normaliseText` can never produce,
+  // since it renders "don't" as "don t". The refusal was therefore
+  // invisible, the call read as undecided, and this test passed for a
+  // reason that had nothing to do with the vocative. Repairing that
+  // table (§4.5 F1b) made the refusal decisive, as its spelled-out twin
+  // "No, I do not want to join." always was, and the fixture stopped
+  // testing the thing it is named after. C3 below now pins that
+  // refusal's behaviour directly, where it belongs.
   const vocative = await runScripted({
     transcriptSoFar: [
       agent(GREETING),
       caller("Yes, tell me."),
       agent("We are doing a live demo of the Funnel Builder Agent today at 7:30 pm."),
-      caller("No, I don't want to join."),
+      caller("Okay, I will see how the day goes."),
     ],
     drive: async (s) => {
       await wait(300);
@@ -697,6 +713,52 @@ try {
       await hangupReasonOf(no.outcome.attemptId!),
       "agent_hangup:final_no",
       "a FINAL_NO must not be relabelled by the closing check that runs after it",
+    );
+  });
+
+  await test("C3. a CONTRACTED refusal ends the same way its spelled-out twin does", async () => {
+    // The regression A4's old fixture was hiding. "don't" reaches the
+    // phrase tables as "don t", so "No, I don't want to join." matched
+    // nothing and settled undecided, while "No, I do not want to join."
+    // — the same sentence — settled FINAL_NO and named the hangup. An
+    // apostrophe decided whether a refusal was heard.
+    //
+    // Asserted at both levels, because they failed independently: the
+    // live reading that names the hangup, and the stored reason.
+    const pair = ["No, I don't want to join.", "No, I do not want to join."] as const;
+    const read = pair.map((line) =>
+      definitiveAnswerIn(
+        [
+          agent(GREETING),
+          caller("Yes, tell me."),
+          agent("We are doing a live demo of the Funnel Builder Agent today at 7:30 pm."),
+          caller(line),
+          agent(CLOSING),
+        ],
+        "registration",
+      ),
+    );
+    assert.equal(read[0], "FINAL_NO", `"${pair[0]}" must be read as a refusal`);
+    assert.equal(read[0], read[1], "the two spellings must agree — this is the whole fix");
+
+    const contracted = await runScripted({
+      transcriptSoFar: [
+        agent(GREETING),
+        caller("Yes, tell me."),
+        agent("We are doing a live demo of the Funnel Builder Agent today at 7:30 pm."),
+        caller("No, I don't want to join."),
+      ],
+      drive: async (s) => {
+        await wait(300);
+        s.beginReply();
+        await wait(600);
+        s.finishReply(CLOSING);
+      },
+    });
+    assert.equal(
+      await hangupReasonOf(contracted.outcome.attemptId!),
+      "agent_hangup:final_no",
+      "a contracted refusal must end the call as a refusal, not as an ordinary sign-off",
     );
   });
 

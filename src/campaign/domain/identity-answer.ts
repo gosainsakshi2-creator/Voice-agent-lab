@@ -69,6 +69,24 @@ const HEARING_ANSWERS = [
  */
 const SELF_IDENTIFICATIONS = [
   "that is me", "thats me", "this is me", "this is her", "this is him",
+  // ── The split spelling, and the nominative pronouns ─────────────
+  //
+  // `normaliseText` reduces every non-letter to a space, so "That's
+  // me." reaches this table as " that s me " and "thats me" above
+  // matches nothing a caller ever says. It is the commonest English
+  // answer to "Am I speaking with Priya?" and it read as `unclear`,
+  // which costs a re-ask — and three unclear answers end the call on
+  // the right person (`MAX_IDENTITY_REASKS`).
+  //
+  // "this is she" / "this is he" are the nominative forms of the two
+  // entries already here. Both are ordinary on an Indian English call
+  // and neither was covered.
+  //
+  // SAFE AGAINST THE DENIAL IT CONTAINS: "That's not me." stays
+  // `denied`, because `DENIALS` is checked BEFORE this table and
+  // carries "not me". That ordering is the existing design and is not
+  // touched — it is asserted from both sides in the identity tests.
+  "that s me", "this is she", "this is he",
   "speaking", "yes speaking", "im speaking", "you are speaking with",
   "bol raha hoon", "bol rahi hoon", "bol raha hu", "bol rahi hu",
   "bol raha", "bol rahi", "main hi hoon", "main hi hu", "wahi hoon",
@@ -77,6 +95,11 @@ const SELF_IDENTIFICATIONS = [
 
 const CONFIRMATIONS = [
   "yes", "yeah", "yep", "yup", "correct", "that is me", "thats me", "this is me",
+  // Kept in step with `SELF_IDENTIFICATIONS` above, which already
+  // duplicates "thats me" / "this is me" / "this is her" / "this is
+  // him" into this table. A spelling that identifies the speaker in one
+  // list and not the other is how the two drift apart.
+  "that s me", "this is she", "this is he",
   "this is her", "this is him", "speaking", "yes speaking", "im sakshi",
   "you are", "you have", "right", "of course", "sure",
   "haan", "han", "ha ji", "haan ji", "ji haan", "ji", "bilkul", "sahi",

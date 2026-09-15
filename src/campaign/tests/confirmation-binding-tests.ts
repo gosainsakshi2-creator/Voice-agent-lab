@@ -185,6 +185,83 @@ for (const line of RETRACTIONS) {
 }
 
 // ═════════════════════════════════════════════════════════════════
+section("B2. THE WITHDRAWAL THAT NAMES NO ACTION (§4.5 F1c)");
+
+/**
+ * Every phrase in group B cancels something by name — "cancel it",
+ * "forget it", "do not reserve it". A person who has already been
+ * confirmed usually does not say any of those. They say they cannot
+ * come, and that shape was invisible: measured after a gate yes and the
+ * [YES] block, each of these stayed `registered_confirmed` and wrote a
+ * registrations row for somebody who had just withdrawn, while
+ * "Actually I cannot make it." — the same sentence, spelled out —
+ * retracted correctly.
+ */
+const WITHDRAWALS = [
+  "Actually I can't make it.",
+  "Actually I cannot make it.",
+  "I can't make it.",
+  "Sorry, I won't make it.",
+  "I will not make it.",
+  "Actually I won't be able to attend.",
+  "Actually I will not be able to attend.",
+  "I'm not going to be able to attend.",
+  "I am not able to attend.",
+  "I'm not able to attend.",
+  "I'm not going to make it.",
+];
+
+for (const line of WITHDRAWALS) {
+  test(`B2. "${line}" takes the registration back`, () => {
+    expect(afterStatement(line), "FINAL_NO", "a withdrawal after the confirmation retracts");
+  });
+}
+
+test("B2. ...and the same words answering a DIFFERENT question do NOT", () => {
+  // The other half, and the half that carries the safety. These are
+  // group A's property restated against the new vocabulary: the binding
+  // is CONTEXTUAL — `retractsTheGate` returns false for OTHER_QUESTION
+  // before any phrase table is consulted — so widening the table cannot
+  // reach them.
+  for (const [question, line] of [
+    ["Can you make it a bit earlier?", "I can't make it earlier."],
+    ["Would you be able to attend the follow-up session too?", "I won't be able to attend that one."],
+    ["Are you able to join from a laptop?", "I am not able to attend from a laptop."],
+    ["Shall I send a calendar invite as well?", "I'm not able to open calendar invites."],
+  ] as const) {
+    expect(
+      afterUnrelatedQuestion(question, line),
+      "FINAL_YES",
+      `"${line}" answers "${question}" and must leave the registration standing`,
+    );
+  }
+});
+
+test("B2. ...and a call that never reached the gate is unchanged", () => {
+  // `GATE_RETRACTIONS` feeds no negation signal, so it can only ever
+  // take back a yes that was actually given. A withdrawal with no
+  // registration behind it stays exactly as undecided as it was.
+  for (const line of ["I can't make it.", "I am not able to attend."]) {
+    const r = settle([
+      agent("We are running a free workshop on Sunday."),
+      caller(line),
+      agent("Understood."),
+    ]);
+    assert.equal(
+      r.outcomeType,
+      "unclear",
+      `"${line}" with no gate behind it must stay undecided (was ${r.outcomeType})`,
+    );
+  }
+});
+
+test("B2. a QUESTION containing a withdrawal phrase retracts nothing", () => {
+  for (const line of ["What if I can't make it?", "Can I still watch it if I'm not able to attend?"]) {
+    expect(afterStatement(line), "FINAL_YES", `"${line}" asks, it does not withdraw`);
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════
 section("C. THE RETRACTIONS THAT ALWAYS WORKED STILL WORK");
 
 for (const line of [

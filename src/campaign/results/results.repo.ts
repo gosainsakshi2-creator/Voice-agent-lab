@@ -438,6 +438,82 @@ export async function attemptsPerContact(
 }
 
 /**
+ * DID THE CONFIRMED REGISTRATIONS ACTUALLY REACH THE SHEET?
+ *
+ * Roadmap §5 B8. A separate question from conversion, and the
+ * separation is the whole point of the block:
+ *
+ *   conversion  — of the people we called, how many said yes?
+ *                 FINAL_YES over unique contacts. Untouched by this.
+ *   capture     — of the people who said yes, how many have a row?
+ *                 SYNCED over FINAL_YES.
+ *
+ * Mixing them would produce a figure that falls when Google is slow and
+ * rises when it recovers, and call it a sales result. So the denominator
+ * here is `confirmed`, never `total`, and nothing in this function is
+ * read by the conversion rate.
+ *
+ * The join is exact rather than approximate: `sheet_sync` is keyed
+ * `(campaign_id, normalized_phone)` and `contacts` is UNIQUE on the same
+ * pair, so every contact matches at most one sync row and no contact can
+ * be counted twice.
+ *
+ * `sheetRowsTotal` is deliberately NOT anchored on contacts. It counts
+ * every SYNCED row this campaign has written, so a row whose contact was
+ * since re-classified or deleted still shows up, and
+ * `sheetRowsTotal - synced` is the drift between the sheet and the
+ * current verdicts. A reconciliation that could only see rows it already
+ * agreed with would not be one.
+ */
+export interface RegistrationCaptureCounts {
+  /** Contacts whose final disposition is FINAL_YES. The denominator. */
+  readonly confirmed: number;
+  /** ...of those, the ones with a row in the sheet. */
+  readonly synced: number;
+  /** ...the ones whose write was attempted and refused. */
+  readonly failed: number;
+  /** ...the ones with a claim in flight, or a claim a dead process left behind. */
+  readonly pending: number;
+  /** ...and the ones that were never presented to the sheet at all. */
+  readonly notAttempted: number;
+  /** Every SYNCED row in this campaign, whatever the contact says now. */
+  readonly sheetRowsTotal: number;
+}
+
+export async function registrationCaptureCounts(
+  campaignId: string,
+): Promise<RegistrationCaptureCounts> {
+  const result = await query(
+    `SELECT count(*) FILTER (WHERE c.final_disposition = 'FINAL_YES')::int AS confirmed,
+            count(*) FILTER (WHERE c.final_disposition = 'FINAL_YES'
+                               AND s.state = 'SYNCED')::int  AS synced,
+            count(*) FILTER (WHERE c.final_disposition = 'FINAL_YES'
+                               AND s.state = 'FAILED')::int  AS failed,
+            count(*) FILTER (WHERE c.final_disposition = 'FINAL_YES'
+                               AND s.state = 'PENDING')::int AS pending,
+            count(*) FILTER (WHERE c.final_disposition = 'FINAL_YES'
+                               AND s.state IS NULL)::int     AS not_attempted,
+            (SELECT count(*) FROM sheet_sync t
+              WHERE t.campaign_id = $1 AND t.state = 'SYNCED')::int AS sheet_rows_total
+       FROM contacts c
+       LEFT JOIN sheet_sync s
+              ON s.campaign_id = c.campaign_id
+             AND s.normalized_phone = c.normalized_phone
+      WHERE c.campaign_id = $1`,
+    [campaignId],
+  );
+  const row = result.rows[0];
+  return {
+    confirmed: int(row?.["confirmed"]),
+    synced: int(row?.["synced"]),
+    failed: int(row?.["failed"]),
+    pending: int(row?.["pending"]),
+    notAttempted: int(row?.["not_attempted"]),
+    sheetRowsTotal: int(row?.["sheet_rows_total"]),
+  };
+}
+
+/**
  * Attempts whose transcript matched a voicemail greeting.
  *
  * Reported so the report can say out loud that an unknown number of its

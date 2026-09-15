@@ -38,6 +38,7 @@
     "test:wire-trace": "tsx src/campaign/tests/wire-trace-tests.ts",
     "test:agent-hangup": "tsx src/campaign/tests/agent-hangup-tests.ts",
     "test:announced-question": "tsx src/campaign/tests/announced-question-hangup-tests.ts",
+    "test:post-registration-question": "tsx src/campaign/tests/post-registration-question-tests.ts",
     "test:attention": "tsx src/campaign/tests/attention-check-tests.ts",
     "test:tts-streaming": "tsx src/campaign/tests/tts-streaming-latency-tests.ts",
     "test:sarvam-stream": "tsx src/campaign/tests/sarvam-stream-tests.ts",
@@ -54,6 +55,10 @@
     "test:language-lock": "tsx src/campaign/tests/language-lock-tests.ts",
     "test:long-monologue": "tsx src/campaign/tests/long-monologue-tests.ts",
     "test:identity": "tsx src/campaign/tests/identity-gate-tests.ts",
+    "test:registration-timing": "tsx src/campaign/tests/registration-timing-tests.ts",
+    "test:registration-capture": "tsx src/campaign/tests/registration-capture-tests.ts",
+    "test:registration-retry": "tsx src/campaign/tests/registration-retry-tests.ts",
+    "test:registration-payload": "tsx src/campaign/tests/registration-payload-tests.ts",
     "preflight:prod": "tsx src/campaign/production-readiness-cli.ts",
     "campaign:audit": "tsx src/campaign/audit-cli.ts"
   },

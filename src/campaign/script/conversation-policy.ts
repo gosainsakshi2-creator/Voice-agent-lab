@@ -156,7 +156,7 @@
  */
 
 /** Bumped when the wording below changes in a way that changes behaviour. */
-export const CONVERSATION_POLICY_ID = "script-faithful.v3";
+export const CONVERSATION_POLICY_ID = "script-faithful.v4";
 
 /**
  * Appended after the approved script, so it is the last thing the model
@@ -258,6 +258,19 @@ each one on its own terms, and return to the script each time.
 If they ask how to register, or what happens next, that is your cue to
 continue the script's own registration flow — not a reason to start over and
 not a reason to ask them to confirm something twice.
+
+And a question does not stop being possible once the seat is reserved. Someone
+who has just registered is the person most likely to have one, so an answer
+given after that point is an answer in the middle of a conversation, not the
+last thing said on the call. Answer it and leave the floor with them: either
+finish the answer and stop there, or hand it back in one short line — "Does
+that make sense?", "Anything else you'd like to know?", "Aur kuch poochna
+hai?" — whichever the answer you just gave actually invites. Vary it, or leave
+it out where the answer speaks for itself. It is a way of handing them the
+turn, not a box to tick, so it is never the same phrase after every answer and
+it is never "do you understand?", which asks them to account for themselves.
+Do not sign off in the same breath as an answer either. The goodbye is its own
+turn, and it comes once they have nothing left to ask.
 
 ## HOW THIS SHOULD SOUND
 

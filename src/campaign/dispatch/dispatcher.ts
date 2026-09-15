@@ -42,6 +42,7 @@ import { CAMPAIGN_TTS_PROVIDERS, type CampaignTtsProvider, type CampaignRecord }
 import { LaneGate, Semaphore, TokenBucket } from "./concurrency";
 import { SessionObserver } from "./session-observer";
 import { runCall, type ManagerLike } from "./call-runner";
+import { reconcileRegistrationSheet } from "../integrations/registration-reconciler";
 
 export type DispatcherState = "IDLE" | "RUNNING" | "PAUSING" | "PAUSED" | "STOPPING" | "STOPPED";
 
@@ -188,6 +189,15 @@ export class CampaignDispatcher {
       await logEvent(this.campaignId, "RECOVERY", "Reconciled state left by a previous run", recovered, "warn");
     }
 
+    // ...and anything a previous run failed to get into the
+    // registrations sheet. STRICTLY POST-CALL: this runs before a
+    // single lane exists, so no conversation this process owns can be
+    // live while it talks to Google. Every registration it touches
+    // belongs to a call that ended in an earlier run. Bounded by the
+    // sheet retry policy, and unable to throw — see
+    // `registration-reconciler.ts`.
+    await reconcileRegistrationSheet(this.campaignId);
+
     this.state = "RUNNING";
     this.callsPlacedThisRun = 0;
     await withTransaction((client) => setCampaignStatus(client, this.campaignId, "RUNNING"));
@@ -210,6 +220,20 @@ export class CampaignDispatcher {
       if (this.heartbeat) clearInterval(this.heartbeat);
       this.heartbeat = undefined;
       await this.settleCampaignStatus();
+      // The second and more important pass: a registration whose sheet
+      // write failed DURING this run is recovered here rather than
+      // waiting for the next run.
+      //
+      // STRICTLY POST-CALL, and provably so. Every lane returns only
+      // after its own `await Promise.allSettled([...inFlight])`, and
+      // this `finally` runs after `await Promise.all(this.lanePromises)`
+      // — so every call of this run has already ended before the first
+      // Google request is made here. It is also outside `runCall`, so
+      // it holds no lane gate and can never delay a hangup.
+      //
+      // Still inside the dispatcher lock, deliberately: that is what
+      // stops two processes sweeping the same campaign at once.
+      await reconcileRegistrationSheet(this.campaignId);
       await releaseDispatcherLock(this.campaignId, owner).catch(() => undefined);
       this.observer.dispose();
       const settled = this.currentState();

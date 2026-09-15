@@ -250,6 +250,12 @@ export async function runCall(
       attemptId: attempt.id,
       classification,
       ...(disposition ? { disposition: disposition.disposition } : { disposition: undefined }),
+      // Read for ONE value — the timestamp the pipeline stamped on the
+      // turn the person confirmed, which is the first link in the §5 B7
+      // timing chain. The same object step 5 already stored, passed by
+      // reference; nothing is recomputed and nothing about the sheet row
+      // depends on it.
+      ...(transcript ? { transcript } : {}),
     });
 
     return { dialled: true, attemptId: attempt.id, failureClass, reason };
@@ -655,11 +661,13 @@ const UNMISTAKABLE_WRONG_NUMBER = [
  * the agent's closing (`AGENT_CLOSED`) or on the silence window. The
  * only thing withdrawn is the EARLY ending.
  *
- * Deliberately a phrase table and NOT "the turn contains a question".
- * "Yes, register me — how do I join?" asks its question outright, the
- * agent's next turn answers it, and that call is finished; it must
- * still hang up exactly as it does today. The distinction is drawn in
- * `announcesAnUnaskedQuestion` below, not here.
+ * This table is still load-bearing now that an ASKED question holds
+ * the line too (see `callerQuestionPending`), and it is load-bearing
+ * for the reported turn specifically: "Yes, I am registering, but I
+ * have a question." contains no question mark and no question-marker
+ * word, so `isQuestionTurn` cannot see it. A question NAMED and a
+ * question PUT are two different shapes in the text and each needs its
+ * own reading.
  *
  * Entries that contain a question-marker word of their own ("can i
  * ask") are fine and deliberate: the phrase is REMOVED before the
@@ -717,8 +725,11 @@ const ANNOUNCED_QUESTION = [
  *
  *   "Yes register me, I have a question. What time is it?"
  *        remainder "yes register me what time is it"  -> asks
- *        -> asked in the same breath, and the agent's reply answered
- *           it. Unchanged: this still ends the call.
+ *        -> asked in the same breath, so this reading declines it and
+ *           `isQuestionTurn` in `callerQuestionPending` takes it
+ *           instead. Either way the line is held; the two readings
+ *           divide the shapes between them, they do not disagree
+ *           about the outcome.
  *
  * The remainder is re-normalised after the removal so the word
  * boundaries `containsPhrase` matches on survive it, and it is tested
@@ -740,19 +751,51 @@ function announcesAnUnaskedQuestion(rawText: string): boolean {
 }
 
 /**
- * The same reading, against the person's MOST RECENT turn only.
+ * Does the person have a question OPEN — named, or asked — as of the
+ * last thing they said?
  *
- * Last turn, and only the last, is the whole of the release mechanism:
- * the moment the person speaks again — to ask the question they
- * announced, or to say anything else — the announcement is no longer
- * what they last said, this returns false, and the hangup it was
- * holding back fires on the very next watchdog tick. Nothing is
- * remembered between ticks and no state is added to the call.
+ * The first reported defect was the hangup landing in the gap between
+ * "I have a question" and the question itself, and holding the line on
+ * an ANNOUNCEMENT closed it. The second reported defect is the same
+ * hangup one exchange later, and it is the one this reading exists for:
+ *
+ *   agent    "Would you like me to reserve your free seat?"
+ *   caller   "Yes, I am registering, but I have a question."
+ *   agent    "Okay, I'll register you — go ahead."       <- held
+ *   caller   "What time does the session start?"
+ *   agent    "It starts at 7:30 pm today."               <- HUNG UP
+ *
+ * The announcement had been released, correctly — the person did speak
+ * again. What replaced it was their actual question, and the FINAL_YES
+ * from the gate was still sitting there waiting, so the agent's answer
+ * became the hangup. The person was cut off at the exact moment they
+ * were owed a turn, on the strength of a yes they had given two turns
+ * earlier.
+ *
+ * So an ASKED question holds the line on the same terms an announced
+ * one does. Which is the whole change: the agent finishing an answer is
+ * not the person saying they are done. Only the person can say that,
+ * and they say it by taking their turn and not asking anything —
+ * "no, that's all", "that's clear, thanks", "bas, itna hi" — or by
+ * saying nothing, which the silence window already ends.
+ *
+ * Last turn, and only the last, is still the whole of the release
+ * mechanism, unchanged: the moment the person speaks again without
+ * asking anything, this returns false and the hangup it was holding
+ * back fires on the very next watchdog tick. Nothing is remembered
+ * between ticks and no state is added to the call. Which is also why
+ * "waiting for the caller" can never become "waiting forever": the
+ * line is still bounded by MAX_SILENCE, by the agent's own closing
+ * (`agentClosedIn`) and by MAX_DURATION, none of which this touches.
  */
-function announcedQuestionPending(turns: readonly TranscriptTurn[]): boolean {
+function callerQuestionPending(turns: readonly TranscriptTurn[]): boolean {
   const lastCustomerTurn = [...turns].reverse().find((turn) => turn.role === "user");
   if (!lastCustomerTurn) return false;
-  return announcesAnUnaskedQuestion(lastCustomerTurn.text);
+  // A question NAMED but not yet PUT — the first fix, unchanged.
+  if (announcesAnUnaskedQuestion(lastCustomerTurn.text)) return true;
+  // A question PUT. The same `isQuestionTurn` the classifier reads, on
+  // the raw text, so a question mark still counts for something.
+  return isQuestionTurn(lastCustomerTurn.text);
 }
 
 /**
@@ -830,12 +873,16 @@ export function definitiveAnswerIn(
   if (isFinalYes(classification, disposition)) {
     if (asksAQuestion(last.content)) return undefined;
     // ...and the mirror of that guard, on the other speaker. The agent
-    // has answered, but the PERSON said a question was coming and has
-    // not asked it yet. The verdict above stands untouched — this
-    // withdraws the early hangup only, so the call ends on the agent's
-    // closing or the silence window and `finalize` settles the same
-    // FINAL_YES from the finished transcript. See `ANNOUNCED_QUESTION`.
-    if (announcedQuestionPending(stored.turns)) return undefined;
+    // has answered, but the PERSON has a question open — one they said
+    // was coming, or one they actually asked and have just been
+    // answered. Either way the next turn is theirs, and the agent
+    // finishing its answer is not them saying they are done. The
+    // verdict above stands untouched — this withdraws the early hangup
+    // only, so the call ends when they close it, on the agent's own
+    // closing, or on the silence window, and `finalize` settles the
+    // same FINAL_YES from the finished transcript.
+    // See `callerQuestionPending`.
+    if (callerQuestionPending(stored.turns)) return undefined;
     return "FINAL_YES";
   }
   if (disposition !== "FINAL_NO") return undefined;

@@ -29,11 +29,13 @@ import {
   coverage,
   dispatchAggregates,
   outcomeAggregates,
+  registrationCaptureCounts,
   suspectedVoicemailAttempts,
   voiceAggregates,
   type ContactDispositionAggregateRow,
   type ContactStateCounts,
   type ConversationEventAggregates,
+  type RegistrationCaptureCounts,
 } from "./results.repo";
 import type {
   CampaignResults,
@@ -46,6 +48,7 @@ import type {
   ProviderOutcomeRow,
   ProviderVoiceRow,
   Rate,
+  RegistrationCapture,
 } from "./results-types";
 
 const VOICE_NOTE =
@@ -83,6 +86,7 @@ export async function buildCampaignResults(campaignId: string): Promise<Campaign
     attemptDistribution,
     voicemailAttempts,
     conversationEvents,
+    registrationCapture,
   ] = await Promise.all([
     attemptAggregates(campaignId),
     outcomeAggregates(campaignId),
@@ -96,6 +100,7 @@ export async function buildCampaignResults(campaignId: string): Promise<Campaign
     attemptsPerContact(campaignId),
     suspectedVoicemailAttempts(campaignId),
     conversationEventAggregates(campaignId),
+    registrationCaptureCounts(campaignId),
   ]);
 
   const providers: readonly ProviderAttemptRow[] = attempts.map((row) => ({
@@ -166,6 +171,10 @@ export async function buildCampaignResults(campaignId: string): Promise<Campaign
 
   const contactOutcomes = buildContactOutcomes(dispositions, contactState, attemptDistribution);
   const conversation = buildConversationAnalytics(conversationEvents);
+  // `contactState.total` rather than a second count of the same table,
+  // so `registrationCapture.totalContacts` and `contactOutcomes.total`
+  // cannot drift apart between two queries of a running campaign.
+  const capture = buildRegistrationCapture(registrationCapture, contactState.total);
 
   const dialingEnabled = isDialingEnabled();
 
@@ -206,6 +215,7 @@ export async function buildCampaignResults(campaignId: string): Promise<Campaign
     providers,
     outcomes: { perProvider: outcomeRows, byType: byOutcomeType, classifiers },
     contactOutcomes,
+    registrationCapture: capture,
     conversation,
     voice: { perProvider: voiceRows, note: VOICE_NOTE },
     orchestration: { perProvider: dispatchRows, note: ORCHESTRATION_NOTE },
@@ -293,6 +303,37 @@ function buildContactOutcomes(
     finalNoRate: rate(overall.FINAL_NO, state.total),
     perProvider,
     note: CONTACT_NOTE,
+  };
+}
+
+const CAPTURE_NOTE =
+  "DELIVERY, not conversion. The denominator here is confirmed registrations (FINAL_YES contacts), " +
+  "never every contact — 'how many of the people who said yes have a row in the sheet'. The " +
+  "conversion figure in contactOutcomes is unchanged by everything in this block and must never be " +
+  "computed from it. synced + failed + pending + notAttempted always equals confirmed.";
+
+/**
+ * The capture block, from the counts and the contact total.
+ *
+ * Arithmetic only: every figure is carried through from the aggregate
+ * and the one derived value is a rate over two of them. Nothing here
+ * decides whether somebody registered — `contacts.final_disposition` and
+ * `sheet_sync.state` already did, and this reads both.
+ */
+function buildRegistrationCapture(
+  counts: RegistrationCaptureCounts,
+  totalContacts: number,
+): RegistrationCapture {
+  return {
+    totalContacts,
+    confirmed: counts.confirmed,
+    synced: counts.synced,
+    failed: counts.failed,
+    pending: counts.pending,
+    notAttempted: counts.notAttempted,
+    sheetRowsTotal: counts.sheetRowsTotal,
+    captureRate: rate(counts.synced, counts.confirmed),
+    note: CAPTURE_NOTE,
   };
 }
 

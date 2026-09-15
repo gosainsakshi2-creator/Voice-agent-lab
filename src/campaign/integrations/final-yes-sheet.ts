@@ -29,9 +29,25 @@
  * object rather than throwing, and its own body is wrapped, so there is
  * no path by which a sheet problem reaches the retry planner, the
  * disposition, the attempt row or the campaign's state.
+ *
+ * ── The timing record (roadmap §5 B7) ────────────────────────────
+ *
+ * Every exit past the gate also writes one durable `campaign_events`
+ * row through `registration-timing.ts`, carrying the instants this
+ * function is the only place that can observe: when the registration
+ * was triggered, when the Sheets request went out, and when it settled.
+ * It is fire-and-forget and returns `void`, so it cannot be awaited,
+ * cannot delay a write, and cannot fail one. WHEN the write happens is
+ * unchanged — this records the existing timing, it does not alter it.
  */
 
-import { getSheetSyncConfig, missingSheetConfigKeys, type SheetSyncConfig } from "../config/sheet.config";
+import {
+  getSheetSyncConfig,
+  getSheetSyncRetryPolicy,
+  missingSheetConfigKeys,
+  type SheetSyncConfig,
+  type SheetSyncRetryPolicy,
+} from "../config/sheet.config";
 import { isSuccessOutcome, type OutcomeClassification } from "../outcome/outcome-types";
 import type { ContactDisposition } from "../outcome/disposition";
 import {
@@ -41,7 +57,13 @@ import {
   markSheetSynced,
 } from "../db/repositories/sheet-sync.repo";
 import { appendSheetRow, type AppendResult } from "./google-sheets.client";
-import { resolveContactEmail } from "./contact-email";
+import { buildRegistrationPayload, sheetRowFor } from "./registration-payload";
+import {
+  confirmationInstantFrom,
+  recordRegistrationSync,
+  type LogEventFn,
+} from "./registration-timing";
+import type { StoredTranscript } from "../outcome/transcript";
 
 /** Why a sync did not happen. Every one of these is a normal, non-error outcome. */
 export type SheetSyncSkipReason =
@@ -61,17 +83,34 @@ export interface FinalYesSheetInput {
   readonly attemptId: string;
   readonly classification: OutcomeClassification | undefined;
   readonly disposition: ContactDisposition | undefined;
+  /**
+   * The stored transcript this classification was made from, read for
+   * ONE value: the timestamp the pipeline stamped on the turn the
+   * person confirmed (roadmap §5 B7). Optional, and nothing about the
+   * sheet row depends on it — a sync without it writes exactly the same
+   * row and reports one fewer timestamp.
+   */
+  readonly transcript?: StoredTranscript;
 }
 
 /**
- * Seam for verification. Production leaves both undefined and gets the
- * real configuration and the real Google client; the idempotency test
- * substitutes an appender so the database guarantee can be exercised
- * without a network call or a credential.
+ * Seam for verification. Production leaves all three undefined and gets
+ * the real configuration, the real Google client and the real
+ * `logEvent`; the idempotency test substitutes an appender so the
+ * database guarantee can be exercised without a network call or a
+ * credential, and the timing test substitutes a recorder so the event
+ * body can be asserted without reading it back out of the database.
  */
 export interface FinalYesSheetDeps {
   readonly config?: SheetSyncConfig;
   readonly append?: (config: SheetSyncConfig, values: readonly string[]) => Promise<AppendResult>;
+  readonly logEvent?: LogEventFn;
+  /**
+   * The retry budget (roadmap §5 B5). Production leaves it undefined
+   * and gets the deployment's policy; a test substitutes one to drive
+   * the ceiling without waiting for a real backoff.
+   */
+  readonly retryPolicy?: SheetSyncRetryPolicy;
 }
 
 /**
@@ -105,13 +144,74 @@ export async function syncFinalYesToSheet(
   input: FinalYesSheetInput,
   deps: FinalYesSheetDeps = {},
 ): Promise<SheetSyncResult> {
+  // THE REGISTRATION TRIGGER, taken before anything can fail so the
+  // outermost catch below can still report it. `Date.now()` cannot
+  // throw, so this line adds no failure mode to the sync.
+  const triggeredAtMs = Date.now();
+  // Captured as the write proceeds and read only by `emit`. Left
+  // undefined on every path that did not reach the statement they name.
+  let confirmation: ReturnType<typeof confirmationInstantFrom>;
+  let requestStartedAtMs: number | undefined;
+  let spreadsheetId: string | undefined;
+  let hasEmail: boolean | undefined;
+  /**
+   * Whether this call is a registration at all. Read by the outermost
+   * catch, so a fault on a call that was never a FINAL_YES stays as
+   * silent as its normal path is.
+   */
+  let pastGate = false;
+
+  /**
+   * One durable event per registration that reached this function past
+   * the gate. Fire-and-forget by construction — `recordRegistrationSync`
+   * returns void — so no branch below can be made to wait on it, and a
+   * logging fault cannot change what this function returns.
+   */
+  const emit = (
+    outcome: "synced" | "failed" | "skipped",
+    extra: { reason?: string; updatedRange?: string; settledAtMs?: number } = {},
+  ): void => {
+    recordRegistrationSync(
+      {
+        campaignId: input.campaignId,
+        contactId: input.contactId,
+        attemptId: input.attemptId,
+        outcome,
+        // The caller passes the instant the SHEET call settled where
+        // one exists, so `requestMs` measures Google and not the
+        // bookkeeping that follows it. Skips have no request to time
+        // and settle when they are decided, which is now.
+        settledAtMs: extra.settledAtMs ?? Date.now(),
+        triggeredAtMs,
+        ...(confirmation ? { confirmation } : {}),
+        ...(requestStartedAtMs !== undefined ? { requestStartedAtMs } : {}),
+        ...(spreadsheetId ? { spreadsheetId } : {}),
+        ...(hasEmail !== undefined ? { hasEmail } : {}),
+        ...(extra.reason !== undefined ? { reason: extra.reason } : {}),
+        ...(extra.updatedRange !== undefined ? { updatedRange: extra.updatedRange } : {}),
+      },
+      deps.logEvent,
+    );
+  };
+
   try {
     // ── 1. The gate. Read, never decided, here. ──────────────────
     if (!isFinalYes(input.classification, input.disposition)) {
+      // Deliberately silent. Every call that is not a registration
+      // reaches this line, and an event for each would bury the
+      // registrations in the log this exists to make readable.
       return { synced: false, reason: "not-final-yes" };
     }
 
+    // Past the gate, so this call IS a registration. From here every
+    // exit is worth a durable line, including the ones that write
+    // nothing — "this person registered and their row is missing
+    // because X" is the question B7 and B8 both have to answer.
+    pastGate = true;
+    confirmation = confirmationInstantFrom(input.classification, input.transcript);
+
     const config = deps.config ?? getSheetSyncConfig();
+    if (config.spreadsheetId.length > 0) spreadsheetId = config.spreadsheetId;
     if (!config.isConfigured) {
       // eslint-disable-next-line no-console
       console.warn(
@@ -119,6 +219,9 @@ export async function syncFinalYesToSheet(
           `missing configuration: ${missingSheetConfigKeys(config).join(", ")}. ` +
           `The registration itself is stored and unaffected.`,
       );
+      emit("skipped", {
+        reason: `not-configured: missing ${missingSheetConfigKeys(config).join(", ")}`,
+      });
       return { synced: false, reason: "not-configured" };
     }
 
@@ -127,11 +230,22 @@ export async function syncFinalYesToSheet(
     if (!contact) {
       // eslint-disable-next-line no-console
       console.warn(`[sheet-sync] contact ${input.contactId} disappeared before its row could be written`);
+      emit("skipped", { reason: "contact-missing" });
       return { synced: false, reason: "contact-missing" };
     }
 
-    const resolvedEmail = resolveContactEmail(contact.metadata);
-    if (!resolvedEmail) {
+    // The canonical registration (§5 B2), built from the authoritative
+    // stored contact and nothing else. Built HERE rather than at the
+    // write below so the email warning and the log line read the same
+    // resolution the row is made from, instead of resolving twice.
+    const payload = buildRegistrationPayload({
+      contact,
+      campaignId: input.campaignId,
+      contactId: input.contactId,
+      attemptId: input.attemptId,
+    });
+    hasEmail = payload.emailSourceColumn !== undefined;
+    if (!hasEmail) {
       // Not a failure: the row still carries the name and the number,
       // which are the two fields the import guarantees. Logged because
       // a whole campaign missing emails means the CSV had no email
@@ -143,38 +257,67 @@ export async function syncFinalYesToSheet(
       );
     }
 
-    // ── 3. Claim the slot. THIS is the duplicate guarantee. ──────
-    const claimed = await claimSheetSync({
-      campaignId: input.campaignId,
-      normalizedPhone: contact.normalizedPhone,
-      contactId: input.contactId,
-      attemptId: input.attemptId,
-      spreadsheetId: config.spreadsheetId,
-    });
+    // ── 3. Claim the slot. THIS is the duplicate guarantee, and it
+    //      is now also where the retry budget is enforced. ─────────
+    // One statement decides both: a registration already in the sheet
+    // is refused because SYNCED is terminal, and one that has used its
+    // whole budget is refused because `attempts` has reached the
+    // ceiling. Neither can be got past by calling this again.
+    const retryPolicy = deps.retryPolicy ?? getSheetSyncRetryPolicy();
+    const claimed = await claimSheetSync(
+      {
+        campaignId: input.campaignId,
+        normalizedPhone: contact.normalizedPhone,
+        contactId: input.contactId,
+        attemptId: input.attemptId,
+        spreadsheetId: config.spreadsheetId,
+      },
+      retryPolicy.maxAttempts,
+    );
     if (!claimed) {
       // eslint-disable-next-line no-console
       console.log(
-        `[sheet-sync] ${maskPhone(contact.normalizedPhone)} is already in the sheet for this campaign — ` +
+        `[sheet-sync] ${maskPhone(contact.normalizedPhone)} is already in the sheet for this campaign, ` +
+          `is being written by another worker, or has used its ${retryPolicy.maxAttempts} sync attempts — ` +
           `no second row written`,
       );
+      emit("skipped", { reason: "already-synced" });
       return { synced: false, reason: "already-synced" };
     }
 
     // ── 4. Write, and settle the slot either way ─────────────────
-    const values = [contact.name?.trim() ?? "", resolvedEmail?.email ?? "", contact.normalizedPhone];
+    // The sheet's three-column projection of the payload above —
+    // byte-identical to the array this line used to build inline.
+    // `registration-payload.ts` owns the contract now, so the columns
+    // are a thing somebody has to change on purpose.
+    const values = sheetRowFor(payload);
     const append = deps.append ?? appendSheetRow;
 
     try {
+      // THE SHEETS HTTP REQUEST INSTANT. Taken on the statement before
+      // the call and nowhere else, so `requestMs` in the event is the
+      // vendor round trip and nothing of ours.
+      requestStartedAtMs = Date.now();
       const result = await append(config, values);
+      // THE SETTLE INSTANT, taken the moment Google answered — before
+      // the bookkeeping below, so none of it lands inside `requestMs`.
+      const syncedAtMs = Date.now();
       await markSheetSynced(input.campaignId, contact.normalizedPhone, result.updatedRange);
       // eslint-disable-next-line no-console
       console.log(
         `[sheet-sync] FINAL_YES written to sheet: ${maskPhone(contact.normalizedPhone)} ` +
-          `name="${contact.name ?? ""}" email=${resolvedEmail ? `from "${resolvedEmail.sourceColumn}"` : "none"} ` +
+          `name="${contact.name ?? ""}" email=${payload.emailSourceColumn ? `from "${payload.emailSourceColumn}"` : "none"} ` +
           `range=${result.updatedRange ?? "unknown"} attempt=${input.attemptId}`,
       );
+      emit("synced", {
+        settledAtMs: syncedAtMs,
+        ...(result.updatedRange !== undefined ? { updatedRange: result.updatedRange } : {}),
+      });
       return { synced: true, updatedRange: result.updatedRange };
     } catch (error) {
+      // Taken before the message is built, for the same reason the
+      // success instant is taken before its log line.
+      const failedAtMs = Date.now();
       const message = error instanceof Error ? error.message : String(error);
       // eslint-disable-next-line no-console
       console.error(
@@ -186,6 +329,7 @@ export async function syncFinalYesToSheet(
       // and is reclaimable after the stale window, which is the same
       // recovery path a crashed process takes.
       await markSheetFailed(input.campaignId, contact.normalizedPhone, message).catch(() => undefined);
+      emit("failed", { settledAtMs: failedAtMs, reason: message });
       return { synced: false, reason: "write-failed" };
     }
   } catch (error) {
@@ -197,6 +341,9 @@ export async function syncFinalYesToSheet(
       `[sheet-sync] sheet sync failed for attempt ${input.attemptId} and was ignored: ` +
         `${error instanceof Error ? error.message : String(error)}`,
     );
+    if (pastGate) {
+      emit("failed", { reason: error instanceof Error ? error.message : String(error) });
+    }
     return { synced: false, reason: "write-failed" };
   }
 }

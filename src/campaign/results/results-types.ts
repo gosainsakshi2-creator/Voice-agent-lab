@@ -165,6 +165,48 @@ export interface ContactOutcomes {
 }
 
 /**
+ * DID THE REGISTRATIONS REACH THE SHEET? — roadmap §5 B8.
+ *
+ * A DELIVERY figure, never a sales one, and it sits in its own block so
+ * the two can never be confused:
+ *
+ *   `contactOutcomes.conversionRate`  FINAL_YES / every contact.
+ *                                     What the campaign achieved.
+ *   `registrationCapture.captureRate` SYNCED / FINAL_YES.
+ *                                     What the plumbing delivered.
+ *
+ * A campaign that converted 30% and captured 100% and one that
+ * converted 30% and captured 78% look identical on the conversion
+ * figure alone. The second is losing registrations, and before this
+ * block there was nowhere that said so.
+ *
+ * `confirmed` is split exhaustively: `synced + failed + pending +
+ * notAttempted === confirmed`, always, because a contact matches at
+ * most one `sheet_sync` row and the four states cover every case
+ * including "no row". That identity is what makes the block a
+ * reconciliation rather than a set of loosely related numbers.
+ */
+export interface RegistrationCapture {
+  /** Every contact imported. The conversion rate's denominator, repeated here for context only. */
+  readonly totalContacts: number;
+  /** Contacts whose final disposition is FINAL_YES. The capture rate's denominator. */
+  readonly confirmed: number;
+  readonly synced: number;
+  readonly failed: number;
+  readonly pending: number;
+  readonly notAttempted: number;
+  /**
+   * Every SYNCED row this campaign has written, whatever the contact's
+   * disposition says now. `sheetRowsTotal - synced` is the drift
+   * between the sheet and the current verdicts — normally zero.
+   */
+  readonly sheetRowsTotal: number;
+  /** SYNCED over FINAL_YES. Null until somebody has actually registered. */
+  readonly captureRate: Rate;
+  readonly note: string;
+}
+
+/**
  * WHAT HAPPENED IN THE CONVERSATIONS, counted in attempts.
  *
  * Separate from `outcomes` and from `contactOutcomes` for the same
@@ -251,6 +293,12 @@ export interface CampaignResults {
    * registered".
    */
   readonly contactOutcomes: ContactOutcomes;
+  /**
+   * Whether the confirmed registrations reached the registrations
+   * sheet. Reads `contactOutcomes`' own source and `sheet_sync`, and
+   * feeds neither the funnel nor the conversion rate.
+   */
+  readonly registrationCapture: RegistrationCapture;
   /**
    * Conversational events, in attempts. Sits beside the two blocks
    * above and feeds neither: no figure here is a success, a failure, or

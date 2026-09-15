@@ -14,7 +14,7 @@
  * integration existed, not fail them.
  */
 
-import { optionalEnv } from "../../providers/shared/env";
+import { optionalEnv, optionalEnvNumber } from "../../providers/shared/env";
 
 export interface SheetSyncConfig {
   /** The spreadsheet's document id (the long token in its URL). */
@@ -92,6 +92,58 @@ export function getSheetSyncConfig(): SheetSyncConfig {
     privateKey,
     isConfigured:
       spreadsheetId.length > 0 && clientEmail.length > 0 && privateKey.length > 0 && tabName.length > 0,
+  };
+}
+
+/**
+ * HOW HARD WE TRY TO GET A CONFIRMED REGISTRATION INTO THE SHEET —
+ * roadmap §5 B5/B6.
+ *
+ * Deliberately a SEPARATE shape from `SheetSyncConfig` rather than two
+ * more fields on it. `SheetSyncConfig` is the credential-and-target
+ * object that is passed to the Google client and stubbed in tests; the
+ * retry budget is a campaign-layer policy that the client never sees
+ * and that no caller of `appendSheetRow` should have to supply.
+ *
+ * The shape mirrors `RetryConfig` in `dispatch.config.ts` exactly — a
+ * ceiling plus a per-attempt backoff table in minutes — because this is
+ * the same kind of decision the call retry planner already makes, and
+ * the repository should have one answer to "how do we back off", not
+ * two. The backoff is DEFERRED, never a sleep: the row records that it
+ * failed and a later reconciliation pass picks it up, which is exactly
+ * how a failed CALL is retried (`next_attempt_after` + a later claim).
+ */
+export interface SheetSyncRetryPolicy {
+  /**
+   * Total write ATTEMPTS allowed per registration, counted by
+   * `sheet_sync.attempts`. Past this the row stays FAILED and is
+   * reported, never silently dropped and never retried again.
+   */
+  readonly maxAttempts: number;
+  /**
+   * Minutes to wait before attempt N+1, indexed by attempts so far.
+   * The last entry applies to every later attempt, exactly as
+   * `temporaryBackoffMinutes` does for calls.
+   */
+  readonly backoffMinutes: readonly number[];
+  /** Registrations one reconciliation pass may attempt. Bounds the sweep. */
+  readonly reconcileBatchSize: number;
+  /** Wall-clock ceiling for one reconciliation pass, whatever the batch size. */
+  readonly reconcileMaxDurationMs: number;
+}
+
+export function getSheetSyncRetryPolicy(): SheetSyncRetryPolicy {
+  return {
+    // Three, matching CAMPAIGN_RETRY_MAX_ATTEMPTS' default: the first
+    // write plus two recoveries. A transient Google fault is recovered;
+    // a revoked share is not retried forever.
+    maxAttempts: optionalEnvNumber("CAMPAIGN_SHEET_MAX_SYNC_ATTEMPTS", 3),
+    backoffMinutes: optionalEnv("CAMPAIGN_SHEET_RETRY_BACKOFF_MINUTES", "1,5,15")
+      .split(",")
+      .map((value) => Number(value.trim()))
+      .filter((value) => Number.isFinite(value) && value >= 0),
+    reconcileBatchSize: optionalEnvNumber("CAMPAIGN_SHEET_RECONCILE_BATCH_SIZE", 25),
+    reconcileMaxDurationMs: optionalEnvNumber("CAMPAIGN_SHEET_RECONCILE_MAX_SECONDS", 60) * 1000,
   };
 }
 

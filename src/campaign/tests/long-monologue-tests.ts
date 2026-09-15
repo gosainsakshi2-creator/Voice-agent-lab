@@ -259,7 +259,11 @@ await test("A7. the policy still forbids everything it forbade before", () => {
 
 await test("A8. the policy moved, so a call can be attributed to it", () => {
   assert.notEqual(CONVERSATION_POLICY_ID, "script-faithful.v2", "the id must be bumped");
-  assert.equal(CONVERSATION_POLICY_ID, "script-faithful.v3");
+  // v4 is the post-registration continuation paragraph — see
+  // `callerQuestionPending` in call-runner.ts. The v2 assertion above is
+  // kept: each bump is additive here, so no earlier id can come back.
+  assert.notEqual(CONVERSATION_POLICY_ID, "script-faithful.v3", "the id must be bumped");
+  assert.equal(CONVERSATION_POLICY_ID, "script-faithful.v4");
 });
 
 // ═════════════════════════════════════════════════════════════════

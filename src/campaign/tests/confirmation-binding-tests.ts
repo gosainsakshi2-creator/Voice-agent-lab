@@ -43,6 +43,7 @@ import { classifyOutcome } from "../outcome/classifier";
 import { dispositionFor } from "../outcome/disposition";
 import { isFinalYes } from "../integrations/final-yes-sheet";
 import { definitiveAnswerIn } from "../dispatch/call-runner";
+import { isQuestionTurn } from "../outcome/conversation-events";
 
 import type { ConversationTurn } from "../../types/provider.types";
 
@@ -99,18 +100,35 @@ function settle(turns: readonly ConversationTurn[]) {
 
 /**
  * Asserts the disposition AND the sheet gate. The live hangup is
- * deliberately not asserted here: it is narrowed on purpose — a
+ * deliberately not asserted flatly: it is narrowed on purpose — a
  * FINAL_NO only cuts a call short when the person's own last words
  * match the shared refusal table — so "Actually no." settles as
  * FINAL_NO afterwards and correctly does not hang up mid-call. What
  * must always hold is that the sheet never disagrees with the label.
+ *
+ * The one narrowing on the YES side, and it is asserted rather than
+ * skipped: a registration whose caller's last turn ASKS something is
+ * held open for their answer (`callerQuestionPending` in
+ * `call-runner.ts`, and `post-registration-question-tests.ts` for why).
+ * The registration itself still stands — that is what the two lines
+ * above check — and only the ENDING is deferred, so this expects the
+ * held reading explicitly instead of accepting either.
  */
 function expect(turns: readonly ConversationTurn[], disposition: "FINAL_YES" | "FINAL_NO", why: string): void {
   const result = settle(turns);
   assert.equal(result.disposition, disposition, `${why} (outcome was ${result.outcomeType})`);
   assert.equal(result.sheet, disposition === "FINAL_YES", "the sheet gate must agree with the disposition");
   if (disposition === "FINAL_YES") {
-    assert.equal(result.live, "FINAL_YES", "and a registration must still end the call as one");
+    const lastCallerTurn = [...turns].reverse().find((t) => t.role === "user");
+    if (lastCallerTurn && isQuestionTurn(lastCallerTurn.content)) {
+      assert.equal(
+        result.live,
+        undefined,
+        "a registration with a question still open must not hang up on the answer",
+      );
+    } else {
+      assert.equal(result.live, "FINAL_YES", "and a registration must still end the call as one");
+    }
   } else {
     assert.notEqual(result.live, "FINAL_YES", "a retracted registration must never hang up as a yes");
   }

@@ -17,21 +17,31 @@
  * person was still holding the floor — they named a question, the agent
  * invited it, and the hangup landed in the gap.
  *
+ * A SECOND DEFECT WAS REPORTED AGAINST THE SAME LIFECYCLE, one exchange
+ * later: the person asked the question, the agent answered it
+ * correctly, and the call was dropped on the agent's own last word. A6,
+ * B2 and D3 below used to assert exactly that ending; they now assert
+ * against it. `post-registration-question-tests.ts` is that defect's own
+ * suite and `callerQuestionPending` in `call-runner.ts` is the reading
+ * the two of them share.
+ *
  * THE FIX IS IN THE HANGUP AND NOWHERE ELSE. `definitiveAnswerIn`
  * already refuses to end a call while the AGENT's last turn asks
  * something; it now also refuses while the PERSON's last turn announces
- * a question they have not yet put. The verdict is untouched, so the
- * call still settles FINAL_YES when it does end — on the agent's
- * closing, or on the silence window, exactly as every undecided call
- * already ends.
+ * a question they have not yet put, or asks one. The verdict is
+ * untouched, so the call still settles FINAL_YES when it does end — on
+ * the person closing the conversation, on the agent's closing, or on
+ * the silence window, exactly as every undecided call already ends.
  *
  * WHAT THIS SUITE IS FOR:
  *
  *   A  an announced question holds the line — English, Hinglish and
- *      Devanagari — and RELEASES it the moment the question is asked
+ *      Devanagari — and keeps holding it through the question being
+ *      asked and answered, releasing only when the PERSON takes a turn
+ *      and asks nothing
  *   B  the controls: a plain "Yes, please." / "Haan, kar dijiye." /
- *      "Okay." still ends the call as FINAL_YES, and a question that
- *      was ASKED in the same breath is unchanged
+ *      "Okay." still ends the call as FINAL_YES, and a question ASKED
+ *      in the same breath holds the line on the same terms
  *   C  the fix is SUBTRACTIVE: it can only withhold a FINAL_YES, never
  *      produce one, and it does not touch the FINAL_NO path
  *   D  the live watchdog, through the real `runCall`: the reported
@@ -191,7 +201,15 @@ await test("A5. Devanagari variants", () => {
   }
 });
 
-await test("A6. the hold is RELEASED once the question is actually asked", () => {
+await test("A6. the hold SURVIVES the question being asked and answered", () => {
+  // This assertion was inverted by the SECOND reported defect, and the
+  // inversion is the point. It used to read "released once the question
+  // is asked" — the announcement was gone, the question had replaced
+  // it, the FINAL_YES from the gate was still waiting, and so the
+  // agent's answer became the hangup. That is the same person being cut
+  // off one exchange later than before. An ASKED question now holds the
+  // line on the same terms an announced one does; see
+  // `callerQuestionPending` and `post-registration-question-tests.ts`.
   const announced = afterGate("Yes, I am registering, but I have a question.");
   assert.equal(definitiveAnswerIn(announced, "registration"), undefined, "held while announced");
 
@@ -202,8 +220,15 @@ await test("A6. the hold is RELEASED once the question is actually asked", () =>
   ];
   assert.equal(
     definitiveAnswerIn(asked, "registration"),
+    undefined,
+    "the agent's answer is not the person saying they are done",
+  );
+
+  // Released by the person, and only by the person.
+  assert.equal(
+    definitiveAnswerIn([...asked, caller("No, that's all. Thank you."), agent("Perfect, see you there.")], "registration"),
     "FINAL_YES",
-    "once the question is asked and answered the call ends as it always did",
+    "a caller turn that asks nothing closes the conversation as it always did",
   );
 });
 
@@ -245,16 +270,20 @@ await test("B1. a plain yes at the gate still reads FINAL_YES", () => {
   }
 });
 
-await test("B2. a question ASKED in the same breath is unchanged", () => {
-  // The distinction the fix turns on. These name a question AND put it;
-  // the agent's next turn is the answer, and the call is finished.
+await test("B2. a question ASKED in the same breath holds the line too", () => {
+  // Also inverted by the second defect, and for the same reason. These
+  // name a question AND put it, so the agent's next turn is the answer
+  // — which is exactly the moment the person is owed a turn, not the
+  // moment the call is over. The two readings divide the shapes between
+  // them: `announcesAnUnaskedQuestion` declines these because the
+  // remainder asks something, and `isQuestionTurn` takes them.
   for (const line of [
     "Yes, register me — how do I join?",
     "Yes register me, I have a question. What time is it?",
     "Haan register kar dijiye, ek baat batao, kitne baje hai?",
     "Okay, book it. What is the link?",
   ]) {
-    assert.equal(liveReading(line), "FINAL_YES", `must still hang up on: "${line}"`);
+    assert.equal(liveReading(line), undefined, `must not hang up on: "${line}"`);
   }
 });
 
@@ -595,12 +624,19 @@ try {
     );
   });
 
-  await test("D3. the call still ends as agent_hangup:final_yes, once the question is answered", async () => {
+  await test("D3. and NOT once the agent has answered it either", async () => {
+    // Inverted by the second reported defect, like A6 and B2 above. The
+    // person asks, the agent answers, and `drive` then stops without
+    // the person saying anything more — so the conversation is left
+    // open for them and ends on the existing silence clock, not on the
+    // agent's own last word. `post-registration-question-tests.ts`
+    // drives the other half: the person closes it, and the call ends as
+    // agent_hangup:final_yes there.
     assert.equal(held.outcome.failureClass, "COMPLETED");
     assert.equal(
       await hangupReasonOf(held.outcome.attemptId!),
-      "agent_hangup:final_yes",
-      "the hangup is DELAYED by the fix, never removed",
+      "watchdog:max_silence",
+      "the answer must not be the hangup — the next turn was theirs",
     );
   });
 

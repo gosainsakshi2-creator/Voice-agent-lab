@@ -86,6 +86,23 @@ export interface CampaignSessionContext {
   readonly systemPromptAppendix: string;
   /** Spoken verbatim in place of the default greeting. Placeholders already resolved. */
   readonly openingLine: string;
+  /**
+   * ADDITIVE, OPTIONAL. The line that establishes WHO PICKED UP, spoken
+   * by the pipeline itself rather than generated.
+   *
+   * It is pipeline-owned for one reason: identity confirmation is a
+   * hard prerequisite for the pitch, and a prerequisite the language
+   * model is merely asked to respect is not a prerequisite. A generated
+   * question also cannot be detected reliably — the model paraphrases
+   * it and translates it ("क्या मैं Priya से बात कर रही हूँ?"), so
+   * nothing downstream could tell whether it had been asked at all.
+   * Spoken from here, the pipeline knows it asked, knows it is waiting,
+   * and can refuse to go on.
+   *
+   * Absent for every non-campaign session, whose gate is open from the
+   * start and whose behaviour is therefore unchanged.
+   */
+  readonly identityLine?: string;
 }
 
 /**

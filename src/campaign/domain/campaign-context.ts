@@ -37,6 +37,16 @@ export interface BuildCampaignContextInput {
   readonly expectedScriptHash?: string;
 }
 
+/**
+ * The pipeline-owned identity question.
+ *
+ * Deliberately the shortest natural form of the question this campaign
+ * already asks. It names the person and nothing else: it makes no
+ * offer, so `classifier.ts` cannot read a "haan" to it as a commitment
+ * (verified — see the identity tests), and it adds no campaign fact.
+ */
+const IDENTITY_LINE_TEMPLATE = "Am I speaking with {{customer_name}}?";
+
 export class CampaignContextError extends Error {
   constructor(message: string) {
     super(message);
@@ -98,6 +108,18 @@ export function buildCampaignContext(input: BuildCampaignContextInput): Campaign
         interpolate(script.systemPromptAppendix, variables),
       ),
       openingLine: interpolate(script.openingLineTemplate, variables),
+      // WHO PICKED UP. The wording already used by this campaign —
+      // `registration.v1` asked it as "Hi, am I speaking with
+      // {{customer_name}}?" and v5's appendix asks for exactly this
+      // line — so nothing new is being invented, only moved from the
+      // model's discretion into the pipeline's.
+      //
+      // Only for scripts that need the name: a script that does not
+      // require one has nobody to check against, and its gate stays
+      // open exactly as before.
+      ...(script.requiresName
+        ? { identityLine: interpolate(IDENTITY_LINE_TEMPLATE, variables) }
+        : {}),
     };
   } catch (error) {
     if (error instanceof ScriptVariableError) {

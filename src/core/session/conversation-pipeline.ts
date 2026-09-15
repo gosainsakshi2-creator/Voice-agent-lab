@@ -44,6 +44,7 @@ import type { TelephonyProvider } from "../../interfaces/providers/telephony-pro
 import type { SessionRecord } from "./session-record";
 import { detectLanguage, isLockGradeEvidence, type LanguageDetectionResult } from "./language-detector";
 import { currentTurnNote, languageHintFor, openingLineFor } from "./system-prompt";
+import { classifyIdentityAnswer } from "../../campaign/domain/identity-answer";
 import { SentenceChunker } from "./sentence-chunker";
 import { isBareAcknowledgement } from "./turn-detection";
 import { voicemailPhraseIn } from "./voicemail-detection";
@@ -1033,6 +1034,54 @@ const SELF_ECHO_MIN_MATCHED_BIGRAMS = 3;
 const LANGUAGE_LOCK_MIN_WORDS = SELF_ECHO_MIN_WORDS;
 
 /**
+ * The identity question, asked a SECOND time.
+ *
+ * Not the bare line again: hearing the identical sentence twice is how
+ * a caller works out they are talking to a machine. One short natural
+ * lead-in, then the same question — which is what a person does when
+ * their question got lost.
+ */
+function identityReAskFor(language: SupportedLanguage, line: string): string {
+  switch (language) {
+    case "hi":
+      return `माफ़ कीजिए — ${line}`;
+    case "hi-en":
+      return `Sorry — ${line}`;
+    default:
+      return `Sorry — ${line}`;
+  }
+}
+
+/**
+ * ...and what is said when it was never answered. Short, warm, and it
+ * promises nothing: the call ends here rather than going on to somebody
+ * who has not said who they are.
+ */
+function identityGiveUpFor(language: SupportedLanguage): string {
+  switch (language) {
+    case "hi":
+      return "कोई बात नहीं, मैं बाद में कॉल कर लूँगी. धन्यवाद!";
+    case "hi-en":
+      return "Koi baat nahi, main baad mein call kar lungi. Thank you!";
+    default:
+      return "No problem, I'll try again later. Thank you!";
+  }
+}
+
+/**
+ * How many times the identity question may be RE-ASKED before the call
+ * is given up on.
+ *
+ * The gate never opens on its own, so something has to bound it: a
+ * caller who answers "kya chahiye?" to every ask would otherwise be
+ * asked forever. Three asks in total (the first, then two more) is what
+ * a person would do before concluding they cannot establish who they
+ * are talking to, and the call is then closed rather than pitched —
+ * which is the whole point of the gate.
+ */
+const MAX_IDENTITY_REASKS = 2;
+
+/**
  * ---------------- The STT stream clock can rewind ----------------
  *
  * The interruption test below asks "did these words happen AFTER I
@@ -1604,6 +1653,29 @@ export class ConversationPipeline {
    * case (a second "hello" over the acknowledgement) this flag exists
    * to handle.
    */
+  /**
+   * ---------------- THE IDENTITY GATE ----------------
+   *
+   * "unasked"     the campaign has an identity line and it has not been
+   *               spoken yet. The caller's first turn is answered with
+   *               it, not with the language model.
+   * "outstanding" it has been asked and nobody has answered it yet.
+   *               EVERY turn in this state is read by
+   *               `classifyIdentityAnswer`, and the language model is
+   *               not reached until it says confirmed or denied.
+   * "confirmed"   they said they are the person we called. The gate is
+   *               open for the rest of the call and never closes again.
+   * "denied"      they said they are not. The gate stays shut; the
+   *               contextual path handles the wrong-person close, and
+   *               the pitch is never spoken.
+   *
+   * A session with NO identity line — every non-campaign session, and
+   * any script that does not require a name — starts "confirmed", so
+   * its behaviour is byte-for-byte what it was.
+   */
+  private identityState: "unasked" | "outstanding" | "confirmed" | "denied";
+  /** Re-asks spent, against `MAX_IDENTITY_REASKS`. */
+  private identityReAsks = 0;
   private attentionEpisodeOpen = false;
   /**
    * FIX 2 — how many silence-recovery prompts have been spoken since the
@@ -1685,6 +1757,12 @@ export class ConversationPipeline {
     private readonly providers: ResolvedProviderStack,
     private readonly host: PipelineHost,
   ) {
+    // The gate is CLOSED only when this call actually has somebody to
+    // check. Everything else keeps the behaviour it has always had.
+    this.identityState =
+      record.campaignIdentityLine !== undefined && record.campaignIdentityLine.trim().length > 0
+        ? "unasked"
+        : "confirmed";
     this.usesStreamingStt = typeof providers.stt.transcribeStream === "function";
   }
 
@@ -1995,6 +2073,25 @@ export class ConversationPipeline {
           continue;
         }
 
+        // ── WHO PICKED UP ──────────────────────────────────────────
+        // Placed exactly here, between the attention check and the
+        // language model. See `handleIdentityGate`: while the gate is
+        // shut the model is never reached, so no reply exists to be
+        // spoken and the pitch cannot start. A hearing episode is
+        // consumed above and never reaches it, which is what keeps
+        // "I can hear you" from ever meaning "I am Sakshi".
+        if (await this.handleIdentityGate(turn.text, loopSignal)) {
+          this.abandonSpeculation("the identity gate answered the turn without the language model");
+          timer.summarize();
+          timer.printLatencyBreakdown({
+            speechEndAtMs: turn.userSpeechEndedAtMs,
+            endpointEvidenceAtMs: turn.endpointEvidenceAtMs,
+            endpointEvidenceKind: turn.endpointEvidenceKind,
+          });
+          this.activeTimer = undefined;
+          continue;
+        }
+
         // The reply about to be generated is PENDING from here until it
         // either completes normally (committed below) or is cancelled by
         // a barge-in (discarded below). Taken BEFORE generation starts so
@@ -2259,6 +2356,100 @@ export class ConversationPipeline {
    *
    * @returns whether this turn was handled here.
    */
+  /**
+   * WHO PICKED UP — the gate that must open before the campaign is
+   * spoken.
+   *
+   * Runs at exactly one place: after `handleAttentionCheck` has
+   * declined the turn and BEFORE `runThinkingAndSpeaking`. That
+   * ordering is the whole design, and both halves matter:
+   *
+   *   - The attention check runs FIRST, so a "Hello?" over the identity
+   *     question, and the caller's answer to the hearing line that
+   *     follows, are consumed there and never reach this method at all.
+   *     A hearing episode therefore cannot move the identity state, in
+   *     either direction. That is the reported defect, closed
+   *     structurally rather than by a rule the model is asked to obey.
+   *
+   *   - It runs BEFORE the language model, so while the gate is shut
+   *     the model is never asked for a reply and cannot produce a pitch
+   *     to be spoken. "No pitch before identity is confirmed" is not an
+   *     instruction here; it is that the code which speaks the pitch is
+   *     not reached.
+   *
+   * Returns true when it answered the turn itself, exactly like
+   * `handleAttentionCheck`, and the main loop then continues.
+   */
+  private async handleIdentityGate(userText: string, loopSignal: AbortSignal): Promise<boolean> {
+    const sid = this.record.id;
+    const line = this.record.campaignIdentityLine;
+    if (line === undefined || this.identityState === "confirmed" || this.identityState === "denied") {
+      return false;
+    }
+
+    // ── Not asked yet: ask it, and nothing else ──────────────────
+    if (this.identityState === "unasked") {
+      this.identityState = "outstanding";
+      // eslint-disable-next-line no-console
+      console.log(`[PIPELINE:${sid}] identity gate — asking who picked up: "${line}"`);
+      this.abandonSpeculation("the identity question is asked without the language model");
+      await this.speakAttentionUtterance(line, loopSignal, "asking who picked up");
+      return true;
+    }
+
+    // ── Asked, and this turn is the answer ───────────────────────
+    const verdict = classifyIdentityAnswer(userText, this.record.request.campaign?.customer.name);
+    // eslint-disable-next-line no-console
+    console.log(
+      `[PIPELINE:${sid}] identity gate — "${userText.trim().slice(0, 40)}" reads as ${verdict.toUpperCase()}`,
+    );
+
+    if (verdict === "confirmed") {
+      this.identityState = "confirmed";
+      // The turn itself still goes to the language model, which is what
+      // carries the conversation on into the campaign from here.
+      return false;
+    }
+
+    if (verdict === "denied") {
+      // Wrong person. The gate stays shut for the rest of the call, so
+      // no later turn can reopen it, and the contextual path speaks the
+      // apology-and-close the script already owns. Nothing is pitched
+      // and nothing is registered.
+      this.identityState = "denied";
+      return false;
+    }
+
+    // ── Unclear: ask again, or give up ──────────────────────────
+    if (this.identityReAsks >= MAX_IDENTITY_REASKS) {
+      // Three asks with no answer. The gate must not open on a guess,
+      // so the call ends instead of continuing into a pitch aimed at
+      // somebody who never said who they are.
+      // eslint-disable-next-line no-console
+      console.log(
+        `[PIPELINE:${sid}] identity gate — ${this.identityReAsks} re-asks spent with no clear answer; ending the call rather than pitching`,
+      );
+      await this.speakAttentionUtterance(
+        identityGiveUpFor(this.record.memory.currentLanguage),
+        loopSignal,
+        "closing a call whose caller never confirmed who they are",
+      );
+      void this.host.end(this.record.id);
+      return true;
+    }
+
+    this.identityReAsks += 1;
+    // eslint-disable-next-line no-console
+    console.log(`[PIPELINE:${sid}] identity gate — no clear answer; asking again (${this.identityReAsks}/${MAX_IDENTITY_REASKS})`);
+    this.abandonSpeculation("the identity question is re-asked without the language model");
+    await this.speakAttentionUtterance(
+      identityReAskFor(this.record.memory.currentLanguage, line),
+      loopSignal,
+      "returning to the unanswered identity question",
+    );
+    return true;
+  }
+
   private async handleAttentionCheck(userText: string, loopSignal: AbortSignal): Promise<boolean> {
     const sid = this.record.id;
     const trimmed = userText.trim();
@@ -2722,6 +2913,13 @@ export class ConversationPipeline {
     if (!this.awaitingTurn || this.voicemailDetected) return;
     if (this.record.state !== SessionState.LISTENING) return;
     if (this.attentionEpisodeOpen || this.heldScriptRemainder.length > 0) return;
+    // ...and not while the identity gate is shut, for exactly the same
+    // reason. A turn taken by the gate is answered from a fixed line,
+    // so a pre-opened request for it is a request that can never be
+    // adopted: the tokens are paid for and thrown away, and the
+    // "zero language-model requests" the attention and continuity
+    // suites assert would stop being true of the opening.
+    if (this.identityState === "unasked" || this.identityState === "outstanding") return;
     const generate = this.providers.llm.generateCompletionStream;
     if (typeof generate !== "function") return;
     const loopSignal = this.record.loopAbortController?.signal;

@@ -124,6 +124,12 @@ export class SessionRecord {
    * `openingLineFor` line exactly as before.
    */
   readonly campaignOpeningLine: string | undefined;
+  /**
+   * The campaign's identity question, or `undefined` for a session that
+   * has nobody to check. Read once by `ConversationPipeline` to decide
+   * whether this call has an identity gate at all.
+   */
+  readonly campaignIdentityLine: string | undefined;
   readonly bargeIn = new BargeInController();
   readonly turnDetector = new AdaptiveTurnDetector();
 
@@ -141,6 +147,7 @@ export class SessionRecord {
     // master prompt is unchanged either way — `buildSystemPrompt`
     // appends this after it rather than replacing anything.
     this.campaignOpeningLine = request.campaign?.openingLine;
+    this.campaignIdentityLine = request.campaign?.identityLine;
 
     this.memory = new ConversationMemory(
     request.language,

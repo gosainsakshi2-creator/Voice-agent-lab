@@ -49,6 +49,7 @@
     "test:buffered-turn": "tsx src/campaign/tests/buffered-turn-drain-tests.ts",
     "test:ack-continuity": "tsx src/campaign/tests/acknowledgement-continuity-tests.ts",
     "test:language-lock": "tsx src/campaign/tests/language-lock-tests.ts",
+    "test:long-monologue": "tsx src/campaign/tests/long-monologue-tests.ts",
     "preflight:prod": "tsx src/campaign/production-readiness-cli.ts",
     "campaign:audit": "tsx src/campaign/audit-cli.ts"
   },

@@ -167,7 +167,7 @@ await test("A1c. an INTEREST question with the same words is still not a gate", 
   assert.equal(isFinalYes(classification, disposition), false);
 });
 
-await test("A1d. the APPROVED v4 script's own gate line is a gate, and v4 is the default", () => {
+await test("A1d. the APPROVED v4 script's own gate line is still a gate", () => {
   // Same regression class as A1b, for the next approved version. v4's
   // gate was deliberately worded "reserve your free seat" because that
   // phrase is an existing COMMIT_ANCHORS entry; had it been "reserve a
@@ -175,8 +175,7 @@ await test("A1d. the APPROVED v4 script's own gate line is a gate, and v4 is the
   // settle one label short of FINAL_YES. Read from the script itself so
   // a future re-wording fails here, not on a live campaign.
   const v4 = findScript("registration", "v4");
-  assert.ok(v4, "the approved registration v4 script must be registered");
-  assert.equal(defaultScriptFor("registration").version, "v4", "v4 must be the default registration script");
+  assert.ok(v4, "the approved registration v4 script must stay registered for campaigns pinned to it");
   const V4_GATE = "Would you like me to reserve your free seat?";
   assert.ok(
     v4.systemPromptAppendix.includes(V4_GATE),
@@ -192,6 +191,47 @@ await test("A1d. the APPROVED v4 script's own gate line is a gate, and v4 is the
     ),
     caller("Yes."),
     agent("Perfect! I'll get your registration confirmed and send the joining details to you on WhatsApp and email."),
+  ]);
+
+  assert.equal(classification.outcomeType, "registered_confirmed");
+  assert.equal(classification.primaryReason, "confirmed_at_gate");
+  assert.equal(disposition, "FINAL_YES");
+  assert.equal(isFinalYes(classification, disposition), true);
+});
+
+await test("A1g. the APPROVED v5 script's gate line is a gate, and v5 is the default", () => {
+  // Same regression class as A1d, for the version that actually ships.
+  // v5 restructured the pitch into two exchanges and left the gate
+  // wording alone precisely BECAUSE "reserve your free seat" is the
+  // COMMIT_ANCHORS entry the sheet mirror and the end-of-call check
+  // both depend on. Read from the script itself so a future re-wording
+  // fails here, not on a live campaign.
+  const v5 = findScript("registration", "v5");
+  assert.ok(v5, "the approved registration v5 script must be registered");
+  assert.equal(
+    defaultScriptFor("registration").version,
+    "v5",
+    "v5 must be the default registration script",
+  );
+  const V5_GATE = "Would you like me to reserve your free seat?";
+  assert.ok(
+    v5.systemPromptAppendix.includes(V5_GATE),
+    "this test's gate line must be the one in the approved v5 script",
+  );
+
+  // The v5 shape: invitation, a question about THEM, their answer, then
+  // the last fact and the gate. The middle exchange must not disturb it.
+  const { classification, disposition } = settle([
+    agent(GREETING),
+    agent(
+      "I'm calling to invite you to a free live workshop this Sunday, 6th September at 11 AM. " +
+        "We'll build a complete online business live — the website, the product, checkout and " +
+        "payments — all from a phone. Have you tried putting something online before?",
+    ),
+    caller("Nahi, kabhi nahi kiya."),
+    agent(`Then this is a good place to start — you won't need any coding or design skills. ${V5_GATE}`),
+    caller("Haan, kar dijiye."),
+    agent("Perfect! I'll get your registration confirmed and send the joining details on WhatsApp and email."),
   ]);
 
   assert.equal(classification.outcomeType, "registered_confirmed");
@@ -258,7 +298,8 @@ await test("A1f. the APPROVED reminder v2 gate line is a gate, and v2 is the rem
     "the approved clarification line must be in the reminder v2 script",
   );
   // Existing registration defaults and scripts are untouched.
-  assert.equal(defaultScriptFor("registration").version, "v4");
+  assert.equal(defaultScriptFor("registration").version, "v5");
+  assert.ok(findScript("registration", "v4"), "registration v4 must stay registered for pinned campaigns");
   assert.ok(findScript("reminder", "v1"), "reminder v1 must stay registered for pinned campaigns");
 
   const { classification, disposition } = settleReminder([

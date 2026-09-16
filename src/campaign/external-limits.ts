@@ -35,9 +35,12 @@ import { optionalEnv } from "../providers/shared/env";
 
 export const EXTERNAL_VENDORS = [
   "vobiz",
+  "plivo",
   "deepgram",
   "openai",
+  "google",
   "cartesia",
+  "elevenlabs",
   "sarvam",
   "smallest-ai",
 ] as const;
@@ -315,6 +318,132 @@ export function getExternalLimits(): readonly ExternalLimit[] {
       source: "src/core/session/cost-estimator.ts",
       matters:
         "Token counts are estimated from characters — neither adapter reports real usage — so LLM cost is an approximation on both sides.",
+      blocksScaling: false,
+    },
+  );
+
+  // ── PLIVO ─────────────────────────────────────────────────────────
+  limits.push(
+    {
+      id: "plivo.api",
+      vendor: "plivo",
+      limit: "API surface this integration actually uses",
+      status: "FROM_REPOSITORY",
+      repositoryValue:
+        `POST /Call/ with (from, to, answer_url) via the official SDK; ` +
+        `DELETE /Call/{call_uuid}/ for hangup; POST /Call/{call_uuid}/Record/ for recording; ` +
+        `GET /Account/ for health. answer_url = ${optionalEnv("PLIVO_ANSWER_URL", "(unset)")}`,
+      source: "src/providers/telephony/plivo.provider.ts",
+      matters:
+        "The hangup and recording calls are both keyed by the CallUUID, which only exists once the callee answers — not by the requestUuid that placing the call returns.",
+      blocksScaling: false,
+    },
+    {
+      id: "plivo.max_concurrent_channels",
+      vendor: "plivo",
+      limit: "Maximum simultaneous outbound calls / channels on the account",
+      status: "FROM_REPOSITORY",
+      repositoryValue: "50 simultaneous calls (confirmed by the operator)",
+      source: "Operator-confirmed account ceiling.",
+      matters:
+        "CAMPAIGN_GLOBAL_MAX_CONCURRENCY must sit below it. It is a ceiling, not a target: the configured global concurrency is unchanged by this figure being known, and raising it remains a deliberate act.",
+      blocksScaling: false,
+    },
+    {
+      id: "plivo.cps",
+      vendor: "plivo",
+      limit: "Permitted call attempts per second (origination rate)",
+      status: "NEEDS_EXTERNAL_CONFIRMATION",
+      repositoryValue: null,
+      matters:
+        "UNKNOWN, and deliberately not guessed. The concurrency ceiling being confirmed at 50 says nothing about the permitted origination rate; exceeding a carrier's CPS is a common cause of silent 4xx bursts and temporary blocks.",
+      confirmWith: "Plivo account manager / console.",
+      blocksScaling: true,
+    },
+    {
+      id: "plivo.price",
+      vendor: "plivo",
+      limit: "Price used by our estimator",
+      status: "FROM_REPOSITORY",
+      repositoryValue: usd(estimateTelephonyCost("plivo", 60), "connected minute"),
+      source: "src/core/session/cost-estimator.ts",
+      matters:
+        "An order-of-magnitude list-price placeholder, the same as Vobiz's. Replace with the contracted rate before quoting a cost-per-registration.",
+      blocksScaling: false,
+    },
+  );
+
+  // ── ELEVENLABS ────────────────────────────────────────────────────
+  limits.push(
+    {
+      id: "elevenlabs.model",
+      vendor: "elevenlabs",
+      limit: "Model and sample rate in use",
+      status: "FROM_REPOSITORY",
+      repositoryValue:
+        `ELEVENLABS_MODEL_ID = ${optionalEnv("ELEVENLABS_MODEL_ID", "eleven_flash_v2_5 (default)")}, ` +
+        `ELEVENLABS_SAMPLE_RATE_HZ = ${optionalEnv("ELEVENLABS_SAMPLE_RATE_HZ", "8000 (default)")}`,
+      source: ".env / src/providers/text-to-speech/elevenlabs.provider.ts",
+      matters:
+        "Rate limits are often per-model, and the 8 kHz default is what lets the bridge skip resampling entirely.",
+      blocksScaling: false,
+    },
+    {
+      id: "elevenlabs.limits",
+      vendor: "elevenlabs",
+      limit: "Concurrent synthesis requests permitted on the plan",
+      status: "NEEDS_EXTERNAL_CONFIRMATION",
+      repositoryValue: null,
+      matters:
+        "ElevenLabs meters concurrency by plan tier and it is the binding limit for a TTS lane. A throttled response is dead air mid-sentence.",
+      confirmWith: "ElevenLabs dashboard (subscription tier) / support.",
+      blocksScaling: true,
+    },
+    {
+      id: "elevenlabs.price",
+      vendor: "elevenlabs",
+      limit: "Price used by our estimator",
+      status: "FROM_REPOSITORY",
+      repositoryValue: usd(estimateTtsCost("elevenlabs", 1_000), "1,000 characters"),
+      source: "src/core/session/cost-estimator.ts",
+      matters: "Billed per character, so it is directly comparable to the Sarvam and Smallest AI lanes.",
+      blocksScaling: false,
+    },
+  );
+
+  // ── GOOGLE (GEMMA 4) ──────────────────────────────────────────────
+  limits.push(
+    {
+      id: "google.gemma_model",
+      vendor: "google",
+      limit: "Model in use for the Gemma lane",
+      status: "FROM_REPOSITORY",
+      repositoryValue: `GEMMA_MODEL = ${optionalEnv("GEMMA_MODEL", "gemma-4-31b-it (default)")}`,
+      source: ".env / src/providers/language-model/gemma.provider.ts",
+      matters:
+        "Gemma 4 is a thinking model: its reasoning parts are filtered out by the adapter, but they are still generated, so they cost latency on every turn.",
+      blocksScaling: false,
+    },
+    {
+      id: "google.gemma_rate_limits",
+      vendor: "google",
+      limit: "Requests-per-minute and tokens-per-minute on the AI Studio key",
+      status: "NEEDS_EXTERNAL_CONFIRMATION",
+      repositoryValue: null,
+      matters:
+        "AI Studio free-tier keys are rate-limited per minute. At campaign concurrency every turn of every call is a request, and a 429 mid-conversation is dead air.",
+      confirmWith: "Google AI Studio console (quota page) for the key in GEMMA_API_KEY.",
+      blocksScaling: true,
+    },
+    {
+      id: "google.gemma_price",
+      vendor: "google",
+      limit: "Price used by our estimator",
+      status: "NEEDS_EXTERNAL_CONFIRMATION",
+      repositoryValue: null,
+      matters:
+        "UNKNOWN, and deliberately not invented. Gemma is free for this account's present usage, so the estimator reports its LLM cost as UNPRICED rather than as $0 — a free tier is not a commercial rate, and reporting one would make a Gemma lane look cheaper than it can be shown to be. Any cost comparison against GPT-5.1 is incomplete until a rate is confirmed.",
+      confirmWith: "Google AI Studio / Vertex pricing for the served Gemma model, once usage leaves the free tier.",
       blocksScaling: false,
     },
   );

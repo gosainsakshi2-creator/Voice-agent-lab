@@ -711,9 +711,9 @@ if (!process.env["DATABASE_URL"]) {
       const contactId = await seedContact(SARVAM);
       const contact = await claimOne(contactId);
 
-      const first = await createAttempt(campaignId, contact, "vobiz");
+      const first = await createAttempt(campaignId, contact, "vobiz", "gpt-5.1");
       assert.ok(first, "the first attempt is created");
-      const second = await createAttempt(campaignId, contact, "vobiz");
+      const second = await createAttempt(campaignId, contact, "vobiz", "gpt-5.1");
       assert.equal(second, undefined, "the unique constraint must refuse the second — no duplicate call");
 
       // And a second runner holding a stale claim does not dial either.
@@ -789,7 +789,7 @@ if (!process.env["DATABASE_URL"]) {
 
       const contact = await claimOne(contactId);
       assert.equal(contact.nextAttemptNumber, 2, "the next attempt number must not collide with the orphan");
-      const retry = await createAttempt(campaignId, contact, "vobiz");
+      const retry = await createAttempt(campaignId, contact, "vobiz", "gpt-5.1");
       assert.ok(retry, "the retry attempt is creatable — before this fix it deadlocked on the unique constraint");
       assert.equal(retry.attemptNumber, 2);
       await query("DELETE FROM contacts WHERE id = $1", [contactId]);

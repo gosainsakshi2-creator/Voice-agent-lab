@@ -194,6 +194,18 @@ interface ThinkingAndSpeakingResult {
   readonly reportedCompletionTokens?: number;
   /** FIX #7A — number of sentence-level TTS invocations this turn produced (1 on the non-streaming LLM path). Telemetry only. */
   readonly ttsChunkCount: number;
+
+  // --- PHASE 3 BATCH 2A: what the vendor SDK actually did on this
+  // turn's request. Observed, never configured. ---
+
+  /** HTTP attempts the SDK made. 1 means no retry occurred. */
+  readonly llmAttempts?: number;
+  /** Attempts beyond the first. */
+  readonly llmRetries?: number;
+  /** Measured wall clock spent on failed attempts plus backoff sleeps. */
+  readonly llmRetryOverheadMs?: number;
+  /** Compact non-sensitive reasons, e.g. `"500,500"`. */
+  readonly llmRetryReasons?: string;
 }
 
 // ------------------------------------------------------------------
@@ -2176,6 +2188,37 @@ export class ConversationPipeline {
             ? this.firstAudioQueuedAtMs - turn.userSpeechEndedAtMs
             : undefined;
 
+        // PHASE 3 BATCH 1 — the three boundaries the per-turn console
+        // trace already printed and then threw away. Each is a
+        // subtraction of two timestamps that were BOTH captured at the
+        // event they name; none is derived from a total, and an
+        // absent endpoint on either side yields `undefined` rather
+        // than a substituted value. `positiveOrUndefined` in the
+        // collector then discards any negative result, so a stale or
+        // reordered stamp reports "not measured" instead of a 0.
+        //
+        // `endpointToReleaseMs` is undefined on a turn released by
+        // INFERENCE (the silence window simply expiring with no
+        // explicit provider claim) — that is a real distinction, not a
+        // gap, and collapsing it to 0 would report the detector as
+        // instant on exactly the turns where it waited longest.
+        const endpointToReleaseMs =
+          turn.endpointEvidenceAtMs !== undefined
+            ? turn.turnReleasedAtMs - turn.endpointEvidenceAtMs
+            : undefined;
+        const speechEndToReleaseMs =
+          turn.userSpeechEndedAtMs !== undefined
+            ? turn.turnReleasedAtMs - turn.userSpeechEndedAtMs
+            : undefined;
+        // The span `total` stops short of: queued -> actually sent by
+        // the bridge pump. Absent when this turn produced no audio, or
+        // when no bridge is attached (dashboard/mock sessions).
+        const playbackStartupMs =
+          this.firstAudioQueuedAtMs !== undefined &&
+          this.record.firstOutboundFrameAtMs !== undefined
+            ? this.record.firstOutboundFrameAtMs - this.firstAudioQueuedAtMs
+            : undefined;
+
         this.record.metrics.recordTurn({
           turnIndex: this.record.turnIndex++,
           sttMs: turn.sttLagMs,
@@ -2185,12 +2228,19 @@ export class ConversationPipeline {
           llmGenerationMs: result.llmGenerationMs,
           ttsSynthesisMs: result.ttsSynthesisMs,
           userSpeechMs: turn.userSpeechMs,
+          endpointToReleaseMs,
+          speechEndToReleaseMs,
+          playbackStartupMs,
           sttCostUsd: turn.sttCostUsd,
           llmCostUsd: result.llmCostUsd,
           ttsCostUsd: result.ttsCostUsd,
           promptTokens: result.reportedPromptTokens,
           cachedPromptTokens: result.cachedPromptTokens,
           reasoningTokens: result.reasoningTokens,
+          llmAttempts: result.llmAttempts,
+          llmRetries: result.llmRetries,
+          llmRetryOverheadMs: result.llmRetryOverheadMs,
+          llmRetryReasons: result.llmRetryReasons,
         });
 
         // Last, after everything this turn owns has been committed and
@@ -2772,6 +2822,12 @@ export class ConversationPipeline {
     this.markedFirstSentenceThisTurn = false;
     this.markedTtsRequestThisTurn = false;
     this.firstAudioQueuedAtMs = undefined;
+    // PHASE 3 BATCH 1 — cleared HERE, alongside `firstAudioQueuedAtMs`,
+    // because the two are only meaningful as a pair: the playback
+    // startup span is the gap between them, and a stale value from the
+    // previous turn would measure the gap across a turn boundary. One
+    // reset site for both, so they cannot fall out of step.
+    this.record.firstOutboundFrameAtMs = undefined;
   }
 
   /**
@@ -4746,6 +4802,13 @@ await this.drainPlayback(speakingSignal, true);
     let cachedPromptTokens: number | undefined;
     let reasoningTokens: number | undefined;
     let reportedCompletionTokens: number | undefined;
+    // PHASE 3 BATCH 2A — retry attribution, carried through from the
+    // provider's final event exactly as the usage counts above are.
+    // Observed, never configured: nothing here alters a retry.
+    let llmAttempts: number | undefined;
+    let llmRetries: number | undefined;
+    let llmRetryOverheadMs: number | undefined;
+    let llmRetryReasons: string | undefined;
     /** FIX #7A — telemetry only: count of sentence-level synthesizeAndPlay invocations this turn. */
     let ttsChunkCount = 0;
     // Set once contamination is detected mid-stream: stops speaking any
@@ -4862,6 +4925,10 @@ await this.drainPlayback(speakingSignal, true);
           cachedPromptTokens = event.cachedPromptTokens;
           reasoningTokens = event.reasoningTokens;
           reportedCompletionTokens = event.completionTokens;
+          llmAttempts = event.llmAttempts;
+          llmRetries = event.llmRetries;
+          llmRetryOverheadMs = event.llmRetryOverheadMs;
+          llmRetryReasons = event.llmRetryReasons;
         }
 
         if (contaminated || speakingSignal?.aborted) break;
@@ -4913,6 +4980,10 @@ await this.drainPlayback(speakingSignal, true);
         ...(cachedPromptTokens !== undefined ? { cachedPromptTokens } : {}),
         ...(reasoningTokens !== undefined ? { reasoningTokens } : {}),
         ...(reportedCompletionTokens !== undefined ? { reportedCompletionTokens } : {}),
+        ...(llmAttempts !== undefined ? { llmAttempts } : {}),
+        ...(llmRetries !== undefined ? { llmRetries } : {}),
+        ...(llmRetryOverheadMs !== undefined ? { llmRetryOverheadMs } : {}),
+        ...(llmRetryReasons !== undefined ? { llmRetryReasons } : {}),
       };
     }
 
@@ -4972,6 +5043,10 @@ await this.drainPlayback(speakingSignal, true);
       ...(cachedPromptTokens !== undefined ? { cachedPromptTokens } : {}),
       ...(reasoningTokens !== undefined ? { reasoningTokens } : {}),
       ...(reportedCompletionTokens !== undefined ? { reportedCompletionTokens } : {}),
+      ...(llmAttempts !== undefined ? { llmAttempts } : {}),
+      ...(llmRetries !== undefined ? { llmRetries } : {}),
+      ...(llmRetryOverheadMs !== undefined ? { llmRetryOverheadMs } : {}),
+      ...(llmRetryReasons !== undefined ? { llmRetryReasons } : {}),
     };
   }
 

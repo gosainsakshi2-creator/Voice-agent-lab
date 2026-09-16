@@ -36,7 +36,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { NoCallsBanner } from "@/components/campaign/no-calls-banner";
-import { CAMPAIGN_TTS_PROVIDERS, type CampaignType } from "@/campaign/domain/campaign-types";
+import {
+  CAMPAIGN_LLM_PROVIDERS,
+  CAMPAIGN_TELEPHONY_PROVIDERS,
+  CAMPAIGN_TTS_PROVIDERS,
+  type CampaignType,
+} from "@/campaign/domain/campaign-types";
 import { agentsByProvider } from "@/campaign/script/agent-identity";
 
 interface CampaignSummary {
@@ -64,23 +69,169 @@ interface ScriptSummary {
 
 const PROVIDER_LABEL: Record<string, string> = {
   cartesia: "Cartesia",
+  elevenlabs: "ElevenLabs",
   sarvam: "Sarvam",
   "smallest-ai": "Smallest AI",
+  "gpt-5.1": "GPT-5.1",
+  "gemma-4": "Gemma 4",
+  vobiz: "Vobiz",
+  plivo: "Plivo",
 };
 
 /** Neutral shades rather than a new palette — the bar shows proportion, not identity. */
 const PROVIDER_BAR: Record<string, string> = {
   cartesia: "bg-foreground/75",
-  sarvam: "bg-foreground/50",
+  elevenlabs: "bg-foreground/60",
+  sarvam: "bg-foreground/45",
   "smallest-ai": "bg-foreground/25",
+  "gpt-5.1": "bg-foreground/70",
+  "gemma-4": "bg-foreground/35",
+  vobiz: "bg-foreground/70",
+  plivo: "bg-foreground/35",
 };
 
-/** Even thirds that still total exactly 100. */
+/** Even quarters. Four 25s total exactly 100, so no remainder has to be parked anywhere. */
 const DEFAULT_PERCENTS: Record<string, number> = {
-  cartesia: 33.34,
-  sarvam: 33.33,
-  "smallest-ai": 33.33,
+  cartesia: 25,
+  elevenlabs: 25,
+  sarvam: 25,
+  "smallest-ai": 25,
 };
+
+/** Even halves, as specified for a new campaign. */
+const DEFAULT_LLM_PERCENTS: Record<string, number> = {
+  "gpt-5.1": 50,
+  "gemma-4": 50,
+};
+
+/**
+ * Telephony defaults to Vobiz outright, NOT to an even split.
+ *
+ * Vobiz is the carrier this programme's campaigns already run on, and
+ * the previous behaviour — no selector at all, server-side fallback to
+ * "vobiz" — is exactly this. Defaulting to 50/50 would silently move
+ * half of every new campaign's calls onto a different carrier on the
+ * strength of a UI default, which is a decision for whoever creates the
+ * campaign to make deliberately.
+ */
+const DEFAULT_TELEPHONY_PERCENTS: Record<string, number> = {
+  vobiz: 100,
+  plivo: 0,
+};
+
+/**
+ * One percentage-allocation editor, used once per provider dimension.
+ *
+ * Extracted rather than copied three times: the markup below is exactly
+ * what the TTS block already was — same bar, same number inputs, same
+ * "Even split" button, same total badge — so all three dimensions read
+ * and behave identically and none of them can drift. No new visual
+ * language, no new interaction, and no new settings.
+ */
+function AllocationEditor({
+  idPrefix,
+  providers,
+  percents,
+  onChange,
+  evenSplit,
+  disabled,
+  footnote,
+}: {
+  idPrefix: string;
+  providers: readonly string[];
+  percents: Record<string, number>;
+  onChange: (next: Record<string, number>) => void;
+  evenSplit: Record<string, number>;
+  disabled: boolean;
+  footnote: string;
+}) {
+  const total = providers.reduce((sum, provider) => {
+    const value = percents[provider] ?? 0;
+    return sum + (Number.isFinite(value) ? value : 0);
+  }, 0);
+  const totalIsValid = Math.abs(total - 100) < 1e-6;
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <span className={`font-mono text-[12px] ${totalIsValid ? "text-muted-foreground" : "text-destructive"}`}>
+            {total.toFixed(2)}%
+          </span>
+          {totalIsValid ? (
+            <Badge variant="outline" className="text-[10px]">
+              totals 100%
+            </Badge>
+          ) : (
+            <span className="text-[12px] text-destructive">must total exactly 100%</span>
+          )}
+        </div>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={() => onChange(evenSplit)}
+          disabled={disabled}
+        >
+          <Scale className="size-4" aria-hidden />
+          Reset
+        </Button>
+      </div>
+
+      {/* Proportion, at a glance. Static widths, no animation. */}
+      <div
+        className="flex h-2 w-full overflow-hidden rounded-full bg-muted"
+        role="img"
+        aria-label={providers
+          .map((provider) => `${PROVIDER_LABEL[provider] ?? provider} ${(percents[provider] ?? 0).toFixed(2)}%`)
+          .join(", ")}
+      >
+        {providers.map((provider) => {
+          const share = Math.max(0, Math.min(100, percents[provider] ?? 0));
+          return share > 0 ? (
+            <span
+              key={provider}
+              className={PROVIDER_BAR[provider] ?? "bg-foreground/40"}
+              style={{ width: `${share}%` }}
+            />
+          ) : null;
+        })}
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {providers.map((provider) => (
+          <div key={provider} className="flex flex-col gap-1.5 rounded-lg border p-3">
+            <div className="flex items-center gap-2">
+              <span className={`size-2 rounded-full ${PROVIDER_BAR[provider] ?? "bg-foreground/40"}`} aria-hidden />
+              <Label htmlFor={`${idPrefix}-${provider}`} className="text-[12px]">
+                {PROVIDER_LABEL[provider] ?? provider}
+              </Label>
+            </div>
+            <Input
+              id={`${idPrefix}-${provider}`}
+              type="number"
+              min={0}
+              max={100}
+              step="0.01"
+              inputMode="decimal"
+              className="font-mono"
+              value={percents[provider] ?? 0}
+              aria-invalid={!totalIsValid}
+              onChange={(e) => onChange({ ...percents, [provider]: Number(e.target.value) })}
+            />
+          </div>
+        ))}
+      </div>
+
+      <p className="text-[11px] leading-relaxed text-muted-foreground">{footnote}</p>
+    </div>
+  );
+}
+
+/** How many providers in a split are actually going to be used, i.e. have a share above 0%. */
+function activeCount(percents: Record<string, number>): number {
+  return Object.values(percents).filter((value) => Number.isFinite(value) && value > 0).length;
+}
 
 const CAMPAIGN_TYPE_COPY: Record<CampaignType, { title: string; detail: string }> = {
   registration: {
@@ -106,6 +257,9 @@ export function CampaignList() {
   const [language, setLanguage] = useState("en");
   const [scriptKey, setScriptKey] = useState<string | undefined>();
   const [percents, setPercents] = useState<Record<string, number>>(DEFAULT_PERCENTS);
+  const [llmPercents, setLlmPercents] = useState<Record<string, number>>(DEFAULT_LLM_PERCENTS);
+  const [telephonyPercents, setTelephonyPercents] =
+    useState<Record<string, number>>(DEFAULT_TELEPHONY_PERCENTS);
   // Derived, not chosen: each provider's agent name follows the gender
   // of its already-configured voice, so the voice and the name always
   // agree. Same resolver the server uses.
@@ -143,13 +297,23 @@ export function CampaignList() {
     return match ?? scriptsForType[0];
   }, [scriptsForType, scriptKey]);
 
-  const total = useMemo(
-    () => Object.values(percents).reduce((sum, value) => sum + (Number.isFinite(value) ? value : 0), 0),
-    [percents],
-  );
+  const sumOf = (values: Record<string, number>): number =>
+    Object.values(values).reduce((sum, value) => sum + (Number.isFinite(value) ? value : 0), 0);
+
+  const total = useMemo(() => sumOf(percents), [percents]);
+  const llmTotal = useMemo(() => sumOf(llmPercents), [llmPercents]);
+  const telephonyTotal = useMemo(() => sumOf(telephonyPercents), [telephonyPercents]);
+
   const totalIsValid = Math.abs(total - 100) < 1e-6;
+  const llmTotalIsValid = Math.abs(llmTotal - 100) < 1e-6;
+  const telephonyTotalIsValid = Math.abs(telephonyTotal - 100) < 1e-6;
   const nameIsValid = name.trim().length > 0;
-  const canCreate = !creating && nameIsValid && totalIsValid;
+  // Every dimension has to be valid: the server validates all three and
+  // would reject the whole request, so letting the button through on a
+  // bad LLM or carrier split would only produce a round trip and an
+  // error banner.
+  const canCreate =
+    !creating && nameIsValid && totalIsValid && llmTotalIsValid && telephonyTotalIsValid;
 
   const create = useCallback(async () => {
     setCreating(true);
@@ -164,6 +328,8 @@ export function CampaignList() {
           campaignType,
           language,
           providerAllocation: percents,
+          llmAllocation: llmPercents,
+          telephonyAllocation: telephonyPercents,
           // The endpoint already accepts these and falls back to the
           // default script for the type when they are absent; sending
           // the selection explicitly makes the choice visible without
@@ -392,92 +558,55 @@ export function CampaignList() {
 
           <Separator />
 
-          {/* ── 4. How the contacts are split ──────────────────────── */}
+          {/* ── 4. How the contacts are split across TTS ───────────── */}
           <FormSection
             step={4}
-            title="Provider allocation"
-            hint="Percentages, never counts. A contact is locked to its provider for every attempt it ever gets."
+            title="TTS provider allocation"
+            hint="Percentages, never counts. A contact is locked to its TTS provider for every attempt it ever gets."
           >
-            <div className="flex flex-col gap-4">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <span
-                    className={`font-mono text-[12px] ${totalIsValid ? "text-muted-foreground" : "text-destructive"}`}
-                  >
-                    {total.toFixed(2)}%
-                  </span>
-                  {totalIsValid ? (
-                    <Badge variant="outline" className="text-[10px]">
-                      totals 100%
-                    </Badge>
-                  ) : (
-                    <span className="text-[12px] text-destructive">must total exactly 100%</span>
-                  )}
-                </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setPercents(DEFAULT_PERCENTS)}
-                  disabled={creating}
-                >
-                  <Scale className="size-4" aria-hidden />
-                  Even split
-                </Button>
-              </div>
+            <AllocationEditor
+              idPrefix="pct"
+              providers={CAMPAIGN_TTS_PROVIDERS}
+              percents={percents}
+              onChange={setPercents}
+              evenSplit={DEFAULT_PERCENTS}
+              disabled={creating}
+              footnote="Exact contact counts are computed by largest-remainder apportionment at import time, so they always sum to the imported total for any list size."
+            />
+          </FormSection>
 
-              {/* Proportion, at a glance. Static widths, no animation. */}
-              <div
-                className="flex h-2 w-full overflow-hidden rounded-full bg-muted"
-                role="img"
-                aria-label={CAMPAIGN_TTS_PROVIDERS.map(
-                  (provider) => `${PROVIDER_LABEL[provider] ?? provider} ${(percents[provider] ?? 0).toFixed(2)}%`,
-                ).join(", ")}
-              >
-                {CAMPAIGN_TTS_PROVIDERS.map((provider) => {
-                  const share = Math.max(0, Math.min(100, percents[provider] ?? 0));
-                  return share > 0 ? (
-                    <span
-                      key={provider}
-                      className={PROVIDER_BAR[provider] ?? "bg-foreground/40"}
-                      style={{ width: `${share}%` }}
-                    />
-                  ) : null;
-                })}
-              </div>
+          {/* ── 5. Which model answers ─────────────────────────────── */}
+          <FormSection
+            step={5}
+            title="LLM provider allocation"
+            hint="Campaign-wide, decided per call. A contact is NOT locked to a model, but every attempt for the same number uses the same one."
+          >
+            <AllocationEditor
+              idPrefix="llm-pct"
+              providers={CAMPAIGN_LLM_PROVIDERS}
+              percents={llmPercents}
+              onChange={setLlmPercents}
+              evenSplit={DEFAULT_LLM_PERCENTS}
+              disabled={creating}
+              footnote="The model that actually answered is recorded on every attempt, so latency and outcomes can be compared per model afterwards. Gemma has no confirmed commercial rate, so its LLM cost is reported as unknown rather than as zero."
+            />
+          </FormSection>
 
-              <div className="grid gap-3 sm:grid-cols-3">
-                {CAMPAIGN_TTS_PROVIDERS.map((provider) => (
-                  <div key={provider} className="flex flex-col gap-1.5 rounded-lg border p-3">
-                    <div className="flex items-center gap-2">
-                      <span className={`size-2 rounded-full ${PROVIDER_BAR[provider] ?? "bg-foreground/40"}`} aria-hidden />
-                      <Label htmlFor={`pct-${provider}`} className="text-[12px]">
-                        {PROVIDER_LABEL[provider] ?? provider}
-                      </Label>
-                    </div>
-                    <Input
-                      id={`pct-${provider}`}
-                      type="number"
-                      min={0}
-                      max={100}
-                      step="0.01"
-                      inputMode="decimal"
-                      className="font-mono"
-                      value={percents[provider] ?? 0}
-                      aria-invalid={!totalIsValid}
-                      onChange={(e) =>
-                        setPercents((prev) => ({ ...prev, [provider]: Number(e.target.value) }))
-                      }
-                    />
-                  </div>
-                ))}
-              </div>
-
-              <p className="text-[11px] leading-relaxed text-muted-foreground">
-                Exact contact counts are computed by largest-remainder apportionment at import time, so
-                they always sum to the imported total for any list size.
-              </p>
-            </div>
+          {/* ── 6. Which carrier dials ─────────────────────────────── */}
+          <FormSection
+            step={6}
+            title="Telephony provider allocation"
+            hint="Campaign-wide, decided per call. Defaults to Vobiz — the carrier these campaigns already run on."
+          >
+            <AllocationEditor
+              idPrefix="tel-pct"
+              providers={CAMPAIGN_TELEPHONY_PROVIDERS}
+              percents={telephonyPercents}
+              onChange={setTelephonyPercents}
+              evenSplit={DEFAULT_TELEPHONY_PERCENTS}
+              disabled={creating}
+              footnote="A carrier at 0% is never dialled. Every carrier given a share must have its credentials configured, or the campaign is blocked by the production-readiness check before it can start."
+            />
           </FormSection>
 
           {/* ── Validation, result, and the primary action ──────────── */}
@@ -519,7 +648,9 @@ export function CampaignList() {
               {nameIsValid
                 ? `${CAMPAIGN_TYPE_COPY[campaignType].title} · ${language === "hi" ? "Hindi" : "English"} · ${
                     selectedScript ? `${selectedScript.id} ${selectedScript.version}` : "no script"
-                  } · ${CAMPAIGN_TTS_PROVIDERS.length}-provider split`
+                  } · ${activeCount(percents)} TTS · ${activeCount(llmPercents)} LLM · ${activeCount(
+                    telephonyPercents,
+                  )} carrier`
                 : "Give the campaign a name to continue."}
             </p>
             <Button onClick={() => void create()} disabled={!canCreate}>

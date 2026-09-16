@@ -91,6 +91,42 @@ export function toE164(rawDestination: string, fromNumber: string): string {
   return `+${digits}`;
 }
 
+/**
+ * How long a `requestUuid` is remembered as "this call has not been
+ * answered yet". Comfortably longer than any ring timeout (the
+ * campaign's is 35s, Plivo's own default is 120s), short enough that
+ * the map cannot grow without bound on a long-running process.
+ */
+const REQUEST_UUID_TTL_MS = 10 * 60 * 1000;
+
+/**
+ * Appends the session id to the configured answer URL.
+ *
+ * WHY, and it is the difference between Plivo working for campaigns
+ * and not working at all:
+ *
+ * `PLIVO_ANSWER_URL` is ONE static URL shared by every call, so the
+ * webhook it fires cannot say which session it belongs to. That was
+ * previously resolved by `server/pending-call.ts`, a single-slot
+ * process-global FIFO whose own header states the assumption it was
+ * built on — "the Dashboard only ever runs one active call at a time".
+ * A campaign runs several concurrently, and each `registerPendingCall`
+ * clears the queue, so concurrent calls would claim each other's
+ * sessions or find none and be answered with `<Hangup/>`.
+ *
+ * Carrying the session id on the URL removes the shared state
+ * entirely, exactly as the Vobiz provider already does. Plivo's REST
+ * API takes the answer URL PER CALL — it is the third argument to
+ * `calls.create` — so this needs no account or Application change.
+ *
+ * An existing query string is preserved rather than clobbered, so an
+ * answer URL that already carries parameters keeps them.
+ */
+export function withSessionId(answerUrl: string, sessionId: string): string {
+  const separator = answerUrl.includes("?") ? "&" : "?";
+  return `${answerUrl}${separator}sessionId=${encodeURIComponent(sessionId)}`;
+}
+
 export class PlivoTelephonyProvider implements TelephonyProvider {
   readonly descriptor: ProviderDescriptor = {
     category: ProviderCategory.TELEPHONY,
@@ -102,6 +138,16 @@ export class PlivoTelephonyProvider implements TelephonyProvider {
 
   private readonly client: PlivoClient;
   private readonly config: PlivoEnvConfig;
+
+  /**
+   * `requestUuid`s this provider has issued that have not been
+   * superseded by a CallUUID, with the time they were issued.
+   *
+   * Exists only so `endCall` can tell the two identifiers apart — see
+   * there. Pruned on every `startCall`, so a process that runs for
+   * weeks does not accumulate entries for calls that ended long ago.
+   */
+  private readonly pendingRequestUuids = new Map<string, number>();
 
   constructor(config: PlivoEnvConfig = loadEnvConfig()) {
     this.config = config;
@@ -178,7 +224,11 @@ export class PlivoTelephonyProvider implements TelephonyProvider {
       response = await this.client.calls.create(
         fromNumber,
         destination,
-        this.config.answerUrl,
+        // PER-CALL answer URL, carrying this session's id — see
+        // `withSessionId`. This is the argument that makes concurrent
+        // campaign calls correlate correctly; it is passed on the call
+        // itself, so no Plivo Application setting changes.
+        withSessionId(this.config.answerUrl, params.sessionId),
       );
     } catch (error) {
       const details = error as { status?: number; statusText?: string; moreInfo?: string };
@@ -206,14 +256,67 @@ export class PlivoTelephonyProvider implements TelephonyProvider {
       );
     }
 
+    // Remembered so `endCall` can tell a not-yet-answered call from a
+    // live one. Pruned here rather than on a timer: the map only grows
+    // when a call is placed, so that is the only moment it can need it.
+    const now = Date.now();
+    for (const [uuid, issuedAt] of this.pendingRequestUuids) {
+      if (now - issuedAt > REQUEST_UUID_TTL_MS) this.pendingRequestUuids.delete(uuid);
+    }
+    this.pendingRequestUuids.set(providerCallId, now);
+
     return {
       sessionId: params.sessionId,
       providerCallId,
     };
   }
 
+  /**
+   * Ends a call, using the identifier Plivo expects for the state the
+   * call is actually in.
+   *
+   * THE TWO IDENTIFIERS ARE NOT INTERCHANGEABLE, and treating them as
+   * one was a real defect on this path — the same one already fixed for
+   * Vobiz (see `vobiz-call-control-tests.ts`):
+   *
+   *   requestUuid  returned by `calls.create`. Exists from the moment
+   *                the call is PLACED. Cancelled with
+   *                `calls.cancel` -> DELETE /Request/{request_uuid}/
+   *   CallUUID     exists only once the callee ANSWERS. Hung up with
+   *                `calls.hangup` -> DELETE /Call/{call_uuid}/
+   *
+   * This method previously always called `hangup` with whatever the
+   * handle carried, and the handle carried the `requestUuid` — so every
+   * programmatic hangup was a DELETE on a /Call/ id that does not
+   * exist. Plivo answered 404, the session manager's `.catch()`
+   * swallowed it, and because the answer XML sets
+   * `keepCallAlive="true"` the carrier leg stayed up until the person
+   * hung up by themselves. Every campaign ending — the closing line,
+   * the final-answer hangup, the silence and duration watchdogs —
+   * failed this way.
+   *
+   * The handle is re-keyed to the CallUUID by the media bridge the
+   * moment the stream opens (`manager.setProviderCallId`), so by the
+   * time a conversation can end, `providerCallId` is the CallUUID and
+   * `hangup` is correct. The `cancel` branch covers the other case,
+   * which is just as real: a ring timeout ends a call that was never
+   * answered, and there `requestUuid` is still all that exists.
+   */
   async endCall(handle: TelephonyCallHandle): Promise<void> {
-    await this.client.calls.hangup(handle.providerCallId);
+    const id = handle.providerCallId;
+    const neverAnswered = this.pendingRequestUuids.has(id);
+    this.pendingRequestUuids.delete(id);
+
+    // eslint-disable-next-line no-console
+    console.log(
+      `[Plivo] endCall: ${neverAnswered ? `cancelling unanswered request_uuid=${id}` : `hanging up call_uuid=${id}`}`,
+    );
+
+    if (neverAnswered) {
+      await this.client.calls.cancel(id);
+      return;
+    }
+    await this.client.calls.hangup(id);
   }
 
   async checkHealth(): Promise<ProviderHealthStatus> {

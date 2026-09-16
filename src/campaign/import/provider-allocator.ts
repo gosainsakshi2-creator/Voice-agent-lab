@@ -28,54 +28,31 @@ import { createHash } from "node:crypto";
 
 import {
   CAMPAIGN_TTS_PROVIDERS,
-  isCampaignTtsProvider,
   type CampaignTtsProvider,
   type ProviderAllocation,
 } from "../domain/campaign-types";
+import { AllocationError, validatePercentageAllocation } from "../domain/allocation";
 
-export class AllocationError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "AllocationError";
-  }
-}
+/**
+ * Re-exported, not moved.
+ *
+ * The class itself now lives in `domain/allocation.ts` so the LLM and
+ * telephony dimensions can raise the same type, but every existing
+ * `import { AllocationError } from ".../provider-allocator"` in the
+ * API routes and the tests keeps resolving exactly as it did.
+ */
+export { AllocationError };
 
-/** Percentages must be non-negative, sum to 100, and not all be zero. */
+/**
+ * Percentages must be non-negative, sum to 100, and not all be zero.
+ *
+ * The rules moved to `validatePercentageAllocation`; they did not
+ * change. This wrapper pins the TTS dimension's id list and the
+ * "campaign providers" wording, so the messages callers and tests
+ * already assert on are byte-for-byte what they were.
+ */
 export function validateAllocation(allocation: ProviderAllocation): ReadonlyArray<[CampaignTtsProvider, number]> {
-  const entries: Array<[CampaignTtsProvider, number]> = [];
-
-  for (const [provider, percent] of Object.entries(allocation)) {
-    if (!isCampaignTtsProvider(provider)) {
-      throw new AllocationError(
-        `"${provider}" is not one of the campaign providers (${CAMPAIGN_TTS_PROVIDERS.join(", ")}).`,
-      );
-    }
-    if (typeof percent !== "number" || !Number.isFinite(percent)) {
-      throw new AllocationError(`Allocation for "${provider}" must be a number.`);
-    }
-    if (percent < 0) {
-      throw new AllocationError(`Allocation for "${provider}" cannot be negative.`);
-    }
-    entries.push([provider, percent]);
-  }
-
-  if (entries.length === 0) {
-    throw new AllocationError("At least one provider must be allocated.");
-  }
-
-  const total = entries.reduce((sum, [, percent]) => sum + percent, 0);
-  // Percentages like 33.33 x3 cannot sum to exactly 100 in binary
-  // floating point, so compare against a tolerance rather than ===.
-  if (Math.abs(total - 100) > 1e-6) {
-    throw new AllocationError(`Allocation must total 100%. It currently totals ${total.toFixed(4)}%.`);
-  }
-
-  if (!entries.some(([, percent]) => percent > 0)) {
-    throw new AllocationError("At least one provider must have an allocation above 0%.");
-  }
-
-  // Stable order so every downstream tie-break is deterministic.
-  return entries.sort((a, b) => a[0].localeCompare(b[0]));
+  return validatePercentageAllocation(allocation, CAMPAIGN_TTS_PROVIDERS, "campaign providers");
 }
 
 /**

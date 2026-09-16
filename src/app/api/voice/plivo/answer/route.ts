@@ -48,11 +48,35 @@ function startRecordingInBackground(callUuid: string | undefined, sessionId: str
  * Plivo what to do next — here, always "open a bidirectional Media
  * Stream back to this app".
  */
-async function respondToAnswer(callUuid: string | undefined): Promise<NextResponse> {
+async function respondToAnswer(
+  callUuid: string | undefined,
+  sessionIdFromQuery: string | undefined,
+): Promise<NextResponse> {
   // eslint-disable-next-line no-console
-  console.log(`[plivo-answer] webhook hit, CallUUID="${callUuid}"`);
+  console.log(
+    `[plivo-answer] webhook hit, CallUUID="${callUuid}" sessionId="${sessionIdFromQuery ?? "(not on URL)"}"`,
+  );
 
-  const sessionId = claimPendingSession(callUuid);
+  // ── Session correlation, in precedence order ──────────────────────
+  //
+  //   1. THE SESSION ID ON THE URL. `PlivoTelephonyProvider.startCall`
+  //      now puts it there per call, so the webhook identifies its own
+  //      session with no shared state at all. This is the only path
+  //      that is safe at campaign concurrency, and it is the same
+  //      mechanism Vobiz already uses.
+  //
+  //   2. THE PENDING-CALL FIFO. Kept strictly as a fallback so the
+  //      Dashboard keeps working unchanged — including for a call
+  //      already in flight across a deploy, and for an answer URL
+  //      configured in Plivo's console (rather than passed per call)
+  //      that therefore arrives with no query string. It remains a
+  //      single-slot queue and is still only correct for one call at a
+  //      time, which is all the Dashboard ever does.
+  //
+  // `claimPendingSession` is deliberately NOT called when the URL
+  // already answered the question: consuming the queue entry there
+  // would let a campaign call steal the Dashboard's pending slot.
+  const sessionId = sessionIdFromQuery ?? claimPendingSession(callUuid);
   if (!sessionId) {
     // eslint-disable-next-line no-console
     console.log(`[plivo-answer] no pending session found for CallUUID="${callUuid}" -> replying <Hangup/>`);
@@ -84,9 +108,13 @@ async function respondToAnswer(callUuid: string | undefined): Promise<NextRespon
 }
 
 export async function POST(request: Request) {
+  // The session id rides on the URL even for a POST: it is part of the
+  // answer URL Plivo was given when the call was placed, not part of
+  // the form body Plivo composes.
+  const sessionId = new URL(request.url).searchParams.get("sessionId") ?? undefined;
   const form = await request.formData();
   const callUuid = (form.get("CallUUID") as string | null) ?? undefined;
-  return respondToAnswer(callUuid);
+  return respondToAnswer(callUuid, sessionId);
 }
 
 export async function GET(request: Request) {
@@ -97,6 +125,7 @@ export async function GET(request: Request) {
   // POST) throws and Next.js returns an empty 500 — Plivo then hangs
   // up the call the instant the callee answers, since it never gets
   // valid Stream XML back.
-  const callUuid = new URL(request.url).searchParams.get("CallUUID") ?? undefined;
-  return respondToAnswer(callUuid);
+  const params = new URL(request.url).searchParams;
+  const callUuid = params.get("CallUUID") ?? undefined;
+  return respondToAnswer(callUuid, params.get("sessionId") ?? undefined);
 }

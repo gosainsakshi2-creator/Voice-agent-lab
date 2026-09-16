@@ -231,9 +231,9 @@ try {
   await test("14. a duplicate attempt number is refused by the database", async () => {
     const claimed = await claimContacts(campaignId, CARTESIA as never, 1, "test");
     const contact = claimed[0]!;
-    const first = await createAttempt(campaignId, contact, "vobiz");
+    const first = await createAttempt(campaignId, contact, "vobiz", "gpt-5.1");
     assert.ok(first, "the first attempt must be created");
-    const second = await createAttempt(campaignId, contact, "vobiz");
+    const second = await createAttempt(campaignId, contact, "vobiz", "gpt-5.1");
     assert.equal(second, undefined, "a second attempt with the same number must be refused");
     await query("DELETE FROM call_attempts WHERE campaign_id=$1", [campaignId]);
     await query("UPDATE contacts SET status='PENDING', claimed_by=NULL WHERE campaign_id=$1", [campaignId]);
@@ -257,7 +257,7 @@ try {
 
   await test("16. crash recovery closes orphans and re-queues contacts", async () => {
     const claimed = await claimContacts(campaignId, CARTESIA as never, 2, "crashed-worker");
-    for (const contact of claimed) await createAttempt(campaignId, contact, "vobiz");
+    for (const contact of claimed) await createAttempt(campaignId, contact, "vobiz", "gpt-5.1");
 
     const recovered = await recoverOrphans(campaignId);
     assert.equal(recovered.attempts, 2, "in-flight attempts must be closed");

@@ -21,6 +21,14 @@ import type {
 } from "../../interfaces/providers/language-model-provider.interface";
 import { probeHealth, timed } from "../shared/health";
 import { requireEnv, optionalEnv } from "../shared/env";
+import {
+  attemptCountOf,
+  createRetryAttributionLogger,
+  retryCountOf,
+  retryOverheadMsOf,
+  retryReasonsOf,
+  withRetryAttribution,
+} from "./openai-retry-telemetry";
 
 interface OpenAiEnvConfig {
   readonly apiKey: string;
@@ -66,7 +74,22 @@ export class OpenAiGptLanguageModelProvider implements LanguageModelProvider {
 
   constructor(config: OpenAiEnvConfig = loadEnvConfig()) {
     this.config = config;
-    this.client = new OpenAI({ apiKey: config.apiKey });
+    this.client = new OpenAI({
+      apiKey: config.apiKey,
+      // PHASE 3 BATCH 2A — ATTRIBUTION ONLY. The SDK already calls its
+      // logger on every request; at the default `logLevel: "warn"` the
+      // info-level calls resolve to `noop`, which is why no retry this
+      // deployment has ever performed has been visible. Supplying a
+      // logger and raising the level to `info` puts a real function
+      // where that no-op sat.
+      //
+      // Scoped to THIS client instance, deliberately: `OPENAI_LOG=info`
+      // would do the same thing process-wide. `maxRetries`, the backoff,
+      // the retryable-status table and the timeout are all untouched and
+      // are not reachable from a logger.
+      logger: createRetryAttributionLogger(),
+      logLevel: "info",
+    });
   }
 
   async generateCompletion(request: CompletionRequest): Promise<CompletionResult> {
@@ -142,16 +165,29 @@ export class OpenAiGptLanguageModelProvider implements LanguageModelProvider {
     let completionTokens: number | undefined;
     let reasoningTokens: number | undefined;
 
-    const stream = await this.client.chat.completions.create({
-      model: this.config.model,
-      messages,
-      stream: true,
-      verbosity: "low",
-      // Asks for ONE extra chunk before `[DONE]` carrying `usage`, with
-      // an empty `choices` array. Adds no tokens, changes no generation
-      // parameter, and cannot produce a token event (see the loop below).
-      stream_options: { include_usage: true },
-    });
+    // PHASE 3 BATCH 2A — the await below is where EVERY retry happens:
+    // the SDK returns to us only once some attempt has produced response
+    // headers. Scoping the attribution record to exactly this await is
+    // what makes the resulting counts this request's own, rather than
+    // a process-wide total shared with the other calls running at
+    // carrier concurrency. The request object, its options and the
+    // SDK's behaviour are byte-for-byte what they were.
+    const { result: stream, attribution } = await withRetryAttribution(() =>
+      this.client.chat.completions.create({
+        model: this.config.model,
+        messages,
+        stream: true,
+        verbosity: "low",
+        // Asks for ONE extra chunk before `[DONE]` carrying `usage`, with
+        // an empty `choices` array. Adds no tokens, changes no generation
+        // parameter, and cannot produce a token event (see the loop below).
+        stream_options: { include_usage: true },
+      }),
+    );
+    const llmAttempts = attemptCountOf(attribution);
+    const llmRetries = retryCountOf(attribution);
+    const llmRetryOverheadMs = retryOverheadMsOf(attribution);
+    const llmRetryReasons = retryReasonsOf(attribution);
 
     for await (const chunk of stream) {
       if (signal?.aborted) break;
@@ -187,7 +223,9 @@ export class OpenAiGptLanguageModelProvider implements LanguageModelProvider {
     console.log(
       `[LLM:openai] Stream complete: ${latencyMs}ms tokens=${tokenIndex} contentLen=${fullContent.length}` +
         ` | USAGE promptTokens=${promptTokens ?? "n/a"} cachedTokens=${cachedTokens ?? "n/a"}` +
-        ` completionTokens=${completionTokens ?? "n/a"} reasoningTokens=${reasoningTokens ?? "n/a"}`,
+        ` completionTokens=${completionTokens ?? "n/a"} reasoningTokens=${reasoningTokens ?? "n/a"}` +
+        ` | ATTEMPTS attempts=${llmAttempts} retries=${llmRetries}` +
+        ` retryOverheadMs=${llmRetryOverheadMs ?? "n/a"} reasons=${llmRetryReasons || "none"}`,
     );
 
     yield {
@@ -198,6 +236,13 @@ export class OpenAiGptLanguageModelProvider implements LanguageModelProvider {
       ...(cachedTokens !== undefined ? { cachedPromptTokens: cachedTokens } : {}),
       ...(reasoningTokens !== undefined ? { reasoningTokens } : {}),
       ...(completionTokens !== undefined ? { completionTokens } : {}),
+      // PHASE 3 BATCH 2A. `llmAttempts` of 0 means the SDK's logging
+      // produced nothing parseable for this request — reported as
+      // absent rather than as "1 attempt", so a parsing regression can
+      // never be mistaken for evidence that retries do not happen.
+      ...(llmAttempts > 0 ? { llmAttempts, llmRetries } : {}),
+      ...(llmRetryOverheadMs !== undefined ? { llmRetryOverheadMs } : {}),
+      ...(llmRetryReasons.length > 0 ? { llmRetryReasons } : {}),
     };
   }
 

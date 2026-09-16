@@ -52,6 +52,28 @@ export interface LlmFinalEvent {
    * chunk as `promptTokens`/`reasoningTokens` above. TELEMETRY ONLY.
    */
   readonly completionTokens?: number;
+
+  // --- PHASE 3 BATCH 2A: retry attribution. TELEMETRY ONLY, and
+  // observed rather than configured — these describe what the vendor
+  // SDK actually did on this request, and nothing reads them to alter
+  // a request, a retry policy or a response. ---
+
+  /** HTTP attempts the SDK made for this request. 1 means no retry occurred. */
+  readonly llmAttempts?: number;
+  /** Attempts beyond the first. 0 on the overwhelming majority of turns. */
+  readonly llmRetries?: number;
+  /**
+   * MEASURED wall clock spent on failed attempts plus the SDK's
+   * backoff sleeps — i.e. how much of this turn's time-to-first-token
+   * the retry machinery is responsible for. Measured rather than
+   * derived from the backoff formula, which carries random jitter.
+   */
+  readonly llmRetryOverheadMs?: number;
+  /**
+   * Compact, non-sensitive reasons, e.g. `"500,500"` or
+   * `"connection-timeout,429"`. Absent when no retry occurred.
+   */
+  readonly llmRetryReasons?: string;
 }
 
 export type LlmStreamEvent = LlmTokenEvent | LlmFinalEvent;

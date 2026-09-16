@@ -7,3 +7,6 @@ dist
 coverage
 *.tsbuildinfo
 .DS_Store
+
+# Phase 3 LLM benchmark: raw measurements and rendered reports
+benchmark-output

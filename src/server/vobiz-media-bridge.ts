@@ -450,6 +450,18 @@ export function attachVobizMediaBridge(
           // eslint-disable-next-line no-console
           console.log(`[Vobiz] greeting first frame sent`);
         }
+        // PHASE 3 BATCH 1 — TELEMETRY ONLY. This line is the closest
+        // the architecture gets to "the caller is now hearing us": the
+        // frame is about to be written to the media socket. Placed
+        // immediately BEFORE `sendJson` rather than after, so the
+        // stamp is the send instant and not the send instant plus a
+        // base64 encode and a JSON serialize.
+        //
+        // The manager de-duplicates (`??=`), so calling on every frame
+        // is intentional — it keeps the definition of "first" in one
+        // place instead of one flag per bridge. Synchronous, throws
+        // nothing, returns nothing, and no audio decision reads it.
+        manager.noteOutboundFrameSent(sessionId);
         sendJson({
           event: "playAudio",
           // Vobiz requires streamId at the top level of playAudio

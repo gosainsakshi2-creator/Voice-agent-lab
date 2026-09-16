@@ -74,6 +74,7 @@ const section = (title: string) => console.log(`\n${title}`);
 const CARTESIA = "cartesia";
 const SARVAM = "sarvam";
 const SMALLEST = "smallest-ai";
+const ELEVENLABS = "elevenlabs";
 
 /** A window built by hand, so no test depends on the environment. */
 function windowOf(overrides: Partial<ReturnType<typeof getCallingWindow>> = {}) {
@@ -327,8 +328,13 @@ await test("22. throughput is the lower of the CPS limit and concurrency ÷ call
 });
 
 await test("23. a tight CPS becomes the binding limit instead", () => {
+  // One entry per campaign TTS lane. `estimateThroughput` sums over
+  // CAMPAIGN_TTS_PROVIDERS, so a fixture that omits a lane is not
+  // describing a configuration the dispatcher can ever produce —
+  // `getDispatchConfig` builds a lane for every provider in that list.
   const lanes = {
     [CARTESIA]: { maxConcurrent: 5, callsPerSecond: 0.02 },
+    [ELEVENLABS]: { maxConcurrent: 5, callsPerSecond: 0.02 },
     [SARVAM]: { maxConcurrent: 5, callsPerSecond: 0.02 },
     [SMALLEST]: { maxConcurrent: 5, callsPerSecond: 0.02 },
   };

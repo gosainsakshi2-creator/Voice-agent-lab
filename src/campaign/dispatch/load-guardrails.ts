@@ -300,14 +300,14 @@ export function checkLoadSafety(
   if (config.globalMaxConcurrent > laneConcurrencyTotal) {
     warn(
       "concurrency",
-      `CAMPAIGN_GLOBAL_MAX_CONCURRENCY is ${config.globalMaxConcurrent} but the three lanes total ` +
+      `CAMPAIGN_GLOBAL_MAX_CONCURRENCY is ${config.globalMaxConcurrent} but the provider lanes total ` +
         `${laneConcurrencyTotal}; the global cap can never bind. Throughput is set by the lanes.`,
     );
   }
   if (config.globalCallsPerSecond > laneCpsTotal) {
     warn(
       "cps",
-      `CAMPAIGN_GLOBAL_CPS is ${config.globalCallsPerSecond} but the three lanes total ${laneCpsTotal} ` +
+      `CAMPAIGN_GLOBAL_CPS is ${config.globalCallsPerSecond} but the provider lanes total ${laneCpsTotal} ` +
         "calls per second; the global rate can never bind.",
     );
   }
@@ -315,7 +315,7 @@ export function checkLoadSafety(
     warn(
       "poll-interval",
       `CAMPAIGN_POLL_INTERVAL_MS is ${config.pollIntervalMs}. Each lane runs a claim query on that ` +
-        "interval; below ~250ms the three lanes spend the campaign querying the database.",
+        "interval; below ~250ms the provider lanes spend the campaign querying the database.",
     );
   }
   if (config.maxSilenceSeconds >= config.maxCallSeconds) {

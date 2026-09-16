@@ -161,6 +161,36 @@ const NEAR_END_SPEECH_FRAMES = 4;
  * door, or the intermittent bursts a background conversation produces.
  */
 const ENERGY_ONLY_BARGE_IN_MS = 700;
+/**
+ * How stale the STT provider's last delivered segment must be before
+ * the energy-only barge-in above is allowed to treat STT as dead.
+ *
+ * PORTED VERBATIM FROM THE VOBIZ BRIDGE, where it fixed a reported
+ * production defect. Nothing about it is new or re-tuned here: same
+ * window, same predicate, same "no evidence" handling. The two bridges
+ * are deliberately NOT unified — only this one behaviour is brought
+ * across, because the defect it closes is a property of the shared
+ * energy-only fallback rather than of either carrier.
+ *
+ * That fallback exists for ONE situation — a Deepgram socket that has
+ * stopped delivering — yet on the Vobiz bridge it fired on live calls
+ * with a healthy socket: ~700ms of loud non-speech energy (our own
+ * audio echoing back out of the handset, a line burst) that Deepgram,
+ * correctly, did not transcribe. Each time it cleared the whole
+ * outbound queue and aborted the TTS stream, and the caller heard the
+ * assistant stop mid-sentence — reported as "Sarvam truncates
+ * sentences". With a live socket, loud energy that produces no words is
+ * by definition not the caller.
+ *
+ * The window is long deliberately: a healthy STT stream legitimately
+ * delivers nothing while the caller sits quietly through a reply, and
+ * campaign replies run 10-20s, so anything shorter would declare a live
+ * socket dead mid-reply and re-open the very false barge-in this gate
+ * exists to close. The transcript-confirmed path in the pipeline is
+ * untouched and still interrupts the moment Deepgram delivers
+ * corroborated words.
+ */
+const STT_UNHEALTHY_AFTER_MS = 30_000;
 
 export function attachPlivoMediaBridge(
   socket: BridgeSocket,
@@ -173,6 +203,11 @@ export function attachPlivoMediaBridge(
   let pumpTimer: ReturnType<typeof setInterval> | undefined;
   let prerollTimer: ReturnType<typeof setTimeout> | undefined;
   let wasSpeaking = false;
+  /**
+   * Latched so a suppressed energy-only barge-in is logged once per
+   * speaking turn rather than on every 20ms frame of a loud run.
+   */
+  let energyOnlySuppressedLogged = false;
   let closed = false;
   /** Plivo's stream identifier — required in `clearAudio` events. */
   let plivoStreamId: string | undefined;
@@ -257,6 +292,30 @@ export function attachPlivoMediaBridge(
 
     if (loudMs < ENERGY_ONLY_BARGE_IN_MS) return;
     if (!wasSpeaking && outboundQueue.length === 0) return;
+
+    // STT IS ALIVE — this is not the fallback's situation. Deepgram has
+    // delivered a segment recently, so it is hearing this line; loud
+    // energy it has produced no words for is not the caller (see
+    // `STT_UNHEALTHY_AFTER_MS`). A genuine interruption is still
+    // handled by the pipeline's transcript-confirmed path the moment its
+    // words land. `undefined` (no segment yet, or the session is gone)
+    // is "no evidence STT is alive", which keeps the previous behaviour.
+    let sttEvidenceAgeMs: number | undefined;
+    try {
+      sttEvidenceAgeMs = manager.sttEvidenceAgeMs(sessionId);
+    } catch {
+      sttEvidenceAgeMs = undefined;
+    }
+    if (sttEvidenceAgeMs !== undefined && sttEvidenceAgeMs < STT_UNHEALTHY_AFTER_MS) {
+      if (!energyOnlySuppressedLogged) {
+        energyOnlySuppressedLogged = true;
+        // eslint-disable-next-line no-console
+        console.log(
+          `[plivo-bridge:${sessionId}] energy-only barge-in SUPPRESSED: ${loudMs}ms of loud near-end energy with no transcript, but STT delivered a segment ${sttEvidenceAgeMs}ms ago — not the caller (queue=${outboundQueue.length} frames)`,
+        );
+      }
+      return;
+    }
 
     // eslint-disable-next-line no-console
     console.log(
@@ -418,6 +477,14 @@ export function attachPlivoMediaBridge(
         }
         framesSent += 1;
         if (outboundQueue.length <= OUTBOUND_LOW_WATER_FRAMES) releaseBackpressure();
+        // PHASE 3 BATCH 1 — TELEMETRY ONLY. Parity with the Vobiz
+        // bridge: stamped immediately before the frame is written to
+        // the media socket, which is the closest observable instant to
+        // "the caller is now hearing us". The manager de-duplicates
+        // (`??=`), so this runs on every frame by design and keeps the
+        // definition of "first frame" in one place for both bridges.
+        // Synchronous, throws nothing, and no audio decision reads it.
+        manager.noteOutboundFrameSent(sessionId);
         sendJson({
           event: "playAudio",
           // `streamId` is a TOP-LEVEL sibling of `event`/`media` — not
@@ -493,6 +560,7 @@ export function attachPlivoMediaBridge(
     if (eventSessionId !== sessionId) return;
     if (transition.to === SessionState.SPEAKING) {
       wasSpeaking = true;
+      energyOnlySuppressedLogged = false;
     } else if (wasSpeaking && transition.to === SessionState.LISTENING) {
       wasSpeaking = false;
       // Only clear on barge-in (user interrupted). Normal turn
@@ -515,7 +583,7 @@ export function attachPlivoMediaBridge(
   function handleMessage(raw: string): void {
     let event: {
       event?: string;
-      start?: { streamId?: string };
+      start?: { callId?: string; streamId?: string };
       media?: { payload?: string; track?: string };
       stop?: unknown;
     };
@@ -529,7 +597,23 @@ export function attachPlivoMediaBridge(
       case "start":
         plivoStreamId = event.start?.streamId;
         // eslint-disable-next-line no-console
-        console.log(`[plivo-bridge:${sessionId}] "start" event received -> streamId=${plivoStreamId ?? "none"}, confirming call answered`);
+        console.log(
+          `[plivo-bridge:${sessionId}] "start" event received -> streamId=${plivoStreamId ?? "none"} callId=${event.start?.callId ?? "none"}, confirming call answered`,
+        );
+        // THE LIVE CallUUID, and the only place it reaches the session.
+        //
+        // `startCall` can only return what placing the call returns —
+        // the `requestUuid` — while Plivo's hangup API is keyed by the
+        // CallUUID, which exists only once the callee has answered.
+        // Without this re-key every programmatic hangup was a DELETE on
+        // an id that does not exist: a 404 the session manager
+        // swallowed, and, because the answer XML sets
+        // `keepCallAlive="true"`, a carrier leg left up until the person
+        // hung up themselves. Writes one field; `end()` ->
+        // `telephony.endCall()` is unchanged and remains the only
+        // hangup path. Same fix, and same single line, as the Vobiz
+        // bridge already carries.
+        if (event.start?.callId) manager.setProviderCallId(sessionId, event.start.callId);
         manager.confirmCallAnswered(sessionId);
         return;
       case "media": {

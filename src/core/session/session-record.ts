@@ -114,6 +114,23 @@ export class SessionRecord {
    */
   lastSttEvidenceAt = 0;
 
+  /**
+   * PHASE 3 BATCH 1 — TELEMETRY ONLY. Wall clock at which the media
+   * bridge's outbound pump sent the first audio frame of the CURRENT
+   * TURN toward the caller.
+   *
+   * Written by `noteOutboundFrameSent` and cleared once per turn by
+   * `beginTurnTiming`, so it pairs with the pipeline's own
+   * `firstAudioQueuedAtMs` to give the playback-startup span. Nothing
+   * reads it to make a decision: no gate, no timer, no threshold and
+   * no branch in the call path consults it.
+   *
+   * `undefined` means "no frame has been sent since this turn began" —
+   * which is the correct report for a turn that produced no audio, and
+   * for any session with no bridge attached at all.
+   */
+  firstOutboundFrameAtMs: number | undefined;
+
   readonly memory: ConversationMemory;
   readonly metrics: SessionMetricsCollector;
   /** Grammatical gender of the selected TTS voice — also drives the deterministic Hindi greeting. */

@@ -46,6 +46,18 @@ export interface TurnLatencyInput {
   readonly llmGenerationMs: number | undefined;
   readonly ttsSynthesisMs: number | undefined;
   readonly userSpeechMs: number | undefined;
+  // PHASE 3 BATCH 1. OPTIONAL (`?:`), not merely nullable, and that is
+  // deliberate: every field above is required-but-nullable, so adding
+  // these as required would break every existing construction site of
+  // this type — including tests that must not be edited to accommodate
+  // a telemetry addition. Omitting them is identical to passing
+  // `undefined`: both report "not measured".
+  /** Endpoint claim observed -> turn released. `undefined` when the turn was released by inference. */
+  readonly endpointToReleaseMs?: number | undefined;
+  /** Caller's audio ended -> turn released. */
+  readonly speechEndToReleaseMs?: number | undefined;
+  /** First frame queued on the transport -> first frame the bridge actually sent. */
+  readonly playbackStartupMs?: number | undefined;
   readonly sttCostUsd: number;
   readonly llmCostUsd: number;
   readonly ttsCostUsd: number;
@@ -55,6 +67,17 @@ export interface TurnLatencyInput {
   readonly cachedPromptTokens: number | undefined;
   /** Reasoning tokens generated before the first visible content token. */
   readonly reasoningTokens: number | undefined;
+  // PHASE 3 BATCH 2A — optional for the same backward-compatibility
+  // reason the Batch 1 boundaries are: existing construction sites
+  // omit them, and omitting is identical to "not measured".
+  /** HTTP attempts the SDK made for this turn's LLM request. */
+  readonly llmAttempts?: number | undefined;
+  /** Attempts beyond the first. */
+  readonly llmRetries?: number | undefined;
+  /** Measured wall clock spent on failed attempts plus backoff sleeps. */
+  readonly llmRetryOverheadMs?: number | undefined;
+  /** Compact non-sensitive retry reasons. */
+  readonly llmRetryReasons?: string | undefined;
 }
 
 /**
@@ -91,6 +114,8 @@ export class SessionMetricsCollector {
   private readonly createdAt = new Date();
   private answeredAt: Date | undefined;
   private endedAt: Date | undefined;
+  /** First outbound audio frame of the call, reported by the media bridge. */
+  private firstOutboundAudioAt: Date | undefined;
 
   constructor(
     private readonly sessionId: SessionId,
@@ -114,6 +139,25 @@ export class SessionMetricsCollector {
     const promptTokens = positiveOrUndefined(input.promptTokens);
     const cachedPromptTokens = positiveOrUndefined(input.cachedPromptTokens);
     const reasoningTokens = positiveOrUndefined(input.reasoningTokens);
+    // PHASE 3 BATCH 1 — same rule as every span above: a negative or
+    // non-finite value means the two clocks disagreed (a stale
+    // snapshot, a reordered event), and the honest report for that is
+    // "not measured", never a clamped 0 that would be averaged in as a
+    // real zero-length wait.
+    const endpointToReleaseMs = positiveOrUndefined(input.endpointToReleaseMs);
+    const speechEndToReleaseMs = positiveOrUndefined(input.speechEndToReleaseMs);
+    const playbackStartupMs = positiveOrUndefined(input.playbackStartupMs);
+    // Counts, not latencies: 0 retries is a REAL and important
+    // observation (it is the answer "retries did not cause this"),
+    // so it must survive alongside `undefined` ("not observed").
+    // `positiveOrUndefined` already preserves 0.
+    const llmAttempts = positiveOrUndefined(input.llmAttempts);
+    const llmRetries = positiveOrUndefined(input.llmRetries);
+    const llmRetryOverheadMs = positiveOrUndefined(input.llmRetryOverheadMs);
+    const llmRetryReasons =
+      typeof input.llmRetryReasons === "string" && input.llmRetryReasons.length > 0
+        ? input.llmRetryReasons
+        : undefined;
 
     this.turnLatencies.push({
       turnIndex: input.turnIndex,
@@ -124,9 +168,16 @@ export class SessionMetricsCollector {
       ...(llmGenerationMs !== undefined ? { llmGenerationMs } : {}),
       ...(ttsSynthesisMs !== undefined ? { ttsSynthesisMs } : {}),
       ...(userSpeechMs !== undefined ? { userSpeechMs } : {}),
+      ...(endpointToReleaseMs !== undefined ? { endpointToReleaseMs } : {}),
+      ...(speechEndToReleaseMs !== undefined ? { speechEndToReleaseMs } : {}),
+      ...(playbackStartupMs !== undefined ? { playbackStartupMs } : {}),
       ...(promptTokens !== undefined ? { promptTokens } : {}),
       ...(cachedPromptTokens !== undefined ? { cachedPromptTokens } : {}),
       ...(reasoningTokens !== undefined ? { reasoningTokens } : {}),
+      ...(llmAttempts !== undefined ? { llmAttempts } : {}),
+      ...(llmRetries !== undefined ? { llmRetries } : {}),
+      ...(llmRetryOverheadMs !== undefined ? { llmRetryOverheadMs } : {}),
+      ...(llmRetryReasons !== undefined ? { llmRetryReasons } : {}),
     });
 
     this.costTotals.speechToText += input.sttCostUsd;
@@ -149,6 +200,21 @@ export class SessionMetricsCollector {
     this.answeredAt ??= new Date();
   }
 
+  /**
+   * PHASE 3 BATCH 1. The media bridge has handed the FIRST outbound
+   * audio frame of this call to the transport.
+   *
+   * Idempotent for exactly the reason `markCallAnswered` is: the pump
+   * calls this on every frame it sends (~50/s), and only the first one
+   * is the answer to "when did the caller start hearing us". `??=`
+   * makes every later call a single no-op comparison rather than
+   * requiring the bridge to carry a flag of its own — which would
+   * put the definition of "first" in two places.
+   */
+  markFirstOutboundAudio(): void {
+    this.firstOutboundAudioAt ??= new Date();
+  }
+
   markCallEnded(): void {
     this.endedAt ??= new Date();
   }
@@ -168,6 +234,9 @@ export class SessionMetricsCollector {
       createdAt: this.createdAt,
       ...(this.answeredAt !== undefined ? { answeredAt: this.answeredAt } : {}),
       ...(this.endedAt !== undefined ? { endedAt: this.endedAt } : {}),
+      ...(this.firstOutboundAudioAt !== undefined
+        ? { firstOutboundAudioAt: this.firstOutboundAudioAt }
+        : {}),
     };
 
     // Telephony bills the connected span, so it is derived here

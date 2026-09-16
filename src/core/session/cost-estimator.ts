@@ -82,22 +82,68 @@ const SARVAM_INR_PER_1K_CHARS = 3;
  * plus rolling history every turn while the completion is one short
  * spoken sentence. Blending therefore mispriced every turn.
  *
- * GEMMA_4: ⚠ UNVERIFIED. Gemma 4 is served here by Google AI Studio
- * (`@google/generative-ai`, model `gemma-4-31b-it` per GEMMA_MODEL),
- * and neither this repository nor its environment declares a price for
- * that endpoint. The inherited blended 0.002 / 1K rate is preserved
- * exactly — as 2.00 / 1M applied to both directions — so this change
- * does not alter Gemma's reported cost. Do not treat it as confirmed.
+ * GEMMA_4: ⚠ UNPRICED — NOT FREE, AND NOT $0.
+ *
+ * Gemma 4 is served here by Google AI Studio (`@google/generative-ai`,
+ * model `gemma-4-31b-it` per GEMMA_MODEL) and is free for this
+ * account's present usage. A free tier is not a commercial rate, and
+ * the two must not be recorded as the same thing: a stored 0 reads,
+ * months later and to someone who was not here, as "Gemma costs
+ * nothing", which would make every Gemma lane look unbeatable on
+ * cost-per-registration on the strength of a placeholder.
+ *
+ * So the rate is treated as UNKNOWN. `isLlmRateKnown` reports that,
+ * `call_metrics.cost_llm_usd` is written NULL rather than 0 for an
+ * unpriced model (see `persistMetrics`), and `external-limits.ts`
+ * carries it as NEEDS_EXTERNAL_CONFIRMATION.
+ *
+ * Set GEMMA_COST_PER_1M_INPUT_USD / GEMMA_COST_PER_1M_OUTPUT_USD to
+ * supply the real rate once it is known; the model then prices exactly
+ * like any other. Until then the arithmetic below still contributes 0,
+ * deliberately — that keeps the per-turn figure the conversation
+ * pipeline computes unchanged, so nothing about the live call path
+ * moves — and it is the PERSISTED analytics value that tells the truth
+ * by being null.
  */
 interface TokenRateUsd {
   readonly inputPer1M: number;
   readonly outputPer1M: number;
 }
 
+/** A configured rate, or `undefined` when this model has no confirmed price. */
+function envLlmRate(prefix: string): TokenRateUsd | undefined {
+  const input = process.env[`${prefix}_COST_PER_1M_INPUT_USD`];
+  const output = process.env[`${prefix}_COST_PER_1M_OUTPUT_USD`];
+  const inputPer1M = Number(input);
+  const outputPer1M = Number(output);
+  if (!input || !output || !Number.isFinite(inputPer1M) || !Number.isFinite(outputPer1M)) {
+    return undefined;
+  }
+  return { inputPer1M, outputPer1M };
+}
+
 const LLM_COST_PER_1M_TOKENS_USD: Readonly<Record<string, TokenRateUsd>> = {
   [LANGUAGE_MODEL_PROVIDER_IDS.GPT_5_1]: { inputPer1M: 1.25, outputPer1M: 10 },
-  [LANGUAGE_MODEL_PROVIDER_IDS.GEMMA_4]: { inputPer1M: 0, outputPer1M: 0 },
 };
+
+/** Models served with no confirmed commercial rate, keyed to their env prefix. */
+const UNPRICED_LLM_ENV_PREFIX: Readonly<Record<string, string>> = {
+  [LANGUAGE_MODEL_PROVIDER_IDS.GEMMA_4]: "GEMMA",
+};
+
+/**
+ * Whether this model's cost can be stated at all.
+ *
+ * `false` means "we do not know", never "it is zero". Callers that
+ * PERSIST a cost must write null on `false`; callers that only display
+ * a running per-turn figure may keep treating the estimate as 0, which
+ * is what the conversation pipeline does and what keeps it unchanged.
+ */
+export function isLlmRateKnown(providerId: string): boolean {
+  if (LLM_COST_PER_1M_TOKENS_USD[providerId] !== undefined) return true;
+  const prefix = UNPRICED_LLM_ENV_PREFIX[providerId];
+  return prefix !== undefined && envLlmRate(prefix) !== undefined;
+}
 
 /** Vendors that bill per character of submitted text. */
 const TTS_COST_PER_1K_CHARS_USD: Readonly<Record<string, number>> = {
@@ -188,10 +234,34 @@ export function estimateLlmCost(
   inputTokens: number,
   outputTokens: number,
 ): number {
-  const rate = LLM_COST_PER_1M_TOKENS_USD[providerId] ?? FALLBACK_LLM_PER_1M_TOKENS_USD;
+  const rate = resolveLlmRate(providerId);
   return (
     (inputTokens / 1_000_000) * rate.inputPer1M + (outputTokens / 1_000_000) * rate.outputPer1M
   );
+}
+
+/**
+ * The rate to do arithmetic with.
+ *
+ * An UNPRICED model resolves to zero rather than to
+ * `FALLBACK_LLM_PER_1M_TOKENS_USD`, which is the behaviour Gemma
+ * already had and is deliberately kept: the fallback is for a model
+ * nobody has considered, whereas Gemma has been considered and the
+ * answer is "no confirmed rate". Letting it fall through to 5/5 would
+ * invent a price, which is worse than the 0 it replaces. The honesty
+ * lives in `isLlmRateKnown` and in the null written to
+ * `call_metrics.cost_llm_usd`, not in this number.
+ */
+function resolveLlmRate(providerId: string): TokenRateUsd {
+  const configured = LLM_COST_PER_1M_TOKENS_USD[providerId];
+  if (configured) return configured;
+
+  const prefix = UNPRICED_LLM_ENV_PREFIX[providerId];
+  if (prefix !== undefined) {
+    return envLlmRate(prefix) ?? { inputPer1M: 0, outputPer1M: 0 };
+  }
+
+  return FALLBACK_LLM_PER_1M_TOKENS_USD;
 }
 
 /**

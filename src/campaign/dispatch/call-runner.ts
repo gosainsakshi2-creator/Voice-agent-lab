@@ -66,7 +66,16 @@ import { buildCampaignContext, CampaignContextError } from "../domain/campaign-c
 import { classifyError, type CallStatus, type FailureClass } from "../domain/call-status";
 import { planRetry } from "./retry-planner";
 import type { DispatchConfig } from "../config/dispatch.config";
-import type { CampaignRecord } from "../domain/campaign-types";
+import {
+  CAMPAIGN_LLM_PROVIDERS,
+  CAMPAIGN_TELEPHONY_PROVIDERS,
+  LEGACY_LLM_ALLOCATION,
+  isCampaignTelephonyProvider,
+  type CampaignRecord,
+} from "../domain/campaign-types";
+import { pickByAllocation, validatePercentageAllocation } from "../domain/allocation";
+import { SPEECH_TO_TEXT_PROVIDER_IDS } from "../../constants/providers.constants";
+import { isLlmRateKnown } from "../../core/session/cost-estimator";
 import type { CampaignScript } from "../script/script-registry";
 import type { SessionObserver } from "./session-observer";
 
@@ -122,6 +131,82 @@ function toLanguage(value: string): SupportedLanguage {
 
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
+/**
+ * The canonical provider ids ONE call actually ran on.
+ *
+ * Every id here comes from `constants/providers.constants.ts` by way of
+ * the campaign's own allowlists, so what is recorded on the attempt is
+ * the same spelling the Provider Registry resolves and the same
+ * spelling analytics groups by. There is no second vocabulary.
+ */
+export interface CallProviderStack {
+  readonly telephony: string;
+  readonly speechToText: string;
+  readonly languageModel: string;
+}
+
+/**
+ * The campaign's configured percentages -> this call's concrete stack.
+ *
+ * `selectionKey` is the contact id: stable, so every attempt for a
+ * number resolves to the same carrier and the same model, and uniformly
+ * distributed, so across a campaign each provider receives its
+ * configured share.
+ *
+ * EACH DIMENSION IS NAMESPACED, and it is load-bearing rather than
+ * decorative. `pickByAllocation` is a pure function of its key, so
+ * handing it the bare contact id twice would make the two dimensions
+ * perfectly CORRELATED: with a 50/50 model split and a 50/50 carrier
+ * split, every contact landing in the lower half of the hash would get
+ * the first model AND the first carrier. Two of the four possible
+ * stacks would never be produced at all, and the stack comparison this
+ * whole feature exists to enable would be measuring two diagonals
+ * instead of a matrix. Prefixing the dimension gives each its own
+ * independent hash of the same contact.
+ *
+ * STT is not allocated. One provider is registered for it and the
+ * campaign has never offered a choice, so it stays the literal it has
+ * always been rather than gaining a dimension nobody asked for.
+ */
+export function resolveCallProviderStack(
+  campaign: CampaignRecord,
+  selectionKey: string,
+): CallProviderStack {
+  // An ABSENT allocation is resolved the same way `campaign.repo.ts`
+  // resolves it when reading a row: to the behaviour the campaign
+  // already had. A record does not always arrive through `toRecord` —
+  // recovery paths and tests build one by hand — and a missing field
+  // must mean "this campaign predates the dimension", never a crash
+  // mid-dial. A MALFORMED allocation is a different thing entirely and
+  // still throws below: that is a campaign configured wrongly, and
+  // guessing a provider for it would attribute a call to something
+  // nobody chose.
+  const llmAllocation = campaign.llmAllocation ?? LEGACY_LLM_ALLOCATION;
+  const telephonyAllocation =
+    campaign.telephonyAllocation ??
+    (isCampaignTelephonyProvider(campaign.telephonyProvider) ? { [campaign.telephonyProvider]: 100 } : {});
+
+  return {
+    telephony: pickByAllocation(
+      `telephony:${selectionKey}`,
+      validatePercentageAllocation(
+        telephonyAllocation,
+        CAMPAIGN_TELEPHONY_PROVIDERS,
+        "campaign telephony providers",
+      ),
+    ),
+    speechToText: SPEECH_TO_TEXT_PROVIDER_IDS.DEEPGRAM,
+    languageModel: pickByAllocation(
+      `llm:${selectionKey}`,
+      validatePercentageAllocation(
+        llmAllocation,
+        CAMPAIGN_LLM_PROVIDERS,
+        "campaign language models",
+      ),
+    ),
+  };
+}
+
 export async function runCall(
   contact: ClaimedContact,
   deps: CallRunnerDeps,
@@ -129,8 +214,26 @@ export async function runCall(
 ): Promise<CallOutcome> {
   const { manager, observer, config, campaign, script } = deps;
 
+  // ── 0. Resolve THIS CALL's provider stack ───────────────────────
+  //
+  // The selection boundary, and the only place a campaign's configured
+  // percentages become the concrete providers one call runs on.
+  //
+  // TTS is NOT chosen here: it was apportioned across contacts at
+  // import time and locked by a database trigger, so it arrives already
+  // decided as `contact.assignedProvider` and nothing may override it.
+  // The LLM and the carrier have no such lock — they are campaign-wide
+  // splits — so they are picked per call, keyed on the contact id so a
+  // retry of the same number lands on the same stack its earlier
+  // attempts used.
+  //
+  // What is resolved here is what gets RECORDED on the attempt below.
+  // Configured allocation and actual provider are two different facts,
+  // and only the second one answers "what handled this call".
+  const stack = resolveCallProviderStack(campaign, contact.id);
+
   // ── 1. Reserve the attempt before anything can dial ─────────────
-  const attempt = await createAttempt(campaign.id, contact, campaign.telephonyProvider);
+  const attempt = await createAttempt(campaign.id, contact, stack.telephony, stack.languageModel);
   if (!attempt) {
     // The unique constraint refused it: this attempt number already
     // exists, so another worker or an earlier run already placed it.
@@ -301,9 +404,14 @@ export async function runCall(
     language: toLanguage(campaign.language),
     direction: CallDirection.OUTBOUND,
     providerStack: {
-      telephony: { category: ProviderCategory.TELEPHONY, id: campaign.telephonyProvider },
-      speechToText: { category: ProviderCategory.SPEECH_TO_TEXT, id: "deepgram" },
-      languageModel: { category: ProviderCategory.LANGUAGE_MODEL, id: "gpt-5.1" },
+      // Resolved at step 0 from the campaign's telephony allocation.
+      telephony: { category: ProviderCategory.TELEPHONY, id: stack.telephony },
+      speechToText: { category: ProviderCategory.SPEECH_TO_TEXT, id: stack.speechToText },
+      // Resolved at step 0 from the campaign's LLM allocation. This was
+      // a `"gpt-5.1"` string literal; a campaign with no stored
+      // allocation still resolves to exactly that, so nothing that ran
+      // before this change runs differently now.
+      languageModel: { category: ProviderCategory.LANGUAGE_MODEL, id: stack.languageModel },
       // The contact's locked provider. Nothing else may set this.
       textToSpeech: { category: ProviderCategory.TEXT_TO_SPEECH, id: contact.assignedProvider },
     },
@@ -443,7 +551,7 @@ export async function runCall(
     transcript = captureTranscript(manager, sessionId);
 
     const persistStartedAt = Date.now();
-    await persistMetrics(manager, attempt.id, campaign, contact, sessionId, timings, persistStartedAt);
+    await persistMetrics(manager, attempt.id, campaign, contact, stack, sessionId, timings, persistStartedAt);
 
     if (verdict === "NO_ANSWER") {
       return finalize("NO_ANSWER", "no answer within the ring timeout", "inferred");
@@ -527,6 +635,7 @@ async function persistMetrics(
   attemptId: string,
   campaign: CampaignRecord,
   contact: ClaimedContact,
+  stack: CallProviderStack,
   sessionId: SessionId,
   timings: Record<string, number | null>,
   persistStartedAt: number,
@@ -554,11 +663,32 @@ async function persistMetrics(
       cost: {
         telephony: breakdown.telephony ?? 0,
         stt: breakdown.speechToText ?? 0,
-        llm: breakdown.languageModel ?? 0,
+        // NULL, not 0, for a model with no confirmed commercial rate.
+        // Gemma is free for this account's present usage, and a stored
+        // 0 would read later as "Gemma costs nothing" — which would
+        // make a Gemma lane win any cost-per-registration comparison on
+        // the strength of a placeholder. A null cannot be averaged into
+        // one by accident; a 0 can. `cost_llm_usd` is already nullable,
+        // so this needs no schema change.
+        llm: isLlmRateKnown(stack.languageModel) ? (breakdown.languageModel ?? 0) : null,
         tts: breakdown.textToSpeech ?? 0,
         total: metrics.estimatedCost?.amount ?? 0,
       },
     });
+    // PHASE 3 BATCH 1 — the column has existed since 001_init.sql and
+    // `saveDispatchMetrics` has always read this key; nothing ever
+    // wrote it, so it was NULL on all 2,399 rows. Both endpoints are
+    // now real, directly-captured instants from the same session's
+    // metrics: `answeredAt` is the telephony-confirmed answer, and
+    // `firstOutboundAudioAt` is stamped by the media bridge's pump as
+    // it sends the call's first frame. Written only when BOTH exist
+    // and the span is non-negative — an unanswered call, or one that
+    // never produced audio, stays NULL rather than becoming a 0.
+    const answeredAtMs = metrics.callDuration?.answeredAt?.getTime();
+    const firstAudioAtMs = metrics.callDuration?.firstOutboundAudioAt?.getTime();
+    if (answeredAtMs !== undefined && firstAudioAtMs !== undefined && firstAudioAtMs >= answeredAtMs) {
+      timings["answerToFirstAudioMs"] = firstAudioAtMs - answeredAtMs;
+    }
     timings["persistMs"] = Date.now() - persistStartedAt;
     await saveDispatchMetrics(attemptId, campaign.id, contact.assignedProvider, timings);
   } catch {

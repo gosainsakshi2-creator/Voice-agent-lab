@@ -8,10 +8,15 @@
 import type { PoolClient } from "pg";
 
 import { query } from "../client";
-import type {
-  CampaignRecord,
-  CampaignStatus,
-  ProviderAllocation,
+import {
+  LEGACY_LLM_ALLOCATION,
+  isCampaignLlmProvider,
+  isCampaignTelephonyProvider,
+  type CampaignRecord,
+  type CampaignStatus,
+  type LlmAllocation,
+  type ProviderAllocation,
+  type TelephonyAllocation,
 } from "../../domain/campaign-types";
 
 interface CampaignRow {
@@ -48,6 +53,8 @@ function toRecord(row: CampaignRow): CampaignRecord {
     language: row.language,
     dispatchConfig: row.dispatch_config,
     agentGender: readAgentGender(row.dispatch_config),
+    llmAllocation: readLlmAllocation(row.dispatch_config),
+    telephonyAllocation: readTelephonyAllocation(row.dispatch_config, row.telephony_provider),
     totalContacts: row.total_contacts,
     pilotStage: row.pilot_stage,
     idempotencyKey: row.idempotency_key,
@@ -68,6 +75,71 @@ function readAgentGender(config: Record<string, unknown>): "male" | "female" | n
   if (typeof agent !== "object" || agent === null) return null;
   const gender = (agent as Record<string, unknown>)["gender"];
   return gender === "male" || gender === "female" ? gender : null;
+}
+
+/**
+ * Reads one percentage map out of `dispatch_config`, keeping only
+ * entries whose id is currently known and whose share is a usable
+ * number.
+ *
+ * Returns `undefined` — NOT an empty object — when there is nothing
+ * usable, so each caller below can apply its own "what did this
+ * campaign do before the field existed" answer rather than inventing a
+ * split here. Unknown ids are dropped rather than throwing: a read path
+ * that refuses to load a campaign because one entry is stale would take
+ * the whole campaign offline, and the allocation is validated properly
+ * on the way IN, at the API boundary.
+ */
+function readAllocation<P extends string>(
+  config: Record<string, unknown>,
+  key: string,
+  isKnownId: (value: string) => value is P,
+): Readonly<Partial<Record<P, number>>> | undefined {
+  const raw = config?.[key];
+  if (typeof raw !== "object" || raw === null) return undefined;
+
+  const parsed: Partial<Record<P, number>> = {};
+  let usable = 0;
+  for (const [id, percent] of Object.entries(raw as Record<string, unknown>)) {
+    if (!isKnownId(id)) continue;
+    if (typeof percent !== "number" || !Number.isFinite(percent) || percent < 0) continue;
+    parsed[id] = percent;
+    usable += percent;
+  }
+
+  return usable > 0 ? parsed : undefined;
+}
+
+/**
+ * The campaign's LLM split.
+ *
+ * Absent for every campaign created before the dimension existed, and
+ * those campaigns ran on the call runner's `"gpt-5.1"` literal — so the
+ * fallback is that exact behaviour, not a new default. The 50/50 the UI
+ * offers is applied when a campaign is CREATED and is stored; it is
+ * never substituted in here, which is what keeps an existing campaign
+ * from silently starting to route half its calls to a different model.
+ */
+function readLlmAllocation(config: Record<string, unknown>): LlmAllocation {
+  return readAllocation(config, "llmAllocation", isCampaignLlmProvider) ?? LEGACY_LLM_ALLOCATION;
+}
+
+/**
+ * The campaign's carrier split.
+ *
+ * Absent for every campaign created before the dimension existed, and
+ * those campaigns dialled through the `telephony_provider` column —
+ * so the fallback is 100% of that column's value, whatever it is.
+ */
+function readTelephonyAllocation(
+  config: Record<string, unknown>,
+  telephonyProviderColumn: string,
+): TelephonyAllocation {
+  const stored = readAllocation(config, "telephonyAllocation", isCampaignTelephonyProvider);
+  if (stored) return stored;
+  return isCampaignTelephonyProvider(telephonyProviderColumn)
+    ? { [telephonyProviderColumn]: 100 }
+    : {};
 }
 
 const SELECT_COLUMNS = `

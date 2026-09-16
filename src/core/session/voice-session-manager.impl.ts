@@ -518,6 +518,47 @@ getTranscript(sessionId: SessionId): readonly import("../../types/provider.types
   }
 
   /**
+   * ADDITIVE, NOT PART OF `VoiceSessionManager`. PHASE 3 BATCH 1 —
+   * PURE TELEMETRY. The media bridge's outbound pump has just handed
+   * an audio frame to the transport.
+   *
+   * This is the ONLY point in the system that knows when the caller
+   * actually begins to hear something. The pipeline knows when audio
+   * was QUEUED; the bridge's pre-roll buffer and its 20ms-paced pump
+   * sit between that and the wire, and that gap is exactly the
+   * playback-startup span this method exists to expose.
+   *
+   * Called on EVERY frame (~50/s per live call) and deliberately so:
+   * both writes are `??=`, so the second and every later frame of a
+   * turn cost one comparison and nothing else. Keeping the "is this
+   * the first one?" decision here rather than behind a flag in each
+   * bridge is what stops the two bridges drifting apart on the
+   * definition — the per-turn field is cleared by `beginTurnTiming`
+   * and the per-call one by nothing, and each is written in exactly
+   * one place.
+   *
+   * Cannot affect the call. It takes no lock, awaits nothing, throws
+   * nothing (an unknown or already-ended session returns silently,
+   * for the same reason `noteCallerSpeech` does — socket callbacks
+   * outlive sessions), and no code reads either value to decide
+   * anything.
+   */
+  noteOutboundFrameSent(sessionId: SessionId): void {
+    const record = this.sessions.get(sessionId);
+    if (!record) return;
+    // Short-circuit BEFORE reading the clock: after the first frame of
+    // a turn this is a single undefined check, so the ~49 remaining
+    // frames per second allocate nothing and call nothing. (The
+    // collector's own `??=` guards the call-level stamp the same way,
+    // so `new Date()` is constructed once per call, not once per
+    // frame.)
+    if (record.firstOutboundFrameAtMs === undefined) {
+      record.firstOutboundFrameAtMs = Date.now();
+    }
+    record.metrics.markFirstOutboundAudio();
+  }
+
+  /**
    * ADDITIVE, NOT PART OF `VoiceSessionManager`. The transport reporting
    * that it is hearing LOUD, near-end speech right now — a strictly
    * stronger claim than `noteCallerSpeech` above, from the same energy

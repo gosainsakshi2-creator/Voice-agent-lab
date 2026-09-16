@@ -576,23 +576,97 @@ export async function buildProductionReadiness(
       detail: dbReachable ? `Campaign ${input.campaignId} was not found.` : "The database is unreachable.",
     });
   } else {
-    const isVobiz = campaign.telephonyProvider === TELEPHONY_PROVIDER_IDS.VOBIZ;
-    const providerRegistered = registered(
-      outcomes,
-      ProviderCategory.TELEPHONY,
-      campaign.telephonyProvider,
-    )?.registered === true;
+    // ── Every carrier the campaign can actually dial through ────────
+    //
+    // This check used to demand Vobiz specifically and BLOCK anything
+    // else, which was correct while Vobiz was the only carrier wired
+    // for campaigns. Plivo is now wired for campaigns too — per-call
+    // answer correlation, a hangup keyed to the live CallUUID, and the
+    // STT-health barge-in gate — so naming a carrier is no longer
+    // sufficient grounds to refuse a launch.
+    //
+    // What the check asks instead is the thing that actually matters
+    // and that it always should have asked: is every carrier this
+    // campaign can select REGISTERED, i.e. does this deployment hold
+    // credentials for it? An allocation naming a carrier whose
+    // environment variables are absent is a campaign whose calls would
+    // fail at `createSession`, one contact at a time — so it is still
+    // BLOCKED, now for the real reason.
+    const selectedCarriers = Object.entries(campaign.telephonyAllocation)
+      .filter((entry): entry is [string, number] => typeof entry[1] === "number" && entry[1] > 0)
+      .map(([id, percent]) => ({
+        id,
+        percent,
+        registered:
+          registered(outcomes, ProviderCategory.TELEPHONY, id)?.registered === true,
+      }))
+      .sort((a, b) => b.percent - a.percent || a.id.localeCompare(b.id));
+
+    const carrierProblems: string[] = [];
+    if (selectedCarriers.length === 0) {
+      carrierProblems.push(
+        `no telephony provider is allocated above 0%, so no call can be placed (telephony_provider column reads "${campaign.telephonyProvider}")`,
+      );
+    }
+    for (const carrier of selectedCarriers) {
+      if (!carrier.registered) {
+        carrierProblems.push(`${carrier.id} is not registered — its environment variables are missing`);
+      }
+    }
+
+    // Plivo's own answer URL, checked the same way check 7 checks
+    // Vobiz's and only when the campaign can actually select Plivo. A
+    // stale answer URL is the failure that connects the call and then
+    // never flows any audio, which is indistinguishable at this end
+    // from the carrier dropping it.
+    //
+    // Unlike Vobiz, an existing query string is NOT a problem here:
+    // `withSessionId` appends with the correct separator, so a URL that
+    // already carries parameters still produces a valid answer URL.
+    if (selectedCarriers.some((carrier) => carrier.id === TELEPHONY_PROVIDER_IDS.PLIVO)) {
+      const plivoAnswerUrl = process.env["PLIVO_ANSWER_URL"]?.trim() ?? "";
+      const expectedPlivoAnswerUrl = baseUrl ? `${baseUrl.origin}/api/voice/plivo/answer` : undefined;
+      const plivoFrom = process.env["PLIVO_FROM_NUMBER"]?.trim() ?? "";
+
+      if (plivoAnswerUrl.length > 0 && !plivoAnswerUrl.startsWith("https://")) {
+        carrierProblems.push("PLIVO_ANSWER_URL is not https");
+      }
+      if (
+        expectedPlivoAnswerUrl &&
+        plivoAnswerUrl.length > 0 &&
+        plivoAnswerUrl.split("?")[0]?.replace(/\/+$/, "") !== expectedPlivoAnswerUrl
+      ) {
+        carrierProblems.push(
+          `PLIVO_ANSWER_URL is "${plivoAnswerUrl}" but this deployment serves the answer webhook at "${expectedPlivoAnswerUrl}". ` +
+            "A stale answer URL means the call connects and no audio ever flows",
+        );
+      }
+      if (plivoFrom.length > 0 && !E164.test(plivoFrom)) {
+        carrierProblems.push(
+          `PLIVO_FROM_NUMBER="${plivoFrom}" is not E.164; Plivo refuses a caller id it cannot parse, and a trailing newline is invisible in the error it returns`,
+        );
+      }
+    }
+
+    const split = selectedCarriers
+      .map((carrier) => `${carrier.id} ${carrier.percent}% (registered: ${carrier.registered})`)
+      .join(", ");
+
     add({
       number: 9,
       id: "campaign-telephony-provider",
       title: "Campaign telephony provider",
-      status: isVobiz && providerRegistered ? "PASS" : "BLOCKED",
-      detail: `The campaign is set to dial through "${campaign.telephonyProvider}" (registered: ${providerRegistered}).${
-        isVobiz ? "" : " Vobiz is the campaign telephony provider for this programme."
-      }`,
-      ...(isVobiz && providerRegistered
+      status: carrierProblems.length === 0 ? "PASS" : "BLOCKED",
+      detail:
+        carrierProblems.length === 0
+          ? `The campaign dials through: ${split}.`
+          : `The campaign dials through: ${split || "(nothing)"}. Problems: ${carrierProblems.join("; ")}.`,
+      ...(carrierProblems.length === 0
         ? {}
-        : { remediation: "Recreate the campaign against vobiz, or configure the provider it names." }),
+        : {
+            remediation:
+              "Configure the environment for every carrier the campaign allocates to, or recreate the campaign allocating only to a correctly configured carrier.",
+          }),
     });
   }
 

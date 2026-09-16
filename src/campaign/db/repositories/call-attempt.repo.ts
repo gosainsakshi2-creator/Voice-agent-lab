@@ -112,14 +112,29 @@ export async function createAttempt(
   campaignId: string,
   contact: ClaimedContact,
   telephonyProvider: string,
+  llmProvider: string,
 ): Promise<CreatedAttempt | undefined> {
   const result = await query<{ id: string; attempt_number: number }>(
     `INSERT INTO call_attempts
-       (campaign_id, contact_id, attempt_number, provider, telephony_provider, status)
-     VALUES ($1, $2, $3, $4, $5, 'DIALING')
+       (campaign_id, contact_id, attempt_number, provider, telephony_provider, llm_provider, status)
+     VALUES ($1, $2, $3, $4, $5, $6, 'DIALING')
      ON CONFLICT (contact_id, attempt_number) DO NOTHING
      RETURNING id, attempt_number`,
-    [campaignId, contact.id, contact.nextAttemptNumber, contact.assignedProvider, telephonyProvider],
+    [
+      campaignId,
+      contact.id,
+      contact.nextAttemptNumber,
+      // THE THREE ACTUAL PROVIDERS, written in the same row as the
+      // attempt they describe and at the moment the attempt is
+      // reserved — before anything can dial, so a call that fails at
+      // origination is still attributable. `provider` is the contact's
+      // locked TTS lane, the other two were resolved for this call from
+      // the campaign's allocations. None of them is the configured
+      // percentage split; all three are what actually handled the call.
+      contact.assignedProvider,
+      telephonyProvider,
+      llmProvider,
+    ],
   );
   const row = result.rows[0];
   return row ? { id: row.id, attemptNumber: row.attempt_number } : undefined;
@@ -239,7 +254,12 @@ export async function saveCallMetrics(
     ttsP50: number | null;
     totalP50: number | null;
     firstTurnTotal: number | null;
-    cost: { telephony: number; stt: number; llm: number; tts: number; total: number };
+    /**
+     * `llm` is nullable: a model with no confirmed commercial rate
+     * records NULL rather than 0, so "we do not know" is never stored
+     * as "it is free". See `isLlmRateKnown`.
+     */
+    cost: { telephony: number; stt: number; llm: number | null; tts: number; total: number };
   },
 ): Promise<void> {
   await query(

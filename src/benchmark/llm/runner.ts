@@ -17,10 +17,10 @@
  *
  * The answer is assembled from `type: "token"` events, NOT from the
  * terminal event's `turn.content`. That choice is the Gemma safety
- * property: its adapter applies the `thought` filter on the way into
- * the token stream (`gemma.provider.ts:262-276`), so a reasoning part
- * can never become a token event. Reading the terminal turn instead
- * would bypass the one place the filter is applied.
+ * property: its adapter yields tokens from the response's `content`
+ * only, never from OpenRouter's separate `reasoning` field, so a
+ * reasoning chunk can never become a token event. Reading the terminal
+ * turn instead would bypass the one place that filter is applied.
  *
  * The two are cross-checked anyway and any divergence is recorded as
  * `finalTextDivergedFromTokens` — for Gemma that would mean reasoning
@@ -123,9 +123,9 @@ export async function runOnce(args: {
     for await (const event of stream) {
       if (event.type === "token") {
         // The metric. First token event === first usable ANSWER token
-        // for both providers: Gemma filters `thought` parts before
-        // they can become one, and OpenAI never streams reasoning as
-        // a content delta at all.
+        // for both providers: Gemma never yields a reasoning chunk as
+        // a token, and OpenAI never streams reasoning as a content
+        // delta at all.
         firstAnswerTokenMs ??= performance.now() - t0;
         tokenCount += 1;
         streamedText += event.delta;

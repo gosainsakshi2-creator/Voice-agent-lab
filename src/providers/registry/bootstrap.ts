@@ -141,7 +141,7 @@ export function bootstrapProviderRegistry(
     registry,
     ProviderCategory.LANGUAGE_MODEL,
     LANGUAGE_MODEL_PROVIDER_IDS.GEMMA_4,
-    ["GEMMA_API_KEY"],
+    ["OPENROUTER_API_KEY"],
     () => new GemmaLanguageModelProvider(),
     outcomes,
   );

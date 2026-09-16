@@ -48,7 +48,7 @@ export interface RunRecord {
   /**
    * Provider invocation -> first emitted `LlmTokenEvent` of type
    * "token". For Gemma this is the first ANSWER token by
-   * construction: its adapter never yields a `thought` part. Absent
+   * construction: its adapter never yields a reasoning chunk. Absent
    * when the run produced no token at all.
    */
   readonly firstAnswerTokenMs: number | undefined;
@@ -66,8 +66,8 @@ export interface RunRecord {
   /**
    * True when the provider's terminal event carried text that differs
    * from the concatenated token stream. For Gemma that would mean
-   * reasoning had escaped its per-part filter, so it is a correctness
-   * alarm, not a curiosity.
+   * reasoning had escaped the content-only filter, so it is a
+   * correctness alarm, not a curiosity.
    */
   readonly finalTextDivergedFromTokens: boolean;
 

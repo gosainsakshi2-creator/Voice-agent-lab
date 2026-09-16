@@ -87,7 +87,7 @@ truncate at the first newline (this has already broken
 | Import | `CAMPAIGN_CSV_MAX_BYTES`, `CAMPAIGN_CSV_MAX_ROWS`, `CAMPAIGN_DEFAULT_REGION` |
 | Sheets | `CAMPAIGN_SHEET_SPREADSHEET_ID`, `CAMPAIGN_SHEET_TAB_NAME`, `GOOGLE_SERVICE_ACCOUNT_JSON` |
 | Telephony | `VOBIZ_*`, `PLIVO_*` |
-| STT / LLM | `DEEPGRAM_*`, `OPENAI_*`, `GEMMA_*` |
+| STT / LLM | `DEEPGRAM_*`, `OPENAI_*`, `OPENROUTER_API_KEY`, `GEMMA_*` |
 | TTS | `ELEVENLABS_*`, `CARTESIA_*`, `SARVAM_*`, `SMALLEST_AI_*` |
 
 ## When something goes wrong

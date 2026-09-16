@@ -35,8 +35,8 @@ export interface VoiceAgentLabEnv {
   readonly OPENAI_API_KEY?: string;
   readonly OPENAI_MODEL?: string;
 
-  // Language Model — Gemma 4
-  readonly GEMMA_API_KEY?: string;
+  // Language Model — Gemma 4 (served via OpenRouter)
+  readonly OPENROUTER_API_KEY?: string;
   readonly GEMMA_MODEL?: string;
 
   // Voice — ElevenLabs

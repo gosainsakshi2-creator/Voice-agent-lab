@@ -38,7 +38,7 @@ export const EXTERNAL_VENDORS = [
   "plivo",
   "deepgram",
   "openai",
-  "google",
+  "openrouter",
   "cartesia",
   "elevenlabs",
   "sarvam",
@@ -411,39 +411,40 @@ export function getExternalLimits(): readonly ExternalLimit[] {
     },
   );
 
-  // ── GOOGLE (GEMMA 4) ──────────────────────────────────────────────
+  // ── OPENROUTER (GEMMA 4) ──────────────────────────────────────────
   limits.push(
     {
-      id: "google.gemma_model",
-      vendor: "google",
+      id: "openrouter.gemma_model",
+      vendor: "openrouter",
       limit: "Model in use for the Gemma lane",
       status: "FROM_REPOSITORY",
-      repositoryValue: `GEMMA_MODEL = ${optionalEnv("GEMMA_MODEL", "gemma-4-31b-it (default)")}`,
+      repositoryValue: `GEMMA_MODEL = ${optionalEnv("GEMMA_MODEL", "google/gemma-4-26b-a4b-it (default)")}`,
       source: ".env / src/providers/language-model/gemma.provider.ts",
       matters:
-        "Gemma 4 is a thinking model: its reasoning parts are filtered out by the adapter, but they are still generated, so they cost latency on every turn.",
+        "Gemma 4 is a thinking model: its reasoning is kept off the spoken answer by the adapter, but it is still generated, so it costs latency on every turn.",
       blocksScaling: false,
     },
     {
-      id: "google.gemma_rate_limits",
-      vendor: "google",
-      limit: "Requests-per-minute and tokens-per-minute on the AI Studio key",
+      id: "openrouter.gemma_rate_limits",
+      vendor: "openrouter",
+      limit: "Requests-per-minute and credit limits on the OpenRouter key",
       status: "NEEDS_EXTERNAL_CONFIRMATION",
       repositoryValue: null,
       matters:
-        "AI Studio free-tier keys are rate-limited per minute. At campaign concurrency every turn of every call is a request, and a 429 mid-conversation is dead air.",
-      confirmWith: "Google AI Studio console (quota page) for the key in GEMMA_API_KEY.",
+        "OpenRouter rate-limits per key, and the limit depends on the account's credit balance. At campaign concurrency every turn of every call is a request, and a 429 mid-conversation is dead air. Which upstream provider OpenRouter routes a request to can also change the latency and the limit under you.",
+      confirmWith: "OpenRouter dashboard (Activity / Limits) for the key in OPENROUTER_API_KEY.",
       blocksScaling: true,
     },
     {
-      id: "google.gemma_price",
-      vendor: "google",
+      id: "openrouter.gemma_price",
+      vendor: "openrouter",
       limit: "Price used by our estimator",
       status: "NEEDS_EXTERNAL_CONFIRMATION",
       repositoryValue: null,
       matters:
-        "UNKNOWN, and deliberately not invented. Gemma is free for this account's present usage, so the estimator reports its LLM cost as UNPRICED rather than as $0 — a free tier is not a commercial rate, and reporting one would make a Gemma lane look cheaper than it can be shown to be. Any cost comparison against GPT-5.1 is incomplete until a rate is confirmed.",
-      confirmWith: "Google AI Studio / Vertex pricing for the served Gemma model, once usage leaves the free tier.",
+        "UNKNOWN to the estimator, and deliberately not invented. OpenRouter publishes a per-token price for the served Gemma model and bills it per request, so — unlike the Google AI Studio free tier this lane used to run on — the cost is real and non-zero. Until that rate is entered the estimator reports the Gemma LLM cost as UNPRICED rather than as $0, and any cost comparison against GPT-5.1 is incomplete.",
+      confirmWith:
+        "OpenRouter model page for GEMMA_MODEL (prompt/completion price per token), then set GEMMA_COST_PER_1M_INPUT_USD / GEMMA_COST_PER_1M_OUTPUT_USD.",
       blocksScaling: false,
     },
   );

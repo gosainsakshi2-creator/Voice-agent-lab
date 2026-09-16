@@ -94,12 +94,15 @@ function configNotes(): ModelConfigNote[] {
     {
       model: "gemma-4",
       settings: {
-        model: process.env["GEMMA_MODEL"] ?? "gemma-4-31b-it",
-        generationConfig: "not set — API defaults",
-        thinking: "ENABLED AND NOT DISABLEABLE (API rejects thinkingBudget/thinkingLevel)",
-        reasoningHandling: "thought parts filtered by the adapter; never enter the answer",
+        model: process.env["GEMMA_MODEL"] ?? "google/gemma-4-26b-a4b-it",
+        servedBy: "OpenRouter (OpenAI-compatible chat.completions)",
+        stream: "true",
+        stream_options: "not set — no usage requested",
+        reasoningHandling:
+          "OpenRouter returns reasoning on its own field, never in content; the adapter reads content only",
         verbosityEquivalent: "NONE — no Gemma equivalent to GPT's verbosity=low",
         temperature: "not set — API default",
+        max_tokens: "not set — API default",
       },
     },
   ];
@@ -125,7 +128,7 @@ function printPlan(log: (s: string) => void, modelIds: readonly string[]): void 
   // not going to make.
   const vendors = [
     ...(modelIds.includes("gpt-5.1") ? ["OpenAI"] : []),
-    ...(modelIds.includes("gemma-4") ? ["Google"] : []),
+    ...(modelIds.includes("gemma-4") ? ["OpenRouter"] : []),
   ].join(" and ");
   log(`  TOTAL REQUESTS    ${plan.total}  — REAL, BILLED, to ${vendors}`);
   log(`  prompt size       ~17,100 tokens per request`);

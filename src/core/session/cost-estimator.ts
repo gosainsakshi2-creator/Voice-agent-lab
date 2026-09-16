@@ -84,11 +84,12 @@ const SARVAM_INR_PER_1K_CHARS = 3;
  *
  * GEMMA_4: ⚠ UNPRICED — NOT FREE, AND NOT $0.
  *
- * Gemma 4 is served here by Google AI Studio (`@google/generative-ai`,
- * model `gemma-4-31b-it` per GEMMA_MODEL) and is free for this
- * account's present usage. A free tier is not a commercial rate, and
- * the two must not be recorded as the same thing: a stored 0 reads,
- * months later and to someone who was not here, as "Gemma costs
+ * Gemma 4 is served here by OpenRouter (the `openai` SDK pointed at
+ * `https://openrouter.ai/api/v1`, model `google/gemma-4-26b-a4b-it`
+ * per GEMMA_MODEL). OpenRouter bills it per token at a published rate,
+ * so this lane's cost is real — it is simply not entered here yet, and
+ * a rate nobody has entered must not be recorded as zero: a stored 0
+ * reads, months later and to someone who was not here, as "Gemma costs
  * nothing", which would make every Gemma lane look unbeatable on
  * cost-per-registration on the strength of a placeholder.
  *
@@ -226,7 +227,7 @@ export function estimateSttCost(providerId: string, audioSeconds: number): numbe
  * configured provider surfaces real usage to the caller — the OpenAI
  * adapter returns only `{ turn, latencyMs }` and its stream is opened
  * without `stream_options.include_usage`; the Gemma adapter likewise
- * discards `usageMetadata` — and manufacturing those counts would mean
+ * requests no usage from OpenRouter — and manufacturing those counts would mean
  * changing the LLM request/response path, which is out of scope here.
  */
 export function estimateLlmCost(

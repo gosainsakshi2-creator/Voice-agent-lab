@@ -172,13 +172,24 @@ export function transcriptEventFromMessage(
 }
 
 export class DeepgramSpeechToTextProvider implements SpeechToTextProvider {
-  readonly descriptor: ProviderDescriptor = {
-    category: ProviderCategory.SPEECH_TO_TEXT,
-    id: SPEECH_TO_TEXT_PROVIDER_IDS.DEEPGRAM,
-    displayName: "Deepgram",
-    supportedLanguages: [SupportedLanguage.ENGLISH, SupportedLanguage.HINDI, SupportedLanguage.HINGLISH],
-    version: "nova-3",
-  };
+  /**
+   * PHASE 3 PHASE 0 — `version` now reports the model this instance
+   * will ACTUALLY send, instead of a literal.
+   *
+   * It was hard-coded to `"nova-3"` while the real model comes from
+   * `optionalEnv("DEEPGRAM_MODEL", "nova-3")` (see `loadEnvConfig`),
+   * so the two could silently disagree: setting `DEEPGRAM_MODEL` to
+   * anything else left the descriptor still claiming `nova-3`. Every
+   * latency comparison that groups by provider would then be pooling
+   * two different models without any way to tell.
+   *
+   * Assigned in the constructor rather than as a property initializer
+   * because `this.config` does not exist until the constructor runs.
+   * `descriptor.version` has no functional reader anywhere in the
+   * codebase — it is metadata only — so making it truthful cannot
+   * change behaviour.
+   */
+  readonly descriptor: ProviderDescriptor;
 
   private readonly client: DeepgramClient;
   private readonly config: DeepgramEnvConfig;
@@ -186,6 +197,15 @@ export class DeepgramSpeechToTextProvider implements SpeechToTextProvider {
   constructor(config: DeepgramEnvConfig = loadEnvConfig()) {
     this.config = config;
     this.client = new DeepgramClient({ apiKey: config.apiKey });
+    this.descriptor = {
+      category: ProviderCategory.SPEECH_TO_TEXT,
+      id: SPEECH_TO_TEXT_PROVIDER_IDS.DEEPGRAM,
+      displayName: "Deepgram",
+      supportedLanguages: [SupportedLanguage.ENGLISH, SupportedLanguage.HINDI, SupportedLanguage.HINGLISH],
+      // The model name only. `config.apiKey` is never read here and
+      // never reaches telemetry.
+      version: config.model,
+    };
   }
   
   async transcribe(request: TranscriptionRequest): Promise<readonly TranscriptSegment[]> {

@@ -99,6 +99,10 @@ export interface TurnLatencyInput {
   readonly llmRetryOverheadMs?: number | undefined;
   /** Compact non-sensitive retry reasons. */
   readonly llmRetryReasons?: string | undefined;
+  /** PHASE 3 PHASE 0 — non-empty finals delivered for this turn. */
+  readonly finalTranscriptCount?: number | undefined;
+  /** PHASE 3 PHASE 0 — gaps between consecutive finals within the turn. */
+  readonly interFinalGapsMs?: readonly number[] | undefined;
 }
 
 /**
@@ -149,6 +153,8 @@ export class SessionMetricsCollector {
   private endedAt: Date | undefined;
   /** First outbound audio frame of the call, reported by the media bridge. */
   private firstOutboundAudioAt: Date | undefined;
+  /** PHASE 3 PHASE 0 — the STT model this call resolved to. */
+  private sttModel: string | undefined;
 
   constructor(
     private readonly sessionId: SessionId,
@@ -223,6 +229,19 @@ export class SessionMetricsCollector {
       typeof input.llmRetryReasons === "string" && input.llmRetryReasons.length > 0
         ? input.llmRetryReasons
         : undefined;
+    // A count of 0 means the turn released with no non-empty final at
+    // all. `positiveOrUndefined` preserves 0, which is correct: that is
+    // a real and diagnostic observation, not a missing measurement.
+    const finalTranscriptCount = positiveOrUndefined(input.finalTranscriptCount);
+    // Each gap is sanitised individually, so one disagreeing pair of
+    // stamps cannot poison the rest of the array. An empty result is
+    // stored as ABSENT — "one final, therefore no gaps" is already
+    // expressed by `finalTranscriptCount`, and an empty array would add
+    // a second, weaker way of saying it.
+    const gaps = Array.isArray(input.interFinalGapsMs)
+      ? input.interFinalGapsMs.filter((g) => Number.isFinite(g) && g >= 0)
+      : [];
+    const interFinalGapsMs = gaps.length > 0 ? gaps : undefined;
 
     this.turnLatencies.push({
       turnIndex: input.turnIndex,
@@ -252,6 +271,8 @@ export class SessionMetricsCollector {
       ...(llmRetries !== undefined ? { llmRetries } : {}),
       ...(llmRetryOverheadMs !== undefined ? { llmRetryOverheadMs } : {}),
       ...(llmRetryReasons !== undefined ? { llmRetryReasons } : {}),
+      ...(finalTranscriptCount !== undefined ? { finalTranscriptCount } : {}),
+      ...(interFinalGapsMs !== undefined ? { interFinalGapsMs } : {}),
     });
 
     this.costTotals.speechToText += input.sttCostUsd;
@@ -272,6 +293,23 @@ export class SessionMetricsCollector {
    */
   markCallAnswered(): void {
     this.answeredAt ??= new Date();
+  }
+
+  /**
+   * PHASE 3 PHASE 0. Records the speech-to-text MODEL this call
+   * resolved to, reported once by the session manager at the moment it
+   * resolves the provider stack.
+   *
+   * Idempotent for the same reason `markCallAnswered` is: it is called
+   * from a path a retried webhook can re-enter, and the first
+   * resolution is the one that describes the call. A blank string is
+   * ignored rather than stored, so a provider with no version reports
+   * absence instead of an empty field.
+   */
+  noteSttModel(model: string | undefined): void {
+    if (this.sttModel !== undefined) return;
+    if (typeof model !== "string" || model.trim().length === 0) return;
+    this.sttModel = model;
   }
 
   /**
@@ -339,6 +377,7 @@ export class SessionMetricsCollector {
       providerStack: this.providerStack,
       timestamp: new Date(),
       callDuration,
+      ...(this.sttModel !== undefined ? { sttModel: this.sttModel } : {}),
       estimatedCost,
       turnLatencies: [...this.turnLatencies],
     };

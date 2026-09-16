@@ -106,6 +106,24 @@ interface AcquiredTurn {
   readonly endpointEvidenceAtMs: number | undefined;
   readonly endpointEvidenceKind: "utterance_end" | "speech_final" | undefined;
   /**
+   * PHASE 3 PHASE 0 — how many non-empty FINAL transcripts Deepgram
+   * delivered for this caller turn, and the wall-clock gaps between
+   * consecutive ones.
+   *
+   * Counted at the SAME event `lastFinalSegmentAtMs` is stamped at,
+   * and snapshot-and-cleared at the SAME turn-release boundary — so
+   * the window is the existing authoritative one that `sttLagMs` and
+   * `userSpeechEndedAtMs` already use. No new notion of a turn is
+   * introduced.
+   *
+   * `finalTranscriptCount > 1` IS the fragmentation signal: one
+   * natural utterance arriving as several finals is the failure mode
+   * `endpointing: 300` was rejected for on 2026-08-09, which at the
+   * time could only be observed by eye.
+   */
+  readonly finalTranscriptCount: number;
+  readonly interFinalGapsMs: readonly number[];
+  /**
    * PHASE 3 BATCH 3 — absolute wall-clock observations for this turn,
    * snapshotted at release alongside the two fields above. Telemetry
    * only; see `TurnLatencyBreakdown` for what each one is.
@@ -1774,6 +1792,14 @@ export class ConversationPipeline {
   /** Wall clock at which the most recent non-empty FINAL transcript segment arrived. */
   private lastFinalSegmentAtMs: number | undefined;
   /**
+   * PHASE 3 PHASE 0 — fragmentation observers. Incremented ONLY at the
+   * final-transcript site below and cleared ONLY at turn release,
+   * alongside `lastFinalSegmentAtMs`. Pure observation: no gate, no
+   * timer, no threshold and no branch in the call path reads either.
+   */
+  private finalTranscriptCount = 0;
+  private interFinalGapsMs: number[] = [];
+  /**
    * Recognition lag of that segment: `inboundStreamMs - segment.endedAtMs`.
    * Both operands are positions on the same audio-stream clock (the
    * barge-in check above already relies on that equivalence), so the
@@ -2294,6 +2320,8 @@ export class ConversationPipeline {
           llmRetries: result.llmRetries,
           llmRetryOverheadMs: result.llmRetryOverheadMs,
           llmRetryReasons: result.llmRetryReasons,
+          finalTranscriptCount: turn.finalTranscriptCount,
+          interFinalGapsMs: turn.interFinalGapsMs,
         });
 
         // Last, after everything this turn owns has been committed and
@@ -3777,7 +3805,18 @@ export class ConversationPipeline {
           // was, so `recordTurn` can report real recognition latency
           // instead of the caller's speaking duration.
           if (segment.isFinal && segment.text.trim().length > 0) {
-            this.lastFinalSegmentAtMs = Date.now();
+            // PHASE 3 PHASE 0 — one `Date.now()` read, used for both the
+            // existing stamp and the gap, so the two cannot describe
+            // different instants. The gap is measured against the
+            // PREVIOUS final, captured before the field is overwritten;
+            // the first final of a turn has no predecessor and
+            // contributes no gap.
+            const finalAtMs = Date.now();
+            if (this.lastFinalSegmentAtMs !== undefined) {
+              this.interFinalGapsMs.push(finalAtMs - this.lastFinalSegmentAtMs);
+            }
+            this.finalTranscriptCount += 1;
+            this.lastFinalSegmentAtMs = finalAtMs;
             // PHASE 3 BATCH 4 — the AUDIO-BYTES clock, read on the line
             // after the WALL clock, in the same handler pass for the
             // same final. Co-stamped deliberately: the whole value of
@@ -4373,6 +4412,13 @@ export class ConversationPipeline {
           lastSegmentAtMs !== undefined ? lastSegmentAtMs - (sttLagMs ?? 0) : undefined;
         this.lastFinalSttLagMs = undefined;
         this.lastFinalSegmentAtMs = undefined;
+        // PHASE 3 PHASE 0 — same snapshot-then-clear pattern, at the
+        // same boundary, so the counts describe exactly the turn being
+        // released and never leak into the next one.
+        const finalTranscriptCount = this.finalTranscriptCount;
+        const interFinalGapsMs = this.interFinalGapsMs;
+        this.finalTranscriptCount = 0;
+        this.interFinalGapsMs = [];
         // Same snapshot-then-clear pattern for the Deepgram endpoint
         // evidence that triggered this release (see the field docs).
         const endpointEvidenceAtMs = this.lastEndpointEvidenceAtMs;
@@ -4400,6 +4446,8 @@ export class ConversationPipeline {
           turnReleasedAtMs,
           endpointEvidenceAtMs,
           endpointEvidenceKind,
+          finalTranscriptCount,
+          interFinalGapsMs,
           lastInboundAudioAtMs: this.lastInboundAudioAtMs,
           lastInterimTranscriptAtMs,
           lastFinalTranscriptAtMs: lastSegmentAtMs,
@@ -4492,6 +4540,13 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
         turnReleasedAtMs: Date.now(),
         endpointEvidenceAtMs: undefined,
         endpointEvidenceKind: undefined,
+        // The batch STT path resolves a whole utterance in one call and
+        // emits no incremental finals, so there is nothing to fragment:
+        // exactly one final, and no gap between consecutive ones. Both
+        // configured LLM/STT production paths stream, so this branch is
+        // not exercised in production.
+        finalTranscriptCount: 1,
+        interFinalGapsMs: [],
         // PHASE 3 BATCH 3 — absent for the same reason as the fields
         // above. A batch `transcribe()` delivers no interim segments
         // and no per-segment arrival to stamp, and its audio never

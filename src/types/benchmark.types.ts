@@ -351,6 +351,28 @@ export interface TurnLatencyBreakdown {
   readonly llmRetryOverheadMs?: number;
   /** Compact, non-sensitive reasons, e.g. `"500,500"`. Absent when no retry occurred. */
   readonly llmRetryReasons?: string;
+
+  // --- PHASE 3 PHASE 0: SPEECH FRAGMENTATION. Telemetry only; read by
+  // nothing that makes a decision. Exists to measure the failure mode
+  // `endpointing: 300` was rejected for on 2026-08-09 — one natural
+  // utterance arriving as several finals — which at the time could
+  // only be observed by eye. ---
+
+  /**
+   * Non-empty FINAL transcripts the STT provider delivered for this
+   * caller turn. `1` is unfragmented; `> 1` means the utterance
+   * arrived in pieces.
+   *
+   * Counted at the same event `stt` is measured from, over the same
+   * turn window — the existing authoritative boundary, not a new one.
+   */
+  readonly finalTranscriptCount?: number;
+  /**
+   * Wall-clock gaps between consecutive finals within this turn, in
+   * arrival order. Length is always `finalTranscriptCount - 1`, so a
+   * single final yields no array at all rather than a misleading `[0]`.
+   */
+  readonly interFinalGapsMs?: readonly number[];
 }
 
 /**
@@ -364,6 +386,23 @@ export interface BenchmarkMetrics {
   readonly providerStack: ProviderStackSelection;
   readonly timestamp: Date;
   readonly callDuration: CallDurationMetric;
+  /**
+   * PHASE 3 PHASE 0 — the speech-to-text MODEL this call actually ran,
+   * e.g. `"nova-3"`.
+   *
+   * `providerStack.speechToText` carries only the vendor id
+   * (`"deepgram"`), so until now a model change between two groups of
+   * calls was invisible and would silently confound any comparison
+   * that grouped by provider. Sourced from the resolved provider's
+   * own descriptor at the moment the conversation begins, so it
+   * reports what the socket will actually be opened with.
+   *
+   * Optional: absent on every record written before this field
+   * existed, and absent for any provider whose descriptor reports no
+   * model. Never a credential — the descriptor carries the model name
+   * and nothing else.
+   */
+  readonly sttModel?: string;
   readonly estimatedCost: EstimatedCostMetric;
   readonly turnLatencies: readonly TurnLatencyBreakdown[];
 }

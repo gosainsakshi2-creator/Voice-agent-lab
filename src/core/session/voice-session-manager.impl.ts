@@ -243,6 +243,15 @@ export class DefaultVoiceSessionManager implements VoiceSessionManager, Pipeline
       tts: this.registry.resolve(ProviderCategory.TEXT_TO_SPEECH, record.providerStack.textToSpeech.id),
     };
 
+    // PHASE 3 PHASE 0 — TELEMETRY ONLY. The resolved STT provider is
+    // the only thing that knows which model the socket will be opened
+    // with; `record.providerStack` carries the vendor id alone. Placed
+    // here beside `markCallAnswered` above because this is the one
+    // point every telephony path converges on with the providers in
+    // hand. Reads a descriptor string, stores it, and is read by
+    // nothing that makes a decision.
+    record.metrics.noteSttModel(providers.stt.descriptor.version);
+
     this.transition(record, SessionState.LISTENING, "call connected");
 
     // eslint-disable-next-line no-console

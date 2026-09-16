@@ -77,6 +77,8 @@ export interface TurnLatencyInput {
   // validation only; see `TurnLatencyBreakdown`.
   /** `inboundStreamMs` at final-transcript arrival. A counter, so 0 is meaningful. */
   readonly inboundStreamMsAtFinalTranscript?: number | undefined;
+  /** PHASE 3 BATCH 5 — which guard the endpoint marker met in `noteEndOfSpeech`. */
+  readonly endpointMarkerOutcome?: TurnLatencyBreakdown["endpointMarkerOutcome"];
   readonly sttCostUsd: number;
   readonly llmCostUsd: number;
   readonly ttsCostUsd: number;
@@ -120,6 +122,18 @@ function measurementOf(
   }
   return { milliseconds, measuredAt };
 }
+
+/** The closed set `endpointMarkerOutcome` may hold — see `TurnLatencyBreakdown`. */
+const ENDPOINT_MARKER_OUTCOMES: ReadonlySet<string> = new Set([
+  "no_pending_turn",
+  "stage_not_silence",
+  "chunk_boundary_grace_collapsed",
+  "pending_interim",
+  "not_releasable_filler",
+  "not_releasable_hold_phrase",
+  "not_releasable_incomplete",
+  "evidenced_confirmation",
+]);
 
 function positiveOrUndefined(value: number | undefined): number | undefined {
   if (value === undefined || !Number.isFinite(value) || value < 0) return undefined;
@@ -190,6 +204,14 @@ export class SessionMetricsCollector {
     const inboundStreamMsAtFinalTranscript = positiveOrUndefined(
       input.inboundStreamMsAtFinalTranscript,
     );
+    // PHASE 3 BATCH 5 — validated against the closed union the same way
+    // `endpointEvidenceKind` is, so the field can only ever hold an
+    // outcome the detector actually produced.
+    const endpointMarkerOutcome = ENDPOINT_MARKER_OUTCOMES.has(
+      input.endpointMarkerOutcome as string,
+    )
+      ? input.endpointMarkerOutcome
+      : undefined;
     // Counts, not latencies: 0 retries is a REAL and important
     // observation (it is the answer "retries did not cause this"),
     // so it must survive alongside `undefined` ("not observed").
@@ -222,6 +244,7 @@ export class SessionMetricsCollector {
       ...(inboundStreamMsAtFinalTranscript !== undefined
         ? { inboundStreamMsAtFinalTranscript }
         : {}),
+      ...(endpointMarkerOutcome !== undefined ? { endpointMarkerOutcome } : {}),
       ...(promptTokens !== undefined ? { promptTokens } : {}),
       ...(cachedPromptTokens !== undefined ? { cachedPromptTokens } : {}),
       ...(reasoningTokens !== undefined ? { reasoningTokens } : {}),

@@ -472,6 +472,29 @@ export interface TurnDetectionEvent {
  * turn. Callers own the timer clock via `now()` injection so this
  * class is trivially testable without real wall-clock delays.
  */
+/**
+ * Which branch of `noteEndOfSpeech` an endpoint marker took.
+ *
+ * TELEMETRY ONLY — nothing reads it to make a decision. It exists
+ * because production showed two `utterance_end` turns paying ~1817ms
+ * and ~1940ms between the evidence arriving and the turn releasing,
+ * against 150-301ms on every other turn, and the stored telemetry
+ * could not say which guard declined the short path.
+ *
+ * Exactly two of these are short paths — `chunk_boundary_grace_collapsed`
+ * and `evidenced_confirmation`. The rest mean the marker was received
+ * and the turn went on waiting.
+ */
+export type EndpointMarkerOutcome =
+  | "no_pending_turn"
+  | "stage_not_silence"
+  | "chunk_boundary_grace_collapsed"
+  | "pending_interim"
+  | "not_releasable_filler"
+  | "not_releasable_hold_phrase"
+  | "not_releasable_incomplete"
+  | "evidenced_confirmation";
+
 export class AdaptiveTurnDetector {
   private silenceTimeoutMs = DEFAULT_SILENCE_TIMEOUT_MS;
   private pendingFinalText = "";
@@ -524,6 +547,13 @@ export class AdaptiveTurnDetector {
    * other window clears it by construction) and by `reset`.
    */
   private chunkBoundaryGraceArmed = false;
+  /**
+   * TELEMETRY ONLY — which branch the most recent endpoint marker took.
+   * Written by `noteEndOfSpeech`, read and cleared by
+   * `consumeEndpointMarkerOutcome`, and never consulted by any decision
+   * in this file.
+   */
+  private lastEndpointMarkerOutcome: EndpointMarkerOutcome | undefined;
   private readonly listeners = new Set<(event: TurnDetectionEvent) => void>();
   /**
    * A turn that ended while nobody was subscribed. The pipeline only
@@ -602,6 +632,13 @@ export class AdaptiveTurnDetector {
 
     if (this.turnStartedAtMs === null) {
       this.turnStartedAtMs = nowMs;
+      // TELEMETRY ONLY. A marker that arrived while nothing was held
+      // recorded `no_pending_turn` against a turn that did not exist
+      // yet; without this it would be consumed by the NEXT turn and
+      // mislabel it — including a turn that released on `speech_final`
+      // and never reached `noteEndOfSpeech` at all. Cleared where the
+      // new turn begins, so the label always describes THIS turn.
+      this.lastEndpointMarkerOutcome = undefined;
     }
     this.lastSegmentAtMs = nowMs;
 
@@ -774,7 +811,10 @@ export class AdaptiveTurnDetector {
    */
   noteEndOfSpeech(): void {
     // Nothing is being held, so there is no turn for this to be about.
-    if (this.timer === null || this.pendingFinalText.trim().length === 0) return;
+    if (this.timer === null || this.pendingFinalText.trim().length === 0) {
+      this.lastEndpointMarkerOutcome = "no_pending_turn";
+      return;
+    }
 
     this.lastFinalWasEndpoint = true;
 
@@ -782,7 +822,10 @@ export class AdaptiveTurnDetector {
     // confirmation window that is already running would cut the
     // in-flight-speech check this detector exists to apply, and there
     // is nothing to gain: it is 300ms.
-    if (this.stage !== "silence") return;
+    if (this.stage !== "silence") {
+      this.lastEndpointMarkerOutcome = "stage_not_silence";
+      return;
+    }
 
     // ── A LATE claim, arriving inside the chunk-boundary grace ───────
     //
@@ -812,11 +855,24 @@ export class AdaptiveTurnDetector {
     // removed. `lastFinalWasEndpoint`, set above, is what stops
     // `emitTurnEnd` taking a SECOND grace on the way through.
     if (this.chunkBoundaryGraceArmed) {
+      this.lastEndpointMarkerOutcome = "chunk_boundary_grace_collapsed";
       this.rearmTimer(0);
       return;
     }
 
-    if (this.pendingInterim || !this.isReleasableThought()) return;
+    // DIAGNOSTIC SPLIT ONLY. `||` became two `if`s so the two reasons
+    // can be told apart in telemetry; the order, the short-circuit and
+    // therefore the behaviour are identical — `isReleasableThought` is
+    // still not called when `pendingInterim` is true, and is still
+    // called at most once.
+    if (this.pendingInterim) {
+      this.lastEndpointMarkerOutcome = "pending_interim";
+      return;
+    }
+    if (!this.isReleasableThought()) {
+      this.lastEndpointMarkerOutcome = this.classifyNotReleasable();
+      return;
+    }
     // PHASE 2: same reasoning as the `feed` fast path above — the
     // marker just arriving IS the endpoint claim, and the text already
     // reads as finished, so `stage` is marked `"confirming"` rather
@@ -830,10 +886,49 @@ export class AdaptiveTurnDetector {
     // withheld a full stop left the turn to wait out the entire
     // remaining silence window plus the open-ended confirmation. The
     // unpunctuated tier below is what such a turn is granted instead.
+    this.lastEndpointMarkerOutcome = "evidenced_confirmation";
     this.stage = "confirming";
     this.rearmTimer(this.evidencedConfirmationWindowMs(this.pendingFinalText));
     // The marker IS the explicit endpoint claim — see `onTurnPending`.
     this.notifyTurnPending();
+  }
+
+  /**
+   * TELEMETRY ONLY. Which of `isReleasableThought`'s three rejections
+   * applied, for a marker that has just been declined.
+   *
+   * Called ONLY after `isReleasableThought()` has already returned
+   * false, and it re-tests nothing that could change a decision:
+   * `FILLER_ONLY` and `HOLD_PHRASE_ONLY` are built with flags `"iu"`
+   * and carry no `g`, so `.test()` is stateless and a second call
+   * cannot perturb the first. `looksIncomplete` is deliberately NOT
+   * re-run — it is the residual, inferred from the other two having
+   * missed, so nothing inside it is evaluated twice.
+   *
+   * Tested in the same order `isReleasableThought` tests them, so the
+   * label always names the branch that actually fired.
+   */
+  private classifyNotReleasable():
+    | "not_releasable_filler"
+    | "not_releasable_hold_phrase"
+    | "not_releasable_incomplete" {
+    const text = this.pendingFinalText.trim();
+    if (FILLER_ONLY.test(text)) return "not_releasable_filler";
+    if (HOLD_PHRASE_ONLY.test(text)) return "not_releasable_hold_phrase";
+    return "not_releasable_incomplete";
+  }
+
+  /**
+   * TELEMETRY ONLY, read-only for behaviour: returns the outcome of the
+   * most recent `noteEndOfSpeech` call and clears it, so a turn that
+   * received no marker reports absence rather than inheriting the
+   * previous turn's label. Mirrors the snapshot-then-clear pattern the
+   * pipeline already uses for endpoint evidence.
+   */
+  consumeEndpointMarkerOutcome(): EndpointMarkerOutcome | undefined {
+    const outcome = this.lastEndpointMarkerOutcome;
+    this.lastEndpointMarkerOutcome = undefined;
+    return outcome;
   }
 
   /** Force an immediate end-of-turn (e.g. the caller detected hard silence via another signal). */
@@ -859,6 +954,12 @@ export class AdaptiveTurnDetector {
     this.interimConfirmations = 0;
     this.chunkBoundaryGraces = 0;
     this.chunkBoundaryGraceArmed = false;
+    // `lastEndpointMarkerOutcome` is deliberately NOT cleared here.
+    // `emitTurnEnd` calls `reset()` BEFORE it notifies its listeners,
+    // and the pipeline reads the outcome from inside that listener — so
+    // clearing here would wipe the label of the very turn it describes.
+    // Leakage to the NEXT turn is prevented where a new turn begins in
+    // `feed`, which is the correct boundary for it.
     // Back to the permissive default: the next turn has produced no
     // finals yet, so nothing is known about its endpointing.
     this.lastFinalWasEndpoint = true;

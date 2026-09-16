@@ -539,6 +539,90 @@ await test("I5 — the utterance_end path records it too, and still releases", a
 });
 
 // ═════════════════════════════════════════════════════════════════
+section("J. PHASE 3 BATCH 5 — which guard the endpoint marker met");
+
+await test("J1 — a marker on a complete thought records 'evidenced_confirmation'", async () => {
+  const turn = await oneTurn({ viaMarker: true, withInterim: false, withAudio: true });
+  assert.equal(turn.endpointEvidenceKind, "utterance_end");
+  assert.equal(
+    turn.endpointMarkerOutcome,
+    "evidenced_confirmation",
+    "a complete, interim-free thought must take the short evidenced path",
+  );
+});
+
+await test("J2 — a marker on an INCOMPLETE thought records why it was declined", async () => {
+  const h = startHarness({
+    openingLine: "Hello, this is Rohan.",
+    replies: ["Sure.", "Go on."],
+  });
+  try {
+    await h.waitForReplies(1);
+    for (let i = 0; i < 40; i += 1) h.pushAudio();
+    // A dangling conjunction: `looksIncomplete` is true, so
+    // `isReleasableThought` refuses and the marker cannot shorten.
+    h.say("I was going to and", { isFinal: true, isSpeechFinal: false });
+    await sleep(60);
+    h.sayEndOfSpeechMarker();
+    await h.waitForReplies(2);
+    const turn = h.turns().at(-1);
+    assert.ok(turn !== undefined);
+    assert.equal(
+      turn.endpointMarkerOutcome,
+      "not_releasable_incomplete",
+      `expected the incomplete-thought guard to be named, got ${String(turn.endpointMarkerOutcome)}`,
+    );
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("J3 — a turn with NO marker reports absence, not a stale label", async () => {
+  // Releases on `speech_final`, which never reaches `noteEndOfSpeech`.
+  const turn = await oneTurn({ viaMarker: false, withInterim: false, withAudio: true });
+  assert.equal(turn.endpointEvidenceKind, "speech_final");
+  assert.equal(
+    turn.endpointMarkerOutcome,
+    undefined,
+    "a speech_final turn never calls noteEndOfSpeech, so it must report no outcome",
+  );
+  assert.ok(!("endpointMarkerOutcome" in turn), "and the key must be omitted entirely");
+});
+
+await test("J4 — a stray marker with nothing held cannot mislabel the NEXT turn", async () => {
+  const h = startHarness({ openingLine: "Hello, this is Rohan.", replies: ["Sure, happy to help."] });
+  try {
+    await h.waitForReplies(1);
+    for (let i = 0; i < 40; i += 1) h.pushAudio();
+    // Nothing is being held yet — this marker describes no turn.
+    h.sayEndOfSpeechMarker();
+    await sleep(80);
+    // A normal speech_final turn follows. It must NOT inherit
+    // "no_pending_turn" from the stray marker above.
+    h.say("Tell me about the workshop.", { isSpeechFinal: true });
+    await h.waitForReplies(2);
+    const turn = h.turns().at(-1);
+    assert.ok(turn !== undefined);
+    assert.equal(
+      turn.endpointMarkerOutcome,
+      undefined,
+      `the next turn must not inherit the stray marker's label, got ${String(turn.endpointMarkerOutcome)}`,
+    );
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("J5 — both marker paths still release the turn (behaviour unchanged)", async () => {
+  const complete = await oneTurn({ viaMarker: true, withInterim: false, withAudio: true });
+  assert.ok(
+    complete.endpointToReleaseMs !== undefined,
+    "the marker path must still produce an evidenced release",
+  );
+  assert.ok(complete.total?.milliseconds !== undefined, "and still produce a reply");
+});
+
+// ═════════════════════════════════════════════════════════════════
 section("F-G. Collector contract: existing metrics unchanged, absence preserved");
 
 const STACK = {
@@ -631,6 +715,24 @@ await test("G5 — a stream reading of 0 IS preserved (a counter, unlike an epoc
     "0 means 'no audio ingested yet', which is a real observation and must not be dropped",
   );
   assert.ok("inboundStreamMsAtFinalTranscript" in turn, "and it must be present on the object");
+});
+
+await test("G7 — endpointMarkerOutcome is validated against the closed union", () => {
+  assert.equal(
+    collect({ endpointMarkerOutcome: "evidenced_confirmation" }).endpointMarkerOutcome,
+    "evidenced_confirmation",
+    "a real outcome round-trips",
+  );
+  assert.equal(
+    collect({ endpointMarkerOutcome: "something_invented" as never }).endpointMarkerOutcome,
+    undefined,
+    "an unrecognised outcome must be dropped, not stored",
+  );
+  assert.equal(
+    collect({}).endpointMarkerOutcome,
+    undefined,
+    "absence stays absence",
+  );
 });
 
 await test("G6 — a non-finite or negative stream reading is dropped", () => {

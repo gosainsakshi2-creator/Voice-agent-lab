@@ -47,6 +47,7 @@ import { currentTurnNote, languageHintFor, openingLineFor } from "./system-promp
 import { classifyIdentityAnswer } from "../../campaign/domain/identity-answer";
 import { SentenceChunker } from "./sentence-chunker";
 import { isBareAcknowledgement } from "./turn-detection";
+import type { EndpointMarkerOutcome } from "./turn-detection";
 import { voicemailPhraseIn } from "./voicemail-detection";
 import { combineSignals, abortableSleep } from "./abort-utils";
 import { estimateAudioSeconds, withByteCounter } from "./audio-utils";
@@ -117,6 +118,11 @@ interface AcquiredTurn {
    * `lastFinalTranscriptAtMs` reads the wall clock at.
    */
   readonly inboundStreamMsAtFinalTranscript: number | undefined;
+  /**
+   * PHASE 3 BATCH 5 — which guard the endpoint marker met inside
+   * `noteEndOfSpeech`. Absent when this turn received no marker.
+   */
+  readonly endpointMarkerOutcome: EndpointMarkerOutcome | undefined;
 }
 
 /**
@@ -2277,6 +2283,7 @@ export class ConversationPipeline {
           endpointEvidenceAtMs: turn.endpointEvidenceAtMs,
           endpointEvidenceKind: turn.endpointEvidenceKind,
           inboundStreamMsAtFinalTranscript: turn.inboundStreamMsAtFinalTranscript,
+          endpointMarkerOutcome: turn.endpointMarkerOutcome,
           sttCostUsd: turn.sttCostUsd,
           llmCostUsd: result.llmCostUsd,
           ttsCostUsd: result.ttsCostUsd,
@@ -4397,6 +4404,10 @@ export class ConversationPipeline {
           lastInterimTranscriptAtMs,
           lastFinalTranscriptAtMs: lastSegmentAtMs,
           inboundStreamMsAtFinalTranscript: lastFinalInboundStreamMs,
+          // PHASE 3 BATCH 5 — read-and-clear, so a turn that received
+          // no marker reports absence rather than the previous turn's
+          // label. Telemetry only; the detector consults it for nothing.
+          endpointMarkerOutcome: this.record.turnDetector.consumeEndpointMarkerOutcome(),
         });
       });
 
@@ -4492,6 +4503,9 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
         // Batch STT never advances the streaming byte counter, so there
         // is no audio-clock reading to pair with. Absent, not zero.
         inboundStreamMsAtFinalTranscript: undefined,
+        // Batch STT delivers no end-of-speech marker, so there is no
+        // `noteEndOfSpeech` branch to report.
+        endpointMarkerOutcome: undefined,
       };
     }
 

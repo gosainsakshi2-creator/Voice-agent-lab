@@ -296,6 +296,34 @@ export interface TurnLatencyBreakdown {
    * decision, and it does not reinterpret or replace `stt`.
    */
   readonly inboundStreamMsAtFinalTranscript?: number;
+  /**
+   * PHASE 3 BATCH 5 — WHICH GUARD the endpoint marker met inside
+   * `AdaptiveTurnDetector.noteEndOfSpeech`. Diagnostic only.
+   *
+   * Production showed two `utterance_end` turns spending ~1817ms and
+   * ~1940ms between the evidence arriving and the turn releasing, while
+   * every other turn spent 150-301ms. `endpointToReleaseMs` records
+   * THAT the wait happened; this records WHY. Absent on a turn that
+   * received no marker at all, which is most of them — a `speech_final`
+   * riding on the words never reaches `noteEndOfSpeech`.
+   *
+   * Only `chunk_boundary_grace_collapsed` and `evidenced_confirmation`
+   * are short paths. The other six mean the marker was received and the
+   * turn kept waiting.
+   *
+   * Declared as a literal union here rather than imported from
+   * `turn-detection.ts`, matching how `endpointEvidenceKind` is
+   * declared, so this types file keeps importing nothing from `core`.
+   */
+  readonly endpointMarkerOutcome?:
+    | "no_pending_turn"
+    | "stage_not_silence"
+    | "chunk_boundary_grace_collapsed"
+    | "pending_interim"
+    | "not_releasable_filler"
+    | "not_releasable_hold_phrase"
+    | "not_releasable_incomplete"
+    | "evidenced_confirmation";
 
   // --- OpenAI usage telemetry. TELEMETRY ONLY: informs investigation
   // of `llm` (TTFT), never itself a latency and never summed into

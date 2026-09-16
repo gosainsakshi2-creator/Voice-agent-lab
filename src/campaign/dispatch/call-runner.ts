@@ -651,6 +651,22 @@ async function persistMetrics(
     const pick = (key: "stt" | "llm" | "tts" | "total") =>
       median(turns.map((t) => t[key]?.milliseconds).filter((v): v is number => v !== undefined));
 
+    // `first_turn_total_ms` is an INTEGER column. Every sibling latency
+    // below reaches it through `median`, which already rounds; this one
+    // alone was passed verbatim. The end-to-end span is back-dated by a
+    // fractional STT lag, so it is routinely fractional — and the
+    // driver sends `2424.7` as that literal text, which Postgres
+    // rejects for an integer with 22P02. The throw landed AFTER
+    // `saveCallMetrics` and BEFORE `saveDispatchMetrics` inside one
+    // try, so a single fractional millisecond silently cost BOTH
+    // metrics rows while the call itself completed normally.
+    //
+    // Rounding here matches the existing convention exactly and changes
+    // no upstream measurement: `metrics.raw` still keeps the full
+    // precision. An absent first turn still stores NULL, never 0 —
+    // "no turn was measured" and "the turn took no time" stay distinct.
+    const firstTurnTotalMs = turns[0]?.total?.milliseconds;
+
     const breakdown = metrics.estimatedCost?.breakdown ?? {};
     await saveCallMetrics(attemptId, campaign.id, contact.assignedProvider, metrics as unknown as Record<string, unknown>, {
       turnCount: turns.length,
@@ -659,7 +675,7 @@ async function persistMetrics(
       llmP50: pick("llm"),
       ttsP50: pick("tts"),
       totalP50: pick("total"),
-      firstTurnTotal: turns[0]?.total?.milliseconds ?? null,
+      firstTurnTotal: firstTurnTotalMs === undefined ? null : Math.round(firstTurnTotalMs),
       cost: {
         telephony: breakdown.telephony ?? 0,
         stt: breakdown.speechToText ?? 0,
@@ -691,9 +707,27 @@ async function persistMetrics(
     }
     timings["persistMs"] = Date.now() - persistStartedAt;
     await saveDispatchMetrics(attemptId, campaign.id, contact.assignedProvider, timings);
-  } catch {
+  } catch (error) {
     // Metrics are diagnostic. Losing them must never turn a completed
-    // call into a failed one, or worse, into a retry.
+    // call into a failed one, or worse, into a retry — so this still
+    // swallows, and everything about finalization below is unchanged.
+    //
+    // What changed is that it is no longer SILENT. This catch hid a
+    // Postgres 22P02 across 144 completed calls: both metrics rows
+    // vanished while the call finished normally, so nothing anywhere
+    // pointed at the failure and the only way to find it was to notice
+    // the missing rows months later. The attempt, the campaign, the
+    // provider and the driver's own error code are enough to identify
+    // and reproduce the next one without re-running the call.
+    const pgCode = (error as { code?: unknown } | null)?.code;
+    // eslint-disable-next-line no-console
+    console.error(
+      `[call-runner:${sessionId}] metrics persistence FAILED — diagnostic only, ` +
+        `the call itself is unaffected. attempt=${attemptId} campaign=${campaign.id} ` +
+        `provider=${contact.assignedProvider}` +
+        `${pgCode === undefined ? "" : ` pgCode=${String(pgCode)}`}: ` +
+        `${error instanceof Error ? error.message : String(error)}`,
+    );
   }
 }
 

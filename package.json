@@ -63,6 +63,7 @@
     "test:registration-retry": "tsx src/campaign/tests/registration-retry-tests.ts",
     "test:registration-payload": "tsx src/campaign/tests/registration-payload-tests.ts",
     "test:llm-benchmark": "tsx src/campaign/tests/llm-benchmark-harness-tests.ts",
+    "test:first-turn-total": "tsx src/campaign/tests/first-turn-total-persistence-tests.ts",
     "bench:llm": "tsx src/benchmark/llm/cli.ts",
     "preflight:prod": "tsx src/campaign/production-readiness-cli.ts",
     "campaign:audit": "tsx src/campaign/audit-cli.ts"

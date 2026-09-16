@@ -1050,6 +1050,40 @@ export function definitiveAnswerIn(
     return "FINAL_YES";
   }
   if (disposition !== "FINAL_NO") return undefined;
+
+  // The same two conversation-safety guards the FINAL_YES branch above
+  // applies, in the same order, for the same reason: the VERDICT is
+  // about what the person decided, but the decision to hang up NOW is
+  // about whether the conversation is actually finished. Only the
+  // first half of that was being asked here.
+  //
+  // Production `sess_mu3ueajc_1` is the call this closes. The person
+  // said "I do not want to listen to your pitch" — a refusal of the
+  // PITCH, not of the offer — in the same breath as asking which
+  // company was calling and what it sells. The classifier matched the
+  // substring "do not want" and settled `explicit_no`. The agent then
+  // answered both questions and asked "would you like me to send the
+  // workshop details on WhatsApp?", and 795ms later this branch hung up
+  // on that stale refusal, mid-question, before the person could
+  // answer. The agent's own reply is what released the hangup, because
+  // committing it is what made the last turn an assistant turn.
+  //
+  // A verdict is not a licence to close while the floor is still open.
+  // If the agent's newest turn asks something, the next turn belongs to
+  // the person; if the person has a question open, likewise. Neither
+  // guard touches the verdict or the classifier — `finalize` still
+  // settles the very same FINAL_NO from the finished transcript, so
+  // this withdraws the EARLY hangup only and the call still ends on the
+  // person's own words, the agent's closing, or the silence window.
+  //
+  // `opt_out` is deliberately inside this guard rather than ahead of
+  // it. It stays final the moment it is said — `finalize` records it
+  // and suppresses the contact either way — so honouring a compliance
+  // signal never requires cutting somebody off in the middle of a
+  // question the agent itself just asked.
+  if (asksAQuestion(last.content)) return undefined;
+  if (callerQuestionPending(stored.turns)) return undefined;
+
   if (classification.primaryReason === "opt_out") return "FINAL_NO";
   if (
     classification.primaryReason !== "explicit_no" &&

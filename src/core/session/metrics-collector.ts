@@ -72,6 +72,11 @@ export interface TurnLatencyInput {
   readonly endpointEvidenceAtMs?: number | undefined;
   /** WHICH endpoint claim it was, preserved verbatim from the pipeline. */
   readonly endpointEvidenceKind?: "speech_final" | "utterance_end" | undefined;
+  // PHASE 3 BATCH 4 — the audio-bytes clock read at the same event
+  // `lastFinalTranscriptAtMs` reads the wall clock at. Measurement
+  // validation only; see `TurnLatencyBreakdown`.
+  /** `inboundStreamMs` at final-transcript arrival. A counter, so 0 is meaningful. */
+  readonly inboundStreamMsAtFinalTranscript?: number | undefined;
   readonly sttCostUsd: number;
   readonly llmCostUsd: number;
   readonly ttsCostUsd: number;
@@ -178,6 +183,13 @@ export class SessionMetricsCollector {
       input.endpointEvidenceKind === "speech_final" || input.endpointEvidenceKind === "utterance_end"
         ? input.endpointEvidenceKind
         : undefined;
+    // PHASE 3 BATCH 4 — same guard, and here `positiveOrUndefined`
+    // PRESERVING 0 is the correct semantic rather than an accident:
+    // this is a counter, and "no audio ingested yet" is a real reading,
+    // unlike the epoch stamps above where 0 would mean 1970.
+    const inboundStreamMsAtFinalTranscript = positiveOrUndefined(
+      input.inboundStreamMsAtFinalTranscript,
+    );
     // Counts, not latencies: 0 retries is a REAL and important
     // observation (it is the answer "retries did not cause this"),
     // so it must survive alongside `undefined` ("not observed").
@@ -207,6 +219,9 @@ export class SessionMetricsCollector {
       ...(lastFinalTranscriptAtMs !== undefined ? { lastFinalTranscriptAtMs } : {}),
       ...(endpointEvidenceAtMs !== undefined ? { endpointEvidenceAtMs } : {}),
       ...(endpointEvidenceKind !== undefined ? { endpointEvidenceKind } : {}),
+      ...(inboundStreamMsAtFinalTranscript !== undefined
+        ? { inboundStreamMsAtFinalTranscript }
+        : {}),
       ...(promptTokens !== undefined ? { promptTokens } : {}),
       ...(cachedPromptTokens !== undefined ? { cachedPromptTokens } : {}),
       ...(reasoningTokens !== undefined ? { reasoningTokens } : {}),

@@ -101,10 +101,14 @@ function clipFor(text: string) {
 
 interface Harness {
   readonly record: InstanceType<typeof SessionRecord>;
-  say(text: string, opts?: { isFinal?: boolean; isSpeechFinal?: boolean }): void;
+  /** Returns the segment's `endedAtMs` — its position on the STT stream clock. */
+  say(text: string, opts?: { isFinal?: boolean; isSpeechFinal?: boolean }): number;
   /** An end-of-speech MARKER — what the Deepgram adapter emits for `UtteranceEnd`. */
   sayEndOfSpeechMarker(): void;
   pushAudio(): void;
+  /** Keeps 20ms mulaw frames flowing, so the audio clock advances during the detector's hold. */
+  startAudioFlow(): void;
+  stopAudioFlow(): void;
   waitForReplies(n: number, timeoutMs?: number): Promise<void>;
   turns(): readonly TurnLatencyBreakdown[];
   stop(): Promise<void>;
@@ -116,6 +120,7 @@ function startHarness(input: { openingLine: string; replies: readonly string[] }
   let closed = false;
   let clockMs = 0;
   let replyIndex = 0;
+  let audioTimer: ReturnType<typeof setInterval> | undefined;
 
   const stt = {
     descriptor: descriptor(ProviderCategory.SPEECH_TO_TEXT, "fake-stt"),
@@ -242,6 +247,7 @@ function startHarness(input: { openingLine: string; replies: readonly string[] }
       const isFinal = opts?.isFinal ?? true;
       const startedAtMs = clockMs;
       clockMs += Math.max(200, (text.length / CHARS_PER_SECOND) * 1000);
+      const endedAtMs = clockMs;
       push({
         text,
         isFinal,
@@ -249,8 +255,9 @@ function startHarness(input: { openingLine: string; replies: readonly string[] }
         confidence: 0.95,
         language: SupportedLanguage.ENGLISH,
         startedAtMs,
-        endedAtMs: clockMs,
+        endedAtMs,
       });
+      return endedAtMs;
     },
     sayEndOfSpeechMarker() {
       // Exactly what `transcriptEventFromMessage` builds for an
@@ -267,11 +274,26 @@ function startHarness(input: { openingLine: string; replies: readonly string[] }
       } as TranscriptSegment);
     },
     pushAudio() {
+      // 160 mulaw samples @ 8kHz = exactly 20ms of audio clock.
       record.inboundAudioFallback.push({
         data: new Uint8Array(160),
         encoding: "MULAW",
         sampleRateHz: 8000,
       } as never);
+    },
+    startAudioFlow() {
+      if (audioTimer !== undefined) return;
+      audioTimer = setInterval(() => {
+        record.inboundAudioFallback.push({
+          data: new Uint8Array(160),
+          encoding: "MULAW",
+          sampleRateHz: 8000,
+        } as never);
+      }, 5);
+    },
+    stopAudioFlow() {
+      if (audioTimer !== undefined) clearInterval(audioTimer);
+      audioTimer = undefined;
     },
     async waitForReplies(n, timeoutMs = 15000) {
       const deadline = Date.now() + timeoutMs;
@@ -286,6 +308,8 @@ function startHarness(input: { openingLine: string; replies: readonly string[] }
       return record.metrics.build().turnLatencies ?? [];
     },
     async stop() {
+      if (audioTimer !== undefined) clearInterval(audioTimer);
+      audioTimer = undefined;
       closed = true;
       for (const w of waiters.splice(0)) w();
       record.loopAbortController?.abort();
@@ -407,6 +431,114 @@ await test("H — speech_final and UtteranceEnd both produce a reply", async () 
 });
 
 // ═════════════════════════════════════════════════════════════════
+section("I. PHASE 3 BATCH 4 — the audio clock is read AT FINAL ARRIVAL");
+
+/**
+ * The proof that the stream value is stamped at the final, not at
+ * release, is an EXACT identity rather than a timing race:
+ *
+ *   sttMs = inboundStreamMs(at final) - segment.endedAtMs
+ *
+ * so `inboundStreamMsAtFinalTranscript - sttMs` must equal the
+ * segment's own `endedAtMs`, which this harness chooses. Audio keeps
+ * flowing all the way through the detector's 150-300ms hold, so the
+ * counter is strictly larger by release — if the value had been read
+ * there, the identity would not hold.
+ */
+async function batch4Turn(viaMarker: boolean): Promise<{
+  turn: TurnLatencyBreakdown;
+  endedAtMs: number;
+}> {
+  const h = startHarness({ openingLine: "Hello, this is Rohan.", replies: ["Sure, happy to help."] });
+  try {
+    await h.waitForReplies(1);
+    // Push the audio clock well past the segment's end position, so
+    // the recognition lag is positive and inside its plausibility
+    // bound (otherwise `sttMs` is discarded and there is no identity).
+    for (let i = 0; i < 120; i += 1) h.pushAudio();
+    await sleep(60);
+    h.startAudioFlow(); // keeps advancing through the hold
+    let endedAtMs: number;
+    if (viaMarker) {
+      endedAtMs = h.say("Tell me about the workshop.", { isFinal: true, isSpeechFinal: false });
+      await sleep(60);
+      h.sayEndOfSpeechMarker();
+    } else {
+      endedAtMs = h.say("Tell me about the workshop.", { isSpeechFinal: true });
+    }
+    await h.waitForReplies(2);
+    h.stopAudioFlow();
+    const turn = h.turns().at(-1);
+    assert.ok(turn !== undefined, "expected a recorded turn");
+    return { turn, endedAtMs };
+  } finally {
+    await h.stop();
+  }
+}
+
+await test("I1 — inboundStreamMsAtFinalTranscript is recorded", async () => {
+  const { turn } = await batch4Turn(false);
+  assert.ok(
+    turn.inboundStreamMsAtFinalTranscript !== undefined,
+    "the audio-clock reading must be recorded alongside the final",
+  );
+  assert.ok(
+    Number.isFinite(turn.inboundStreamMsAtFinalTranscript),
+    `must be a finite counter value, got ${turn.inboundStreamMsAtFinalTranscript}`,
+  );
+});
+
+await test("I2 — it is the value AT FINAL ARRIVAL, not at turn release", async () => {
+  const { turn, endedAtMs } = await batch4Turn(false);
+  const stream = turn.inboundStreamMsAtFinalTranscript;
+  const stt = turn.stt?.milliseconds;
+  assert.ok(stream !== undefined, "stream reading must exist");
+  assert.ok(stt !== undefined, "sttMs must exist for this identity to be checkable");
+  assert.ok(
+    Math.abs(stream - stt - endedAtMs) < 1,
+    `inboundStreamMsAtFinalTranscript(${stream}) - sttMs(${stt}) must equal the segment's endedAtMs(${endedAtMs}) ` +
+      `— it does not, so the counter was read at a different moment than sttMs was computed`,
+  );
+});
+
+await test("I3 — audio really did keep flowing after the final (so I2 is not vacuous)", async () => {
+  // If the counter had stopped advancing, I2 would pass trivially.
+  // The inbound wall-clock stamp is taken at release; it must be
+  // strictly later than the final's wall clock, proving frames kept
+  // arriving across the hold that I2 relies on.
+  const { turn } = await batch4Turn(false);
+  assert.ok(turn.lastInboundAudioAtMs !== undefined && turn.lastFinalTranscriptAtMs !== undefined);
+  assert.ok(
+    turn.lastInboundAudioAtMs > turn.lastFinalTranscriptAtMs,
+    "inbound audio must still have been arriving after the final transcript landed",
+  );
+});
+
+await test("I4 — the wall-clock twin is the EXISTING final stamp, not a second one", async () => {
+  const { turn } = await batch4Turn(false);
+  assert.ok(
+    turn.lastFinalTranscriptAtMs !== undefined,
+    "lastFinalTranscriptAtMs is the wall-clock reading of this same event; no second stamp is added",
+  );
+  assert.ok(
+    !("inboundWallClockAtFinalTranscriptMs" in turn),
+    "a duplicate wall-clock field must NOT exist — it would be a second, independently drifting stamp",
+  );
+});
+
+await test("I5 — the utterance_end path records it too, and still releases", async () => {
+  const { turn, endedAtMs } = await batch4Turn(true);
+  assert.equal(turn.endpointEvidenceKind, "utterance_end");
+  const stream = turn.inboundStreamMsAtFinalTranscript;
+  const stt = turn.stt?.milliseconds;
+  assert.ok(stream !== undefined && stt !== undefined);
+  assert.ok(
+    Math.abs(stream - stt - endedAtMs) < 1,
+    `identity must hold on the marker path too (stream=${stream} stt=${stt} endedAt=${endedAtMs})`,
+  );
+});
+
+// ═════════════════════════════════════════════════════════════════
 section("F-G. Collector contract: existing metrics unchanged, absence preserved");
 
 const STACK = {
@@ -452,6 +584,7 @@ await test("F — every pre-existing metric is byte-for-byte unchanged", () => {
     lastFinalTranscriptAtMs: 1_700_000_000_200,
     endpointEvidenceAtMs: 1_700_000_000_300,
     endpointEvidenceKind: "speech_final",
+    inboundStreamMsAtFinalTranscript: 42_000,
   });
   for (const key of [
     "stt",
@@ -483,10 +616,26 @@ await test("G — absent observations stay ABSENT, never 0 (a 0 epoch stamp is 1
     "lastFinalTranscriptAtMs",
     "endpointEvidenceAtMs",
     "endpointEvidenceKind",
+    "inboundStreamMsAtFinalTranscript",
   ] as const) {
     assert.equal(turn[key], undefined, `${key} must be undefined when not observed`);
     assert.ok(!(key in turn), `${key} must be OMITTED from the object, not present as undefined`);
   }
+});
+
+await test("G5 — a stream reading of 0 IS preserved (a counter, unlike an epoch stamp)", () => {
+  const turn = collect({ inboundStreamMsAtFinalTranscript: 0 });
+  assert.equal(
+    turn.inboundStreamMsAtFinalTranscript,
+    0,
+    "0 means 'no audio ingested yet', which is a real observation and must not be dropped",
+  );
+  assert.ok("inboundStreamMsAtFinalTranscript" in turn, "and it must be present on the object");
+});
+
+await test("G6 — a non-finite or negative stream reading is dropped", () => {
+  assert.equal(collect({ inboundStreamMsAtFinalTranscript: Number.NaN }).inboundStreamMsAtFinalTranscript, undefined);
+  assert.equal(collect({ inboundStreamMsAtFinalTranscript: -5 }).inboundStreamMsAtFinalTranscript, undefined);
 });
 
 await test("G2 — a non-finite or negative stamp is dropped rather than stored", () => {

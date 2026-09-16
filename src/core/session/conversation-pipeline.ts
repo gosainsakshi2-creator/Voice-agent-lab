@@ -112,6 +112,11 @@ interface AcquiredTurn {
   readonly lastInboundAudioAtMs: number | undefined;
   readonly lastInterimTranscriptAtMs: number | undefined;
   readonly lastFinalTranscriptAtMs: number | undefined;
+  /**
+   * PHASE 3 BATCH 4 — the audio-bytes clock read at the same final
+   * `lastFinalTranscriptAtMs` reads the wall clock at.
+   */
+  readonly inboundStreamMsAtFinalTranscript: number | undefined;
 }
 
 /**
@@ -1787,6 +1792,14 @@ export class ConversationPipeline {
    * "not observed" instead of inheriting the previous turn's.
    */
   private lastInterimTranscriptAtMs: number | undefined;
+  /**
+   * PHASE 3 BATCH 4 — `inboundStreamMs` as it stood when the most
+   * recent non-empty FINAL arrived, co-stamped with
+   * `lastFinalSegmentAtMs`. Measurement validation only: it is the
+   * audio-bytes reading that pairs with that wall-clock reading, and
+   * nothing derives a latency from it.
+   */
+  private lastFinalInboundStreamMs: number | undefined;
 
   constructor(
     private readonly record: SessionRecord,
@@ -2263,6 +2276,7 @@ export class ConversationPipeline {
           lastFinalTranscriptAtMs: turn.lastFinalTranscriptAtMs,
           endpointEvidenceAtMs: turn.endpointEvidenceAtMs,
           endpointEvidenceKind: turn.endpointEvidenceKind,
+          inboundStreamMsAtFinalTranscript: turn.inboundStreamMsAtFinalTranscript,
           sttCostUsd: turn.sttCostUsd,
           llmCostUsd: result.llmCostUsd,
           ttsCostUsd: result.ttsCostUsd,
@@ -3757,6 +3771,17 @@ export class ConversationPipeline {
           // instead of the caller's speaking duration.
           if (segment.isFinal && segment.text.trim().length > 0) {
             this.lastFinalSegmentAtMs = Date.now();
+            // PHASE 3 BATCH 4 — the AUDIO-BYTES clock, read on the line
+            // after the WALL clock, in the same handler pass for the
+            // same final. Co-stamped deliberately: the whole value of
+            // this reading is that it pairs with
+            // `lastFinalSegmentAtMs` at one event, so the two clocks
+            // can be compared across turns.
+            //
+            // Recorded UNCONDITIONALLY, outside the plausibility bound
+            // below: a turn whose `sttMs` was rejected is precisely the
+            // turn this exists to explain.
+            this.lastFinalInboundStreamMs = this.inboundStreamMs;
             // On the RE-BASED clock, not raw `endedAtMs`. After an STT
             // stream reconnect the raw value restarts at zero, so the
             // lag computed from it inflates by however long the call
@@ -4332,6 +4357,11 @@ export class ConversationPipeline {
         // the t0 the end-to-end latency is measured from.
         const sttLagMs = this.lastFinalSttLagMs;
         const lastSegmentAtMs = this.lastFinalSegmentAtMs;
+        // PHASE 3 BATCH 4 — snapshotted and cleared with its wall-clock
+        // twin below, so the pair always describes the same final or
+        // neither does.
+        const lastFinalInboundStreamMs = this.lastFinalInboundStreamMs;
+        this.lastFinalInboundStreamMs = undefined;
         const userSpeechEndedAtMs =
           lastSegmentAtMs !== undefined ? lastSegmentAtMs - (sttLagMs ?? 0) : undefined;
         this.lastFinalSttLagMs = undefined;
@@ -4366,6 +4396,7 @@ export class ConversationPipeline {
           lastInboundAudioAtMs: this.lastInboundAudioAtMs,
           lastInterimTranscriptAtMs,
           lastFinalTranscriptAtMs: lastSegmentAtMs,
+          inboundStreamMsAtFinalTranscript: lastFinalInboundStreamMs,
         });
       });
 
@@ -4458,6 +4489,9 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
         lastInboundAudioAtMs: undefined,
         lastInterimTranscriptAtMs: undefined,
         lastFinalTranscriptAtMs: undefined,
+        // Batch STT never advances the streaming byte counter, so there
+        // is no audio-clock reading to pair with. Absent, not zero.
+        inboundStreamMsAtFinalTranscript: undefined,
       };
     }
 

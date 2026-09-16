@@ -265,6 +265,37 @@ export interface TurnLatencyBreakdown {
    * line, and without this field a stored turn cannot say which it got.
    */
   readonly endpointEvidenceKind?: "speech_final" | "utterance_end";
+  /**
+   * PHASE 3 BATCH 4 — MEASUREMENT VALIDATION, not a latency.
+   *
+   * The value of the pipeline's `inboundStreamMs` counter at the exact
+   * instant the final transcript arrived — the SAME event, in the same
+   * handler pass, that `lastFinalTranscriptAtMs` stamps on the wall
+   * clock. The pair is the whole point: one reading of the AUDIO-BYTES
+   * clock and one of the WALL clock, taken together.
+   *
+   * WHY. `stt` is computed as `inboundStreamMs - segment.endedAtMs`,
+   * entirely on the audio-bytes clock, and is then subtracted from a
+   * wall-clock stamp to reconstruct speech end. That is only valid
+   * while the audio clock advances 1:1 with real time. Production
+   * showed the last INTERIM transcript arriving up to 1468ms AFTER the
+   * reconstructed speech end on 10 of 12 turns, with the offset
+   * tracking `stt` almost monotonically — an inconsistency that this
+   * field is the minimum needed to resolve. Two turns of the same call
+   * give an audio-clock elapsed and a wall-clock elapsed that can be
+   * compared directly.
+   *
+   * DELIBERATELY UNFILTERED. `stt` is discarded when it fails its
+   * plausibility bound; this counter is recorded regardless, because a
+   * turn whose lag was rejected is exactly the turn worth inspecting.
+   *
+   * `0` is a legitimate value (a counter, not an epoch stamp): it means
+   * no audio had been ingested yet, which is a real observation.
+   *
+   * Nothing derives a latency from this, nothing reads it to make a
+   * decision, and it does not reinterpret or replace `stt`.
+   */
+  readonly inboundStreamMsAtFinalTranscript?: number;
 
   // --- OpenAI usage telemetry. TELEMETRY ONLY: informs investigation
   // of `llm` (TTFT), never itself a latency and never summed into

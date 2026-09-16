@@ -104,6 +104,14 @@ interface AcquiredTurn {
   /** FIX #7A — arrival time of the Deepgram evidence that ended this turn, if it was directly observed (see `lastEndpointEvidenceAtMs`). */
   readonly endpointEvidenceAtMs: number | undefined;
   readonly endpointEvidenceKind: "utterance_end" | "speech_final" | undefined;
+  /**
+   * PHASE 3 BATCH 3 — absolute wall-clock observations for this turn,
+   * snapshotted at release alongside the two fields above. Telemetry
+   * only; see `TurnLatencyBreakdown` for what each one is.
+   */
+  readonly lastInboundAudioAtMs: number | undefined;
+  readonly lastInterimTranscriptAtMs: number | undefined;
+  readonly lastFinalTranscriptAtMs: number | undefined;
 }
 
 /**
@@ -1763,6 +1771,22 @@ export class ConversationPipeline {
   private lastFinalSttLagMs: number | undefined;
   /** Wall clock at which this turn's FIRST audio frame reached the transport. */
   private firstAudioQueuedAtMs: number | undefined;
+  /**
+   * PHASE 3 BATCH 3 — wall clock of the most recent caller audio chunk
+   * handed to the STT stream. The REAL-TIME counterpart of
+   * `inboundStreamMs`, which counts the same chunks in audio-duration
+   * units; holding both is what makes a divergence between them
+   * visible. Rolling for the whole call, never cleared: inbound audio
+   * does not stop at a turn boundary.
+   */
+  private lastInboundAudioAtMs: number | undefined;
+  /**
+   * PHASE 3 BATCH 3 — wall clock of the latest non-empty INTERIM
+   * transcript. Snapshot-then-cleared at each release, like the
+   * endpoint evidence, so a turn that produced no interim reports
+   * "not observed" instead of inheriting the previous turn's.
+   */
+  private lastInterimTranscriptAtMs: number | undefined;
 
   constructor(
     private readonly record: SessionRecord,
@@ -2231,6 +2255,14 @@ export class ConversationPipeline {
           endpointToReleaseMs,
           speechEndToReleaseMs,
           playbackStartupMs,
+          // PHASE 3 BATCH 3 — the raw observations, passed straight
+          // through. No span is derived from them here: this batch
+          // captures, it does not calculate.
+          lastInboundAudioAtMs: turn.lastInboundAudioAtMs,
+          lastInterimTranscriptAtMs: turn.lastInterimTranscriptAtMs,
+          lastFinalTranscriptAtMs: turn.lastFinalTranscriptAtMs,
+          endpointEvidenceAtMs: turn.endpointEvidenceAtMs,
+          endpointEvidenceKind: turn.endpointEvidenceKind,
           sttCostUsd: turn.sttCostUsd,
           llmCostUsd: result.llmCostUsd,
           ttsCostUsd: result.ttsCostUsd,
@@ -3602,6 +3634,10 @@ export class ConversationPipeline {
       // "the caller is interrupting me" apart from "the caller
       // spoke before I started, and the transcript only just landed".
       this.inboundStreamMs += estimateAudioSeconds(chunk) * 1000;
+      // PHASE 3 BATCH 3 — METRICS ONLY. The same chunk, stamped on the
+      // WALL clock instead of the audio clock. Nothing reads it to make
+      // a decision; it exists so the two clocks can later be compared.
+      this.lastInboundAudioAtMs = Date.now();
     });
 
     void (async () => {
@@ -3741,6 +3777,15 @@ export class ConversationPipeline {
             if (Number.isFinite(lagMs) && lagMs >= 0 && lagMs <= MAX_PLAUSIBLE_STT_LAG_MS) {
               this.lastFinalSttLagMs = lagMs;
             }
+          }
+
+          // PHASE 3 BATCH 3 — METRICS ONLY, and the mirror of the block
+          // above for the other kind of segment. An end-of-speech
+          // MARKER can never reach here (its branch `continue`s well
+          // above), so an `UtteranceEnd` is never mistaken for an
+          // interim. Pure observation, no control flow.
+          if (!segment.isFinal && segment.text.trim().length > 0) {
+            this.lastInterimTranscriptAtMs = Date.now();
           }
 
           // The user has started talking while the assistant was
@@ -4297,6 +4342,17 @@ export class ConversationPipeline {
         const endpointEvidenceKind = this.lastEndpointEvidenceKind;
         this.lastEndpointEvidenceAtMs = undefined;
         this.lastEndpointEvidenceKind = undefined;
+        // PHASE 3 BATCH 3 — same snapshot-then-clear pattern, for the
+        // wall-clock observations. `lastFinalTranscriptAtMs` reuses the
+        // value already snapshotted into `lastSegmentAtMs` above rather
+        // than re-reading the field: that IS the observed arrival of
+        // this turn's last non-empty final, and re-deriving it would
+        // risk drifting from the stamp `sttLagMs` was measured against.
+        // The interim stamp is cleared so it cannot be inherited; the
+        // inbound-audio stamp is NOT, because audio keeps arriving and
+        // the freshest frame is exactly what this turn wants to report.
+        const lastInterimTranscriptAtMs = this.lastInterimTranscriptAtMs;
+        this.lastInterimTranscriptAtMs = undefined;
 
         finish({
           text: event.text,
@@ -4307,6 +4363,9 @@ export class ConversationPipeline {
           turnReleasedAtMs,
           endpointEvidenceAtMs,
           endpointEvidenceKind,
+          lastInboundAudioAtMs: this.lastInboundAudioAtMs,
+          lastInterimTranscriptAtMs,
+          lastFinalTranscriptAtMs: lastSegmentAtMs,
         });
       });
 
@@ -4391,6 +4450,14 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
         turnReleasedAtMs: Date.now(),
         endpointEvidenceAtMs: undefined,
         endpointEvidenceKind: undefined,
+        // PHASE 3 BATCH 3 — absent for the same reason as the fields
+        // above. A batch `transcribe()` delivers no interim segments
+        // and no per-segment arrival to stamp, and its audio never
+        // passes through the streaming byte counter that carries the
+        // inbound stamp. Absent, never substituted.
+        lastInboundAudioAtMs: undefined,
+        lastInterimTranscriptAtMs: undefined,
+        lastFinalTranscriptAtMs: undefined,
       };
     }
 

@@ -58,6 +58,20 @@ export interface TurnLatencyInput {
   readonly speechEndToReleaseMs?: number | undefined;
   /** First frame queued on the transport -> first frame the bridge actually sent. */
   readonly playbackStartupMs?: number | undefined;
+  // PHASE 3 BATCH 3 — ABSOLUTE wall-clock observations, not durations.
+  // Optional for the same backward-compatibility reason every batch
+  // before them is: existing construction sites omit them, and omitting
+  // is identical to "not observed". See `TurnLatencyBreakdown`.
+  /** Wall clock of the most recent caller audio chunk received. */
+  readonly lastInboundAudioAtMs?: number | undefined;
+  /** Wall clock of the latest non-empty INTERIM transcript for this turn. */
+  readonly lastInterimTranscriptAtMs?: number | undefined;
+  /** Wall clock of the latest non-empty FINAL transcript for this turn. */
+  readonly lastFinalTranscriptAtMs?: number | undefined;
+  /** Wall clock at which this turn's endpoint evidence arrived. */
+  readonly endpointEvidenceAtMs?: number | undefined;
+  /** WHICH endpoint claim it was, preserved verbatim from the pipeline. */
+  readonly endpointEvidenceKind?: "speech_final" | "utterance_end" | undefined;
   readonly sttCostUsd: number;
   readonly llmCostUsd: number;
   readonly ttsCostUsd: number;
@@ -147,6 +161,23 @@ export class SessionMetricsCollector {
     const endpointToReleaseMs = positiveOrUndefined(input.endpointToReleaseMs);
     const speechEndToReleaseMs = positiveOrUndefined(input.speechEndToReleaseMs);
     const playbackStartupMs = positiveOrUndefined(input.playbackStartupMs);
+    // PHASE 3 BATCH 3 — absolute epoch-ms stamps, not spans. The same
+    // `positiveOrUndefined` guard applies (it rejects undefined, NaN
+    // and negatives), and it cannot collapse a real stamp: `Date.now()`
+    // is never 0 or negative, so "absent" stays absent rather than
+    // becoming a 1970 timestamp.
+    const lastInboundAudioAtMs = positiveOrUndefined(input.lastInboundAudioAtMs);
+    const lastInterimTranscriptAtMs = positiveOrUndefined(input.lastInterimTranscriptAtMs);
+    const lastFinalTranscriptAtMs = positiveOrUndefined(input.lastFinalTranscriptAtMs);
+    const endpointEvidenceAtMs = positiveOrUndefined(input.endpointEvidenceAtMs);
+    // A closed string union, so it is validated the same way
+    // `llmRetryReasons` is rather than through a numeric guard. An
+    // unrecognised value is dropped rather than stored, so the field
+    // can only ever hold a claim the pipeline actually made.
+    const endpointEvidenceKind =
+      input.endpointEvidenceKind === "speech_final" || input.endpointEvidenceKind === "utterance_end"
+        ? input.endpointEvidenceKind
+        : undefined;
     // Counts, not latencies: 0 retries is a REAL and important
     // observation (it is the answer "retries did not cause this"),
     // so it must survive alongside `undefined` ("not observed").
@@ -171,6 +202,11 @@ export class SessionMetricsCollector {
       ...(endpointToReleaseMs !== undefined ? { endpointToReleaseMs } : {}),
       ...(speechEndToReleaseMs !== undefined ? { speechEndToReleaseMs } : {}),
       ...(playbackStartupMs !== undefined ? { playbackStartupMs } : {}),
+      ...(lastInboundAudioAtMs !== undefined ? { lastInboundAudioAtMs } : {}),
+      ...(lastInterimTranscriptAtMs !== undefined ? { lastInterimTranscriptAtMs } : {}),
+      ...(lastFinalTranscriptAtMs !== undefined ? { lastFinalTranscriptAtMs } : {}),
+      ...(endpointEvidenceAtMs !== undefined ? { endpointEvidenceAtMs } : {}),
+      ...(endpointEvidenceKind !== undefined ? { endpointEvidenceKind } : {}),
       ...(promptTokens !== undefined ? { promptTokens } : {}),
       ...(cachedPromptTokens !== undefined ? { cachedPromptTokens } : {}),
       ...(reasoningTokens !== undefined ? { reasoningTokens } : {}),

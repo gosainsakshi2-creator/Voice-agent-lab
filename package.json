@@ -65,6 +65,7 @@
     "test:llm-benchmark": "tsx src/campaign/tests/llm-benchmark-harness-tests.ts",
     "test:first-turn-total": "tsx src/campaign/tests/first-turn-total-persistence-tests.ts",
     "test:stale-final-no": "tsx src/campaign/tests/stale-final-no-tests.ts",
+    "test:stt-observability": "tsx src/campaign/tests/stt-observability-tests.ts",
     "bench:llm": "tsx src/benchmark/llm/cli.ts",
     "preflight:prod": "tsx src/campaign/production-readiness-cli.ts",
     "campaign:audit": "tsx src/campaign/audit-cli.ts"

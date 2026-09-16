@@ -199,6 +199,73 @@ export interface TurnLatencyBreakdown {
    */
   readonly playbackStartupMs?: number;
 
+  // --- PHASE 3 BATCH 3: ABSOLUTE WALL-CLOCK OBSERVATIONS. ------------
+  //
+  // Every field above is a DURATION. These five are not: they are raw
+  // `Date.now()` epoch-millisecond stamps of events that were directly
+  // OBSERVED, recorded so the STT boundary can later be decomposed.
+  //
+  // They exist because `stt` (recognition lag) is computed on the
+  // AUDIO-STREAM clock — `inboundStreamMs - segment.endedAtMs` — which
+  // conflates Deepgram's processing, transport delay, the configured
+  // `endpointing` hold, and any divergence between the audio clock and
+  // real time. Production measured that boundary at p50 1040ms / p90
+  // 2350ms / max 3300ms without being able to say which of those it
+  // was. Wall-clock stamps of the surrounding events are the smallest
+  // thing that separates them.
+  //
+  // NOTHING HERE IS A LATENCY, and nothing derives one yet: this batch
+  // captures raw observations only. They are never summed into `total`
+  // and nothing reads them to make a decision.
+  //
+  // Absent means NOT OBSERVED, never zero — an epoch stamp of 0 would
+  // be a 1970 timestamp, so a missing value stays `undefined`.
+
+  /**
+   * Wall clock of the most recent caller audio chunk the application
+   * received, as of this turn's release.
+   *
+   * Rolling, not per-turn: inbound audio is continuous, so at release
+   * this is simply the freshest frame. Compare against
+   * `lastFinalTranscriptAtMs` to see how far behind the live audio edge the
+   * transcript landed IN REAL TIME — the wall-clock counterpart of the
+   * stream-clock `stt`, and the pair that reveals audio-clock drift.
+   */
+  readonly lastInboundAudioAtMs?: number;
+  /**
+   * Wall clock of the latest non-empty INTERIM transcript for this
+   * turn. Cleared at each release, so it is never inherited from a
+   * previous turn; absent when the turn produced no interim at all.
+   */
+  readonly lastInterimTranscriptAtMs?: number;
+  /**
+   * Wall clock at which the latest non-empty FINAL transcript arrived —
+   * the same observation `stt`'s lag is measured at, kept here in
+   * absolute form. This is OBSERVED. It is NOT the caller's speech end,
+   * which is reconstructed (`lastFinalSegmentAtMs - sttLagMs`) and is
+   * deliberately not stamped here as though it had been seen.
+   */
+  readonly lastFinalTranscriptAtMs?: number;
+  /**
+   * Wall clock at which the endpoint evidence that ended this turn
+   * arrived. Absent on a turn released by INFERENCE — the adaptive
+   * silence window expiring with no explicit provider claim — which is
+   * a real distinction and not a gap.
+   */
+  readonly endpointEvidenceAtMs?: number;
+  /**
+   * WHICH claim it was, preserved verbatim from the pipeline rather
+   * than re-derived later:
+   *   `speech_final`  — Deepgram's VAD endpointer fired ON the words.
+   *   `utterance_end` — the word-timing `UtteranceEnd` marker, or a
+   *                     `speech_final` that arrived alone in its own
+   *                     empty message, both of which reach the pipeline
+   *                     as an end-of-speech marker.
+   * The two have very different delivery characteristics on a noisy
+   * line, and without this field a stored turn cannot say which it got.
+   */
+  readonly endpointEvidenceKind?: "speech_final" | "utterance_end";
+
   // --- OpenAI usage telemetry. TELEMETRY ONLY: informs investigation
   // of `llm` (TTFT), never itself a latency and never summed into
   // `total`. Absent whenever the provider doesn't report usage, or a

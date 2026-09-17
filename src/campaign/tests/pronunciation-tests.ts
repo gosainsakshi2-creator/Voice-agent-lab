@@ -394,6 +394,104 @@ test("C5 — idempotent in every call language, including the overridden path", 
   }
 });
 
+// ── SECTION E — a slash that means "per", and every slash that does not ──
+//
+// OBSERVED IN THE PHASE 4 AUDIO REVIEW: a rate written with a slash is
+// read out as the punctuation — "two sessions slash week" — where a
+// person says "two sessions per week".
+//
+// WHY THIS IS NARROW, AND MUST STAY NARROW.
+//
+// A slash is not one thing. It separates a rate, but it also builds
+// URLs, file paths, dates, ratios, version strings, identifiers and
+// alternatives ("and/or"), and in EVERY one of those the slash is
+// either meaningful or must simply be left for the engine to read as it
+// does today. A global slash -> "per" rule would corrupt all of them.
+//
+// So the rule is keyed on the DENOMINATOR, not on the slash: it fires
+// only when the right-hand side is one of a small, fixed set of unit
+// words that can only follow "per" in ordinary speech. Everything else
+// is untouched, and the tests below assert that in both directions —
+// what must convert, and the eight shapes that must not.
+//
+// The left-hand guard matters just as much: the word before the slash
+// must start the text or follow whitespace/an opening bracket. That is
+// what keeps "example.com/week" and "/docs/week" out, because their
+// left-hand token is preceded by "." or "/".
+
+console.log("\nSECTION E — slash as a rate");
+
+test("E1 — the observed case: a rate reads as 'per' in every call language", () => {
+  for (const language of [EN, HI, HINGLISH] as const) {
+    speaks("There are two sessions/week.", language, "There are two sessions per week.");
+  }
+});
+
+test("E2 — the common rate denominators convert", () => {
+  speaks("5 leads/day", EN, "5 leads per day");
+  speaks("30 calls/hour", EN, "30 calls per hour");
+  speaks("2 reports/month", EN, "2 reports per month");
+  speaks("12 sessions/year", EN, "12 sessions per year");
+  speaks("60 frames/second", EN, "60 frames per second");
+  speaks("1 seat/person", EN, "1 seat per person");
+});
+
+test("E3 — it composes with the existing rupee rewrite, and runs after it", () => {
+  speaks("It is ₹500/month for you.", EN, "It is 500 rupees per month for you.");
+  speaks("₹500/month", HI, "500 rupaye per month");
+});
+
+test("E4 — URLs are untouched, including one that ends in a unit word", () => {
+  for (const language of [EN, HI, HINGLISH] as const) {
+    speaks("Details are at https://example.com/live-workshop.", language, "Details are at https://example.com/live-workshop.");
+    speaks("See https://example.com/week for more.", language, "See https://example.com/week for more.");
+    speaks("Go to /docs/week now.", language, "Go to /docs/week now.");
+  }
+});
+
+test("E5 — dates, paths, ratios, versions and identifiers are untouched", () => {
+  for (const language of [EN, HI, HINGLISH] as const) {
+    speaks("Your slot is on 13/08/2026.", language, "Your slot is on 13/08/2026.");
+    speaks("It is at C:/Users/report.pdf today.", language, "It is at C:/Users/report.pdf today.");
+    speaks("The ratio is 3:1 in your favour.", language, "The ratio is 3:1 in your favour.");
+    speaks("We are open 24/7 for you.", language, "We are open 24/7 for you.");
+    speaks("Your code is FF-2026/A47 here.", language, "Your code is FF-2026/A47 here.");
+    speaks("Lightning v3.1 is the model.", language, "Lightning v3.1 is the model.");
+  }
+});
+
+test("E6 — an alternative is not a rate: 'and/or' and friends stay literal", () => {
+  for (const language of [EN, HI, HINGLISH] as const) {
+    speaks("Bring a laptop and/or a phone.", language, "Bring a laptop and/or a phone.");
+    speaks("Answer yes/no please.", language, "Answer yes/no please.");
+    speaks("He/she can join.", language, "He/she can join.");
+  }
+});
+
+test("E7 — a denominator that is not on the list is left alone, deliberately", () => {
+  // The list is an allow-list, not a guess. An unlisted denominator
+  // costs nothing: the text is spoken exactly as it is today.
+  speaks("It runs at 60 km/h.", EN, "It runs at 60 km/h.");
+  speaks("The rate is 5 units/batch.", EN, "The rate is 5 units/batch.");
+});
+
+test("E8 — the conversion is idempotent and does not run twice", () => {
+  for (const language of [EN, HI, HINGLISH] as const) {
+    for (const text of ["two sessions/week", "It is ₹500/month.", "https://example.com/week"]) {
+      const once = pronounceForSpeech(text, language);
+      assert.equal(pronounceForSpeech(once, language), once, `${language}: ${JSON.stringify(once)}`);
+    }
+  }
+});
+
+test("E9 — a slash rate does not disturb the numeric register decision", () => {
+  // The Hindi register still applies to a Hindi sentence that happens
+  // to carry a rate, and the English override still applies to an
+  // English one. The slash rule is orthogonal to both.
+  speaks("Aap 2 sessions/week kar sakte hain.", HI, "Aap 2 sessions per week kar sakte hain.");
+  speaks("You get 2 sessions/week at 7:30 PM.", HI, "You get 2 sessions per week at seven thirty PM.");
+});
+
 // ─────────────────────────────────────────────────────────────────
 console.log(
   `\n${failures.length === 0 ? "ALL PASSED" : "FAILURES"} — ${passed} passed, ${failures.length} failed`,

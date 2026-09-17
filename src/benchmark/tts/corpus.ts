@@ -51,8 +51,17 @@
 
 import { SupportedLanguage } from "../../types/enums";
 
-/** Bump on ANY edit to `CORPUS` below. */
-export const CORPUS_VERSION = "phase4-evidence-1";
+/**
+ * Bump on ANY edit to `CORPUS` below.
+ *
+ * `-2`: no item was added, removed or re-worded. One DECLARATION moved
+ * — `norm-symbol-slash-en` from `unchanged` to `transformed`, because
+ * the rate-slash rule in `speech-pronunciation.ts` now rewrites it. The
+ * version still moves, so a report from before that rule cannot be
+ * compared against one from after it without the difference being
+ * visible.
+ */
+export const CORPUS_VERSION = "phase4-evidence-2";
 
 /**
  * What today's transformation path does to an item.
@@ -630,8 +639,11 @@ const NORMALIZATION: readonly CorpusItem[] = [
     category: "normalization-symbolic",
     sourceText: "It is 2 sessions/week.",
     language: EN,
-    expectation: "unchanged",
-    note: "GAP: slash as 'per'.",
+    expectation: "transformed",
+    note:
+      "WAS a gap, now implemented: a rate denominator turns the slash into 'per'. " +
+      "The audio under this id in run tts_2026-09-17T13-53-48-036Z predates that and was " +
+      "synthesized from the raw slash.",
   },
   {
     id: "norm-ratio-not-a-time-en",

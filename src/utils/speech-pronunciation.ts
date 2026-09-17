@@ -135,6 +135,49 @@ const GROUPED_AMOUNT = /(₹\s*)?\b(\d{1,2}(?:,\d{2})+,\d{3})\b(\s*\+)?/giu;
 const PLAIN_RUPEES = /₹\s*(\d[\d,]*(?:\.\d+)?)(\s*\+)?/giu;
 
 /**
+ * ── A SLASH THAT MEANS "PER" ──────────────────────────────────────
+ *
+ * Heard in the Phase 4 audio review: "two sessions/week" read out as
+ * "two sessions slash week".
+ *
+ * A slash is not one thing, which is why this rule is keyed on the
+ * DENOMINATOR rather than on the slash. The same character builds URLs
+ * (`example.com/live-workshop`), file paths (`C:/Users/report.pdf`),
+ * dates (`13/08/2026`), ratios (`24/7`), identifiers (`FF-2026/A47`)
+ * and alternatives (`and/or`) — in every one of those the slash is
+ * either meaningful or is already read correctly, and a global
+ * slash -> "per" rewrite would corrupt all of them. So only a fixed
+ * allow-list of unit words can close the match, and each one is a word
+ * that in ordinary speech can follow "per" and essentially nothing
+ * else.
+ *
+ * Two guards do the rest:
+ *
+ *   - the left-hand word must START the text or follow whitespace or an
+ *     opening bracket. That is what keeps `example.com/week` and
+ *     `/docs/week` out: their left-hand token is preceded by "." or
+ *     "/", so the group never matches.
+ *   - the unit must not be followed by "/", ":" or "-", so a longer
+ *     path or compound is not clipped at its first unit-looking
+ *     segment. A following full stop IS allowed, because that is a
+ *     sentence ending.
+ *
+ * Deliberately conservative: an unlisted denominator ("km/h",
+ * "units/batch") is left exactly as it is spoken today. A miss costs
+ * nothing; a false positive changes a URL a caller is meant to act on.
+ *
+ * Not language-gated. "per" is the word used in Indian English and in
+ * Hinglish alike, and the Hindi alternative would be inventing
+ * vocabulary this module has no evidence for.
+ */
+const RATE_DENOMINATOR = "(?:second|minute|hour|day|week|month|year|person)";
+
+const RATE_SLASH = new RegExp(
+  `(^|[\\s(\\[])([A-Za-z0-9]+)\\s*/\\s*(${RATE_DENOMINATOR})\\b(?![:/-])`,
+  "giu",
+);
+
+/**
  * ── WHICH REGISTER AN UTTERANCE IS READ IN ────────────────────────
  *
  * The `language` this module is handed is the CALL's language —
@@ -448,6 +491,16 @@ export function pronounceForSpeech(text: string, language: SupportedLanguage): s
     PLAIN_RUPEES,
     (_match, figure: string, plus: string | undefined) =>
       join(pronounceHalves(figure.replace(/,/gu, ""), hindi), lex.rupees, plus ? "plus" : ""),
+  );
+
+  // LAST, and that ordering is load-bearing: "₹500/month" has to become
+  // "500 rupees" before this sees it, so the word on the left of the
+  // slash is the currency word rather than the "₹" the amount rules
+  // consume. Both sides are re-emitted exactly as written; only the
+  // slash itself is replaced.
+  spoken = spoken.replace(
+    RATE_SLASH,
+    (_match, lead: string, numerator: string, unit: string) => `${lead}${numerator} per ${unit}`,
   );
 
   return spoken.replace(/[ \t]{2,}/gu, " ");

@@ -403,6 +403,57 @@ export interface BenchmarkMetrics {
    * and nothing else.
    */
   readonly sttModel?: string;
+  /**
+   * PHASE 3 — CONTROLLED ENDPOINTING A/B. Which arm this call was
+   * assigned, and the `endpointing` value its STT socket was ACTUALLY
+   * opened with.
+   *
+   * Both are stored because only one of them can be wrong: an analysis
+   * that re-derives the parameter from the arm label cannot notice a
+   * call labelled `treatment` that nevertheless ran at 400, which is
+   * exactly the failure that would quietly invalidate the experiment.
+   *
+   * `sessionId` above and the `call_attempt_id` this record is written
+   * under together give every experimental call an unambiguous
+   * identity, so no additional id is carried here.
+   *
+   * Optional: absent on every record written before this field
+   * existed, and absent for any session that was never assigned — for
+   * which the production default of 400 applied, unchanged.
+   */
+  readonly sttEndpointing?: EndpointingAssignmentRecord;
   readonly estimatedCost: EstimatedCostMetric;
   readonly turnLatencies: readonly TurnLatencyBreakdown[];
+}
+
+/**
+ * The persisted form of one call's endpointing assignment. Structural
+ * rather than an import of the runtime type, so this types module
+ * keeps depending on nothing.
+ */
+export interface EndpointingAssignmentRecord {
+  /** `"control"` (400) or `"treatment"` (300). */
+  readonly arm: "control" | "treatment";
+  /** The value the Deepgram socket was opened with. */
+  readonly endpointingMs: number;
+  /** Whether this attempt was actually in the experiment. */
+  readonly experimentEnabled: boolean;
+  /**
+   * The exact hashed key — `stt-endpointing:<call_attempts.id>` — so
+   * the arm can be re-derived and checked from the record alone.
+   * Absent when the attempt was not assigned by hash, which is the
+   * only case in which there is no key to report.
+   */
+  readonly assignmentKey?: string;
+  /** The treatment share in force. Absent when this attempt was not in the experiment. */
+  readonly treatmentPercent?: number;
+  /**
+   * Why this attempt was NOT in the experiment. Present exactly when
+   * `experimentEnabled` is false. Recorded rather than inferred so an
+   * analysis knows which calls were excluded and on what grounds:
+   * `"experiment-disabled"` is every call today, `"no-attempt-id"` is
+   * a non-campaign session, and `"key-not-uuid"` would mean something
+   * handed the assignment a key it refused to hash.
+   */
+  readonly ineligibleReason?: "experiment-disabled" | "no-attempt-id" | "key-not-uuid";
 }

@@ -101,6 +101,21 @@ export interface StreamingTranscriptionRequest {
   readonly audio: AsyncIterable<AudioPayload>;
   readonly language: import("./enums").SupportedLanguage;
   readonly signal?: AbortSignal;
+  /**
+   * ADDITIVE, OPTIONAL. PHASE 3 — CONTROLLED ENDPOINTING A/B. The
+   * provider's end-of-chunk `endpointing` window for THIS CALL, in ms,
+   * decided before this request was built.
+   *
+   * ABSENT for every caller that predates the experiment, and absent
+   * is not "unset" — it means the provider's production default, which
+   * the provider applies explicitly. So a call site that never passes
+   * this opens exactly the socket it opens today.
+   *
+   * It is a per-connection parameter, so it is fixed for the whole
+   * call: there is no per-turn form of this setting, and nothing here
+   * lets one be invented.
+   */
+  readonly endpointingMs?: number;
 }
 
 /**

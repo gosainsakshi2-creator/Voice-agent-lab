@@ -22,6 +22,7 @@ import type {
 import { probeHealth } from "../shared/health";
 import { requireEnv, optionalEnv } from "../shared/env";
 import { AsyncQueue } from "../../core/session/async-queue";
+import { resolveEndpointingMs } from "../../core/session/stt-endpointing-experiment";
 interface DeepgramEnvConfig {
   readonly apiKey: string;
   readonly model: string;
@@ -301,7 +302,17 @@ const connection = await this.client.listen.v1.connect({
   // adaptive estimate down toward its floor. 400ms keeps the detector's
   // gap observations closer to real inter-utterance pauses without
   // adding meaningful latency.
-  endpointing: "400",
+  //
+  // PHASE 3 — CONTROLLED ENDPOINTING A/B. That 400 is now the
+  // DEFAULT rather than a literal, and it is still what this socket
+  // opens with on every call that carries no assignment — which is
+  // every call, until the experiment is explicitly switched on. The
+  // only other reachable value is 300, under a per-call assignment
+  // made before this connection existed. `resolveEndpointingMs`
+  // throws on anything else rather than passing an unattributable
+  // value to the vendor — a socket whose parameter cannot be tied to
+  // an arm would silently poison the comparison.
+  endpointing: String(resolveEndpointingMs(request.endpointingMs)),
   // ── Why a SECOND end-of-speech signal is requested ─────────────────
   //
   // `endpointing` above is VAD-driven, and a telephone line that carries

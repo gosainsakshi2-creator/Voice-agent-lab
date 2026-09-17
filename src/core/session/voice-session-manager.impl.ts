@@ -39,6 +39,7 @@ import type { TelephonyCallHandle } from "../../interfaces/providers/telephony-p
 import { SessionRecord } from "./session-record";
 import { ConversationPipeline, type PipelineHost, type ResolvedProviderStack } from "./conversation-pipeline";
 import { toSessionErrorInfo } from "./error-recovery";
+import { assignEndpointing } from "./stt-endpointing-experiment";
 
 let sessionCounter = 0;
 function generateSessionId(): SessionId {
@@ -251,6 +252,42 @@ export class DefaultVoiceSessionManager implements VoiceSessionManager, Pipeline
     // hand. Reads a descriptor string, stores it, and is read by
     // nothing that makes a decision.
     record.metrics.noteSttModel(providers.stt.descriptor.version);
+
+    // PHASE 3 — CONTROLLED ENDPOINTING A/B. This call's `endpointing`
+    // arm, decided HERE and nowhere else.
+    //
+    // The placement is the whole point: `ConversationPipeline` is
+    // constructed a few lines below, and it is the pipeline that calls
+    // `transcribeStream` and so opens the Deepgram socket. Assigning
+    // above that construction is what makes "assigned before the
+    // connection exists" a property of the control flow rather than a
+    // convention someone has to remember.
+    //
+    // OFF BY DEFAULT: with `STT_ENDPOINTING_EXPERIMENT_ENABLED` unset
+    // this returns a `control` assignment carrying the production 400,
+    // and the socket request below is unchanged.
+    //
+    // THE KEY IS THE CALL-ATTEMPT UUID, never `record.id`. The session
+    // id is `sess_<base36 time>_<base36 counter>`, and hashing it gave
+    // a split that was clustered in time while still looking balanced
+    // in aggregate. `attemptId` is `call_attempts.id`, a
+    // `gen_random_uuid()` value — which is the input the hash was
+    // built for, and the same row key this call's metrics land under.
+    // A session with no attempt id (every non-campaign call) is
+    // recorded as ineligible and runs the production default.
+    //
+    // Resolution and validation happen inside `assignEndpointing`,
+    // ONCE. Nothing downstream re-resolves, so no configuration error
+    // can be raised inside the pipeline's STT loop, where it would
+    // have been swallowed into a silently deaf call.
+    const endpointing = record.assignSttEndpointing(
+      assignEndpointing(record.request.campaign?.attemptId),
+    );
+    record.metrics.noteEndpointingAssignment(endpointing);
+    // eslint-disable-next-line no-console
+    console.log(
+      `[session-mgr:${record.id}] stt endpointing arm=${endpointing.arm} endpointing=${record.sttEndpointingMs}ms experiment=${endpointing.experimentEnabled ? "on" : `off (${endpointing.ineligibleReason ?? "unknown"})`}`,
+    );
 
     this.transition(record, SessionState.LISTENING, "call connected");
 

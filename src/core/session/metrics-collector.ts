@@ -32,6 +32,7 @@ import type {
 } from "../../types/benchmark.types";
 import type { ProviderStackSelection, SessionId } from "../../types/session.types";
 import { estimateTelephonyCost } from "./cost-estimator";
+import { ALLOWED_ENDPOINTING_MS, type EndpointingAssignment } from "./stt-endpointing-experiment";
 
 export interface TurnLatencyInput {
   readonly turnIndex: number;
@@ -155,6 +156,8 @@ export class SessionMetricsCollector {
   private firstOutboundAudioAt: Date | undefined;
   /** PHASE 3 PHASE 0 — the STT model this call resolved to. */
   private sttModel: string | undefined;
+  /** PHASE 3 — the endpointing arm this call was assigned, and the value it actually ran. */
+  private sttEndpointing: EndpointingAssignment | undefined;
 
   constructor(
     private readonly sessionId: SessionId,
@@ -313,6 +316,32 @@ export class SessionMetricsCollector {
   }
 
   /**
+   * PHASE 3 — CONTROLLED ENDPOINTING A/B. Records which arm this call
+   * was assigned and the `endpointing` value its STT socket was
+   * actually opened with, reported by the session manager at the
+   * moment it assigns, before the socket exists.
+   *
+   * Idempotent for the same reason `noteSttModel` is, and for one
+   * stronger one: two different arms recorded against one call would
+   * make that call uninterpretable, which is worse than not having
+   * measured it.
+   *
+   * ONLY AN ASSIGNABLE VALUE IS STORED. An assignment whose
+   * `endpointingMs` is outside the closed set is dropped rather than
+   * written, because a record is only worth having if the number in it
+   * is one the socket could actually have been opened with. Nothing
+   * here reads the assignment to make a decision — the value on the
+   * wire comes from `resolveEndpointingMs`, not from this collector.
+   */
+  noteEndpointingAssignment(assignment: EndpointingAssignment | undefined): void {
+    if (this.sttEndpointing !== undefined) return;
+    if (assignment === undefined) return;
+    if (assignment.arm !== "control" && assignment.arm !== "treatment") return;
+    if (!ALLOWED_ENDPOINTING_MS.includes(assignment.endpointingMs)) return;
+    this.sttEndpointing = assignment;
+  }
+
+  /**
    * PHASE 3 BATCH 1. The media bridge has handed the FIRST outbound
    * audio frame of this call to the transport.
    *
@@ -378,6 +407,7 @@ export class SessionMetricsCollector {
       timestamp: new Date(),
       callDuration,
       ...(this.sttModel !== undefined ? { sttModel: this.sttModel } : {}),
+      ...(this.sttEndpointing !== undefined ? { sttEndpointing: this.sttEndpointing } : {}),
       estimatedCost,
       turnLatencies: [...this.turnLatencies],
     };

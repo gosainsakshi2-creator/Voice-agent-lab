@@ -416,7 +416,12 @@ export async function runCall(
       textToSpeech: { category: ProviderCategory.TEXT_TO_SPEECH, id: contact.assignedProvider },
     },
     destinationNumber: contact.normalizedPhone,
-    campaign: campaignContext,
+    // PHASE 3 — the endpointing A/B randomises on the ATTEMPT UUID,
+    // which exists here (step 1 reserved the row before anything could
+    // dial) but not inside the session. Passed through rather than
+    // re-derived so the key the arm is drawn from is exactly the key
+    // the resulting `call_metrics` row is stored under.
+    campaign: { ...campaignContext, attemptId: attempt.id },
   };
 
   const timings: Record<string, number | null> = {

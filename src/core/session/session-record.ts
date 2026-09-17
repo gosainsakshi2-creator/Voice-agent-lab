@@ -27,6 +27,11 @@ import { BargeInController } from "./barge-in-controller";
 import { AdaptiveTurnDetector } from "./turn-detection";
 import { AsyncQueue } from "./async-queue";
 import { buildSystemPrompt } from "./system-prompt";
+import {
+  CONTROL_ENDPOINTING_MS,
+  resolveEndpointingMs,
+  type EndpointingAssignment,
+} from "./stt-endpointing-experiment";
 
 export class SessionRecord {
   state: SessionState = SessionState.INITIALIZING;
@@ -149,6 +154,57 @@ export class SessionRecord {
   readonly campaignIdentityLine: string | undefined;
   readonly bargeIn = new BargeInController();
   readonly turnDetector = new AdaptiveTurnDetector();
+
+  /**
+   * PHASE 3 — CONTROLLED ENDPOINTING A/B. Which `endpointing` value
+   * this call's STT socket is opened with, decided ONCE, before the
+   * socket exists.
+   *
+   * `undefined` means no assignment was made for this session — every
+   * path that predates the experiment, and every harness that builds a
+   * record by hand. The pipeline resolves that to the production 400
+   * through `resolveEndpointingMs`, so an unassigned session behaves
+   * exactly as it does today.
+   *
+   * Written only by `assignSttEndpointing`, which is idempotent, so a
+   * retried webhook or a re-entered `beginConversation` cannot move a
+   * live call between arms mid-flight.
+   */
+  sttEndpointing: EndpointingAssignment | undefined;
+
+  /**
+   * The ALREADY-RESOLVED `endpointing` value for this call's STT
+   * socket, in ms. Always a member of the closed set, always present,
+   * and 400 until an assignment says otherwise — so the audio pipeline
+   * reads a plain number and has nothing to validate.
+   *
+   * Deliberately a separate field from `sttEndpointing` above. That
+   * one is the AUDIT RECORD (arm, key, split) and may legitimately be
+   * absent; this one is the OPERATIONAL VALUE and may not. Keeping
+   * them apart is what removed the last place a configuration error
+   * could be raised inside the pipeline's STT loop, whose `catch`
+   * swallows exceptions by design and would have turned such a throw
+   * into a silently deaf call.
+   */
+  sttEndpointingMs: number = CONTROL_ENDPOINTING_MS;
+
+  /**
+   * Records this call's endpointing arm and the value its socket will
+   * run. First write wins, for the same reason `markCallAnswered` and
+   * `noteSttModel` are idempotent: this is reached from a path a
+   * retried webhook can re-enter, and the arm a call ran on must be
+   * one value for the whole call.
+   */
+  assignSttEndpointing(assignment: EndpointingAssignment): EndpointingAssignment {
+    if (this.sttEndpointing === undefined) {
+      this.sttEndpointing = assignment;
+      // Validated once, at the single write point. `assignEndpointing`
+      // has already resolved it; this is the guard that keeps the
+      // invariant true for any other caller.
+      this.sttEndpointingMs = resolveEndpointingMs(assignment.endpointingMs);
+    }
+    return this.sttEndpointing;
+  }
 
   constructor(
     

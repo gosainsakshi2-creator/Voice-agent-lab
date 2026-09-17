@@ -103,6 +103,24 @@ export interface CampaignSessionContext {
    * start and whose behaviour is therefore unchanged.
    */
   readonly identityLine?: string;
+  /**
+   * ADDITIVE, OPTIONAL. The `call_attempts.id` UUID this session is
+   * placing — the campaign layer's own identifier for THIS ATTEMPT,
+   * created before the session exists and already the row key its
+   * metrics are stored under.
+   *
+   * Carried for one purpose: it is the randomisation key of the
+   * endpointing A/B (see `stt-endpointing-experiment.ts`). It has to
+   * be a UUID rather than the session id because the session id is a
+   * timestamp plus a counter, and hashing that produced a split that
+   * was clustered in time while still looking balanced overall.
+   *
+   * Nothing branches on it. It is not read by the pipeline, the turn
+   * detector, the prompt, or any provider; an absent value simply
+   * means this session is not in the experiment and runs the
+   * production default — which is every non-campaign session.
+   */
+  readonly attemptId?: string;
 }
 
 /**

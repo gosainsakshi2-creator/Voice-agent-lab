@@ -3696,6 +3696,15 @@ export class ConversationPipeline {
           audio: wrapped,
           language: this.record.memory.currentLanguage,
           signal: loopSignal,
+          // PHASE 3 — CONTROLLED ENDPOINTING A/B. Already resolved and
+          // validated by the session manager, before this pipeline was
+          // constructed. Read as a plain number ON PURPOSE: this `for
+          // await` sits inside a `try` whose `catch` deliberately
+          // swallows transport errors, so anything that could THROW
+          // here would become a silently deaf call rather than a
+          // reported fault. There is nothing left to validate.
+          // Defaults to the production 400 for an unassigned session.
+          endpointingMs: this.record.sttEndpointingMs,
         });
         if (!stream) return;
 
@@ -4503,6 +4512,10 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
     })(),
     language: this.record.memory.currentLanguage,
     signal: loopSignal,
+    // Same already-resolved value as the streaming path above. Both
+    // paths read the one field on the record, so a call cannot run two
+    // different endpointing values.
+    endpointingMs: this.record.sttEndpointingMs,
   })) {
     segments.push(segment);
   }

@@ -11,8 +11,10 @@
  *      drawing breath mid-sentence arrives as several separate finals")
  *      can be quantified rather than eyeballed.
  *
- * NEITHER changes behaviour. `endpointing` stays `"400"` — asserted
- * directly in section F, from the provider source.
+ * NEITHER changes behaviour. `endpointing` still DEFAULTS to 400 —
+ * asserted directly in section F, now through the per-call resolver
+ * the Phase 3 experiment introduced rather than through the literal
+ * that used to be in the provider source.
  *
  * NOTHING HERE OPENS A SOCKET, CONTACTS DEEPGRAM, PLACES A CALL OR
  * TOUCHES A DATABASE.
@@ -24,6 +26,9 @@ import { readFileSync } from "node:fs";
 const { SessionMetricsCollector } = await import("../../core/session/metrics-collector");
 const { DeepgramSpeechToTextProvider } = await import("../../providers/speech-to-text/deepgram.provider");
 const { ProviderCategory } = await import("../../types/enums");
+const { resolveEndpointingMs, CONTROL_ENDPOINTING_MS } = await import(
+  "../../core/session/stt-endpointing-experiment"
+);
 
 import type { TurnLatencyInput } from "../../core/session/metrics-collector";
 import type { ProviderStackSelection, SessionId } from "../../types/session.types";
@@ -256,13 +261,32 @@ await test("E3. fragmentation telemetry is numeric only — it cannot carry tran
 // ═════════════════════════════════════════════════════════════════
 section("F. THE EXPERIMENT VARIABLE IS UNTOUCHED");
 
-await test("F1. endpointing is still exactly \"400\" and utterance_end_ms still \"1000\"", () => {
-  // Phase 0 is telemetry only. This asserts the one thing the whole
-  // batch promised not to touch, read from the provider source itself.
+await test("F1. endpointing still defaults to 400 and utterance_end_ms is still \"1000\"", () => {
+  // Phase 0 asserted the literal `endpointing: "400"` in the provider
+  // source. The Phase 3 experiment replaced that literal with a
+  // per-call resolver, so the spelling no longer carries the promise —
+  // the RESOLVER does, and it is asserted directly. `utterance_end_ms`
+  // is not a dimension of that experiment and is still read from the
+  // source, unchanged.
   const src = readFileSync("src/providers/speech-to-text/deepgram.provider.ts", "utf8");
-  assert.ok(/endpointing:\s*"400"/.test(src), "endpointing must remain 400");
   assert.ok(/utterance_end_ms:\s*"1000"/.test(src), "utterance_end_ms must remain 1000");
-  assert.ok(!/endpointing:\s*"(?!400)/.test(src), "no other endpointing value may appear");
+  assert.ok(
+    !/endpointing:\s*"(?!400)/.test(src),
+    "no hard-coded endpointing value other than 400 may appear",
+  );
+
+  // The value a call with no experiment assignment opens its socket
+  // with — i.e. every call, until the experiment is switched on.
+  assert.equal(resolveEndpointingMs(undefined), 400, "the production default must remain 400");
+  assert.equal(CONTROL_ENDPOINTING_MS, 400);
+});
+
+await test("F2. only 400 and 300 are reachable — no third value can be handed to Deepgram", () => {
+  assert.equal(resolveEndpointingMs(400), 400);
+  assert.equal(resolveEndpointingMs(300), 300);
+  for (const bad of [0, 200, 350, 500]) {
+    assert.throws(() => resolveEndpointingMs(bad), `endpointing=${bad} must be refused`);
+  }
 });
 
 // ═════════════════════════════════════════════════════════════════

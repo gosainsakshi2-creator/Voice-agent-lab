@@ -134,6 +134,148 @@ const GROUPED_AMOUNT = /(₹\s*)?\b(\d{1,2}(?:,\d{2})+,\d{3})\b(\s*\+)?/giu;
 /** Any remaining rupee figure: "₹500", "₹2,000+". */
 const PLAIN_RUPEES = /₹\s*(\d[\d,]*(?:\.\d+)?)(\s*\+)?/giu;
 
+/**
+ * ── WHICH REGISTER AN UTTERANCE IS READ IN ────────────────────────
+ *
+ * The `language` this module is handed is the CALL's language —
+ * `memory.currentLanguage`, which the language lock fixes for the whole
+ * call. It is not, and never was, the language of the sentence being
+ * spoken; nothing in the codebase carries one. So a Hindi- or
+ * Hinglish-locked call substituted Hindi words into sentences written
+ * entirely in English:
+ *
+ *   "The webinar will start at 7:30 PM."
+ *     -> "The webinar will start at saadhe saat baje shaam ko."
+ *
+ * The rule below separates the two concerns for THIS transformation
+ * only. It is deliberately one-directional: a non-English call may fall
+ * back to the English register when the utterance is clearly English.
+ * An English call is never pushed the other way, the `language`
+ * argument is not modified, and nothing here reaches the value handed
+ * to the TTS provider — that stays the locked language, which is the
+ * lock's entire job.
+ *
+ * WHY NOT `detectLanguage`. It was measured against these fixtures
+ * before this was written and it reports "7:30 PM", "₹500", "2.5 lakh"
+ * and "11:15 AM" as English, on basis `default-english`, with
+ * `isLockGradeEvidence` true. That is correct for what it is for — a
+ * CALLER's bare utterance carries the previous language forward — and
+ * wrong here, where a bare notation carries no language at all.
+ * Adopting it would have un-Hindi'd every short utterance on a Hindi
+ * call. It also lives in `core/session`; this module is pure and has
+ * only ever imported the enum.
+ *
+ * SO THE TEST IS FOR POSITIVE EVIDENCE OF ENGLISH, and everything else
+ * keeps today's behaviour rather than guessing. Three gates, cheapest
+ * first, all three required:
+ *
+ *   1. no Devanagari anywhere — one Devanagari letter and this is not
+ *      an English sentence, whatever else is in it;
+ *   2. no romanized Hindi function word — this is what makes Hinglish
+ *      Hinglish. English CONTENT words are not evidence of English:
+ *      "LIVE attendees ko ₹1.5 lakh+ ke bonuses milenge" is a Hindi
+ *      sentence with English nouns in it, and `ko`/`ke` are what say so;
+ *   3. at least two distinct English function words. One can appear in
+ *      a romanized Hindi sentence by accident, and a bare "7:30 PM" has
+ *      none at all — which is the case this threshold exists to refuse.
+ *
+ * KNOWN LIMIT, recorded rather than hidden: this runs per streamed
+ * chunk, so a long English sentence split by the chunker is judged one
+ * piece at a time. The chunker's minimums (40 characters for the first
+ * chunk, 60 for the rest) put several function words in a normal chunk,
+ * but a short fragment can fall below the threshold and keep the call's
+ * register. That errs toward today's behaviour, which is the safe
+ * direction.
+ */
+
+/** One Devanagari letter is enough to settle it. */
+const DEVANAGARI = /[ऀ-ॿ]/u;
+
+/**
+ * Romanized Hindi function words. Deliberately EXCLUDES every spelling
+ * that is also an ordinary English word — `is`, `us`, `the`, `me`,
+ * `to`, `hi`, `no`, `so` — because a false positive here reads an
+ * English sentence as Hindi, which is the bug this is fixing. Missing a
+ * marker only costs the fallback, which is today's behaviour.
+ */
+const HINDI_FUNCTION_WORDS: ReadonlySet<string> = new Set([
+  "aap", "aapka", "aapke", "aapki", "aapko", "main", "mera", "meri", "mere",
+  "hum", "humara", "hamara", "tum", "tumhara", "yeh", "ye", "woh", "wo",
+  "kya", "kyun", "kyon", "kaise", "kahan", "kab", "kaun", "kitna", "kitne", "kitni",
+  "hai", "hain", "tha", "thi", "thay", "hoga", "hogi", "honge", "hota", "hoti", "hote",
+  "karna", "karne", "karta", "karti", "karte", "kar", "kiya", "kiye", "karo", "kijiye",
+  "nahi", "nahin", "haan", "han", "haanji", "hanji", "ji", "bhi",
+  "ka", "ke", "ki", "ko", "se", "ne", "par", "pe", "mein",
+  "aur", "lekin", "magar", "phir", "abhi", "aaj", "kal", "subah", "shaam", "sham",
+  "raat", "dopahar", "baje", "liye", "sakta", "sakte", "sakti", "chahiye",
+  "milega", "milegi", "milenge", "raha", "rahi", "rahe", "gaya", "gayi",
+  "bahut", "thoda", "accha", "achha", "theek", "thik", "bilkul", "zaroor", "jaroor",
+  "apna", "apne", "apni", "sab", "kuch", "kuchh", "koi", "jo", "jis", "jab",
+  "shuru", "judiye", "dekhiye", "suniye", "batao", "bataye", "hoke", "wala", "wali", "wale",
+]);
+
+/**
+ * English function words. Content words are deliberately absent: a
+ * Hinglish sentence is full of English nouns, and counting them would
+ * read it as English.
+ */
+const ENGLISH_FUNCTION_WORDS: ReadonlySet<string> = new Set([
+  "the", "a", "an", "and", "or", "but", "if", "then", "than",
+  "is", "are", "was", "were", "be", "been", "being", "am",
+  "will", "would", "can", "could", "shall", "should", "may", "might", "must",
+  "have", "has", "had", "do", "does", "did", "get", "got",
+  "of", "to", "in", "on", "at", "for", "with", "from", "by", "into", "about",
+  "over", "under", "after", "before", "during", "between",
+  "this", "that", "these", "those", "there", "here",
+  "it", "its", "you", "your", "yours", "we", "our", "us", "they", "them", "their",
+  "he", "she", "his", "her", "my", "me", "i",
+  "not", "no", "so", "also", "only", "just", "very", "too",
+  "what", "which", "who", "when", "where", "how", "why",
+  "please", "thanks", "thank", "sorry", "yes",
+]);
+
+/** Minimum distinct English function words before the register is overridden. */
+const MIN_ENGLISH_EVIDENCE = 2;
+
+/**
+ * Splits into comparable word tokens.
+ *
+ * `\p{M}` is in the class on purpose: Devanagari matras and the virama
+ * are COMBINING MARKS, not letters, so a class of `\p{L}` alone shatters
+ * every Devanagari word into single consonants. Nothing here matches a
+ * Devanagari token — the script gate above has already settled those —
+ * but a tokenizer that quietly destroys one script is a trap for the
+ * next person to use it. Same class and same NFC normalization the
+ * phrase matchers elsewhere in the codebase use.
+ */
+function wordsOf(text: string): readonly string[] {
+  return text
+    .normalize("NFC")
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}\p{M}]+/u)
+    .filter((word) => word.length > 0);
+}
+
+/**
+ * Is this utterance clearly English, on its own evidence?
+ *
+ * Answers only that one question. It is not a language detector and
+ * must not become one: "not clearly English" is not a claim that the
+ * text is Hindi, only that there is no reason to override the call's
+ * register.
+ */
+export function isClearlyEnglishUtterance(text: string): boolean {
+  if (DEVANAGARI.test(text)) return false;
+
+  const words = wordsOf(text);
+  const englishHits = new Set<string>();
+  for (const word of words) {
+    if (HINDI_FUNCTION_WORDS.has(word)) return false;
+    if (ENGLISH_FUNCTION_WORDS.has(word)) englishHits.add(word);
+  }
+  return englishHits.size >= MIN_ENGLISH_EVIDENCE;
+}
+
 interface Lexicon {
   readonly rupees: string;
   readonly thousand: string;
@@ -264,7 +406,11 @@ function pronounceGrouped(digits: string, lex: Lexicon): string {
 export function pronounceForSpeech(text: string, language: SupportedLanguage): string {
   if (text.trim().length === 0) return text;
 
-  const hindi = language !== SupportedLanguage.ENGLISH;
+  // The call's language decides the register, EXCEPT where the
+  // utterance itself is clearly English — see the long note above
+  // `isClearlyEnglishUtterance`. One-directional: `language` is read,
+  // never rewritten, and an English call is unaffected by this clause.
+  const hindi = language !== SupportedLanguage.ENGLISH && !isClearlyEnglishUtterance(text);
   const lex = hindi ? HINDI_LEXICON : ENGLISH_LEXICON;
 
   let spoken = text.replace(DOTTED_MERIDIEM, (_match, ap: string) => `${ap.toUpperCase()}M`);

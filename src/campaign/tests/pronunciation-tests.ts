@@ -212,6 +212,188 @@ test("every sentence of the approved v2 script survives one pass in both languag
   }
 });
 
+// ── SECTION D — the utterance decides the numeric register ───────
+//
+// THE BUG THIS SECTION EXISTS FOR.
+//
+// `pronounceForSpeech` is handed `memory.currentLanguage` — the CALL's
+// language, which the Phase 1.3 lock fixes for the whole call. It was
+// never the language of the sentence being spoken, and nothing else in
+// the codebase carries one. So on a Hindi- or Hinglish-locked call, an
+// assistant sentence written entirely in English had Hindi words
+// substituted into it:
+//
+//   "The webinar will start at 7:30 PM."
+//     -> "The webinar will start at saadhe saat baje shaam ko."
+//
+// The fix is one-directional and lives entirely inside
+// `speech-pronunciation.ts`: a NON-English call language may fall back
+// to the English register when the utterance itself is clearly English.
+// An English call language is never pushed the other way, the `language`
+// argument is unchanged, and the value handed to the TTS provider is
+// untouched — that is the language lock's job and it keeps it.
+//
+// WHAT "CLEARLY ENGLISH" HAS TO MEAN, AND WHY IT IS NARROW.
+//
+// `detectLanguage` was measured against these exact fixtures before
+// this was written, and it is NOT usable here: it reports "7:30 PM",
+// "₹500", "2.5 lakh" and "11:15 AM" as English on basis
+// `default-english` with `isLockGradeEvidence` true. Adopting it would
+// have flipped every bare-fragment case in sections A and B — including
+// the Hinglish assertion this suite already pins. It is tuned for
+// CALLER speech, where a bare fragment carries the previous language
+// forward; here a bare fragment carries no evidence at all.
+//
+// So the rule requires POSITIVE evidence of English and preserves
+// today's behaviour otherwise. A4/A5 below pin that: an utterance with
+// numerals and nothing else stays Hindi on a Hindi call.
+
+console.log("\nSECTION D — utterance-aware numeric register");
+
+/** The Hindi renderings that must NOT appear in a clearly-English utterance. */
+const HINDI_NUMERIC_WORDS =
+  /\b(saadhe|sawa|paune|dedh|dhaai|baje|bajkar|shaam|subah|dopahar|raat|hazaar|rupaye|sau)\b/iu;
+
+function speaksEnglishNumerals(text: string, language: Language, mustContain: string): void {
+  const spoken = pronounceForSpeech(text, language);
+  assert.ok(
+    spoken.includes(mustContain),
+    `${language}: ${JSON.stringify(text)}\n  expected to contain: ${JSON.stringify(mustContain)}\n  actual: ${JSON.stringify(spoken)}`,
+  );
+  assert.ok(
+    !HINDI_NUMERIC_WORDS.test(spoken),
+    `${language}: a clearly English sentence must not receive Hindi numeric wording\n  actual: ${JSON.stringify(spoken)}`,
+  );
+}
+
+// ── D-A. English numeric pronunciation, in EVERY call language ──
+
+test("A1 — a clearly English sentence reads 7:30 PM the English way in en, hi and hi-en", () => {
+  for (const language of [EN, HI, HINGLISH] as const) {
+    speaksEnglishNumerals("The webinar will start at 7:30 PM.", language, "seven thirty");
+  }
+  // The exact English string, so this is not satisfied by some third rendering.
+  speaks("The webinar will start at 7:30 PM.", HI, "The webinar will start at seven thirty PM.");
+  speaks("The webinar will start at 7:30 PM.", HINGLISH, "The webinar will start at seven thirty PM.");
+});
+
+test("A2 — a grouped rupee figure in a clearly English sentence uses English scale words", () => {
+  for (const language of [EN, HI, HINGLISH] as const) {
+    speaksEnglishNumerals("It is worth ₹1,50,000+ in bonuses.", language, "1 lakh 50 thousand rupees plus");
+  }
+  speaks("It is worth ₹1,50,000+ in bonuses.", HI, "It is worth 1 lakh 50 thousand rupees plus in bonuses.");
+});
+
+test("A3 — a half-lakh figure in a clearly English sentence is not read as dedh", () => {
+  for (const language of [EN, HI, HINGLISH] as const) {
+    speaksEnglishNumerals("It is worth ₹1.5 lakh+ in bonuses.", language, "1.5 lakh rupees plus");
+  }
+  speaks("It is worth ₹1.5 lakh+ in bonuses.", HINGLISH, "It is worth 1.5 lakh rupees plus in bonuses.");
+});
+
+test("A4 — a bare figure carries NO English evidence, so a Hindi call keeps the Hindi reading", () => {
+  // The whole safety property in one test. "7:30 PM" is not an English
+  // sentence; it is a notation with no language in it. Treating it as
+  // English would be the aggressive guess this fix refuses to make, and
+  // would silently un-Hindi every short utterance on a Hindi call.
+  speaks("7:30 PM", HI, "saadhe saat baje shaam ko");
+  speaks("7:30 PM", HINGLISH, "saadhe saat baje shaam ko");
+  speaks("₹500", HI, "500 rupaye");
+  speaks("2.5 lakh", HI, "dhaai lakh");
+  speaks("11:15 AM", HI, "sawa gyarah baje subah ko");
+});
+
+test("A5 — one English word is not enough; the evidence threshold is real", () => {
+  // A single function word can appear inside a romanized Hindi sentence
+  // by accident. The rule needs more than one before it overrides a
+  // locked call's register.
+  speaks("at 7:30 PM", HI, "at saadhe saat baje shaam ko");
+});
+
+// ── D-B. Pinned behaviour that must not move ────────────────────
+
+test("B1 — 11 AM is untouched in every call language, English sentence or not", () => {
+  for (const language of [EN, HI, HINGLISH] as const) {
+    speaks("The webinar will start at 11 AM.", language, "The webinar will start at 11 AM.");
+    speaks("The session starts at 11 AM.", language, "The session starts at 11 AM.");
+  }
+});
+
+test("B2 — a spelled-out lakh is untouched in every call language", () => {
+  for (const language of [EN, HI, HINGLISH] as const) {
+    speaks("It costs one lakh rupees.", language, "It costs one lakh rupees.");
+    speaks("You get 1 lakh bonuses.", language, "You get 1 lakh bonuses.");
+  }
+});
+
+test("B3 — the established ₹2,999 reading is preserved", () => {
+  speaks("It is ₹2,999 only.", EN, "It is 2999 rupees only.");
+  speaks("It is ₹2,999 only.", HI, "It is 2999 rupees only.");   // clearly English sentence
+  speaks("₹2,999", HI, "2999 rupaye");                            // bare figure, Hindi call
+});
+
+test("B4 — dates are untouched in every call language", () => {
+  for (const language of [EN, HI, HINGLISH] as const) {
+    speaks("Your slot is on 13/08/2026.", language, "Your slot is on 13/08/2026.");
+    speaks("It is on Sunday, 4th October.", language, "It is on Sunday, 4th October.");
+  }
+});
+
+// ── D-C. Hindi and Hinglish must not regress ────────────────────
+
+test("C1 — a Devanagari sentence still receives the Hindi reading", () => {
+  speaks(
+    "वेबिनार कल शाम 7:30 बजे शुरू होगा।",
+    HI,
+    "वेबिनार कल शाम saadhe saat baje शुरू होगा।",
+  );
+  speaks(
+    "वेबिनार कल शाम 7:30 बजे शुरू होगा।",
+    HINGLISH,
+    "वेबिनार कल शाम saadhe saat baje शुरू होगा।",
+  );
+});
+
+test("C2 — a romanized Hindi sentence still receives the Hindi reading", () => {
+  speaks("Aaj 7:30 PM par judiye.", HI, "Aaj saadhe saat baje shaam ko par judiye.");
+  speaks("Aaj 7:30 PM par judiye.", HINGLISH, "Aaj saadhe saat baje shaam ko par judiye.");
+});
+
+test("C3 — genuinely code-mixed sentences keep the Hindi reading, English words and all", () => {
+  // These carry English CONTENT words ("attendees", "bonuses", "bonus
+  // bundle") but romanized Hindi function words, which is exactly what
+  // Hinglish is. The rule must not read the English nouns as evidence.
+  speaks(
+    "LIVE attendees ko ₹1.5 lakh+ ke bonuses milenge.",
+    HINGLISH,
+    "LIVE attendees ko dedh lakh rupaye plus ke bonuses milenge.",
+  );
+  speaks("bonus bundle ₹1,50,000+ ka hai", HINGLISH, "bonus bundle 1 lakh 50 hazaar rupaye plus ka hai");
+  speaks("1.5 lakh log", HINGLISH, "dedh lakh log");
+  speaks("Session 7:30 PM par shuru hoga.", HINGLISH, "Session saadhe saat baje shaam ko par shuru hoga.");
+});
+
+test("C4 — the English register is never forced ONTO a Hindi-worded utterance on an English call", () => {
+  // One-directional by design: an English call language is left exactly
+  // as it was, whatever the utterance looks like. This pins that the fix
+  // did not become a two-way rewrite.
+  speaks("Aaj 7:30 PM par judiye.", EN, "Aaj seven thirty PM par judiye.");
+});
+
+test("C5 — idempotent in every call language, including the overridden path", () => {
+  for (const language of [EN, HI, HINGLISH] as const) {
+    for (const text of [
+      "The webinar will start at 7:30 PM.",
+      "It is worth ₹1,50,000+ in bonuses.",
+      "Aaj 7:30 PM par judiye.",
+      "7:30 PM",
+    ]) {
+      const once = pronounceForSpeech(text, language);
+      assert.equal(pronounceForSpeech(once, language), once, `${language}: ${JSON.stringify(once)}`);
+    }
+  }
+});
+
 // ─────────────────────────────────────────────────────────────────
 console.log(
   `\n${failures.length === 0 ? "ALL PASSED" : "FAILURES"} — ${passed} passed, ${failures.length} failed`,

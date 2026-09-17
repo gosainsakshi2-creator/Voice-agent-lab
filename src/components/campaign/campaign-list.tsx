@@ -14,8 +14,11 @@
  * consequence of the choice stated next to it, because every field here
  * ends up in a phone call to a real person.
  *
- * Presentation only. Every field, every request body and the
- * idempotency key are exactly what they were.
+ * Presentation, and the collection of the operator's choices. The
+ * request body itself is assembled by `buildCampaignCreateBody` rather
+ * than inline here — see that module for why the shape of this form's
+ * `create` callback is load-bearing. Every field and the idempotency
+ * key are exactly what they were.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -44,6 +47,7 @@ import {
   CAMPAIGN_TTS_PROVIDERS,
   type CampaignType,
 } from "@/campaign/domain/campaign-types";
+import { buildCampaignCreateBody } from "@/campaign/domain/campaign-create-request";
 import { agentsByProvider } from "@/campaign/script/agent-identity";
 
 interface CampaignSummary {
@@ -55,6 +59,15 @@ interface CampaignSummary {
   scriptId: string;
   scriptVersion: string;
   createdAt: string;
+  /**
+   * What the server actually STORED for this campaign, echoed back by
+   * the create endpoint. Absent for a campaign that recorded no
+   * choice. Read from the response rather than from form state on
+   * purpose: the confirmation must report the persisted decision, so a
+   * selection that failed to reach the database is visible instead of
+   * being confirmed back from the value the form still holds.
+   */
+  sttProvider?: string | null;
 }
 
 /** As returned by `describeScript` on the campaigns endpoint. */
@@ -326,34 +339,42 @@ export function CampaignList() {
     setError(undefined);
     setCreated(undefined);
     try {
+      // Built from ONE explicit object rather than read out of this
+      // closure field by field. The previous inline version read
+      // `sttProvider`, `llmPercents` and `telephonyPercents` without
+      // declaring them below, so React kept a memoised callback that
+      // still held the values from an earlier render: selecting Soniox
+      // and pressing Create sent "deepgram". Passing the fields in
+      // means the body cannot contain a value this callback did not
+      // receive, and the dependency array is checkable against one
+      // argument list.
       const res = await fetch("/api/campaigns", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name,
-          campaignType,
-          language,
-          providerAllocation: percents,
-          llmAllocation: llmPercents,
-          telephonyAllocation: telephonyPercents,
-          // Sent explicitly so the choice is recorded even when it is
-          // the default — "chose Deepgram" and "never chose" stay
-          // distinguishable in the campaign row.
-          sttProvider,
-          // The endpoint already accepts these and falls back to the
-          // default script for the type when they are absent; sending
-          // the selection explicitly makes the choice visible without
-          // changing what gets created.
-          ...(selectedScript ? { scriptId: selectedScript.id, scriptVersion: selectedScript.version } : {}),
-          // Derived from the campaign's own identity rather than a
-          // fresh random value, so a double-submit or a refreshed
-          // form resolves to the same campaign instead of a second one.
-          idempotencyKey: `ui:${campaignType}:${name.trim().toLowerCase()}`,
-        }),
+        body: JSON.stringify(
+          buildCampaignCreateBody({
+            name,
+            campaignType,
+            language,
+            providerAllocation: percents,
+            llmAllocation: llmPercents,
+            telephonyAllocation: telephonyPercents,
+            sttProvider,
+            script: selectedScript
+              ? { id: selectedScript.id, version: selectedScript.version }
+              : undefined,
+          }),
+        ),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Could not create the campaign.");
       setCreated(json.campaign as CampaignSummary);
+      // ONLY the name is cleared. Every other choice — type, language,
+      // script, the three splits and the recognizer — stays as the
+      // operator left it, so setting up several campaigns in a row
+      // does not silently return any of them to a default between
+      // creations. Resetting `sttProvider` here is precisely what
+      // would reintroduce the incident.
       setName("");
       await load();
     } catch (err) {
@@ -361,7 +382,20 @@ export function CampaignList() {
     } finally {
       setCreating(false);
     }
-  }, [campaignType, language, load, name, percents, selectedScript]);
+    // EVERY value the body is built from is declared. See the comment
+    // above: an omission here is not a lint nit, it is a wrong
+    // provider in a phone call.
+  }, [
+    campaignType,
+    language,
+    llmPercents,
+    load,
+    name,
+    percents,
+    selectedScript,
+    sttProvider,
+    telephonyPercents,
+  ]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -676,6 +710,19 @@ export function CampaignList() {
                     Created as {created.status}. Import contacts next — no call is placed until a run is
                     started.
                   </p>
+                  {/* The PERSISTED recognizer, from the server's
+                      response — not from the form's own state. If a
+                      selection ever fails to reach the database, this
+                      line disagrees with the button above it, which is
+                      what turns a silent substitution into a visible
+                      one. A campaign that recorded no choice says so
+                      rather than claiming a Deepgram it never picked. */}
+                  <p className="text-[11px] text-muted-foreground">
+                    Speech-to-text:{" "}
+                    <span className="font-medium text-foreground">
+                      {created.sttProvider ?? "not recorded — resolves to deepgram"}
+                    </span>
+                  </p>
                 </div>
               </div>
               <Button asChild size="sm" variant="outline">
@@ -696,7 +743,7 @@ export function CampaignList() {
                     selectedScript ? `${selectedScript.id} ${selectedScript.version}` : "no script"
                   } · ${activeCount(percents)} TTS · ${activeCount(llmPercents)} LLM · ${activeCount(
                     telephonyPercents,
-                  )} carrier`
+                  )} carrier · ${sttProvider} STT`
                 : "Give the campaign a name to continue."}
             </p>
             <Button onClick={() => void create()} disabled={!canCreate}>

@@ -70,7 +70,10 @@
     "test:endpointing-experiment": "tsx src/campaign/tests/endpointing-experiment-tests.ts",
     "test:stt-lag-inputs": "tsx src/campaign/tests/stt-lag-inputs-tests.ts",
     "test:soniox": "tsx src/campaign/tests/soniox-stt-tests.ts",
+    "test:provider-selection": "tsx src/campaign/tests/campaign-provider-selection-tests.ts",
+    "test:tts-evidence": "tsx src/campaign/tests/tts-evidence-harness-tests.ts",
     "bench:llm": "tsx src/benchmark/llm/cli.ts",
+    "bench:tts": "tsx src/benchmark/tts/cli.ts",
     "preflight:prod": "tsx src/campaign/production-readiness-cli.ts",
     "campaign:audit": "tsx src/campaign/audit-cli.ts"
   },

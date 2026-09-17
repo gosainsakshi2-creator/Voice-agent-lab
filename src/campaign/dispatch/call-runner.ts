@@ -36,7 +36,7 @@
  */
 
 import { CallDirection, ProviderCategory, SessionState, SupportedLanguage } from "../../types/enums";
-import type { SessionCreationRequest, SessionId } from "../../types/session.types";
+import type { SessionCreationRequest, SessionId, SessionWarmupResult } from "../../types/session.types";
 import type { BenchmarkMetrics } from "../../types/benchmark.types";
 import {
   attachSessionId,
@@ -91,6 +91,15 @@ export interface ManagerLike {
   start(sessionId: SessionId): Promise<unknown>;
   end(sessionId: SessionId): Promise<unknown>;
   getBenchmarkMetrics(sessionId: SessionId): Promise<BenchmarkMetrics>;
+  /**
+   * OPTIONAL, and read-only. Already a member of the public
+   * `VoiceSessionManager` interface — declared here only so this
+   * module's own subset view can see it. Read once, after warm-up, for
+   * the one thing `warmUpProviders` does not surface: WHICH provider
+   * failed and WHAT it said. Optional, and guarded at the call site, so
+   * a manager without it behaves exactly as before.
+   */
+  getWarmupResult?(sessionId: SessionId): Promise<SessionWarmupResult>;
   /**
    * OPTIONAL, and read-only. `DefaultVoiceSessionManager` already
    * exposes this for the dashboard's live transcript; the campaign
@@ -504,6 +513,30 @@ export async function runCall(
 
   let sessionId: SessionId | undefined;
   let unwatch: (() => void) | undefined;
+  /**
+   * The real reason warm-up failed, held only for the window in which
+   * it can be the reason the call died.
+   *
+   * `warmUpProviders` moves a session with an unhealthy provider to
+   * ERROR and returns normally. `start()` is then a transition out of
+   * ERROR, which the state table forbids, so it throws
+   * `Cannot transition session from "ERROR" to "CALLING".` — and THAT
+   * is the sentence every failed attempt in this campaign's history has
+   * been closed with, for both language models. The provider's own
+   * message ("gemma-4 REST call failed: 401 …") was produced, stored on
+   * the warm-up result, and never read.
+   *
+   * So it is read here and substituted for the reason TEXT in the catch
+   * below. Deliberately not thrown: `classifyError` derives the failure
+   * CLASS from the message, and a real provider error containing
+   * "timeout", "forbidden" or "403" would land in a different class
+   * than the transition error does today — which would change retry
+   * scheduling, attempt status and contact state. Letting `start()`
+   * throw exactly as it does now keeps the class provably identical
+   * (TEMPORARY, via `classifyError`'s default branch) and changes only
+   * the words stored beside it.
+   */
+  let warmupFailureReason: string | undefined;
 
   try {
     const session = await manager.createSession(request);
@@ -544,10 +577,15 @@ export async function runCall(
     });
 
     await manager.warmUpProviders(sessionId);
+    warmupFailureReason = await readWarmupFailure(manager, sessionId);
 
     const dialStartedAt = Date.now();
     timings["claimToDialMs"] = dialStartedAt - claimedAt;
     await manager.start(sessionId);
+    // The dial was accepted, so warm-up cannot be what killed this call.
+    // Cleared so a later, unrelated failure keeps reporting its own
+    // reason rather than inheriting a stale warm-up message.
+    warmupFailureReason = undefined;
     timings["dialRequestMs"] = Date.now() - dialStartedAt;
 
     // ── 5. Watchdog: ring timeout, max duration, max silence, and a
@@ -674,13 +712,17 @@ export async function runCall(
     }
     return finalize("COMPLETED", "conversation completed", "observed", "remote_hangup");
   } catch (error) {
+    // `failureClass` STILL comes from the error that was actually
+    // thrown, unchanged — see `warmupFailureReason`. Only the reason
+    // text is substituted, and only when warm-up is what failed.
     const { failureClass, reason } = classifyError(error);
+    const failureReason = warmupFailureReason ?? reason;
     if (sessionId) {
       transcript ??= captureTranscript(manager, sessionId);
       await manager.end(sessionId).catch(() => undefined);
     }
-    await logEvent(campaign.id, "CALL_FAILED", reason, { attemptId: attempt.id, failureClass }, "error");
-    return finalize(failureClass, reason, "observed");
+    await logEvent(campaign.id, "CALL_FAILED", failureReason, { attemptId: attempt.id, failureClass }, "error");
+    return finalize(failureClass, failureReason, "observed");
   } finally {
     unwatch?.();
   }
@@ -818,6 +860,42 @@ function captureTranscript(manager: ManagerLike, sessionId: SessionId): StoredTr
     const turns = manager.getTranscript(sessionId);
     if (!turns || turns.length === 0) return undefined;
     return toStoredTranscript(turns);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The provider-specific reason warm-up failed, or `undefined` when it
+ * succeeded, when this manager does not expose the result, or when the
+ * result cannot be read.
+ *
+ * Read-only and never throws, for the same reason `captureTranscript`
+ * above is: a call must never fail differently because a diagnostic
+ * could not be collected. Returning `undefined` leaves the reason
+ * exactly as it is written today.
+ *
+ * Only UNHEALTHY providers are named, each with the message its own
+ * `checkHealth()` produced — which for a REST probe is the vendor's
+ * status line and response body, never a request header, so no
+ * credential can reach it.
+ */
+async function readWarmupFailure(
+  manager: ManagerLike,
+  sessionId: SessionId,
+): Promise<string | undefined> {
+  if (typeof manager.getWarmupResult !== "function") return undefined;
+  try {
+    const result = await manager.getWarmupResult(sessionId);
+    if (!result || result.isReady) return undefined;
+    const failures = result.providerStatuses
+      .filter((status) => !status.health.isHealthy)
+      .map(
+        (status) =>
+          `${status.identifier.category}/${status.identifier.id}: ${status.health.message ?? "no message"}`,
+      );
+    if (failures.length === 0) return undefined;
+    return `provider warm-up failed — ${failures.join(" | ")}`;
   } catch {
     return undefined;
   }

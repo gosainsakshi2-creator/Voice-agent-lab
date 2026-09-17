@@ -5171,9 +5171,30 @@ await this.drainPlayback(speakingSignal, true);
 
         if (contaminated || speakingSignal?.aborted) break;
       }
-    } catch {
+    } catch (error) {
       // Streaming LLM connection dropped mid-reply — speak whatever
       // was generated so far rather than losing the turn entirely.
+      //
+      // The recovery is unchanged; only the silence about it is. This
+      // catch swallowed every mid-turn provider failure — a 401, a rate
+      // limit, a dropped socket — with no log line, and the turn then
+      // produced an empty reply that is indistinguishable in storage
+      // from a model that legitimately returned nothing. Naming the
+      // error here is what separates those two, and it is the whole
+      // change: nothing is rethrown, no fallback is spoken, no state is
+      // transitioned, no retry is attempted.
+      //
+      // Deliberately reports only what was already measured on this
+      // turn — no prompt text, no transcript, no reply content, no
+      // credential — plus the provider's own message.
+      // eslint-disable-next-line no-console
+      console.error(
+        `[LLM:${this.record.id}] streaming completion FAILED mid-turn` +
+          ` provider=${llmProviderId} turnIndex=${this.record.turnIndex}` +
+          ` firstTokenMs=${llmFirstTokenMs ?? "never"} charsGenerated=${fullText.length}` +
+          ` spokenChunks=${ttsChunkCount} elapsedMs=${Date.now() - startedAt}` +
+          ` error=${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}`,
+      );
     }
 
     // The stream may end without a final event (abort, dropped

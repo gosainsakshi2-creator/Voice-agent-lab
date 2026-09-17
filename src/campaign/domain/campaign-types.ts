@@ -9,6 +9,7 @@
 
 import {
   LANGUAGE_MODEL_PROVIDER_IDS,
+  SPEECH_TO_TEXT_PROVIDER_IDS,
   TELEPHONY_PROVIDER_IDS,
   TEXT_TO_SPEECH_PROVIDER_IDS,
 } from "../../constants/providers.constants";
@@ -71,6 +72,30 @@ export type CampaignTelephonyProvider = (typeof CAMPAIGN_TELEPHONY_PROVIDERS)[nu
 export function isCampaignTelephonyProvider(value: string): value is CampaignTelephonyProvider {
   return (CAMPAIGN_TELEPHONY_PROVIDERS as readonly string[]).includes(value);
 }
+
+/**
+ * The speech-to-text providers a campaign may be pointed at.
+ *
+ * A SINGLE CHOICE, NOT AN ALLOCATION. Unlike TTS, the language model
+ * and telephony, STT is not split by percentage across contacts —
+ * there is no hash, no lane and no per-contact variation. A campaign
+ * uses one recognizer for every call it places, which is what makes
+ * one campaign's transcripts comparable to another's.
+ */
+export const CAMPAIGN_STT_PROVIDERS = [
+  SPEECH_TO_TEXT_PROVIDER_IDS.DEEPGRAM,
+  SPEECH_TO_TEXT_PROVIDER_IDS.SONIOX,
+] as const;
+
+export type CampaignSttProvider = (typeof CAMPAIGN_STT_PROVIDERS)[number];
+
+export function isCampaignSttProvider(value: string): value is CampaignSttProvider {
+  return (CAMPAIGN_STT_PROVIDERS as readonly string[]).includes(value);
+}
+
+/** What a campaign with no explicit choice runs on. Unchanged behaviour. */
+export const DEFAULT_CAMPAIGN_STT_PROVIDER: CampaignSttProvider =
+  SPEECH_TO_TEXT_PROVIDER_IDS.DEEPGRAM;
 
 export const CAMPAIGN_TYPES = ["registration", "reminder"] as const;
 export type CampaignType = (typeof CAMPAIGN_TYPES)[number];
@@ -148,6 +173,17 @@ export interface CampaignRecord {
    * telephony allocation dials through — see `telephonyAllocation`.
    */
   readonly telephonyProvider: string;
+  /**
+   * The speech-to-text provider this campaign was configured with.
+   *
+   * ABSENT means no explicit choice was made — every campaign created
+   * before STT became selectable, and any created without naming one.
+   * The runtime resolves that to `DEFAULT_CAMPAIGN_STT_PROVIDER`
+   * (Deepgram), so an absent value behaves exactly as it always has.
+   * Deliberately not defaulted at the type level: "chose Deepgram" and
+   * "never chose" are different facts and the column keeps them apart.
+   */
+  readonly sttProvider?: string;
   readonly language: string;
   readonly dispatchConfig: Readonly<Record<string, unknown>>;
   /**

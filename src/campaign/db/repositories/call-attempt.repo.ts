@@ -113,11 +113,13 @@ export async function createAttempt(
   contact: ClaimedContact,
   telephonyProvider: string,
   llmProvider: string,
+  sttProvider: string,
 ): Promise<CreatedAttempt | undefined> {
   const result = await query<{ id: string; attempt_number: number }>(
     `INSERT INTO call_attempts
-       (campaign_id, contact_id, attempt_number, provider, telephony_provider, llm_provider, status)
-     VALUES ($1, $2, $3, $4, $5, $6, 'DIALING')
+       (campaign_id, contact_id, attempt_number, provider, telephony_provider, llm_provider,
+        stt_provider, status)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, 'DIALING')
      ON CONFLICT (contact_id, attempt_number) DO NOTHING
      RETURNING id, attempt_number`,
     [
@@ -134,6 +136,10 @@ export async function createAttempt(
       contact.assignedProvider,
       telephonyProvider,
       llmProvider,
+      // The FOURTH actual provider, written in the same row and at the
+      // same moment as the other three — before anything can dial, so a
+      // call that fails at origination is still attributable.
+      sttProvider,
     ],
   );
   const row = result.rows[0];

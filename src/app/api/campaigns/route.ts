@@ -13,6 +13,8 @@ import {
   type LlmAllocation,
   type ProviderAllocation,
   type TelephonyAllocation,
+  CAMPAIGN_STT_PROVIDERS,
+  isCampaignSttProvider,
 } from "@/campaign/domain/campaign-types";
 
 export const dynamic = "force-dynamic";
@@ -32,6 +34,12 @@ interface CreateBody {
   scriptVersion?: string;
   providerAllocation?: ProviderAllocation;
   telephonyProvider?: string;
+  /**
+   * The campaign's speech-to-text provider. A SINGLE id, not an
+   * allocation — STT is not split across contacts. Omitted means "no
+   * explicit choice", which the dispatcher resolves to Deepgram.
+   */
+  sttProvider?: string;
   llmAllocation?: LlmAllocation;
   telephonyAllocation?: TelephonyAllocation;
   idempotencyKey?: string;
@@ -109,6 +117,20 @@ export async function POST(request: Request) {
   // happily and then failed at `createSession` for every contact in the
   // campaign, one call at a time. It now fails closed, here, before a
   // row exists.
+  // ── Speech-to-text provider ─────────────────────────────────────
+  // Rejected up front, like every other provider id, so a typo is a
+  // 400 at creation rather than a failed dial an hour later.
+  const rawStt = body.sttProvider?.trim().toLowerCase();
+  if (rawStt !== undefined && rawStt.length > 0 && !isCampaignSttProvider(rawStt)) {
+    return NextResponse.json(
+      {
+        error: `"${rawStt}" is not a supported speech-to-text provider (${CAMPAIGN_STT_PROVIDERS.join(", ")}).`,
+      },
+      { status: 400 },
+    );
+  }
+  const sttProvider = rawStt !== undefined && rawStt.length > 0 ? rawStt : undefined;
+
   let llmAllocation: LlmAllocation;
   let telephonyAllocation: TelephonyAllocation;
   try {
@@ -147,6 +169,12 @@ export async function POST(request: Request) {
       // allocation rather than left behind: it names whichever carrier
       // holds the largest share.
       telephonyProvider: dominantProvider(telephonyAllocation),
+      // Validated against the supported set rather than stored as
+      // typed: a campaign must never be persisted pointing at a
+      // recognizer that does not exist, because the failure would not
+      // surface until it tried to dial. Absent stays absent — the
+      // column records a decision, and "not chosen" is a real answer.
+      ...(sttProvider !== undefined ? { sttProvider } : {}),
       // Both new dimensions live in `dispatch_config`, following the
       // exact precedent `agent.gender` set — no migration, and the
       // Phase 1 schema stays frozen. `dispatch_config` is JSONB with no

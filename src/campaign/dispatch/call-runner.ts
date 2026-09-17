@@ -75,6 +75,11 @@ import {
 } from "../domain/campaign-types";
 import { pickByAllocation, validatePercentageAllocation } from "../domain/allocation";
 import { SPEECH_TO_TEXT_PROVIDER_IDS } from "../../constants/providers.constants";
+import {
+  CAMPAIGN_STT_PROVIDERS,
+  DEFAULT_CAMPAIGN_STT_PROVIDER,
+  isCampaignSttProvider,
+} from "../domain/campaign-types";
 import { isLlmRateKnown } from "../../core/session/cost-estimator";
 import type { CampaignScript } from "../script/script-registry";
 import type { SessionObserver } from "./session-observer";
@@ -195,7 +200,24 @@ export const STT_PROVIDER_OVERRIDE_ENV = "STT_PROVIDER";
  * on the attempt row either way, so "I set it and it did not take"
  * is visible rather than mysterious.
  */
-export function resolveSttProviderId(): string {
+export function resolveSttProviderId(campaignChoice?: string | undefined): string {
+  // THE CAMPAIGN'S OWN CHOICE WINS. It is an explicit, persisted,
+  // per-campaign decision made in the UI, so it outranks a
+  // process-wide environment switch that exists for ad-hoc runs. An
+  // unrecognised stored value is ignored rather than trusted — the
+  // column is free text and a campaign must never dial through a
+  // provider that is not in the supported set.
+  const chosen = (campaignChoice ?? "").trim().toLowerCase();
+  if (chosen.length > 0) {
+    if (isCampaignSttProvider(chosen)) return chosen;
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[call-runner] campaign stt_provider="${chosen}" is not a supported STT provider ` +
+        `(expected ${CAMPAIGN_STT_PROVIDERS.join(" or ")}) — falling back to ${DEFAULT_CAMPAIGN_STT_PROVIDER}.`,
+    );
+    return DEFAULT_CAMPAIGN_STT_PROVIDER;
+  }
+
   const configured = (process.env[STT_PROVIDER_OVERRIDE_ENV] ?? "").trim().toLowerCase();
   if (configured.length === 0) return SPEECH_TO_TEXT_PROVIDER_IDS.DEEPGRAM;
   if (configured === SPEECH_TO_TEXT_PROVIDER_IDS.SONIOX) return SPEECH_TO_TEXT_PROVIDER_IDS.SONIOX;
@@ -237,7 +259,7 @@ export function resolveCallProviderStack(
         "campaign telephony providers",
       ),
     ),
-    speechToText: resolveSttProviderId(),
+    speechToText: resolveSttProviderId(campaign.sttProvider),
     languageModel: pickByAllocation(
       `llm:${selectionKey}`,
       validatePercentageAllocation(
@@ -275,7 +297,13 @@ export async function runCall(
   const stack = resolveCallProviderStack(campaign, contact.id);
 
   // ── 1. Reserve the attempt before anything can dial ─────────────
-  const attempt = await createAttempt(campaign.id, contact, stack.telephony, stack.languageModel);
+  const attempt = await createAttempt(
+    campaign.id,
+    contact,
+    stack.telephony,
+    stack.languageModel,
+    stack.speechToText,
+  );
   if (!attempt) {
     // The unique constraint refused it: this attempt number already
     // exists, so another worker or an earlier run already placed it.

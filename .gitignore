@@ -10,3 +10,11 @@ coverage
 
 # Phase 3 LLM benchmark: raw measurements and rendered reports
 benchmark-output
+
+# Never commit a copy of the environment file under ANY name. `.env.local`
+# alone did not cover `.env.local.bak-stt`, and a backup of a secrets file
+# is still a secrets file.
+.env*
+!.env.example
+*.bak
+*.bak-*

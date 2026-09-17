@@ -27,6 +27,8 @@ interface CampaignPayload {
     scriptVersion: string;
     providerAllocation: Record<string, number>;
     telephonyProvider: string;
+    /** Absent for campaigns created before STT became selectable. */
+    sttProvider?: string | null;
     language: string;
     agentGender: string | null;
     totalContacts: number;
@@ -142,6 +144,13 @@ export function CampaignHeader({ campaignId }: { campaignId: string }) {
             <MetaChip label="Script" value={`${campaign.scriptId} ${campaign.scriptVersion}`} mono />
             <MetaChip label="Language" value={campaign.language} />
             <MetaChip label="Telephony" value={campaign.telephonyProvider} />
+            {/* Shows what the campaign CHOSE. A campaign created before
+                STT was selectable chose nothing, and says so rather
+                than claiming Deepgram it never picked. */}
+            <MetaChip
+              label="Speech-to-text"
+              value={campaign.sttProvider ?? "deepgram (default)"}
+            />
             <MetaChip
               label="Voice providers"
               value={providers.length > 0 ? providers.join(" · ") : "—"}

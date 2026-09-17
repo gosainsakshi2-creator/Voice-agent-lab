@@ -29,6 +29,8 @@ interface CampaignRow {
   script_hash: string;
   provider_allocation: ProviderAllocation;
   telephony_provider: string;
+  /** NULL for campaigns created before STT became selectable. */
+  stt_provider: string | null;
   language: string;
   dispatch_config: Record<string, unknown>;
   total_contacts: number;
@@ -50,6 +52,10 @@ function toRecord(row: CampaignRow): CampaignRecord {
     scriptHash: row.script_hash,
     providerAllocation: row.provider_allocation,
     telephonyProvider: row.telephony_provider,
+    // Absent, never defaulted here: "no choice was made" and "chose
+    // Deepgram" are different facts, and `resolveCallProviderStack` is
+    // the single place that turns the first into the second.
+    ...(row.stt_provider !== null ? { sttProvider: row.stt_provider } : {}),
     language: row.language,
     dispatchConfig: row.dispatch_config,
     agentGender: readAgentGender(row.dispatch_config),
@@ -144,7 +150,7 @@ function readTelephonyAllocation(
 
 const SELECT_COLUMNS = `
   id, name, campaign_type, status, script_id, script_version, script_hash,
-  provider_allocation, telephony_provider, language, dispatch_config,
+  provider_allocation, telephony_provider, stt_provider, language, dispatch_config,
   total_contacts, pilot_stage, idempotency_key, created_at, started_at, completed_at
 `;
 
@@ -157,6 +163,8 @@ export interface CreateCampaignInput {
   readonly scriptHash: string;
   readonly providerAllocation: ProviderAllocation;
   readonly telephonyProvider: string;
+  /** Omitted means "no explicit choice" — stored as NULL, resolved to the default at dial time. */
+  readonly sttProvider?: string | undefined;
   readonly dispatchConfig: Readonly<Record<string, unknown>>;
   readonly idempotencyKey: string;
 }
@@ -177,8 +185,9 @@ export async function createCampaignIdempotent(
   const inserted = await query<CampaignRow>(
     `INSERT INTO campaigns
        (name, campaign_type, language, script_id, script_version, script_hash,
-        provider_allocation, telephony_provider, dispatch_config, idempotency_key, status)
-     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9::jsonb, $10, 'DRAFT')
+        provider_allocation, telephony_provider, stt_provider, dispatch_config,
+        idempotency_key, status)
+     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10::jsonb, $11, 'DRAFT')
      ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
      RETURNING ${SELECT_COLUMNS}`,
     [
@@ -190,6 +199,8 @@ export async function createCampaignIdempotent(
       input.scriptHash,
       JSON.stringify(input.providerAllocation),
       input.telephonyProvider,
+      // NULL, not a substituted default: the column records a decision.
+      input.sttProvider ?? null,
       JSON.stringify(input.dispatchConfig),
       input.idempotencyKey,
     ],

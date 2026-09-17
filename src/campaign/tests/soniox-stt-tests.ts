@@ -33,6 +33,7 @@ const {
   SONIOX_DEFAULT_MAX_ENDPOINT_DELAY_MS,
   SONIOX_DEFAULT_LATENCY_ADJUSTMENT_LEVEL,
   SONIOX_DEFAULT_ENDPOINT_SENSITIVITY,
+  sonioxLanguageHints,
 } = await import("../../providers/speech-to-text/soniox.provider");
 const { bootstrapProviderRegistry } = await import("../../providers/registry/bootstrap");
 const { resolveCallProviderStack, resolveSttProviderId, STT_PROVIDER_OVERRIDE_ENV } =
@@ -41,6 +42,8 @@ const { SPEECH_TO_TEXT_PROVIDER_IDS } = await import("../../constants/providers.
 const { ProviderCategory, SupportedLanguage } = await import("../../types/enums");
 const { SessionMetricsCollector } = await import("../../core/session/metrics-collector");
 const { ConfigurationError } = await import("../../core/errors");
+const { CAMPAIGN_STT_PROVIDERS, DEFAULT_CAMPAIGN_STT_PROVIDER, isCampaignSttProvider } =
+  await import("../domain/campaign-types");
 
 import type { SonioxSocketLike } from "../../providers/speech-to-text/soniox.provider";
 import type { AudioPayload, TranscriptSegment } from "../../types/provider.types";
@@ -523,6 +526,128 @@ await test("O9. the override is read ONLY at the stack-resolution point", () => 
       .replace(/\/\/.*/g, "");
     assert.ok(!code.includes("STT_PROVIDER"), `${f} must not read the override`);
   }
+});
+
+// ═════════════════════════════════════════════════════════════════
+section("A3. Language hints — the Punjabi fix");
+
+await test("H1. hints are derived from the session language", () => {
+  assert.deepEqual(sonioxLanguageHints(SupportedLanguage.ENGLISH), ["en"]);
+  assert.deepEqual(sonioxLanguageHints(SupportedLanguage.HINDI), ["hi"]);
+  // Hinglish mixes both INSIDE one sentence, so hinting one biases
+  // against the other half of the same utterance.
+  assert.deepEqual(sonioxLanguageHints(SupportedLanguage.HINGLISH), ["hi", "en"]);
+});
+
+await test("H2. no hint set ever contains a language we do not speak", () => {
+  for (const lang of [SupportedLanguage.ENGLISH, SupportedLanguage.HINDI, SupportedLanguage.HINGLISH]) {
+    const hints = sonioxLanguageHints(lang);
+    assert.ok(hints.length > 0, "an empty hint list is what caused the Punjabi transcripts");
+    for (const h of hints) {
+      assert.ok(["hi", "en"].includes(h), `unexpected hint "${h}"`);
+      assert.notEqual(h, "pa", "Punjabi must never be hinted");
+    }
+  }
+});
+
+await test("H3. the config frame actually SENDS the hints", async () => {
+  for (const [lang, expected] of [
+    [SupportedLanguage.HINDI, ["hi"]],
+    [SupportedLanguage.ENGLISH, ["en"]],
+    [SupportedLanguage.HINGLISH, ["hi", "en"]],
+  ] as const) {
+    const sock = new MockSocket();
+    const p2 = new SonioxSpeechToTextProvider(CONFIGURED, () => sock);
+    const held = heldAudio();
+    const segments: TranscriptSegment[] = [];
+    const done = (async () => {
+      for await (const seg of p2.transcribeStream({
+        sessionId: "lang-test" as SessionId,
+        audio: held.iterable,
+        language: lang,
+      })) segments.push(seg);
+    })();
+    sock.emit("open");
+    await sleep(10);
+    assert.deepEqual(sock.config!["language_hints"], expected, `language ${lang}`);
+    held.release();
+    await done;
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════
+section("B3. Per-campaign STT selection");
+
+const campaignWith = (stt?: string) =>
+  ({ id: "c", campaignType: "registration", telephonyProvider: "vobiz",
+     ...(stt !== undefined ? { sttProvider: stt } : {}) }) as never;
+
+await test("C1. a campaign with NO choice resolves to Deepgram", async () => {
+  await withEnv({ [STT_PROVIDER_OVERRIDE_ENV]: undefined }, () => {
+    assert.equal(resolveCallProviderStack(campaignWith(), "k").speechToText, "deepgram");
+    assert.equal(DEFAULT_CAMPAIGN_STT_PROVIDER, "deepgram");
+  });
+});
+
+await test("C2. a campaign that chose soniox gets soniox", async () => {
+  await withEnv({ [STT_PROVIDER_OVERRIDE_ENV]: undefined }, () => {
+    assert.equal(resolveCallProviderStack(campaignWith("soniox"), "k").speechToText, "soniox");
+  });
+});
+
+await test("C3. the campaign's choice OUTRANKS the env override", async () => {
+  await withEnv({ [STT_PROVIDER_OVERRIDE_ENV]: "soniox" }, () => {
+    assert.equal(
+      resolveCallProviderStack(campaignWith("deepgram"), "k").speechToText,
+      "deepgram",
+      "an explicit per-campaign decision beats a process-wide switch",
+    );
+  });
+  await withEnv({ [STT_PROVIDER_OVERRIDE_ENV]: "deepgram" }, () => {
+    assert.equal(resolveCallProviderStack(campaignWith("soniox"), "k").speechToText, "soniox");
+  });
+});
+
+await test("C4. the env override still applies when the campaign made no choice", async () => {
+  await withEnv({ [STT_PROVIDER_OVERRIDE_ENV]: "soniox" }, () => {
+    assert.equal(resolveCallProviderStack(campaignWith(), "k").speechToText, "soniox");
+  });
+});
+
+await test("C5. an unsupported stored value falls back to Deepgram, not to soniox", async () => {
+  await withEnv({ [STT_PROVIDER_OVERRIDE_ENV]: undefined }, () => {
+    const realWarn = console.warn;
+    console.warn = () => {};
+    try {
+      for (const bad of ["whisper", "qwen", "", "  ", "deepgramm"]) {
+        assert.equal(
+          resolveCallProviderStack(campaignWith(bad), "k").speechToText,
+          "deepgram",
+          `stored "${bad}" must not dial through an unsupported recognizer`,
+        );
+      }
+    } finally {
+      console.warn = realWarn;
+    }
+  });
+});
+
+await test("C6. STT stays a SINGLE choice — never a per-contact allocation", async () => {
+  await withEnv({ [STT_PROVIDER_OVERRIDE_ENV]: undefined }, () => {
+    const ids = new Set<string>();
+    for (let i = 0; i < 100; i += 1) {
+      ids.add(resolveCallProviderStack(campaignWith("soniox"), `contact-${i}`).speechToText);
+    }
+    assert.deepEqual([...ids], ["soniox"], "every contact must get the same recognizer");
+  });
+});
+
+await test("C7. the supported set is exactly Deepgram and Soniox", () => {
+  assert.deepEqual([...CAMPAIGN_STT_PROVIDERS].sort(), ["deepgram", "soniox"]);
+  assert.ok(isCampaignSttProvider("deepgram"));
+  assert.ok(isCampaignSttProvider("soniox"));
+  assert.ok(!isCampaignSttProvider("whisper"));
+  assert.ok(!isCampaignSttProvider("Soniox"), "the guard is exact — callers lowercase first");
 });
 
 // ═════════════════════════════════════════════════════════════════

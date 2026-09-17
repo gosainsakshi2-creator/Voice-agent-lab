@@ -70,6 +70,41 @@ export const SONIOX_NUM_CHANNELS = 1;
 export const SONIOX_END_TOKEN = "<end>";
 
 /**
+ * Which languages to BIAS Soniox toward for a given session language.
+ *
+ * WHY THIS EXISTS. With no `language_hints` the multilingual model
+ * "automatically detects and transcribes any supported language" — and
+ * on this deployment's audio it was resolving Hindi and English speech
+ * as PUNJABI. Punjabi is acoustically and lexically close to Hindi, so
+ * an unbiased detector picking it is an entirely ordinary failure; the
+ * transcript is then in a script the caller never spoke, and every
+ * downstream vocabulary (the Devanagari affirmation/refusal tables,
+ * the registration gate) stops matching.
+ *
+ * Hints BIAS, they do not restrict: Soniox documents that they "do not
+ * restrict recognition to those languages — they only bias the model
+ * toward them." So a caller who genuinely switches to a third language
+ * is still transcribed; this only stops the model wandering off when
+ * the audio is the Hindi/English it actually is.
+ *
+ * Derived from the session's own language rather than hard-coded, so
+ * an English campaign biases to English alone and a Hinglish one
+ * carries both — which is what code-switching mid-sentence needs.
+ */
+export function sonioxLanguageHints(language: SupportedLanguage): readonly string[] {
+  switch (language) {
+    case SupportedLanguage.ENGLISH:
+      return ["en"];
+    case SupportedLanguage.HINDI:
+      return ["hi"];
+    case SupportedLanguage.HINGLISH:
+      // Both, deliberately. A Hinglish turn mixes the two inside one
+      // sentence, so hinting only one biases against the other half.
+      return ["hi", "en"];
+  }
+}
+
+/**
  * Bounded, deliberately. The socket is re-dialled on an unexpected
  * close so a transient blip does not end a live call's transcription,
  * but a socket that cannot be established — a revoked key, a removed
@@ -458,6 +493,11 @@ export class SonioxSpeechToTextProvider implements SpeechToTextProvider {
             audio_format: SONIOX_AUDIO_FORMAT,
             sample_rate: SONIOX_SAMPLE_RATE_HZ,
             num_channels: SONIOX_NUM_CHANNELS,
+            // Biases recognition to the language this session is
+            // actually conducted in. Without it the multilingual model
+            // free-detects and was resolving Hindi/English audio as
+            // Punjabi — see `sonioxLanguageHints`.
+            language_hints: sonioxLanguageHints(request.language),
             enable_endpoint_detection: this.config.enableEndpointDetection,
             // The three latency knobs, sent explicitly rather than left
             // to Soniox's conservative transcription defaults. See the

@@ -39,6 +39,8 @@ import { NoCallsBanner } from "@/components/campaign/no-calls-banner";
 import {
   CAMPAIGN_LLM_PROVIDERS,
   CAMPAIGN_TELEPHONY_PROVIDERS,
+  CAMPAIGN_STT_PROVIDERS,
+  DEFAULT_CAMPAIGN_STT_PROVIDER,
   CAMPAIGN_TTS_PROVIDERS,
   type CampaignType,
 } from "@/campaign/domain/campaign-types";
@@ -260,6 +262,10 @@ export function CampaignList() {
   const [llmPercents, setLlmPercents] = useState<Record<string, number>>(DEFAULT_LLM_PERCENTS);
   const [telephonyPercents, setTelephonyPercents] =
     useState<Record<string, number>>(DEFAULT_TELEPHONY_PERCENTS);
+  // A SINGLE choice, not a percentage split: STT is not allocated
+  // across contacts, so every call in the campaign uses this one
+  // recognizer. Defaults to the platform default.
+  const [sttProvider, setSttProvider] = useState<string>(DEFAULT_CAMPAIGN_STT_PROVIDER);
   // Derived, not chosen: each provider's agent name follows the gender
   // of its already-configured voice, so the voice and the name always
   // agree. Same resolver the server uses.
@@ -330,6 +336,10 @@ export function CampaignList() {
           providerAllocation: percents,
           llmAllocation: llmPercents,
           telephonyAllocation: telephonyPercents,
+          // Sent explicitly so the choice is recorded even when it is
+          // the default — "chose Deepgram" and "never chose" stay
+          // distinguishable in the campaign row.
+          sttProvider,
           // The endpoint already accepts these and falls back to the
           // default script for the type when they are absent; sending
           // the selection explicitly makes the choice visible without
@@ -607,6 +617,42 @@ export function CampaignList() {
               disabled={creating}
               footnote="A carrier at 0% is never dialled. Every carrier given a share must have its credentials configured, or the campaign is blocked by the production-readiness check before it can start."
             />
+          </FormSection>
+
+          {/* ── 7. Which recognizer transcribes ────────────────────── */}
+          <FormSection
+            step={7}
+            title="Speech-to-text provider"
+            hint="One recognizer for the whole campaign — not a split. Deepgram is the platform default."
+          >
+            <div className="flex flex-wrap gap-2">
+              {CAMPAIGN_STT_PROVIDERS.map((provider) => {
+                const selected = sttProvider === provider;
+                return (
+                  <button
+                    key={provider}
+                    type="button"
+                    disabled={creating}
+                    onClick={() => setSttProvider(provider)}
+                    aria-pressed={selected}
+                    className={[
+                      "rounded-lg border px-4 py-2 text-sm font-medium transition-colors",
+                      selected
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-border bg-background text-muted-foreground hover:bg-muted",
+                      creating ? "cursor-not-allowed opacity-60" : "",
+                    ].join(" ")}
+                  >
+                    {provider === DEFAULT_CAMPAIGN_STT_PROVIDER ? `${provider} (default)` : provider}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Every call in this campaign is transcribed by the selected provider, and the one that
+              actually ran is recorded per attempt. A provider without its API key configured is
+              blocked by the production-readiness check before the campaign can start.
+            </p>
           </FormSection>
 
           {/* ── Validation, result, and the primary action ──────────── */}

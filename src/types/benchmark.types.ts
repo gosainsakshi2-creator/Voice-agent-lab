@@ -296,6 +296,49 @@ export interface TurnLatencyBreakdown {
    * decision, and it does not reinterpret or replace `stt`.
    */
   readonly inboundStreamMsAtFinalTranscript?: number;
+
+  // --- PHASE 3 BATCH 6: the rest of the STT-lag subtraction.
+  // Telemetry only, read by nothing that makes a decision, and neither
+  // field reinterprets or replaces `stt`. ---
+
+  /**
+   * The RE-BASED end of the last recognised word of this turn's final,
+   * in stream ms — i.e. `sttStreamMsOf(segment)`, the exact value the
+   * pipeline subtracted to compute `stt`.
+   *
+   * WHY IT EXISTS. Batch 4 persisted the minuend
+   * (`inboundStreamMsAtFinalTranscript`) but not the subtrahend, so a
+   * turn whose `stt` was rejected left no way to see which of the three
+   * rejection causes applied. With both,
+   *
+   *     inboundStreamMsAtFinalTranscript - lastFinalWordEndStreamMs
+   *
+   * reproduces exactly the lag the plausibility guard evaluated, at
+   * analysis time, with no filter discarding it.
+   *
+   * DELIBERATELY UNFILTERED, for the same reason its Batch 4 twin is:
+   * the turns worth inspecting are precisely the ones the guard threw
+   * away.
+   *
+   * `0` is a legitimate value and is itself diagnostic — it is what
+   * `sttStreamMsOf` returns for "this result carried no word timings",
+   * which is one of the rejection causes.
+   */
+  readonly lastFinalWordEndStreamMs?: number;
+  /**
+   * The STT stream-clock offset in force when the reading above was
+   * taken, i.e. how far a reconnect had shifted the word-end position
+   * onto the call timeline.
+   *
+   * `0` means no re-base had occurred on this call yet, so the word-end
+   * position is Deepgram's own raw reported time. A NON-ZERO value
+   * means it has been shifted, and the shift is known to land a
+   * recognition-lag too far forward — which is what makes a subsequent
+   * lag negative and therefore discarded. Recorded so such a turn can
+   * be identified and excluded rather than silently distorting a
+   * measurement.
+   */
+  readonly sttClockOffsetMs?: number;
   /**
    * PHASE 3 BATCH 5 — WHICH GUARD the endpoint marker met inside
    * `AdaptiveTurnDetector.noteEndOfSpeech`. Diagnostic only.

@@ -137,6 +137,14 @@ interface AcquiredTurn {
    */
   readonly inboundStreamMsAtFinalTranscript: number | undefined;
   /**
+   * PHASE 3 BATCH 6 — the other half of the STT-lag subtraction, and
+   * the clock offset in force when it was taken. See
+   * `TurnLatencyBreakdown` for why both are needed to reconstruct a
+   * lag the plausibility guard discarded.
+   */
+  readonly lastFinalWordEndStreamMs: number | undefined;
+  readonly sttClockOffsetMs: number | undefined;
+  /**
    * PHASE 3 BATCH 5 — which guard the endpoint marker met inside
    * `noteEndOfSpeech`. Absent when this turn received no marker.
    */
@@ -1832,6 +1840,24 @@ export class ConversationPipeline {
    * nothing derives a latency from it.
    */
   private lastFinalInboundStreamMs: number | undefined;
+  /**
+   * PHASE 3 BATCH 6 — the SUBTRAHEND of the STT lag, and the clock
+   * offset in force when it was read. Co-stamped with
+   * `lastFinalInboundStreamMs` above, in the same handler pass for the
+   * same final.
+   *
+   * Batch 4 persisted the minuend (`inboundStreamMs`) but not this, so
+   * a lag the plausibility guard rejected left no way to see WHY. Both
+   * are needed: `inboundStreamMs - lastFinalWordEndStreamMs` is exactly
+   * the lag that guard evaluated, and `sttClockOffsetMs` says whether a
+   * re-base had shifted the word-end position when it was taken.
+   *
+   * Measurement validation only, exactly like its Batch 4 twin: no
+   * latency is derived from either here, and nothing reads them to make
+   * a decision.
+   */
+  private lastFinalWordEndStreamMs: number | undefined;
+  private lastFinalSttClockOffsetMs: number | undefined;
 
   constructor(
     private readonly record: SessionRecord,
@@ -2309,6 +2335,9 @@ export class ConversationPipeline {
           endpointEvidenceAtMs: turn.endpointEvidenceAtMs,
           endpointEvidenceKind: turn.endpointEvidenceKind,
           inboundStreamMsAtFinalTranscript: turn.inboundStreamMsAtFinalTranscript,
+          // PHASE 3 BATCH 6 — passed through beside their Batch 4 twin.
+          lastFinalWordEndStreamMs: turn.lastFinalWordEndStreamMs,
+          sttClockOffsetMs: turn.sttClockOffsetMs,
           endpointMarkerOutcome: turn.endpointMarkerOutcome,
           sttCostUsd: turn.sttCostUsd,
           llmCostUsd: result.llmCostUsd,
@@ -3837,6 +3866,19 @@ export class ConversationPipeline {
             // below: a turn whose `sttMs` was rejected is precisely the
             // turn this exists to explain.
             this.lastFinalInboundStreamMs = this.inboundStreamMs;
+            // PHASE 3 BATCH 6 — the SUBTRAHEND Batch 4 left out, plus
+            // the offset that shaped it. Same handler pass, same final,
+            // and UNCONDITIONAL for the same reason its twin above is:
+            // the turns worth explaining are precisely the ones the
+            // bound below throws away, and without these two an
+            // `sttMs` of `undefined` is indistinguishable from
+            // "no word timings", "negative after a re-base" and
+            // "beyond the plausibility bound".
+            //
+            // Written BEFORE `lagMs` is computed so no branch can skip
+            // them. Neither is read by anything that makes a decision.
+            this.lastFinalWordEndStreamMs = segmentEndedAtStreamMs;
+            this.lastFinalSttClockOffsetMs = this.sttClockOffsetMs;
             // On the RE-BASED clock, not raw `endedAtMs`. After an STT
             // stream reconnect the raw value restarts at zero, so the
             // lag computed from it inflates by however long the call
@@ -4417,6 +4459,13 @@ export class ConversationPipeline {
         // neither does.
         const lastFinalInboundStreamMs = this.lastFinalInboundStreamMs;
         this.lastFinalInboundStreamMs = undefined;
+        // PHASE 3 BATCH 6 — snapshotted and cleared in the same place
+        // and the same order as their Batch 4 twin above, so all three
+        // readings describe one final or none of them do.
+        const lastFinalWordEndStreamMs = this.lastFinalWordEndStreamMs;
+        const lastFinalSttClockOffsetMs = this.lastFinalSttClockOffsetMs;
+        this.lastFinalWordEndStreamMs = undefined;
+        this.lastFinalSttClockOffsetMs = undefined;
         const userSpeechEndedAtMs =
           lastSegmentAtMs !== undefined ? lastSegmentAtMs - (sttLagMs ?? 0) : undefined;
         this.lastFinalSttLagMs = undefined;
@@ -4461,6 +4510,8 @@ export class ConversationPipeline {
           lastInterimTranscriptAtMs,
           lastFinalTranscriptAtMs: lastSegmentAtMs,
           inboundStreamMsAtFinalTranscript: lastFinalInboundStreamMs,
+          lastFinalWordEndStreamMs,
+          sttClockOffsetMs: lastFinalSttClockOffsetMs,
           // PHASE 3 BATCH 5 — read-and-clear, so a turn that received
           // no marker reports absence rather than the previous turn's
           // label. Telemetry only; the detector consults it for nothing.
@@ -4571,6 +4622,10 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
         // Batch STT never advances the streaming byte counter, so there
         // is no audio-clock reading to pair with. Absent, not zero.
         inboundStreamMsAtFinalTranscript: undefined,
+        // Same reason: with no streaming segment there is no word-end
+        // position and no stream clock to have been re-based.
+        lastFinalWordEndStreamMs: undefined,
+        sttClockOffsetMs: undefined,
         // Batch STT delivers no end-of-speech marker, so there is no
         // `noteEndOfSpeech` branch to report.
         endpointMarkerOutcome: undefined,

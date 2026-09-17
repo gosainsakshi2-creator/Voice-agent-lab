@@ -68,6 +68,7 @@
     "test:stale-final-no": "tsx src/campaign/tests/stale-final-no-tests.ts",
     "test:stt-observability": "tsx src/campaign/tests/stt-observability-tests.ts",
     "test:endpointing-experiment": "tsx src/campaign/tests/endpointing-experiment-tests.ts",
+    "test:stt-lag-inputs": "tsx src/campaign/tests/stt-lag-inputs-tests.ts",
     "bench:llm": "tsx src/benchmark/llm/cli.ts",
     "preflight:prod": "tsx src/campaign/production-readiness-cli.ts",
     "campaign:audit": "tsx src/campaign/audit-cli.ts"

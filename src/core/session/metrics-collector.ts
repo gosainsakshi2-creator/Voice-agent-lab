@@ -78,6 +78,12 @@ export interface TurnLatencyInput {
   // validation only; see `TurnLatencyBreakdown`.
   /** `inboundStreamMs` at final-transcript arrival. A counter, so 0 is meaningful. */
   readonly inboundStreamMsAtFinalTranscript?: number | undefined;
+  // PHASE 3 BATCH 6 — the other half of the STT-lag subtraction, and
+  // the clock offset in force when it was taken.
+  /** Re-based end of the last recognised word, in stream ms. A position, so 0 is meaningful. */
+  readonly lastFinalWordEndStreamMs?: number | undefined;
+  /** `sttClockOffsetMs` in force at that final. 0 means no re-base had occurred. */
+  readonly sttClockOffsetMs?: number | undefined;
   /** PHASE 3 BATCH 5 — which guard the endpoint marker met in `noteEndOfSpeech`. */
   readonly endpointMarkerOutcome?: TurnLatencyBreakdown["endpointMarkerOutcome"];
   readonly sttCostUsd: number;
@@ -213,6 +219,13 @@ export class SessionMetricsCollector {
     const inboundStreamMsAtFinalTranscript = positiveOrUndefined(
       input.inboundStreamMsAtFinalTranscript,
     );
+    // PHASE 3 BATCH 6 — same guard, same reasoning as the counter
+    // above: both are POSITIONS on the stream clock, so 0 is a real
+    // reading ("no word timings in this result" for the word end, "no
+    // re-base has happened" for the offset) and must survive. Only
+    // undefined/NaN/negative are rejected.
+    const lastFinalWordEndStreamMs = positiveOrUndefined(input.lastFinalWordEndStreamMs);
+    const sttClockOffsetMs = positiveOrUndefined(input.sttClockOffsetMs);
     // PHASE 3 BATCH 5 — validated against the closed union the same way
     // `endpointEvidenceKind` is, so the field can only ever hold an
     // outcome the detector actually produced.
@@ -266,6 +279,8 @@ export class SessionMetricsCollector {
       ...(inboundStreamMsAtFinalTranscript !== undefined
         ? { inboundStreamMsAtFinalTranscript }
         : {}),
+      ...(lastFinalWordEndStreamMs !== undefined ? { lastFinalWordEndStreamMs } : {}),
+      ...(sttClockOffsetMs !== undefined ? { sttClockOffsetMs } : {}),
       ...(endpointMarkerOutcome !== undefined ? { endpointMarkerOutcome } : {}),
       ...(promptTokens !== undefined ? { promptTokens } : {}),
       ...(cachedPromptTokens !== undefined ? { cachedPromptTokens } : {}),

@@ -28,6 +28,7 @@ import { InMemoryProviderRegistry } from "./in-memory-provider-registry";
 import { PlivoTelephonyProvider } from "../telephony/plivo.provider";
 import { VobizTelephonyProvider } from "../telephony/vobiz.provider";
 import { DeepgramSpeechToTextProvider } from "../speech-to-text/deepgram.provider";
+import { SonioxSpeechToTextProvider } from "../speech-to-text/soniox.provider";
 import { OpenAiGptLanguageModelProvider } from "../language-model/openai-gpt.provider";
 import { GemmaLanguageModelProvider } from "../language-model/gemma.provider";
 import { ElevenLabsTextToSpeechProvider } from "../text-to-speech/elevenlabs.provider";
@@ -123,6 +124,22 @@ export function bootstrapProviderRegistry(
     SPEECH_TO_TEXT_PROVIDER_IDS.DEEPGRAM,
     ["DEEPGRAM_API_KEY"],
     () => new DeepgramSpeechToTextProvider(),
+    outcomes,
+  );
+
+  // ADDITIVE, AND INERT UNLESS EXPLICITLY CONFIGURED. Registered only
+  // when SONIOX_API_KEY is present, and even then nothing selects it:
+  // Deepgram remains the default, `resolveCallProviderStack` still
+  // returns the Deepgram literal, and no allocation references this id.
+  // A deployment without the key is byte-for-byte unchanged — the
+  // registration simply does not happen, exactly as for any other
+  // unconfigured provider.
+  registerIfConfigured(
+    registry,
+    ProviderCategory.SPEECH_TO_TEXT,
+    SPEECH_TO_TEXT_PROVIDER_IDS.SONIOX,
+    ["SONIOX_API_KEY"],
+    () => new SonioxSpeechToTextProvider(),
     outcomes,
   );
 

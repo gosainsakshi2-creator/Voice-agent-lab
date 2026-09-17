@@ -17,6 +17,14 @@ export const TELEPHONY_PROVIDER_IDS = {
 
 export const SPEECH_TO_TEXT_PROVIDER_IDS = {
   DEEPGRAM: "deepgram",
+  /**
+   * ADDITIVE. Registered only when `SONIOX_API_KEY` is present, and
+   * never selected unless a caller asks for it by id: nothing defaults
+   * to it, no allocation references it, and `resolveCallProviderStack`
+   * still returns the Deepgram literal it always has. Declared here so
+   * the registry can hold it for explicit, controlled testing.
+   */
+  SONIOX: "soniox",
 } as const;
 
 export const LANGUAGE_MODEL_PROVIDER_IDS = {

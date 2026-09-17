@@ -34,6 +34,14 @@ import { config as loadEnvFile } from "dotenv";
 loadEnvFile({ path: ".env.local", quiet: true });
 loadEnvFile({ quiet: true });
 
+// This suite asserts what the campaign's ALLOCATION resolves to, which
+// must not depend on whichever STT override the machine running the
+// tests happens to have in `.env.local`. Pinned to unset so D1 below
+// tests allocation canonicality rather than the ambient environment.
+// The override's own behaviour is covered explicitly in
+// `soniox-stt-tests.ts` (O1-O9), including "unset => deepgram".
+delete process.env["STT_PROVIDER"];
+
 const {
   AllocationError,
   pickByAllocation,

@@ -164,10 +164,52 @@ export interface CallProviderStack {
  * instead of a matrix. Prefixing the dimension gives each its own
  * independent hash of the same contact.
  *
- * STT is not allocated. One provider is registered for it and the
- * campaign has never offered a choice, so it stays the literal it has
- * always been rather than gaining a dimension nobody asked for.
+ * STT IS STILL NOT ALLOCATED. It has no percentage, no hash and no
+ * per-contact variation — it is a process-wide switch read from the
+ * environment by `resolveSttProviderId` below, and with that variable
+ * unset it returns the same Deepgram literal this function has always
+ * returned. The switch exists so one controlled run can be pointed at
+ * an alternative provider; it is not a fourth allocation dimension and
+ * must not become one.
  */
+/**
+ * The environment variable that, and only that, can move a call off
+ * Deepgram. Absent — which is how every environment ships — the STT id
+ * is the Deepgram literal this function has always returned.
+ */
+export const STT_PROVIDER_OVERRIDE_ENV = "STT_PROVIDER";
+
+/**
+ * Which STT provider THIS call runs on.
+ *
+ * NOT AN ALLOCATION. There is no percentage, no hash, no randomness
+ * and no per-contact variation here, deliberately: this exists to let
+ * an operator point one controlled smoke run at Soniox and nothing
+ * else. Every call in a process resolves the same way, and with the
+ * variable unset that way is Deepgram.
+ *
+ * AN UNRECOGNISED VALUE FALLS BACK TO DEEPGRAM, LOUDLY. Falling back
+ * is the safe direction — a typo in an env var must not take down
+ * dialing for a whole campaign — but it is not silent: the bad value
+ * is named in a warning, and the id this call actually ran is recorded
+ * on the attempt row either way, so "I set it and it did not take"
+ * is visible rather than mysterious.
+ */
+export function resolveSttProviderId(): string {
+  const configured = (process.env[STT_PROVIDER_OVERRIDE_ENV] ?? "").trim().toLowerCase();
+  if (configured.length === 0) return SPEECH_TO_TEXT_PROVIDER_IDS.DEEPGRAM;
+  if (configured === SPEECH_TO_TEXT_PROVIDER_IDS.SONIOX) return SPEECH_TO_TEXT_PROVIDER_IDS.SONIOX;
+  if (configured === SPEECH_TO_TEXT_PROVIDER_IDS.DEEPGRAM) return SPEECH_TO_TEXT_PROVIDER_IDS.DEEPGRAM;
+
+  // eslint-disable-next-line no-console
+  console.warn(
+    `[call-runner] ${STT_PROVIDER_OVERRIDE_ENV}="${configured}" is not a known STT provider ` +
+      `(expected "${SPEECH_TO_TEXT_PROVIDER_IDS.DEEPGRAM}" or "${SPEECH_TO_TEXT_PROVIDER_IDS.SONIOX}") ` +
+      `— falling back to ${SPEECH_TO_TEXT_PROVIDER_IDS.DEEPGRAM}.`,
+  );
+  return SPEECH_TO_TEXT_PROVIDER_IDS.DEEPGRAM;
+}
+
 export function resolveCallProviderStack(
   campaign: CampaignRecord,
   selectionKey: string,
@@ -195,7 +237,7 @@ export function resolveCallProviderStack(
         "campaign telephony providers",
       ),
     ),
-    speechToText: SPEECH_TO_TEXT_PROVIDER_IDS.DEEPGRAM,
+    speechToText: resolveSttProviderId(),
     languageModel: pickByAllocation(
       `llm:${selectionKey}`,
       validatePercentageAllocation(

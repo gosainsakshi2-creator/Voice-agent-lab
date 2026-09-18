@@ -539,7 +539,12 @@ await test("B1 — a real contribution resets the cap: a later hearing check is 
   try {
     await blockDelivered(h);
 
-    h.say("Hello?");
+    // Doubled, so it qualifies on its own turn: the caller's previous
+    // turn here is "Hi, tell me." (the one that drew the block), which
+    // is not a bare greeting, so a single "Hello?" would now take the
+    // contextual path. The cap, which is what this test is about, is
+    // reached exactly as before once the pair has been spoken.
+    h.say("Hello? Hello?");
     await h.waitForReplies(3);
     h.say("Hello?");
     await h.waitForReplies(4);
@@ -581,7 +586,10 @@ await test("B2 — a hearing confirmation counts as progress: the cap is not con
     await h.waitForReplies(3);
     assert.equal(h.requests.length, 1, "the confirmation went to the model, which pitches");
 
-    h.say("Hello?");
+    // Doubled: the previous turn was the confirmation, not a greeting,
+    // so this has to qualify on its own to reach the cap at all — which
+    // is the point of the test.
+    h.say("Hello? Hello?");
     await h.waitForReplies(4);
     assert.equal(spokenCount(h, ACK), 2, "acknowledged again — the confirmation reset the counter");
   } finally {
@@ -638,7 +646,9 @@ await test("C1 — our own acknowledgement, echoed back whole, is still suppress
   const h = startHarness({ openingLine: OPENING, replies: [BLOCK, "MUST-NOT-BE-SAID"] });
   try {
     await blockDelivered(h);
-    h.say("Hello?");
+    // Doubled so it qualifies: the echo this test is about is of the
+    // acknowledgement, so the acknowledgement has to be spoken first.
+    h.say("Hello? Hello?");
     await h.waitForReplies(3);
     assert.equal(spokenCount(h, ACK), 1);
 
@@ -714,13 +724,27 @@ await test('D1 — a single casual "Hello." before any block is still the caller
   }
 });
 
-await test('D2 — a single "Hello?" after a block still gets exactly one acknowledgement, with no model request', async () => {
+await test('D2 — a REPEATED "Hello?" after a block still gets exactly one acknowledgement, with no model request', async () => {
+  // ── WHAT CHANGED, AND WHAT DID NOT ───────────────────────────────
+  //
+  // This test used to say "a single Hello? after a block". That rule is
+  // gone: one greeting out of a clear sky is a person saying hello, and
+  // being answered with "Hey, can you hear me okay?" on the spot is the
+  // robotic reading. The qualifying test is now an UNMISTAKABLE check
+  // (a presence phrase, or the greeting doubled in one utterance) or a
+  // bare greeting whose PREVIOUS turn was a bare greeting too.
+  //
+  // Everything this test exists to pin is unchanged and still asserted:
+  // once it does qualify, the acknowledgement is spoken exactly ONCE,
+  // makes no language-model request, and adds no script text.
+  // `test:silence-recovery` I5 asserts the other side — that the single
+  // greeting takes the contextual path instead.
   const h = startHarness({ openingLine: OPENING, replies: [BLOCK, "MUST-NOT-BE-SAID"] });
   try {
     await blockDelivered(h);
     const requestsBefore = h.requests.length;
 
-    h.say("Hello?");
+    h.say("Hello? Hello?");
     await h.waitForReplies(3);
 
     assert.equal(spokenCount(h, ACK), 1, "acknowledged once");
@@ -752,7 +776,9 @@ await test("D4 — the acknowledgement + follow-up pair still runs in full befor
   try {
     await blockDelivered(h);
 
-    h.say("Hello?");
+    // Doubled so the pair starts; the second one reaches the follow-up
+    // through the open episode, exactly as it always has.
+    h.say("Hello? Hello?");
     await h.waitForReplies(3);
     h.say("Hello? Hello?");
     await h.waitForReplies(4);

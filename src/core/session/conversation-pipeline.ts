@@ -760,8 +760,30 @@ function attentionAcknowledgementFor(language: SupportedLanguage): string {
  * or cancel it — the same `lastConversationActivityAt` stamp the
  * campaign watchdog already reads.
  */
-/** Caller silence, in LISTENING, before each recovery step. */
-const SILENCE_RECOVERY_INTERVAL_MS = 10_000;
+/**
+ * Caller silence, in LISTENING, before each recovery step.
+ *
+ * The ladder is three steps of this interval, each re-armed by the
+ * previous one: prompt 1 ("Hello, are you there?"), prompt 2 ("Hello,
+ * is anyone there?"), then the call ends. At 10s a caller who merely
+ * paused to think — or who put the phone down for a moment — was asked
+ * if they were still there before they had finished deciding, so the
+ * window is 30s.
+ *
+ * ── The watchdog has to outlast this ─────────────────────────────
+ *
+ * `CAMPAIGN_MAX_SILENCE_SECONDS` hangs the call up on silence measured
+ * in exactly the same state (LISTENING) against the same
+ * `lastConversationActivityAt` stamp, so whichever window is shorter is
+ * the only one that ever fires. At the 10s interval the pipeline always
+ * acted first and the 20s watchdog was unreachable; at 30s it would be
+ * the other way round and no recovery prompt would ever be spoken. The
+ * watchdog default moved to 40s with this constant — see
+ * `maxSilenceSeconds` in `dispatch.config.ts`, which carries the same
+ * note. The two are a pair; changing one alone silently disables the
+ * other.
+ */
+const SILENCE_RECOVERY_INTERVAL_MS = 30_000;
 /** Recovery prompts spoken before the call is ended: "are you there?", "is anyone there?". */
 const SILENCE_RECOVERY_MAX_PROMPTS = 2;
 /** `waitForTurnDetectorEnd` returning this means the silence window expired with no turn. */
@@ -926,6 +948,35 @@ export function isRepeatedGreeting(text: string): boolean {
   if (!isHearingCheck(text)) return false;
   const greetings = text.match(HEARING_GREETING_TOKEN);
   return greetings !== null && greetings.length >= 2;
+}
+
+/**
+ * The WHOLE utterance is a greeting and nothing else — "Hello.",
+ * "Hi?", "Hey", "Hello hello" — with no presence question attached and
+ * no content of its own.
+ *
+ * The one input to the cross-turn repetition rule (see
+ * `lastTurnWasBareGreeting`): a turn that is this, followed by another
+ * turn that is a hearing check, is the caller repeating themselves
+ * because they did not hear us.
+ *
+ * Built from the predicates that already exist and adds no vocabulary
+ * of its own — `isHearingCheck` for "nothing but greetings, presence
+ * phrases and filler", minus the utterances that carry an explicit
+ * presence phrase, which are unmistakable on their own and never need a
+ * second turn to be believed. A lone "haan ji", "ji" or "please" is not
+ * this either, because `isHearingCheck` already requires a real
+ * greeting or presence phrase to be present.
+ *
+ * Exported for the same reason the other vocabulary predicates are: the
+ * boundary is the safety case, and a test must be able to assert both
+ * sides of it directly.
+ */
+export function isBareGreetingTurn(text: string): boolean {
+  const trimmed = text.trim();
+  if (trimmed.length === 0) return false;
+  if (!isHearingCheck(trimmed)) return false;
+  return !HEARING_PRESENCE_PHRASE.test(trimmed);
 }
 
 /**
@@ -1137,6 +1188,45 @@ function identityGiveUpFor(language: SupportedLanguage): string {
     default:
       return "No problem, I'll try again later. Thank you!";
   }
+}
+
+/**
+ * Did the campaign's OPENING LINE already ask who picked up?
+ *
+ * A script may introduce the agent first and leave the identity
+ * question to the gate (`registration v1`-`v7`), or it may open WITH the
+ * question and introduce the agent afterwards (`registration v8`, the
+ * approved identity-first flow). Both use the same gate, the same
+ * classifier and the same states — the only difference is whether the
+ * question has already been spoken by the time the first caller turn
+ * arrives.
+ *
+ * That is exactly the difference between `unasked` and `outstanding`,
+ * which the gate already distinguishes, so this decides which of the two
+ * the call starts in and nothing else. Without it an identity-first
+ * script asks the caller "Am I speaking with ...?" twice in a row: once
+ * as the greeting, then again as the gate's first act.
+ *
+ * READ ONCE, in the constructor. `buildCampaignContext` builds both
+ * strings, from templates that live next to each other in that one file,
+ * so they agree by construction rather than by luck — and v8's
+ * `openingLineTemplate` carries a comment saying so. Compared on letters
+ * and digits only (`\p{M}` kept, so Devanagari matras survive) rather
+ * than byte for byte, so punctuation and spacing around the question
+ * cannot break the match.
+ *
+ * Conservative in the safe direction: if this returns false for a script
+ * that DOES ask, the caller hears the question twice — annoying, not
+ * unsafe. It can never open the gate, skip the question, or shorten the
+ * campaign's path to a pitch.
+ */
+function openingLineAsksIdentity(openingLine: string | undefined, identityLine: string): boolean {
+  if (openingLine === undefined) return false;
+  const flatten = (text: string): string =>
+    text.toLowerCase().replace(/[^\p{L}\p{N}\p{M}]+/gu, " ").trim();
+  const opening = flatten(openingLine);
+  const identity = flatten(identityLine);
+  return identity.length > 0 && opening.includes(identity);
 }
 
 /**
@@ -1610,6 +1700,17 @@ export class ConversationPipeline {
    */
   private pickupAckAllowance = false;
   /**
+   * The campaign's opening line IS the identity question — see
+   * `openingLineAsksIdentity`, which computes this once in the
+   * constructor.
+   *
+   * Read in exactly two places, and both are about the same thing: the
+   * caller's FIRST utterance is an ANSWER, not an acknowledgement.
+   * `identityState` starts `outstanding` instead of `unasked`, and the
+   * pickup-acknowledgement allowance is never granted.
+   */
+  private readonly openingAsksIdentity: boolean;
+  /**
    * Set once, when the live transcript shows we are talking to a
    * machine. From that instant the agent says NOTHING for the rest of
    * the call — see `synthesizeAndPlay`, which is the single choke point
@@ -1790,6 +1891,36 @@ export class ConversationPipeline {
    */
   private hearingLinesWithoutProgress = 0;
   /**
+   * ---------------- One "hello", or two? ----------------
+   *
+   * The caller's PREVIOUS turn was nothing but a greeting.
+   *
+   * `isRepeatedGreeting` / `isEmphaticHearingCheck` already recognise a
+   * greeting said twice, but only WITHIN one utterance ("Hello?
+   * Hello?"), because both are whole-utterance regexes. A caller who
+   * says "Hello." — waits — "Hello." produces two separate turns, and
+   * no predicate could see the repetition. So after a block had been
+   * delivered the qualifying test fell back to `isHearingCheck`, which
+   * a SINGLE bare greeting satisfies, and one "Hello" out of a clear
+   * sky was answered with "Hey, can you hear me okay?".
+   *
+   * That is the robotic reading. One greeting is a person saying hello;
+   * the same greeting twice in a row is a person who cannot hear us.
+   * This flag is the difference between them, and it is the whole of
+   * the repetition state: set from the turn currently being judged,
+   * read on the NEXT turn, and cleared by any turn that is not a bare
+   * greeting — so "Hello." then "Yes, tell me." is not a repeat, and a
+   * later single "Hello" starts over as a single one.
+   *
+   * Updated once per committed user turn, at the top of
+   * `handleAttentionCheck`, which the main loop runs for every turn
+   * before the language model is reached. It never widens what counts
+   * as a hearing check — an explicit presence phrase ("can you hear
+   * me") and a doubled greeting in one utterance still qualify on their
+   * own, immediately, exactly as before.
+   */
+  private lastTurnWasBareGreeting = false;
+  /**
    * FIX #8 — the LLM request pre-opened for the turn the detector is
    * currently holding in its evidenced confirmation window, if any. See
    * `SpeculativeCompletion`. At most one at a time; replaced or
@@ -1880,10 +2011,23 @@ export class ConversationPipeline {
   ) {
     // The gate is CLOSED only when this call actually has somebody to
     // check. Everything else keeps the behaviour it has always had.
+    //
+    // `outstanding` rather than `unasked` when the campaign's opening
+    // line IS the identity question (`registration v8`): the greeting
+    // asks it, so the gate's job on the first caller turn is to read the
+    // ANSWER, not to ask again. See `openingLineAsksIdentity`. For every
+    // script whose opening does not ask it — v1 through v7 — this is
+    // false and the state is `unasked`, exactly as before.
+    const identityLine = record.campaignIdentityLine?.trim() ?? "";
+    this.openingAsksIdentity =
+      identityLine.length > 0 &&
+      openingLineAsksIdentity(record.campaignOpeningLine, identityLine);
     this.identityState =
-      record.campaignIdentityLine !== undefined && record.campaignIdentityLine.trim().length > 0
-        ? "unasked"
-        : "confirmed";
+      identityLine.length === 0
+        ? "confirmed"
+        : this.openingAsksIdentity
+          ? "outstanding"
+          : "unasked";
     this.usesStreamingStt = typeof providers.stt.transcribeStream === "function";
   }
 
@@ -2663,6 +2807,14 @@ export class ConversationPipeline {
     const sid = this.record.id;
     const trimmed = userText.trim();
     const isCheck = isAttentionCheck(trimmed);
+    // ── Cross-turn greeting repetition — see `lastTurnWasBareGreeting`.
+    //
+    // Read BEFORE it is updated, so `repeatedGreeting` below describes
+    // the PREVIOUS turn and this turn together. Updated here rather
+    // than at any of the method's ten return points, so no branch can
+    // forget it and the flag describes every committed turn.
+    const previousTurnWasBareGreeting = this.lastTurnWasBareGreeting;
+    this.lastTurnWasBareGreeting = isBareGreetingTurn(trimmed);
     // Only ever read inside an open episode: this is the caller
     // confirming the line after OUR acknowledgement, not a bare "yes"
     // in open conversation, which is never seen by this method.
@@ -2785,13 +2937,33 @@ export class ConversationPipeline {
     // they say after that takes the contextual path with both lines in
     // its history. No script text is spoken by either branch.
     if (!this.attentionEpisodeOpen) {
-      // Before any block: only an unmistakable check ("can you hear me",
-      // "hello hello"). A single "Hi." after our opening line is the
-      // caller answering the phone and takes the contextual path — the
-      // pitch — exactly as today. After a block: any strict check.
-      const qualifies = this.contextualReplyCommitted
-        ? isHearingCheck(trimmed)
-        : isEmphaticHearingCheck(trimmed);
+      // ── One greeting is a hello; two in a row is a hearing problem ──
+      //
+      // Two ways to qualify, and a single bare greeting is neither:
+      //
+      //   UNMISTAKABLE — an explicit presence phrase ("can you hear
+      //     me", "are you there") or the greeting doubled inside one
+      //     utterance ("Hello? Hello?"). Answered on the first turn,
+      //     before a block and after one, exactly as before.
+      //
+      //   REPEATED ACROSS TURNS — this turn is a strict hearing check
+      //     and the caller's PREVIOUS turn was a bare greeting too.
+      //     "Hello." ... "Hello." is a person who cannot hear us, and
+      //     it is the case no whole-utterance predicate could see,
+      //     because the two halves arrive as two separate turns.
+      //
+      // What changes is only this: after a block, a SINGLE bare "Hello"
+      // used to qualify by `isHearingCheck` alone and was answered with
+      // "Hey, can you hear me okay?" on the spot. One greeting out of a
+      // clear sky is a person saying hello, so it now takes the
+      // contextual path — where the model answers it naturally and the
+      // conversation carries on — and the hearing check waits for the
+      // second one. Nothing here widens the vocabulary, and the
+      // before-a-block rule is untouched: a single "Hi." after our
+      // opening line is still the caller answering the phone.
+      const qualifies =
+        isEmphaticHearingCheck(trimmed) ||
+        (previousTurnWasBareGreeting && isHearingCheck(trimmed));
       if (qualifies) {
         if (this.hearingLineCapReached()) return this.declineExhaustedHearingCheck(trimmed);
         this.attentionEpisodeOpen = true;
@@ -3963,7 +4135,14 @@ export class ConversationPipeline {
             // is decided at turn release, on the whole utterance, in
             // the main loop; nothing here inspects the text, filters a
             // segment, or changes what is fed to the turn detector.
-            if (!this.greetingDone) this.pickupAckAllowance = true;
+            // ...unless our opening line ASKED them something. The
+            // allowance exists because "the opening line is the answer
+            // to it" — true of a greeting the caller is greeting back,
+            // and false of a question. On an identity-first script the
+            // caller's "Haan." over the tail of "Hello, am I speaking
+            // with Sakshi?" is the ANSWER, and dropping it would
+            // re-ask a question they had already answered.
+            if (!this.greetingDone && !this.openingAsksIdentity) this.pickupAckAllowance = true;
             // Prefix the finals already accumulated for this turn. A
             // Deepgram interim/final is only the tail since the last
             // final, so without this the preview snaps back to the

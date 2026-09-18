@@ -839,13 +839,20 @@ await test("I1 — the call carries on normally after an attention-check episode
 
 await test("I2 — an attention check with nothing to resume, after a block, is acknowledged without the model (FIX 2)", async () => {
   // The block finished and the caller heard all of it, then said
-  // nothing but "Hello?". Before FIX 2 this took the contextual path,
-  // and the model — shown a completed block and a bare greeting —
+  // nothing but "Hello? Hello?". Before FIX 2 this took the contextual
+  // path, and the model — shown a completed block and a bare greeting —
   // restarted the script (real transcript, 2026-08-30 08:52 IST). It is
   // now answered by the same fixed acknowledgement the remainder path
   // uses, once, with no language-model request; the caller's NEXT
   // contribution takes the normal path. `silence-recovery-tests.ts`
   // section I covers the follow-up and the boundary.
+  //
+  // DOUBLED, and that is the only change here. A SINGLE bare greeting
+  // after a block no longer qualifies on its own — one "Hello" is a
+  // person saying hello, and it takes the contextual path
+  // (`test:silence-recovery` I5). What this test pins — that a
+  // qualifying check is answered by the fixed line, once, without the
+  // model, and never re-speaks the block — is unchanged.
   const h = startHarness({ openingLine: OPENING, replies: ["Short reply.", "Yes, I'm here."] });
   try {
     await h.waitForReplies(1);
@@ -853,7 +860,7 @@ await test("I2 — an attention check with nothing to resume, after a block, is 
     await h.waitForReplies(2);
     const requestsBefore = h.requests.length;
 
-    h.say("Hello?");
+    h.say("Hello? Hello?");
     await h.waitForReplies(3);
 
     assert.equal(h.requests.length, requestsBefore, "no language-model request for a bare hello after a finished block");

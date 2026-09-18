@@ -31,7 +31,7 @@
  *     only ever a whole utterance; a word of content anywhere in it
  *     makes it a turn.
  *   - GENUINE SILENCE still recovers on exactly today's schedule:
- *     prompt 1 at 8s, prompt 2 at 8s more, then the hangup. Including
+ *     prompt 1 at 30s, prompt 2 at 30s more, then the hangup. Including
  *     after a backchannel — a caller who says "okay" and then really
  *     does go quiet is still asked.
  *
@@ -74,7 +74,7 @@ const section = (t: string) => console.log(`\n${t}`);
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 /** The production constant, restated here so a change to it fails a test rather than silently shifting one. */
-const INTERVAL_MS = 8_000;
+const INTERVAL_MS = 30_000;
 /** Timer slack: setTimeout on a loaded machine, plus the 25ms re-arm floor. */
 const SLACK_MS = 250;
 
@@ -464,7 +464,7 @@ for (const word of ["Okay", "Achha", "Haan ji", "Hmm"]) {
 // that is deliberate and unchanged, because over audio the caller is
 // hearing it means the line may have gone bad. What was wrong is what
 // came next: the acknowledgement was spoken, the unheard rest of the
-// block was HELD, and then the 8s silence window read the caller as
+// block was HELD, and then the silence window read the caller as
 // absent and asked "Hello, are you there?" — their own presence check
 // answered as an absence, with the block never finished.
 //
@@ -582,7 +582,7 @@ for (const utterance of [
 // ═════════════════════════════════════════════════════════════════
 section("8-9. genuine silence is still recovered from, and a backchannel does not suppress it");
 
-await test("8 — no caller speech at all: prompt 1 at 8s, prompt 2 at 8s more, then the call is ended once", async () => {
+await test("8 — no caller speech at all: prompt 1 at 30s, prompt 2 at 30s more, then the call is ended once", async () => {
   const h = startHarness({ openingLine: OPENING, replies: [PITCH] });
   try {
     await greetingDone(h);
@@ -590,12 +590,12 @@ await test("8 — no caller speech at all: prompt 1 at 8s, prompt 2 at 8s more, 
     await h.waitForReplies(2, 20_000);
     const drainedAt = lastListeningAt(h);
 
-    await h.waitFor("prompt 1", () => count(h.syntheses, PROMPT_1) === 1, INTERVAL_MS + 4_000);
+    await h.waitFor("prompt 1", () => count(h.syntheses, PROMPT_1) === 1, INTERVAL_MS + 6_000);
     const p1 = h.syntheses.find((s) => s.text === PROMPT_1)!;
     assert.ok(p1.atMs - drainedAt >= INTERVAL_MS - SLACK_MS, `prompt 1 came ${p1.atMs - drainedAt}ms after the drain`);
 
-    await h.waitFor("prompt 2", () => count(h.syntheses, PROMPT_2) === 1, INTERVAL_MS + 4_000);
-    await h.waitFor("the hangup", () => h.endCalls() === 1, INTERVAL_MS + 4_000);
+    await h.waitFor("prompt 2", () => count(h.syntheses, PROMPT_2) === 1, INTERVAL_MS + 6_000);
+    await h.waitFor("the hangup", () => h.endCalls() === 1, INTERVAL_MS + 6_000);
 
     assert.equal(count(h.syntheses, PROMPT_1), 1, "prompt 1 exactly once");
     assert.equal(count(h.syntheses, PROMPT_2), 1, "prompt 2 exactly once");
@@ -605,7 +605,7 @@ await test("8 — no caller speech at all: prompt 1 at 8s, prompt 2 at 8s more, 
   }
 });
 
-await test('9 — "Okay" over the block, then real silence: the block finishes AND prompt 1 still fires at 8s', async () => {
+await test('9 — "Okay" over the block, then real silence: the block finishes AND prompt 1 still fires at 30s', async () => {
   const h = startHarness({ openingLine: OPENING, replies: [PITCH] });
   try {
     await blockPlaying(h);
@@ -613,7 +613,7 @@ await test('9 — "Okay" over the block, then real silence: the block finishes A
     await h.waitForReplies(2, 20_000);
     const drainedAt = lastListeningAt(h);
 
-    await h.waitFor("prompt 1", () => count(h.syntheses, PROMPT_1) === 1, INTERVAL_MS + 4_000);
+    await h.waitFor("prompt 1", () => count(h.syntheses, PROMPT_1) === 1, INTERVAL_MS + 6_000);
     const p1 = h.syntheses.find((s) => s.text === PROMPT_1)!;
 
     assert.deepEqual(bargeIns(h), [], "the backchannel did not interrupt the block");

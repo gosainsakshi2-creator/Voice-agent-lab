@@ -564,18 +564,27 @@ await test("TEST 1b — only the part that PLAYED is committed, never the queued
 // ignored acknowledgement: the path that used to restart the script.
 const SHORT_BLOCK = "We have created Flexi Genie, which automates your whole online business.";
 
-// FIX 2 — "hi" / "hello" after the interrupted block are HEARING CHECKS
-// and no longer reach the model at all: they get the fixed
-// acknowledgement (see `test:attention`, `test:silence-recovery` I).
-// Exactly as the SECTION A note explains for TEST 1, "must produce a
-// request" was an expectation about the old mechanism; the invariant —
-// script progress is never reset — is asserted below on the next
-// SUBSTANTIVE turn, which is the one that actually reaches the model.
-// "okay" / "haan" are acknowledgements, not hearing checks, and still
-// take the contextual path directly.
-const HEARING_CHECK_WORDS = new Set(["hi", "hello"]);
+// Which of these utterances is answered by the fixed hearing line
+// rather than by the model.
+//
+// A SINGLE "hi" / "hello" is no longer one of them. One greeting out of
+// a clear sky is a person saying hello, and answering it on the spot
+// with "Hey, can you hear me okay?" is the robotic reading; it now
+// takes the contextual path exactly as "okay" and "haan" do. What
+// qualifies is an unmistakable check — a presence phrase, or the
+// greeting doubled — or a bare greeting whose PREVIOUS turn was a bare
+// greeting too. (`test:silence-recovery` I5/I6 assert both sides;
+// `test:attention` I2 and `test:hearing-loop` D2 pin the answered case.)
+//
+// "hello hello" is in the loop so this test still exercises the
+// hearing-check branch at all. Exactly as the SECTION A note explains
+// for TEST 1, "must produce a request" was an expectation about the old
+// mechanism; the invariant this test exists for — script progress is
+// never reset — is asserted below for every word, on the turn that
+// actually reaches the model.
+const HEARING_CHECK_WORDS = new Set(["hello hello"]);
 
-for (const word of ["okay", "hi", "hello", "haan"]) {
+for (const word of ["okay", "hi", "hello", "haan", "hello hello"]) {
   await test(`TEST 5 — "${word}" never resets script progress`, async () => {
     const h = startHarness({ openingLine: OPENING, replies: [SHORT_BLOCK, "Sure."] });
     try {

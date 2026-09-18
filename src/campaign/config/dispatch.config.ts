@@ -111,7 +111,13 @@ export function getDispatchConfig(): DispatchConfig {
     lanes,
     ringTimeoutSeconds: optionalEnvNumber("CAMPAIGN_RING_TIMEOUT_SECONDS", 35),
     maxCallSeconds: optionalEnvNumber("CAMPAIGN_MAX_CALL_SECONDS", 180),
-    maxSilenceSeconds: optionalEnvNumber("CAMPAIGN_MAX_SILENCE_SECONDS", 20),
+    // Paired with `SILENCE_RECOVERY_INTERVAL_MS` in the pipeline (30s).
+    // Both measure caller silence in LISTENING off the same
+    // `lastConversationActivityAt` stamp, so the shorter window is the
+    // only one that ever fires. This must stay ABOVE the recovery
+    // interval, or the call is hung up before "Hello, are you there?"
+    // can be spoken and the whole recovery ladder becomes dead code.
+    maxSilenceSeconds: optionalEnvNumber("CAMPAIGN_MAX_SILENCE_SECONDS", 40),
     claimBatchSize: optionalEnvNumber("CAMPAIGN_CLAIM_BATCH_SIZE", 5),
     pollIntervalMs: optionalEnvNumber("CAMPAIGN_POLL_INTERVAL_MS", 1000),
     // Pilot ladder ceiling for a single run. 10 by default so the first

@@ -175,6 +175,19 @@ export function attachVobizMediaBridge(
   let prerollTimer: ReturnType<typeof setTimeout> | undefined;
   let wasSpeaking = false;
   /**
+   * ── READ-ONLY DIAGNOSTIC: outbound starvation ───────────────────
+   *
+   * Parity with the Plivo bridge, same semantics, same two log lines:
+   * set when the pump finds the queue EMPTY while the pipeline still
+   * considers itself SPEAKING (the caller is hearing silence mid-reply
+   * because this process had nothing to send), cleared with the gap
+   * logged when the pump next starts, and reset by a deliberate
+   * barge-in clear so that recovery is never reported as starvation.
+   *
+   * Nothing reads this. It adds no timer and changes no audio decision.
+   */
+  let pumpDryAtMs: number | undefined;
+  /**
    * `onLoudSpeech` fires on every loud frame once the run is long enough,
    * so a suppressed energy-only barge-in is logged once per speaking
    * phase rather than fifty times a second. Reset on entering SPEAKING.
@@ -419,6 +432,16 @@ export function attachVobizMediaBridge(
 
   function beginPump(): void {
     if (pumpTimer) return;
+    // READ-ONLY DIAGNOSTIC — see `pumpDryAtMs`. How long the caller
+    // actually heard nothing, from the pump running out to it having
+    // audio again (pre-roll included).
+    if (pumpDryAtMs !== undefined) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[vobiz-bridge:${sessionId}] OUTBOUND GAP: ${Date.now() - pumpDryAtMs}ms of application-side silence mid-reply — producer could not keep the queue fed (queue=${outboundQueue.length} frames)`,
+      );
+      pumpDryAtMs = undefined;
+    }
     if (awaitingFirstFrame) {
       // eslint-disable-next-line no-console
       console.log(`[Vobiz] greeting pump started`);
@@ -440,6 +463,16 @@ export function attachVobizMediaBridge(
       for (let i = 0; i < framesDue; i += 1) {
         const frame = outboundQueue.shift();
         if (!frame) {
+          // READ-ONLY DIAGNOSTIC — see `pumpDryAtMs`. Empty after the
+          // pipeline left SPEAKING is the normal end of an utterance;
+          // empty while it is STILL speaking is mid-reply dead air.
+          if (wasSpeaking && pumpDryAtMs === undefined) {
+            pumpDryAtMs = Date.now();
+            // eslint-disable-next-line no-console
+            console.warn(
+              `[vobiz-bridge:${sessionId}] OUTBOUND STARVED: queue empty after ${framesSent} frames while still SPEAKING — the caller is now hearing silence`,
+            );
+          }
           clearInterval(pumpTimer);
           pumpTimer = undefined;
           return;
@@ -488,6 +521,10 @@ export function attachVobizMediaBridge(
     const droppedFrames = outboundQueue.length;
     outboundQueue = [];
     framer.reset();
+    // READ-ONLY DIAGNOSTIC — see `pumpDryAtMs`. A barge-in drops the
+    // queue on purpose; that silence belongs to the barge-in recovery
+    // path, not to producer starvation.
+    pumpDryAtMs = undefined;
     if (pumpTimer) {
       clearInterval(pumpTimer);
       pumpTimer = undefined;

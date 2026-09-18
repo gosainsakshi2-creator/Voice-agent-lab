@@ -687,6 +687,83 @@ await test("A6 — common cadence keeps the ~300ms tail: the adaptive win is NOT
   }
 });
 
+await test("A9 — transport backpressure does NOT inflate the tail into the hard bound", async () => {
+  // ── THE MID-REPLY SILENCE, REPRODUCED ────────────────────────────
+  //
+  // Every test above drains the generator instantly. A real call does
+  // not: `playAudioChunk` awaits the bridge's outbound backpressure,
+  // so each `yield` parks for up to ~600ms once the queue passes its
+  // 2800ms high-water mark. That park sits BETWEEN the vendor's frames
+  // as far as this generator can see, so it inflated `widestFrameGapMs`
+  // (~60ms measured -> ~825ms) and `widestDeliveryMs` (275ms -> 2475ms)
+  // and pinned the budget at the MAX_IDLE_GAP_MS ceiling, and then the
+  // timer started AFTER the park on top of that.
+  //
+  // The tail is not free time: `runStreamingCompletion` awaits
+  // `synthesizeAndPlay` once per sentence, so the next sentence's TTS
+  // request cannot start until this generator returns. Measured against
+  // this exact schedule the tail was 1210ms, draining the cushion that
+  // covers the next request's round trip down to 1526ms.
+  const frames: Frame[] = Array.from({ length: 22 }, (_, i) => ({
+    bytes: FRAME_275MS,
+    gapMsBefore: i === 0 ? 20 : 60,
+  }));
+
+  // The Plivo bridge's outbound queue: pump drains at 1x real time,
+  // producer parks above high water and is released at low water.
+  const HIGH_WATER_MS = 2800;
+  const LOW_WATER_MS = 2200;
+  let queuedMs = 0;
+  let lastAt = Date.now();
+  let parks = 0;
+  const advance = (): void => {
+    const now = Date.now();
+    queuedMs = Math.max(0, queuedMs - (now - lastAt));
+    lastAt = now;
+  };
+
+  const server = await startFakeSarvam({ frames });
+  try {
+    const startedAt = Date.now();
+    let lastChunkReleasedAt = startedAt;
+    const result = await drain(providerFor(server.baseUrl), TEXT_LONG, {
+      onChunk: async (chunk) => {
+        // Audio only. The zero-byte final sentinel is yielded AFTER the
+        // idle wait, so letting it move the marker would hide the very
+        // tail this test measures.
+        if (chunk.audio.data.byteLength === 0) return;
+        advance();
+        queuedMs += audioMs(chunk.audio.data.byteLength);
+        if (queuedMs > HIGH_WATER_MS) {
+          parks += 1;
+          await sleep(queuedMs - LOW_WATER_MS);
+          advance();
+        }
+        lastChunkReleasedAt = Date.now();
+      },
+    });
+    const returnedAt = Date.now();
+
+    assert.equal(result.error, undefined, `unexpected error: ${result.error?.message}`);
+    // The premise: this schedule really does exercise backpressure. A
+    // consumer that never parked would make the assertion below vacuous.
+    assert.ok(parks > 0, "the consumer never parked — the test is not reproducing a real call");
+    // Not a word of the utterance may be lost to the shorter wait.
+    assertSameAudio(result.audio, server.expectedAudio(), "A9 full utterance");
+    // The tail that matters is measured from when the consumer let go,
+    // not from when the last chunk was handed over — the park after the
+    // final chunk is playback, not dead air.
+    const tailMs = returnedAt - lastChunkReleasedAt;
+    assert.ok(
+      tailMs < 550,
+      `tail ${tailMs}ms should be the ~${SHIPPED_MIN_IDLE_GAP_MS}ms floor, not the ${HARD_BOUND_MS}ms hard bound —` +
+        ` backpressure is being charged to the vendor again, and every sentence boundary pays it`,
+    );
+  } finally {
+    await server.close();
+  }
+});
+
 await test("A8 — one enormous frame cannot license an unbounded tail", async () => {
   // 4 seconds of audio in a single frame. Without the hard bound the
   // delivery-quantum floor would license a 4s tail.

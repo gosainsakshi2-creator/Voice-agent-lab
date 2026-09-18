@@ -375,13 +375,30 @@ const PITCH =
  */
 async function run(
   turns: readonly string[],
-  opts: { readonly identityLine?: string; readonly pauseMs?: number } = {},
+  opts: {
+    readonly identityLine?: string;
+    readonly pauseMs?: number;
+    /**
+     * IDENTITY-FIRST (`registration v8`): the opening line IS the
+     * identity question, so the gate starts `outstanding` rather than
+     * `unasked` and the caller's first utterance is the ANSWER.
+     * Omitted, this is the v1-v7 opening and every existing case below
+     * runs exactly as it did.
+     */
+    readonly openingLine?: string;
+    /**
+     * Skip the leading pickup "Hello.". An identity-first call has no
+     * pickup turn to skip past — the first thing the caller says is
+     * their answer, and the pipeline must not eat it.
+     */
+    readonly skipPickup?: boolean;
+  } = {},
 ): Promise<{ spoken: string[]; llmRequests: number; lastUserSentToLlm: string | undefined }> {
   // `identityLine: ""` means "this call has no gate"; omitted means the
   // ordinary campaign gate.
   const line = opts.identityLine === undefined ? ID_LINE : opts.identityLine;
   const h = startHarness({
-    openingLine: OPEN,
+    openingLine: opts.openingLine ?? OPEN,
     ...(line.length > 0 ? { identityLine: line } : {}),
     replies: [PITCH, PITCH, PITCH, PITCH],
     replyDelayMs: 0,
@@ -391,8 +408,10 @@ async function run(
     // drops it as the pickup acknowledgement — the opening line is
     // already the answer to it. That is existing behaviour and not
     // this gate's business, so every case here starts after it.
-    h.say("Hello.", { isFinal: true, isSpeechFinal: true });
-    await sleep(3000);
+    if (opts.skipPickup !== true) {
+      h.say("Hello.", { isFinal: true, isSpeechFinal: true });
+      await sleep(3000);
+    }
     for (const text of turns) {
       h.say(text, { isFinal: true, isSpeechFinal: true });
       await sleep(opts.pauseMs ?? 4000);
@@ -663,6 +682,233 @@ await test("C2. it is a question about them and commits them to nothing", async 
       failureClass: "COMPLETED",
     }).disposition;
     assert.notEqual(disposition, "FINAL_YES", `"${said}" to the identity line must not register`);
+    assert.notEqual(outcome.primaryReason, "confirmed_at_gate");
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════
+section("D. IDENTITY FIRST — the opening ASKS, the introduction waits");
+// ═════════════════════════════════════════════════════════════════
+//
+// `registration v8`: the opening line is the identity question, and the
+// agent introduces itself in its FIRST REPLY, which only happens after
+// the gate is `confirmed`.
+//
+//     AGENT:  "Hello, am I speaking with Sakshi?"
+//     CALLER: "Yes."
+//     AGENT:  "I'm Rohan from Team FlexiFunnels. I'm calling to invite…"
+//
+// The gate, the classifier, the re-ask, the three-strike give-up and the
+// denied path are the SAME ones section B exercises — the only
+// difference is that the question has already been spoken when the first
+// caller turn arrives. `llmRequests` remains the assertion that matters:
+// the introduction and everything after it come from the model, so zero
+// requests is proof that nothing was introduced or pitched.
+
+/** v8's opening: the identity question, with nothing else in it. */
+const ID_FIRST_OPEN = "Hello, am I speaking with Sakshi?";
+
+const idFirst = (
+  turns: readonly string[],
+  extra: { readonly pauseMs?: number } = {},
+): ReturnType<typeof run> =>
+  run(turns, { openingLine: ID_FIRST_OPEN, skipPickup: true, ...extra });
+
+// `idAsks` matches "Am I speaking with Sakshi" case-sensitively, so on
+// these identity-first calls it counts the times the GATE put the
+// question — the lowercase "am" in the opening line is deliberately not
+// one of them. Zero is therefore the success case here: the opening
+// asked, and the gate never had to ask again.
+
+await test("D1. English: the opening asks, 'Yes.' confirms, and ONLY then does the model run", async () => {
+  const r = await idFirst(["Yes."]);
+  assert.equal(r.spoken[0], ID_FIRST_OPEN, "the call opens with the question");
+  assert.equal(r.llmRequests, 1, "exactly one request, after confirmation");
+  assert.equal(r.lastUserSentToLlm, "Yes.", "and it carried the identity confirmation");
+  assert.equal(pitched(r.spoken), true, "the introduction and purpose follow");
+  assert.equal(idAsks(r.spoken), 0, "the gate never re-asks — the opening already asked");
+});
+
+await test("D2. Hinglish: 'Haan ji.' confirms the same way, through the same classifier", async () => {
+  const r = await idFirst(["Haan ji."]);
+  assert.equal(r.llmRequests, 1);
+  assert.equal(pitched(r.spoken), true);
+  assert.equal(idAsks(r.spoken), 0, "not re-asked");
+});
+
+await test("D3. the caller's bare 'Haan.' is an ANSWER, not a pickup acknowledgement", async () => {
+  // The regression this flow creates if `pickupAckAllowance` is left
+  // alone: "Haan." / "Okay." matches `isBareAcknowledgement`, so the
+  // first turn of an identity-first call would be DROPPED and the
+  // caller re-asked a question they had just answered.
+  const r = await idFirst(["Haan."]);
+  assert.equal(r.llmRequests, 1, "the answer reached the gate and opened it");
+  assert.equal(idAsks(r.spoken), 0, "it was NOT swallowed and re-asked");
+});
+
+await test("D4. the introduction does not exist until identity is confirmed", async () => {
+  // Nothing said at all after the opening.
+  const r = await idFirst([]);
+  assert.equal(r.llmRequests, 0, "no language-model request, so no introduction and no pitch");
+  assert.deepEqual(r.spoken, [ID_FIRST_OPEN], "the opening line is the ONLY thing spoken");
+});
+
+await test("D5. NO SCRIPT DUMP: the opening is the question and carries no event facts", async () => {
+  const r = await idFirst([]);
+  const opening = r.spoken[0] ?? "";
+  assert.equal(opening, ID_FIRST_OPEN);
+  for (const leak of ["workshop", "invite", "Zoom", "free", "event", "September", "FlexiFunnels"]) {
+    assert.equal(
+      opening.toLowerCase().includes(leak.toLowerCase()),
+      false,
+      `the opening must not carry "${leak}" — it asks one question and stops`,
+    );
+  }
+});
+
+await test("D6. 'No.' is denied: the gate shuts and never re-opens", async () => {
+  const r = await idFirst(["No.", "Yes, this is Sakshi"]);
+  // As B6: the denial itself goes to the model, because the
+  // wrong-person close is script content. What must not happen is the
+  // gate re-opening on the later confirmation.
+  assert.equal(idAsks(r.spoken), 0, "a denied gate does not ask again");
+});
+
+await test("D7. 'No, this isn't Sakshi.' is denied", async () => {
+  const r = await idFirst(["No, this isn't Sakshi."]);
+  assert.equal(r.lastUserSentToLlm, "No, this isn't Sakshi.", "the denial reaches the wrong-person close");
+  assert.equal(idAsks(r.spoken), 0, "a denied gate does not ask again");
+});
+
+await test("D8. 'Wrong number.' is denied", async () => {
+  const r = await idFirst(["Wrong number."]);
+  assert.equal(r.lastUserSentToLlm, "Wrong number.");
+  assert.equal(idAsks(r.spoken), 0, "a denied gate does not ask again");
+});
+
+await test("D9. 'Who is this?' is UNCLEAR: no introduction, and the question is put again", async () => {
+  const r = await idFirst(["Who is this?"]);
+  assert.equal(r.llmRequests, 0, "an unclear answer must not unlock the introduction");
+  assert.equal(pitched(r.spoken), false);
+  assert.ok(idAsks(r.spoken) >= 1, "the gate puts the unanswered question again");
+});
+
+await test("D10. 'Hello' to the opening is unclear, and a later 'Yes.' still confirms", async () => {
+  const r = await idFirst(["Hello", "Yes."]);
+  assert.equal(r.llmRequests, 1, "one request, and only after the real answer");
+  assert.equal(r.lastUserSentToLlm, "Yes.");
+  assert.ok(idAsks(r.spoken) >= 1, "the question was put again after the greeting");
+});
+
+await test("D11. a repeated 'Yes.' does not ask, introduce or pitch twice", async () => {
+  const r = await idFirst(["Yes.", "Yes."]);
+  assert.equal(idAsks(r.spoken), 0, "the confirmed gate never asks again");
+  assert.equal(r.llmRequests, 2, "the second turn is ordinary conversation, answered once");
+});
+
+await test("D12. silence after the opening leaves the gate shut", async () => {
+  // No turn at all: the gate cannot open on nothing, and the silence
+  // recovery ladder is a different mechanism entirely.
+  const r = await idFirst([], { pauseMs: 0 });
+  assert.equal(r.llmRequests, 0);
+  assert.equal(pitched(r.spoken), false);
+});
+
+// ═════════════════════════════════════════════════════════════════
+section("E. THE v8 SCRIPT — identity first, introduction in the first reply");
+// ═════════════════════════════════════════════════════════════════
+
+await test("E1. v8's opening line IS the identity question the pipeline supplies", async () => {
+  const { findScript } = await import("../script/script-registry");
+  const v8 = findScript("registration", "v8");
+  assert.ok(v8, "registration v8 must be registered");
+  const context = buildCampaignContext({
+    campaignId: "e1",
+    campaignType: "registration",
+    script: v8,
+    provider: "smallest-ai",
+    customerName: "Sakshi",
+    expectedScriptHash: hashScript(v8),
+  });
+  assert.equal(context.openingLine, "Hello, am I speaking with Sakshi?");
+  assert.equal(context.identityLine, "Am I speaking with Sakshi?");
+  // THE COUPLING THE PIPELINE RELIES ON. `openingLineAsksIdentity`
+  // marks the gate `outstanding` because the opening contains the
+  // identity line; if this ever stops being true the caller is asked
+  // the same question twice in a row.
+  assert.ok(
+    context.openingLine.toLowerCase().includes(context.identityLine.toLowerCase()),
+    "the opening must contain the identity line verbatim",
+  );
+  assert.ok(!context.openingLine.includes("{{"), "no placeholder may survive");
+});
+
+await test("E2. v8 introduces the agent in the FIRST REPLY, not in the opening", async () => {
+  const { findScript } = await import("../script/script-registry");
+  const v8 = findScript("registration", "v8")!;
+  assert.equal(
+    v8.openingLineTemplate.includes("{{agent_name}}"),
+    false,
+    "the agent's name must NOT be in the opening — that is the whole change",
+  );
+  assert.ok(
+    v8.openingLineTemplate.includes("{{customer_name}}"),
+    "the opening asks for the CUSTOMER by name",
+  );
+  assert.ok(
+    v8.systemPromptAppendix.includes("I'm {{agent_name}} from Team FlexiFunnels."),
+    "the introduction moved into the first reply's instruction",
+  );
+});
+
+await test("E3. v8 keeps v7's commitment gate, discovery question and event facts WORD FOR WORD", async () => {
+  const { findScript } = await import("../script/script-registry");
+  const v7 = findScript("registration", "v7")!;
+  const v8 = findScript("registration", "v8")!;
+  for (const carried of [
+    "Would you like me to reserve your free seat?",
+    "Are you currently running a business, or are you looking to start something online?",
+    "Saturday 19th and Sunday 20th September 2026",
+    "the 2-Day AI Income Blueprint Event",
+    "There isn't a guaranteed income amount.",
+  ]) {
+    assert.ok(v7.systemPromptAppendix.includes(carried), `premise: v7 contains "${carried}"`);
+    assert.ok(v8.systemPromptAppendix.includes(carried), `v8 must carry "${carried}" unchanged`);
+  }
+});
+
+await test("E4. v7 is untouched, and v6 is still the default", async () => {
+  const { findScript, defaultScriptFor } = await import("../script/script-registry");
+  const v7 = findScript("registration", "v7")!;
+  assert.equal(
+    v7.openingLineTemplate,
+    "Hello, this is {{agent_name}} from Team FlexiFunnels.",
+    "v7's opening must stay exactly as approved — campaigns are pinned to its hash",
+  );
+  assert.equal(defaultScriptFor("registration").version, "v6", "v8 must not become the default");
+});
+
+await test("E5. answering v8's opening does not register anybody", async () => {
+  // The identity answer is a yes, and the classifier must not read it
+  // as a yes to the commitment gate.
+  const { classifyOutcome } = await import("../outcome/classifier");
+  const { dispositionFor } = await import("../outcome/disposition");
+  for (const said of ["Yes.", "Haan ji.", "Speaking."]) {
+    const outcome = classifyOutcome({
+      campaignType: "registration",
+      status: "COMPLETED",
+      failureClass: "COMPLETED",
+      answered: true,
+      transcript: [
+        { role: "assistant", text: "Hello, am I speaking with Sakshi?" },
+        { role: "user", text: said },
+      ] as never,
+    });
+    const disposition = dispositionFor({
+      outcomeType: outcome.outcomeType,
+      failureClass: "COMPLETED",
+    }).disposition;
+    assert.notEqual(disposition, "FINAL_YES", `"${said}" to the v8 opening must not register`);
     assert.notEqual(outcome.primaryReason, "confirmed_at_gate");
   }
 });

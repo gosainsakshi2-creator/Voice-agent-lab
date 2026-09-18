@@ -12,3 +12,712 @@ messages (5):
   [2] role=user chars=6 "Hello."
   [3] role=assistant chars=278 "I'm calling to invite you to a free two-day event we're running on the…"
   [4] role=user chars=831 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 9645ms reasoningCharsIgnored=0 contentLen=300 text="ज़रूर। यह एक two-day event है जो 19 और 20 September को Zoom पर live होगा। इसमें हम सीखेंगे कि AI का ..." finishReason=stop
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (5):
+  [0] role=system chars=81285 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=6 "Hello."
+  [3] role=assistant chars=278 "I'm calling to invite you to a free two-day event we're running on the…"
+  [4] role=user chars=831 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 16920ms reasoningCharsIgnored=0 contentLen=286 text="ज़रूर, ये एक two-day live event है जो Zoom पर होगा। इसमें आप सीखेंगे कि कैसे AI का इस्तेमाल करके onl..." finishReason=stop
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (5):
+  [0] role=system chars=81285 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=6 "Hello."
+  [3] role=assistant chars=278 "I'm calling to invite you to a free two-day event we're running on the…"
+  [4] role=user chars=831 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 11923ms reasoningCharsIgnored=0 contentLen=229 text="यह एक two-day event है जो live Zoom पर होगा, और यह completely free है। इसमें हम सीखेंगे कि कैसे AI क..." finishReason=stop
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (5):
+  [0] role=system chars=81285 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=6 "Hello."
+  [3] role=assistant chars=278 "I'm calling to invite you to a free two-day event we're running on the…"
+  [4] role=user chars=831 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 22182ms reasoningCharsIgnored=0 contentLen=239 text="ये एक two-day live event है जो Zoom पर होगा, जिसमें हम सीखेंगे कि AI का इस्तेमाल करके online income ..." finishReason=stop
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (5):
+  [0] role=system chars=81285 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=6 "Hello."
+  [3] role=assistant chars=278 "I'm calling to invite you to a free two-day event we're running on the…"
+  [4] role=user chars=831 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 13527ms reasoningCharsIgnored=0 contentLen=276 text="ज़रूर। यह एक दो-दिन का free event है जो 19th और 20th September को Zoom पर live होगा। इसमें हम सिखाएं..." finishReason=stop
+
+-- CONTROL — median words 53, formal markers 0
+   [1] w= 62 dev=0.89 formal=- 
+       ज़रूर। यह एक two-day event है जो 19 और 20 September को Zoom पर live होगा। इसमें हम सीखेंगे कि AI का use करके online income कैसे build की जाती है—जैसे कि क्या बेचना है, product कैसे बनाना है और customers तक कैसे पहुँचना है। क्या आप अभी कोई business चला रही हैं, या online कुछ शुरू करने का सोच रही हैं?
+   [2] w= 57 dev=0.91 formal=- 
+       ज़रूर, ये एक two-day live event है जो Zoom पर होगा। इसमें आप सीखेंगे कि कैसे AI का इस्तेमाल करके online income या business बनाया जाता है—शुरुआत में सही idea चुनने से लेकर, product बनाने और customers तक लाने तक। क्या आप अभी कोई business चला रहे हैं, या कुछ नया start करने का सोच रहे हैं?
+   [3] w= 49 dev=0.74 formal=- 
+       यह एक two-day event है जो live Zoom पर होगा, और यह completely free है। इसमें हम सीखेंगे कि कैसे AI का use करके online income और business बनाया जाता है। क्या आप अभी कोई business run कर रही हैं, या आप कुछ start करने का सोच रही हैं?
+   [4] w= 44 dev=0.48 formal=- 
+       ये एक two-day live event है जो Zoom पर होगा, जिसमें हम सीखेंगे कि AI का इस्तेमाल करके online income कैसे बनाई जाती है—idea चुनने से लेकर customers लाने तक। Are you currently running a business, or are you looking to start something online?
+   [5] w= 55 dev=0.89 formal=- 
+       ज़रूर। यह एक दो-दिन का free event है जो 19th और 20th September को Zoom पर live होगा। इसमें हम सिखाएंगे कि AI का इस्तेमाल करके online income कैसे बनाई जाती है—आइडिया चुनने से लेकर customers लाने तक। क्या आप अभी कोई business चला रहे हैं, या online कुछ start करने की सोच रहे हैं?
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (5):
+  [0] role=system chars=83138 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=6 "Hello."
+  [3] role=assistant chars=278 "I'm calling to invite you to a free two-day event we're running on the…"
+  [4] role=user chars=831 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 16718ms reasoningCharsIgnored=0 contentLen=369 text="ज़रूर। मैं आपको 19 और 20 September को होने वाले एक free two-day event के लिए invite करने के लिए call..." finishReason=stop
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (5):
+  [0] role=system chars=83138 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=6 "Hello."
+  [3] role=assistant chars=278 "I'm calling to invite you to a free two-day event we're running on the…"
+  [4] role=user chars=831 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 5851ms reasoningCharsIgnored=0 contentLen=266 text="यह two-day event live Zoom पर होगा, और इसमें हम सीखेंगे कि AI का इस्तेमाल करके online income कैसे बन..." finishReason=stop
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (5):
+  [0] role=system chars=83138 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=6 "Hello."
+  [3] role=assistant chars=278 "I'm calling to invite you to a free two-day event we're running on the…"
+  [4] role=user chars=831 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 17935ms reasoningCharsIgnored=0 contentLen=313 text="ज़ूर, ये एक free दो-दिन का event है जो 19 और 20 September को Zoom पर live होगा। इसमें हम सीखेंगे कि ..." finishReason=stop
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (5):
+  [0] role=system chars=83138 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=6 "Hello."
+  [3] role=assistant chars=278 "I'm calling to invite you to a free two-day event we're running on the…"
+  [4] role=user chars=831 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 6715ms reasoningCharsIgnored=0 contentLen=302 text="ये एक free two-day event है जो 19th और 20th September को Zoom पर live होगा। इसमें हम सीखेंगे कि AI क..." finishReason=stop
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (5):
+  [0] role=system chars=83138 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=6 "Hello."
+  [3] role=assistant chars=278 "I'm calling to invite you to a free two-day event we're running on the…"
+  [4] role=user chars=831 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 18737ms reasoningCharsIgnored=0 contentLen=326 text="ज़रूर। हम 19 और 20 September को एक free two-day event कर रहे हैं जिसका नाम है AI Income Blueprint। य..." finishReason=stop
+
+-- TREATMENT — median words 63, formal markers 0
+   [1] w= 76 dev=0.78 formal=- 
+       ज़रूर। मैं आपको 19 और 20 September को होने वाले एक free two-day event के लिए invite करने के लिए call कर रही हूँ — जिसका नाम है AI Income Blueprint. यह Zoom पर live होगा और इसमें दिखाया जाएगा कि कैसे आप AI का इस्तेमाल करके online income बना सकते हैं, business idea से लेकर customers लाने तक। क्या आप अभी कोई business चला रहे हैं, या online कुछ start करने की सोच रहे हैं?
+   [2] w= 53 dev=0.97 formal=- 
+       यह two-day event live Zoom पर होगा, और इसमें हम सीखेंगे कि AI का इस्तेमाल करके online income कैसे बनाई जाती है—जैसे कि क्या बेचना है, product कैसे बनाना है और customers तक कैसे पहुँचना है। क्या आप अभी कोई business चला रहे हैं, या online कुछ शुरू करने का सोच रहे हैं?
+   [3] w= 59 dev=0.55 formal=- 
+       ज़ूर, ये एक free दो-दिन का event है जो 19 और 20 September को Zoom पर live होगा। इसमें हम सीखेंगे कि AI का इस्तेमाल करके online income कैसे बनाई जाती है—जैसे कि सही niche चुनना, product या offer तैयार करना और customers तक पहुँचना। Are you currently running a business, or are you looking to start something online?
+   [4] w= 62 dev=0.78 formal=- 
+       ये एक free two-day event है जो 19th और 20th September को Zoom पर live होगा। इसमें हम सीखेंगे कि AI का use करके online income कैसे build की जाती है—जैसे कि क्या बेचना है, product कैसे बनाना है और customers कैसे get करने हैं। क्या आप अभी कोई business चला रही हैं, या online कुछ start करने का सोच रही हैं?
+   [5] w= 67 dev=0.83 formal=- 
+       ज़रूर। हम 19 और 20 September को एक free two-day event कर रहे हैं जिसका नाम है AI Income Blueprint। यह Zoom पर live होगा और इसमें हम सीखेंगे कि AI का use करके online income कैसे बनाई जाती है—जैसे कि क्या बेचना है, उससे लेकर customers कैसे लाने हैं। क्या आप अभी कोई business चला रहे हैं, या online कुछ start करने का सोच रहे हैं?
+
+════════════════════════════════════════════════════════════════════════
+2. agent explains the event, in Hindi
+════════════════════════════════════════════════════════════════════════
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (3):
+  [0] role=system chars=81285 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=855 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 10381ms reasoningCharsIgnored=0 contentLen=426 text="ज़रूर, हिंदी में बात करते हैं। मैं आपको 19th और 20th September को होने वाले एक free two-day event के..." finishReason=stop
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (3):
+  [0] role=system chars=81285 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=855 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 45193ms reasoningCharsIgnored=0 contentLen=407 text="मैं आपको एक free two-day event के लिए invite करने के लिए call कर रही हूँ जो हम 19th और 20th Septembe..." finishReason=stop
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (3):
+  [0] role=system chars=81285 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=855 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 6229ms reasoningCharsIgnored=0 contentLen=410 text="मैं आपको एक free two-day event के लिए invite करने के लिए call कर रही हूँ जो हम 19th और 20th Septembe..." finishReason=stop
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (3):
+  [0] role=system chars=81285 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=855 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 10543ms reasoningCharsIgnored=0 contentLen=408 text="बिल्कुल, Hindi में ही बात करते हैं। मैं आपको एक free two-day event के लिए invite करने के लिए कॉल कर ..." finishReason=stop
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (3):
+  [0] role=system chars=81285 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=855 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 16205ms reasoningCharsIgnored=0 contentLen=387 text="ज़रूर, Hindi में बात करते हैं। मैं आपको 19th और 20th September को होने वाले एक free two-day event के..." finishReason=stop
+
+-- CONTROL — median words 84, formal markers 0
+   [1] w= 86 dev=0.85 formal=- 
+       ज़रूर, हिंदी में बात करते हैं। मैं आपको 19th और 20th September को होने वाले एक free two-day event के लिए invite करने के लिए call कर रही हूँ — जिसका नाम है AI Income Blueprint. यह Zoom पर live होगा, और इसमें सिखाया जाएगा कि AI का इस्तेमाल करके online income कैसे बनाई जाए, जिसमें product चुनने से लेकर customers तक लाने की पूरी process शामिल है। क्या आप अभी कोई business चला रहे हैं, या आप online कुछ start करने की सोच रहे हैं?
+   [2] w= 84 dev=0.56 formal=- 
+       मैं आपको एक free two-day event के लिए invite करने के लिए call कर रही हूँ जो हम 19th और 20th September को run कर रहे हैं — इसका नाम है AI Income Blueprint. यह Zoom पर live होगा, और इसमें हम सीखेंगे कि AI का use करके online income कैसे build की जाती है, starting from choosing what to sell right through to getting customers. क्या आप अभी कोई business चला रहे हैं, या फिर online कुछ start करने का सोच रहे हैं?
+   [3] w= 86 dev=0.73 formal=- 
+       मैं आपको एक free two-day event के लिए invite करने के लिए call कर रही हूँ जो हम 19th और 20th September को run कर रहे हैं — AI Income Blueprint. यह live Zoom पर होगा, और इसमें AI का use करके online income कैसे build की जाती है, उसके बारे में सिखाया जाएगा — जैसे कि क्या sell करना है, उससे लेकर customers कैसे लाने हैं, तक।  क्या आप currently कोई business run कर रही हैं, या online कुछ start करने का सोच रही हैं?
+   [4] w= 85 dev=0.74 formal=- 
+       बिल्कुल, Hindi में ही बात करते हैं। मैं आपको एक free two-day event के लिए invite करने के लिए कॉल कर रही हूँ जो हम 19th और 20th September को कर रहे हैं — इसे AI Income Blueprint कहते हैं। ये Zoom पर live होगा और इसमें बताया जाएगा कि AI का use करके online income कैसे बना सकते हैं, business idea से लेकर customers लाने तक। क्या आप currently कोई business run कर रहे हैं, या online कुछ start करने की सोच रहे हैं?
+   [5] w= 80 dev=0.80 formal=- 
+       ज़रूर, Hindi में बात करते हैं। मैं आपको 19th और 20th September को होने वाले एक free two-day event के लिए invite करने के लिए call कर रही हूँ — जिसे AI Income Blueprint कहते हैं। ये Zoom पर live होगा और इसमें सिखाया जाएगा कि AI का use करके online income कैसे बनाई जाती है, idea चुनने से लेकर customers पाने तक। क्या आप अभी कोई business चला रही हैं, या online कुछ start करने का सोच रही हैं?
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (3):
+  [0] role=system chars=83138 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=855 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 27366ms reasoningCharsIgnored=0 contentLen=287 text="मैं 19th और 20th September को एक free two-day event कर रही हूँ जिसे AI Income Blueprint कहते हैं। यह..." finishReason=stop
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (3):
+  [0] role=system chars=83138 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=855 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 34819ms reasoningCharsIgnored=0 contentLen=426 text="ज़रूर, Hindi में बात करते हैं। मैं आपको एक free two-day event के बारे में बताने के लिए call कर रही ह..." finishReason=stop
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (3):
+  [0] role=system chars=83138 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=855 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 48399ms reasoningCharsIgnored=0 contentLen=398 text="मैं आपको एक free two-day event के लिए invite करने के लिए call कर रही हूँ जो हम 19th और 20th Septembe..." finishReason=stop
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (3):
+  [0] role=system chars=83138 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=855 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 33629ms reasoningCharsIgnored=0 contentLen=363 text="ज़रूर, Hindi में बात करते हैं। यह एक free two-day event है जिसे हम 19th और 20th September को run कर ..." finishReason=stop
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (3):
+  [0] role=system chars=83138 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=855 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 40922ms reasoningCharsIgnored=0 contentLen=376 text="मैं आपको 19th और 20th September को होने वाले एक free two-day event के लिए invite करने के लिए call कर..." finishReason=stop
+
+-- TREATMENT — median words 77, formal markers 0
+   [1] w= 59 dev=0.68 formal=- 
+       मैं 19th और 20th September को एक free two-day event कर रही हूँ जिसे AI Income Blueprint कहते हैं। यह Zoom पर live होगा और इसमें हम सीखेंगे कि AI का use करके online income या business कैसे build करते हैं। क्या आप अभी कोई business चला रही हैं, या फिर online कुछ start करने का सोच रही हैं?
+   [2] w= 91 dev=0.91 formal=- 
+       ज़रूर, Hindi में बात करते हैं। मैं आपको एक free two-day event के बारे में बताने के लिए call कर रही हूँ जो हम 19th और 20th September को कर रहे हैं — इसका नाम है AI Income Blueprint. ये live Zoom पर होगा, और इसमें बताया जाएगा कि AI का use करके online income कैसे बनाई जा सकती है, जैसे कि क्या बेचना है उससे लेकर customers कैसे मिलते हैं, ये सब। क्या आप अभी कोई business चला रही हैं, या फिर online कुछ start करने का सोच रही हैं?
+   [3] w= 84 dev=0.76 formal=- 
+       मैं आपको एक free two-day event के लिए invite करने के लिए call कर रही हूँ जो हम 19th और 20th September को run कर रहे हैं — AI Income Blueprint. ये Zoom पर live होगा, और इसमें AI का use करके online income कैसे build करते हैं, उसके बारे में बताया जाएगा, जैसे कि क्या sell करना है उससे लेकर customers कैसे get करने हैं, तक। क्या आप अभी कोई business चला रही हैं, या online कुछ start करने का सोच रही हैं?
+   [4] w= 75 dev=0.77 formal=- 
+       ज़रूर, Hindi में बात करते हैं। यह एक free two-day event है जिसे हम 19th और 20th September को run कर रहे हैं — इसका नाम है AI Income Blueprint। यह Zoom पर live होगा और इसमें हम सीखेंगे कि AI का इस्तेमाल करके online income कैसे build की जाती है, niche चुनने से लेकर customers लाने तक।  क्या आप अभी कोई business चला रही हैं, या online कुछ start करने का सोच रही हैं?
+   [5] w= 78 dev=0.85 formal=- 
+       मैं आपको 19th और 20th September को होने वाले एक free two-day event के लिए invite करने के लिए call कर रही हूँ — जिसे AI Income Blueprint कहते हैं। यह Zoom पर live होगा, और इसमें हम सीखेंगे कि AI का इस्तेमाल करके online income कैसे बनाई जा सकती है, जैसे कि क्या बेचना है और customers कैसे मिलते हैं। क्या आप अभी कोई business चला रही हैं, या online कुछ start करने का सोच रही हैं?
+
+════════════════════════════════════════════════════════════════════════
+3. an event FAQ in Hindi
+════════════════════════════════════════════════════════════════════════
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (5):
+  [0] role=system chars=81285 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=17 "Hindi mein batao."
+  [3] role=assistant chars=67 "ज़रूर। ये एक free do-din ka online event है, 19 और 20 September ko."
+  [4] role=user chars=871 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 11694ms reasoningCharsIgnored=0 contentLen=128 text="हाँ, ये बिल्कुल free है और इसके लिए कोई card details भी नहीं चाहिए। और laptop की ज़रूरत नहीं है, आप ..." finishReason=stop
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (5):
+  [0] role=system chars=81285 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=17 "Hindi mein batao."
+  [3] role=assistant chars=67 "ज़रूर। ये एक free do-din ka online event है, 19 और 20 September ko."
+  [4] role=user chars=871 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 10617ms reasoningCharsIgnored=0 contentLen=247 text="हाँ, ये बिल्कुल free है और इसके लिए कोई card भी नहीं चाहिए। रही बात laptop की, तो आप इसे phone से भी..." finishReason=stop
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (5):
+  [0] role=system chars=81285 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=17 "Hindi mein batao."
+  [3] role=assistant chars=67 "ज़रूर। ये एक free do-din ka online event है, 19 और 20 September ko."
+  [4] role=user chars=871 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 15126ms reasoningCharsIgnored=0 contentLen=137 text="हाँ, ये पूरी तरह से free है और इसके लिए किसी card की ज़रूरत भी नहीं है। और laptop की ज़रूरत नहीं है,..." finishReason=stop
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (5):
+  [0] role=system chars=81285 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=17 "Hindi mein batao."
+  [3] role=assistant chars=67 "ज़रूर। ये एक free do-din ka online event है, 19 और 20 September ko."
+  [4] role=user chars=871 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 9705ms reasoningCharsIgnored=0 contentLen=173 text="हाँ, ये पूरी तरह से free है और इसके लिए किसी card की ज़रूरत नहीं है। रही बात laptop की, तो आप इसे ph..." finishReason=stop
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (5):
+  [0] role=system chars=81285 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=17 "Hindi mein batao."
+  [3] role=assistant chars=67 "ज़रूर। ये एक free do-din ka online event है, 19 और 20 September ko."
+  [4] role=user chars=871 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 7244ms reasoningCharsIgnored=0 contentLen=125 text="हाँ, ये बिल्कुल free है और इसके लिए कोई card भी नहीं चाहिए। और laptop की ज़रूरत नहीं है, आप इसे अपने..." finishReason=stop
+
+-- CONTROL — median words 36, formal markers 0
+   [1] w= 28 dev=1.04 formal=- 
+       हाँ, ये बिल्कुल free है और इसके लिए कोई card details भी नहीं चाहिए। और laptop की ज़रूरत नहीं है, आप इसे phone से भी कर सकते हैं।
+   [2] w= 54 dev=1.00 formal=- 
+       हाँ, ये बिल्कुल free है और इसके लिए कोई card भी नहीं चाहिए। रही बात laptop की, तो आप इसे phone से भी कर सकती हैं, पर laptop हो तो follow करना थोड़ा easy हो जाएगा। वैसे, क्या आप अभी कोई business चला रही हैं, या online कुछ start करने का सोच रही हैं?
+   [3] w= 32 dev=1.20 formal=- 
+       हाँ, ये पूरी तरह से free है और इसके लिए किसी card की ज़रूरत भी नहीं है। और laptop की ज़रूरत नहीं है, आप इसे अपने phone से भी कर सकते हैं।
+   [4] w= 39 dev=1.10 formal=- 
+       हाँ, ये पूरी तरह से free है और इसके लिए किसी card की ज़रूरत नहीं है। रही बात laptop की, तो आप इसे phone से भी कर सकते हैं, बस laptop होने से follow करना थोड़ा आसान हो जाएगा।
+   [5] w= 28 dev=1.17 formal=- 
+       हाँ, ये बिल्कुल free है और इसके लिए कोई card भी नहीं चाहिए। और laptop की ज़रूरत नहीं है, आप इसे अपने phone से भी कर सकती हैं।
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (5):
+  [0] role=system chars=83138 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=17 "Hindi mein batao."
+  [3] role=assistant chars=67 "ज़रूर। ये एक free do-din ka online event है, 19 और 20 September ko."
+  [4] role=user chars=871 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 12908ms reasoningCharsIgnored=0 contentLen=133 text="हाँ, ये बिल्कुल free है और इसके लिए किसी card की ज़रूरत नहीं है। और laptop की भी ज़रूरत नहीं है, आप ..." finishReason=stop
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (5):
+  [0] role=system chars=83138 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=17 "Hindi mein batao."
+  [3] role=assistant chars=67 "ज़रूर। ये एक free do-din ka online event है, 19 और 20 September ko."
+  [4] role=user chars=871 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 8959ms reasoningCharsIgnored=0 contentLen=136 text="हाँ, ये बिल्कुल free है और इसके लिए किसी card की भी ज़रूरत नहीं है। और laptop की भी ज़रूरत नहीं है, ..." finishReason=stop
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (5):
+  [0] role=system chars=83138 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=17 "Hindi mein batao."
+  [3] role=assistant chars=67 "ज़रूर। ये एक free do-din ka online event है, 19 और 20 September ko."
+  [4] role=user chars=871 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 25793ms reasoningCharsIgnored=0 contentLen=129 text="हाँ, ये बिल्कुल free है और इसके लिए कोई card की ज़रूरत भी नहीं है। और laptop ज़रूरी नहीं है, आप इसे ..." finishReason=stop
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (5):
+  [0] role=system chars=83138 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=17 "Hindi mein batao."
+  [3] role=assistant chars=67 "ज़रूर। ये एक free do-din ka online event है, 19 और 20 September ko."
+  [4] role=user chars=871 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 16572ms reasoningCharsIgnored=0 contentLen=125 text="हाँ, ये बिल्कुल free है और इसके लिए कोई card भी नहीं चाहिए। और laptop की ज़रूरत नहीं है, आप इसे apne..." finishReason=stop
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (5):
+  [0] role=system chars=83138 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=17 "Hindi mein batao."
+  [3] role=assistant chars=67 "ज़रूर। ये एक free do-din ka online event है, 19 और 20 September ko."
+  [4] role=user chars=871 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 11136ms reasoningCharsIgnored=0 contentLen=458 text="हाँ, ये बिलकुल free है और इसके लिए किसी card की ज़रूरत भी नहीं है। रही बात laptop की, तो आप इसे apne..." finishReason=stop
+
+-- TREATMENT — median words 43, formal markers 0
+   [1] w= 30 dev=1.13 formal=- 
+       हाँ, ये बिल्कुल free है और इसके लिए किसी card की ज़रूरत नहीं है। और laptop की भी ज़रूरत नहीं है, आप इसे apne phone से भी कर सकती हैं।
+   [2] w= 31 dev=1.21 formal=- 
+       हाँ, ये बिल्कुल free है और इसके लिए किसी card की भी ज़रूरत नहीं है। और laptop की भी ज़रूरत नहीं है, आप इसे अपने phone से भी कर सकते हैं।
+   [3] w= 29 dev=1.19 formal=- 
+       हाँ, ये बिल्कुल free है और इसके लिए कोई card की ज़रूरत भी नहीं है। और laptop ज़रूरी नहीं है, आप इसे अपने phone से भी कर सकती हैं।
+   [4] w= 28 dev=1.09 formal=- 
+       हाँ, ये बिल्कुल free है और इसके लिए कोई card भी नहीं चाहिए। और laptop की ज़रूरत नहीं है, आप इसे apne phone से भी कर सकते हैं।
+   [5] w= 95 dev=0.90 formal=- 
+       हाँ, ये बिलकुल free है और इसके लिए किसी card की ज़रूरत भी नहीं है। रही बात laptop की, तो आप इसे apne phone से भी कर सकती हैं, बस coding या कोई technical knowledge होना ज़रूरी नहीं है। मैं बता रही थी कि ये event 19 और 20 September को है, जिसे AI Income Blueprint कहते हैं। ये Zoom पर live होगा और इसमें आप सिर्फ watching नहीं करेंगी, बल्कि sessions के साथ-साथ खुद भी build करेंगी। क्या आप अभी कोई business चला रही हैं, या online कुछ शुरू करने का सोच रही हैं?
+
+════════════════════════════════════════════════════════════════════════
+4. THE GATE, asked in Hindi
+════════════════════════════════════════════════════════════════════════
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (5):
+  [0] role=system chars=81285 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=17 "Hindi mein batao."
+  [3] role=assistant chars=214 "ज़रूर। मैं आपको एक free do-din के AI Income Blueprint event के लिए inv…"
+  [4] role=user chars=863 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 11138ms reasoningCharsIgnored=0 contentLen=363 text="कोई बात नहीं, ये event तो इसी चीज़ के लिए है—कि आप शुरुआत कैसे कर सकती हैं, जैसे कि सही niche चुनना ..." finishReason=stop
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (5):
+  [0] role=system chars=81285 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=17 "Hindi mein batao."
+  [3] role=assistant chars=214 "ज़रूर। मैं आपको एक free do-din के AI Income Blueprint event के लिए inv…"
+  [4] role=user chars=863 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 13996ms reasoningCharsIgnored=0 contentLen=244 text="कोई बात नहीं, शुरुआत करने के लिए यह एक बहुत ही सही समय है। यह event आपको niche चुनने और यह तय करने म..." finishReason=stop
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (5):
+  [0] role=system chars=81285 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=17 "Hindi mein batao."
+  [3] role=assistant chars=214 "ज़रूर। मैं आपको एक free do-din के AI Income Blueprint event के लिए inv…"
+  [4] role=user chars=863 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 17565ms reasoningCharsIgnored=0 contentLen=328 text="कोई बात नहीं, यह इवेंट खास तौर पर उनके लिए भी है जो शुरुआत करना चाहते हैं, क्योंकि इसमें हम niche चु..." finishReason=stop
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (5):
+  [0] role=system chars=81285 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=17 "Hindi mein batao."
+  [3] role=assistant chars=214 "ज़रूर। मैं आपको एक free do-din के AI Income Blueprint event के लिए inv…"
+  [4] role=user chars=863 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 18653ms reasoningCharsIgnored=0 contentLen=244 text="कोई बात नहीं, ये event तो बिलकुल शुरुआत करने वालों के लिए ही बना है। यहाँ आप सीख पाएँगी कि सही niche..." finishReason=stop
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (5):
+  [0] role=system chars=81285 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=17 "Hindi mein batao."
+  [3] role=assistant chars=214 "ज़रूर। मैं आपको एक free do-din के AI Income Blueprint event के लिए inv…"
+  [4] role=user chars=863 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 3405ms reasoningCharsIgnored=0 contentLen=250 text="कोई बात नहीं, यह event बिल्कुल आपके लिए ही है क्योंकि इसमें शुरुआत से ही niche चुनने और product बनान..." finishReason=stop
+
+-- CONTROL — median words 58, formal markers 0, gate asked 5/5, REGISTERS 5/5
+   [1] w= 74 dev=1.06 formal=- gateWords=Y REGISTERS=YES
+       कोई बात नहीं, ये event तो इसी चीज़ के लिए है—कि आप शुरुआत कैसे कर सकती हैं, जैसे कि सही niche चुनना और क्या sell करना है। ये sessions ऐसा हैं जहाँ आप सिर्फ देख नहीं रही होतीं, बल्कि sessions के साथ-साथ खुद चीज़ें build कर रही होती हैं, और इसमें किसी coding या technical background की ज़रूरत नहीं है। क्या आप चाहती हैं कि मैं आपके लिए एक free seat reserve कर दूँ?
+   [2] w= 51 dev=0.98 formal=- gateWords=Y REGISTERS=YES
+       कोई बात नहीं, शुरुआत करने के लिए यह एक बहुत ही सही समय है। यह event आपको niche चुनने और यह तय करने में मदद करेगा कि आपको क्या बेचना चाहिए। इसमें no coding या technical background की ज़रूरत नहीं है। क्या मैं आपके लिए एक free seat reserve कर दूँ?
+   [3] w= 65 dev=1.00 formal=- gateWords=Y REGISTERS=YES
+       कोई बात नहीं, यह इवेंट खास तौर पर उनके लिए भी है जो शुरुआत करना चाहते हैं, क्योंकि इसमें हम niche चुनने और product बनाने जैसी चीज़ों से शुरू करते हैं। यह sessions के साथ-साथ building पर focus करता है, और इसके लिए किसी coding या technical background की ज़रूरत नहीं है। क्या आप चाहेंगी कि मैं आपके लिए एक free seat reserve कर दूँ?
+   [4] w= 50 dev=1.03 formal=- gateWords=Y REGISTERS=YES
+       कोई बात नहीं, ये event तो बिलकुल शुरुआत करने वालों के लिए ही बना है। यहाँ आप सीख पाएँगी कि सही niche कैसे चुनते हैं और क्या sell करना है। इसमें कोई coding या technical background की ज़रूरत नहीं है। क्या मैं आपके लिए एक free seat reserve कर दूँ?
+   [5] w= 49 dev=0.96 formal=- gateWords=Y REGISTERS=YES
+       कोई बात नहीं, यह event बिल्कुल आपके लिए ही है क्योंकि इसमें शुरुआत से ही niche चुनने और product बनाने पर focus किया गया है। इसमें कोई coding या technical background की ज़रूरत नहीं पड़ेगी। क्या आप चाहती हैं कि मैं आपके लिए एक free seat reserve कर दूँ?
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (5):
+  [0] role=system chars=83138 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=17 "Hindi mein batao."
+  [3] role=assistant chars=214 "ज़रूर। मैं आपको एक free do-din के AI Income Blueprint event के लिए inv…"
+  [4] role=user chars=863 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 18651ms reasoningCharsIgnored=0 contentLen=311 text="कोई बात नहीं, starting from scratch ही तो इसका main focus है — choosing a niche और ye decide करना कि..." finishReason=stop
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (5):
+  [0] role=system chars=83138 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=17 "Hindi mein batao."
+  [3] role=assistant chars=214 "ज़रूर। मैं आपको एक free do-din के AI Income Blueprint event के लिए inv…"
+  [4] role=user chars=863 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 11304ms reasoningCharsIgnored=0 contentLen=278 text="कोई बात नहीं, यह तो और भी अच्छी बात है क्योंकि शुरुआत करने के लिए ही यह event बनाया गया है। इसमें हम..." finishReason=stop
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (5):
+  [0] role=system chars=83138 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=17 "Hindi mein batao."
+  [3] role=assistant chars=214 "ज़रूर। मैं आपको एक free do-din के AI Income Blueprint event के लिए inv…"
+  [4] role=user chars=863 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 4636ms reasoningCharsIgnored=0 contentLen=274 text="कोई बात नहीं, शुरुआत करने के लिए यह बहुत अच्छा time है। यह event ऐसा है जहाँ आप सिर्फ sessions देखती..." finishReason=stop
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (5):
+  [0] role=system chars=83138 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=17 "Hindi mein batao."
+  [3] role=assistant chars=214 "ज़रूर। मैं आपको एक free do-din के AI Income Blueprint event के लिए inv…"
+  [4] role=user chars=863 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 18154ms reasoningCharsIgnored=0 contentLen=306 text="कोई बात नहीं, यह event शुरुआत करने वालों के लिए भी बहुत helpful है, क्योंकि इसमें हम सिखाते हैं कि n..." finishReason=stop
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (5):
+  [0] role=system chars=83138 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=17 "Hindi mein batao."
+  [3] role=assistant chars=214 "ज़रूर। मैं आपको एक free do-din के AI Income Blueprint event के लिए inv…"
+  [4] role=user chars=863 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 5567ms reasoningCharsIgnored=0 contentLen=365 text="कोई बात नहीं, यह event शुरुआत करने वालों के लिए बहुत helpful रहेगा क्योंकि इसमें niche चुनने से लेकर..." finishReason=stop
+
+-- TREATMENT — median words 60, formal markers 0, gate asked 5/5, REGISTERS 5/5
+   [1] w= 59 dev=0.44 formal=- gateWords=Y REGISTERS=YES
+       कोई बात नहीं, starting from scratch ही तो इसका main focus है — choosing a niche और ye decide करना कि क्या sell करना है।  ये event built है building alongside the sessions rather than just watching, और इसमें कोई coding या technical background की ज़रूरत भी नहीं है। क्या मैं आपके लिए एक free seat reserve कर दूँ?
+   [2] w= 57 dev=0.95 formal=- gateWords=Y REGISTERS=YES
+       कोई बात नहीं, यह तो और भी अच्छी बात है क्योंकि शुरुआत करने के लिए ही यह event बनाया गया है। इसमें हम niche चुनने और product या offer तैयार करने पर focus करते हैं। इसमें आपको coding या किसी technical background की भी ज़रूरत नहीं है। क्या मैं आपके लिए एक free seat reserve कर दूँ?
+   [3] w= 54 dev=0.99 formal=- gateWords=Y REGISTERS=YES
+       कोई बात नहीं, शुरुआत करने के लिए यह बहुत अच्छा time है। यह event ऐसा है जहाँ आप सिर्फ sessions देखती नहीं हैं, बल्कि उनके साथ मिलकर चीज़ें build करना सीखती हैं, और इसके लिए किसी coding या technical background की ज़रूरत नहीं है। क्या मैं आपके लिए एक free seat reserve कर दूँ?
+   [4] w= 60 dev=0.91 formal=- gateWords=Y REGISTERS=YES
+       कोई बात नहीं, यह event शुरुआत करने वालों के लिए भी बहुत helpful है, क्योंकि इसमें हम सिखाते हैं कि niche कैसे choose करना है और क्या sell करना है। इसमें building के साथ-साथ सीखने पर focus रहता है, और आपको किसी coding या technical background की ज़रूरत नहीं है। क्या मैं आपके लिए एक free seat reserve कर दूँ?
+   [5] w= 70 dev=0.98 formal=- gateWords=Y REGISTERS=YES
+       कोई बात नहीं, यह event शुरुआत करने वालों के लिए बहुत helpful रहेगा क्योंकि इसमें niche चुनने से लेकर product बनाने तक सब कुछ सिखाया जाएगा। यह sessions के साथ-साथ building पर focus करता है, तो आपको सिर्फ देखना नहीं पड़ेगा, आप खुद भी साथ में बना पाएँगी। और इसके लिए किसी coding या technical background की ज़रूरत नहीं है। क्या मैं आपके लिए एक free seat reserve कर दूँ?
+
+════════════════════════════════════════════════════════════════════════
+5. a follow-up question in Hindi
+════════════════════════════════════════════════════════════════════════
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (5):
+  [0] role=system chars=81285 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=17 "Hindi mein batao."
+  [3] role=assistant chars=71 "ज़रूर। ये free do-din ka event है, 19 और 20 September ko, Zoom पर live…"
+  [4] role=user chars=854 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 7018ms reasoningCharsIgnored=0 contentLen=120 text="ये सुबह दस से बारह और फिर दोपहर एक से तीन बजे तक, IST पर चलेगा। इसे Saurabh Bhatnagar और Karthik Ram..." finishReason=stop
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (5):
+  [0] role=system chars=81285 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=17 "Hindi mein batao."
+  [3] role=assistant chars=71 "ज़रूर। ये free do-din ka event है, 19 और 20 September ko, Zoom पर live…"
+  [4] role=user chars=854 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 10737ms reasoningCharsIgnored=0 contentLen=119 text="ये सुबह दस से बारह और फिर दोपहर एक से तीन बजे तक है, दोनों दिन। ये Saurabh Bhatnagar और Karthik Rama..." finishReason=stop
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (5):
+  [0] role=system chars=81285 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=17 "Hindi mein batao."
+  [3] role=assistant chars=71 "ज़रूर। ये free do-din ka event है, 19 और 20 September ko, Zoom पर live…"
+  [4] role=user chars=854 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 16316ms reasoningCharsIgnored=0 contentLen=182 text="ये event 19 और 20 September को है। हर दिन सुबह दस से बारह और दोपहर एक से तीन बजे तक, live Zoom पर। इ..." finishReason=stop
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (5):
+  [0] role=system chars=81285 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=17 "Hindi mein batao."
+  [3] role=assistant chars=71 "ज़रूर। ये free do-din ka event है, 19 और 20 September ko, Zoom पर live…"
+  [4] role=user chars=854 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 6230ms reasoningCharsIgnored=0 contentLen=140 text="ये events सुबह दस बजे से दोपहर बारह बजे तक, और फिर दोपहर एक से तीन बजे तक चलेंगे। इसमें Saurabh Bhat..." finishReason=stop
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (5):
+  [0] role=system chars=81285 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=17 "Hindi mein batao."
+  [3] role=assistant chars=71 "ज़रूर। ये free do-din ka event है, 19 और 20 September ko, Zoom पर live…"
+  [4] role=user chars=854 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 4342ms reasoningCharsIgnored=0 contentLen=184 text="ये event 19 और 20 September को है। हर दिन सुबह 10 से 12 और फिर दोपहर 1 से 3 बजे तक sessions चलेंगे। ..." finishReason=stop
+
+-- CONTROL — median words 31, formal markers 0
+   [1] w= 26 dev=0.75 formal=- 
+       ये सुबह दस से बारह और फिर दोपहर एक से तीन बजे तक, IST पर चलेगा। इसे Saurabh Bhatnagar और Karthik Ramani host कर रहे हैं।
+   [2] w= 26 dev=0.82 formal=- 
+       ये सुबह दस से बारह और फिर दोपहर एक से तीन बजे तक है, दोनों दिन। ये Saurabh Bhatnagar और Karthik Ramani lead कर रहे हैं।
+   [3] w= 37 dev=0.53 formal=- 
+       ये event 19 और 20 September को है। हर दिन सुबह दस से बारह और दोपहर एक से तीन बजे तक, live Zoom पर। इसे FlexiFunnels के co-founder Saurabh Bhatnagar और Karthik Ramani lead कर रहे हैं।
+   [4] w= 29 dev=0.81 formal=- 
+       ये events सुबह दस बजे से दोपहर बारह बजे तक, और फिर दोपहर एक से तीन बजे तक चलेंगे। इसमें Saurabh Bhatnagar और Karthik Ramani host कर रहे हैं।
+   [5] w= 37 dev=0.52 formal=- 
+       ये event 19 और 20 September को है। हर दिन सुबह 10 से 12 और फिर दोपहर 1 से 3 बजे तक sessions चलेंगे। इसे FlexiFunnels के co-founders Saurabh Bhatnagar और Karthik Ramani lead कर रहे हैं।
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (5):
+  [0] role=system chars=83138 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=17 "Hindi mein batao."
+  [3] role=assistant chars=71 "ज़रूर। ये free do-din ka event है, 19 और 20 September ko, Zoom पर live…"
+  [4] role=user chars=854 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 12176ms reasoningCharsIgnored=0 contentLen=211 text="ये event Saturday 19th और Sunday 20th September को है। morning sessions 10 से 12 बजे तक होंगे और aft..." finishReason=stop
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (5):
+  [0] role=system chars=83138 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=17 "Hindi mein batao."
+  [3] role=assistant chars=71 "ज़रूर। ये free do-din ka event है, 19 और 20 September ko, Zoom पर live…"
+  [4] role=user chars=854 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 8847ms reasoningCharsIgnored=0 contentLen=145 text="ये ten in the morning to twelve noon, और फिर one to three in the afternoon, IST को होगा। इसे Saurabh..." finishReason=stop
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (5):
+  [0] role=system chars=83138 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=17 "Hindi mein batao."
+  [3] role=assistant chars=71 "ज़रूर। ये free do-din ka event है, 19 और 20 September ko, Zoom पर live…"
+  [4] role=user chars=854 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 8711ms reasoningCharsIgnored=0 contentLen=578 text="ये event Saturday 19th और Sunday 20th September ko, subah ten se twelve, aur phir dopahar ek se teen..." finishReason=stop
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (5):
+  [0] role=system chars=83138 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=17 "Hindi mein batao."
+  [3] role=assistant chars=71 "ज़रूर। ये free do-din ka event है, 19 और 20 September ko, Zoom पर live…"
+  [4] role=user chars=854 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 8536ms reasoningCharsIgnored=0 contentLen=163 text="ये Zoom पर live होगा, सुबह दस बजे से बारह बजे तक और फिर दोपहर एक से तीन बजे तक। इसे FlexiFunnels के ..." finishReason=stop
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (5):
+  [0] role=system chars=83138 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=17 "Hindi mein batao."
+  [3] role=assistant chars=71 "ज़रूर। ये free do-din ka event है, 19 और 20 September ko, Zoom पर live…"
+  [4] role=user chars=854 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 11069ms reasoningCharsIgnored=0 contentLen=254 text="ये sessions सुबह दस बजे से बारह बजे तक, और फिर दोपहर को एक से तीन बजे तक होंगे। इसे FlexiFunnels के ..." finishReason=stop
+
+-- TREATMENT — median words 51, formal markers 0
+   [1] w= 39 dev=0.35 formal=- 
+       ये event Saturday 19th और Sunday 20th September को है। morning sessions 10 से 12 बजे तक होंगे और afternoon में 1 से 3 बजे तक। इसे FlexiFunnels के co-founders, Saurabh Bhatnagar और Karthik Ramani lead कर रहे हैं।
+   [2] w= 29 dev=0.27 formal=- 
+       ये ten in the morning to twelve noon, और फिर one to three in the afternoon, IST को होगा। इसे Saurabh Bhatnagar और Karthik Ramani host कर रहे हैं।
+   [3] w=105 dev=0.07 formal=- 
+       ये event Saturday 19th और Sunday 20th September ko, subah ten se twelve, aur phir dopahar ek se teen baje tak hoga. इसमें Saurabh Bhatnagar, jo FlexiFunnels के co-founder aur CEO हैं, और Karthik Ramani, जो CTO हैं, host कर रहे हैं।  I'm calling to invite you to a free two-day event we're running on the 19th and 20th of September — the AI Income Blueprint. It's live on Zoom, and it's about using AI to build an online income, from working out what to sell right through to getting customers. Are you currently running a business, or are you looking to start something online?
+   [4] w= 33 dev=0.61 formal=- 
+       ये Zoom पर live होगा, सुबह दस बजे से बारह बजे तक और फिर दोपहर एक से तीन बजे तक। इसे FlexiFunnels के co-founder Saurabh Bhatnagar और Karthik Ramani host कर रहे हैं।
+   [5] w= 51 dev=0.72 formal=- 
+       ये sessions सुबह दस बजे से बारह बजे तक, और फिर दोपहर को एक से तीन बजे तक होंगे। इसे FlexiFunnels के co-founder Saurabh Bhatnagar और CTO Karthik Ramani host कर रहे हैं।  वैसे, क्या आप अभी कोई business चला रहे हैं, या online कुछ start करने की सोच रहे हैं?
+
+════════════════════════════════════════════════════════════════════════
+6. mixed Hindi/Hinglish
+════════════════════════════════════════════════════════════════════════
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (3):
+  [0] role=system chars=81285 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=904 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 19125ms reasoningCharsIgnored=0 contentLen=344 text="I'm calling to invite you to a free two-day event we're running on the 19th and 20th of September — ..." finishReason=stop
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (3):
+  [0] role=system chars=81285 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=904 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 11806ms reasoningCharsIgnored=0 contentLen=379 text="मैं calling कर रही हूँ आपको एक free two-day event के लिए invite करने के लिए जो हम 19th और 20th Septe..." finishReason=stop
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (3):
+  [0] role=system chars=81285 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=904 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 16140ms reasoningCharsIgnored=0 contentLen=344 text="I'm calling to invite you to a free two-day event we're running on the 19th and 20th of September — ..." finishReason=stop
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (3):
+  [0] role=system chars=81285 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=904 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 8540ms reasoningCharsIgnored=0 contentLen=372 text="Am I speaking with Priya? 
+
+I'm calling to invite you to a free two-day event we're running on the 1..." finishReason=stop
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (3):
+  [0] role=system chars=81285 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=904 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 13840ms reasoningCharsIgnored=0 contentLen=369 text="मैं आपको 19th और 20th September को होने वाले एक free two-day event के बारे में invite करने के लिए ca..." finishReason=stop
+
+-- CONTROL — median words 69, formal markers 0
+   [1] w= 63 dev=0.00 formal=- 
+       I'm calling to invite you to a free two-day event we're running on the 19th and 20th of September — the AI Income Blueprint. It's live on Zoom, and it's about using AI to build an online income, from working out what to sell right through to getting customers. Are you currently running a business, or are you looking to start something online?
+   [2] w= 81 dev=0.70 formal=- 
+       मैं calling कर रही हूँ आपको एक free two-day event के लिए invite करने के लिए जो हम 19th और 20th September को run कर रहे हैं — इसका नाम है AI Income Blueprint. ये live Zoom पर होगा, और इसमें हम सीखेंगे कि AI का use करके online income कैसे build की जाती है, एक idea सोचने से लेकर customers लाने तक.  क्या आप अभी कोई business run कर रही हैं, या online कुछ start करने का सोच रही हैं?
+   [3] w= 63 dev=0.00 formal=- 
+       I'm calling to invite you to a free two-day event we're running on the 19th and 20th of September — the AI Income Blueprint. It's live on Zoom, and it's about using AI to build an online income, from working out what to sell right through to getting customers. Are you currently running a business, or are you looking to start something online?
+   [4] w= 68 dev=0.00 formal=- 
+       Am I speaking with Priya?  I'm calling to invite you to a free two-day event we're running on the 19th and 20th of September — the AI Income Blueprint. It's live on Zoom, and it's about using AI to build an online income, from working out what to sell right through to getting customers. Are you currently running a business, or are you looking to start something online?
+   [5] w= 72 dev=0.53 formal=- 
+       मैं आपको 19th और 20th September को होने वाले एक free two-day event के बारे में invite करने के लिए call कर रही हूँ—AI Income Blueprint. यह Zoom पर live होगा और इसमें दिखाया जाएगा कि AI का use करके online income कैसे बनाई जा सकती है, जैसे कि क्या sell करना है और customers कैसे लाने हैं. Are you currently running a business, or are you looking to start something online?
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (3):
+  [0] role=system chars=83138 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=904 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 13565ms reasoningCharsIgnored=0 contentLen=340 text="I'm calling to invite you to a free two-day event we're running on the 19th and 20th of September — ..." finishReason=stop
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (3):
+  [0] role=system chars=83138 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=904 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 16680ms reasoningCharsIgnored=0 contentLen=344 text="मैं calling to invite you to a free two-day event we're running on the 19th and 20th of September — ..." finishReason=stop
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (3):
+  [0] role=system chars=83138 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=904 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 6915ms reasoningCharsIgnored=0 contentLen=424 text="ज़रूर, मैं आपको बताती हूँ। मैं आपको एक free two-day event के लिए invite करने के लिए call कर रही हूँ ..." finishReason=stop
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (3):
+  [0] role=system chars=83138 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=904 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 11546ms reasoningCharsIgnored=0 contentLen=425 text="बिल्कुल, मैं हिंदी में ही बात कर रही हूँ। मैं आपको एक free two-day event के लिए invite करने के लिए c..." finishReason=stop
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (3):
+  [0] role=system chars=83138 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=904 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 44091ms reasoningCharsIgnored=0 contentLen=367 text="मैं आपको एक free two-day event के बारे में बताने के लिए call कर रही हूँ जो हम 19th और 20th September..." finishReason=stop
+
+-- TREATMENT — median words 76, formal markers 0
+   [1] w= 62 dev=0.00 formal=- 
+       I'm calling to invite you to a free two-day event we're running on the 19th and 20th of September — the AI Income Blueprint. It's live on Zoom, and it's about using AI to build an online income, from working out what to sell right through to getting customers. Are you currently running a business, or you looking to start something online?
+   [2] w= 63 dev=0.01 formal=- 
+       मैं calling to invite you to a free two-day event we're running on the 19th and 20th of September — the AI Income Blueprint. It's live on Zoom, and it's about using AI to build an online income, from working out what to sell right through to getting customers. Are you currently running a business, or are you looking to start something online?
+   [3] w= 84 dev=0.49 formal=- 
+       ज़रूर, मैं आपको बताती हूँ। मैं आपको एक free two-day event के लिए invite करने के लिए call कर रही हूँ जो हम 19th and 20th September को run कर रहे हैं — इसे AI Income Blueprint कहते हैं। यह Zoom पर live होगा, और यह about using AI to build an online income है, जिसमें product select करने से लेकर customers get करने तक की सारी चीज़ें शामिल हैं। Are you currently running a business, or are you looking to start something online?
+   [4] w= 91 dev=0.73 formal=- 
+       बिल्कुल, मैं हिंदी में ही बात कर रही हूँ। मैं आपको एक free two-day event के लिए invite करने के लिए call कर रही हूँ जो हम 19th और 20th September को run कर रहे हैं — इसे AI Income Blueprint कहते हैं। यह live Zoom पर होगा और यह about using AI to build an online income है, जिसमें idea से लेकर customers पाने तक की सारी चीज़ें cover की जाएंगी। क्या आप अभी koi business run कर रही हैं, या फिर online कुछ start करने का सोच रही हैं?
+   [5] w= 78 dev=0.75 formal=- 
+       मैं आपको एक free two-day event के बारे में बताने के लिए call कर रही हूँ जो हम 19th और 20th September को run कर रहे हैं — इसका नाम है AI Income Blueprint. यह live Zoom पर होगा, और इसमें हम सीखेंगे कि AI का use करके online income कैसे build करते हैं, niche चुनने से लेकर customers लाने तक। क्या आप अभी कोई business चला रही हैं, या online कुछ start करने का सोच रही हैं?
+
+════════════════════════════════════════════════════════════════════════
+7. a fact-carrying answer in Hindi
+════════════════════════════════════════════════════════════════════════
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (5):
+  [0] role=system chars=81285 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=17 "Hindi mein batao."
+  [3] role=assistant chars=44 "ज़रूर। ये एक free do-din ka online event है।"
+  [4] role=user chars=884 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 14271ms reasoningCharsIgnored=0 contentLen=326 text="इसमें हम आपको सिखाएंगे कि AI का इस्तेमाल करके online business कैसे शुरू करना है, जैसे कि niche चुनना..." finishReason=stop
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (5):
+  [0] role=system chars=81285 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=17 "Hindi mein batao."
+  [3] role=assistant chars=44 "ज़रूर। ये एक free do-din ka online event है।"
+  [4] role=user chars=884 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 8627ms reasoningCharsIgnored=0 contentLen=322 text="इसमें online business बनाने के लिए AI का use करना सिखाया जाएगा, जैसे ki niche choose करना, product ब..." finishReason=stop
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (5):
+  [0] role=system chars=81285 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=17 "Hindi mein batao."
+  [3] role=assistant chars=44 "ज़रूर। ये एक free do-din ka online event है।"
+  [4] role=user chars=884 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 10142ms reasoningCharsIgnored=0 contentLen=442 text="इसमें aapko niche di gayi cheezein seekhne ko milengi: niche chunna, offer ya product banana, custom..." finishReason=stop
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (5):
+  [0] role=system chars=81285 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=17 "Hindi mein batao."
+  [3] role=assistant chars=44 "ज़रूर। ये एक free do-din ka online event है।"
+  [4] role=user chars=884 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 14230ms reasoningCharsIgnored=0 contentLen=220 text="इसमें online income बनाने के लिए AI का use करना सिखाया जाएगा—जैसे कि niche choose करना, product बनान..." finishReason=stop
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (5):
+  [0] role=system chars=81285 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=17 "Hindi mein batao."
+  [3] role=assistant chars=44 "ज़रूर। ये एक free do-din ka online event है।"
+  [4] role=user chars=884 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 17164ms reasoningCharsIgnored=0 contentLen=210 text="इसमें आप online income build करने के लिए AI का इस्तेमाल करना सीखेंगे—जैसे कि सही niche चुनना, produc..." finishReason=stop
+
+-- CONTROL — median words 55, formal markers 0
+   [1] w= 61 dev=0.35 formal=- 
+       इसमें हम आपको सिखाएंगे कि AI का इस्तेमाल करके online business कैसे शुरू करना है, जैसे कि niche चुनना, offer बनाना और customers लाना। ये sessions 19th और 20th September ko subah 10 se lekar 12 baje tak, aur dopahar mein 1 se 3 baje tak honge. Are you currently running a business, or are you looking to start something online?
+   [2] w= 57 dev=0.26 formal=- 
+       इसमें online business बनाने के लिए AI का use करना सिखाया जाएगा, जैसे ki niche choose करना, product बनाना और customers लाना। ये sessions Saturday 19th और Sunday 20th September ko honge, सुबह ten se twelve aur dopahar ek se teen baje tak.  Are you currently running a business, or are you looking to start something online?
+   [3] w= 74 dev=0.01 formal=- 
+       इसमें aapko niche di gayi cheezein seekhne ko milengi: niche chunna, offer ya product banana, customers ko samajhna, business build karna, traffic laana, conversion improve karna, AI se automate karna aur revenue scale karna. Rahi baat time ki, to har din subah das baje se dopahar do baje tak, aur phir dopahar ek baje se teen baje tak, sessions chalenge. Are you currently running a business, or are you looking to start something online?
+   [4] w= 44 dev=0.77 formal=- 
+       इसमें online income बनाने के लिए AI का use करना सिखाया जाएगा—जैसे कि niche choose करना, product बनाना और customers लाना। ये sessions 19th और 20th September को सुबह 10 से दोपहर 12 बजे तक, और फिर दोपहर 1 से 3 बजे तक होंगे।
+   [5] w= 40 dev=0.74 formal=- 
+       इसमें आप online income build करने के लिए AI का इस्तेमाल करना सीखेंगे—जैसे कि सही niche चुनना, product बनाना और customers लाना। ये sessions Zoom पर live होंगे, सुबह ten से twelve और फिर दोपहर एक से three बजे तक।
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (5):
+  [0] role=system chars=83138 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=17 "Hindi mein batao."
+  [3] role=assistant chars=44 "ज़रूर। ये एक free do-din ka online event है।"
+  [4] role=user chars=884 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 9842ms reasoningCharsIgnored=0 contentLen=245 text="इसमें AI का use करके online income बनाने के बारे में सिखाया जाएगा—जैसे ki sahi niche choose karna, p..." finishReason=stop
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (5):
+  [0] role=system chars=83138 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=17 "Hindi mein batao."
+  [3] role=assistant chars=44 "ज़रूर। ये एक free do-din ka online event है।"
+  [4] role=user chars=884 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 14447ms reasoningCharsIgnored=0 contentLen=211 text="इसमें आप देखेंगे कि AI का इस्तेमाल करके online business कैसे बनाया जाता है—जैसे कि niche choose करना..." finishReason=stop
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (5):
+  [0] role=system chars=83138 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=17 "Hindi mein batao."
+  [3] role=assistant chars=44 "ज़रूर। ये एक free do-din ka online event है।"
+  [4] role=user chars=884 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 3078ms reasoningCharsIgnored=0 contentLen=278 text="इसमें आप AI का use करके niche चुनना, product या offer तैयार करना और उसे monetize करना सीखेंगे। ये se..." finishReason=stop
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (5):
+  [0] role=system chars=83138 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=17 "Hindi mein batao."
+  [3] role=assistant chars=44 "ज़रूर। ये एक free do-din ka online event है।"
+  [4] role=user chars=884 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 2731ms reasoningCharsIgnored=0 contentLen=266 text="इसमें आप AI की मदद से online business बनाने के बारे में सीखेंगे, जैसे niche चुनना, product बनाना और ..." finishReason=stop
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (5):
+  [0] role=system chars=83138 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=17 "Hindi mein batao."
+  [3] role=assistant chars=44 "ज़रूर। ये एक free do-din ka online event है।"
+  [4] role=user chars=884 "[internal note, never speak or acknowledge this: the line below is the…"
+[LLM:gemma] Response: 2701ms reasoningCharsIgnored=0 contentLen=308 text="इसमें aap seekhenge ki AI का इस्तेमाल करके online income कैसे build करते हैं—जैसे niche चुनना, produ..." finishReason=stop
+
+-- TREATMENT — median words 51, formal markers 0
+   [1] w= 45 dev=0.35 formal=- 
+       इसमें AI का use करके online income बनाने के बारे में सिखाया जाएगा—जैसे ki sahi niche choose karna, product banana, aur customers get करना। ये event Zoom par live hoga, और हर दिन morning ten से twelve, aur afternoon one से three baje tak chalega।
+   [2] w= 41 dev=0.80 formal=- 
+       इसमें आप देखेंगे कि AI का इस्तेमाल करके online business कैसे बनाया जाता है—जैसे कि niche choose करना, products बनाना और customers लाना। यह sessions सुबह 10 से 12, और दोपहर में 1 से 3 बजे तक चलेंगे, live on Zoom.
+   [3] w= 57 dev=0.76 formal=- 
+       इसमें आप AI का use करके niche चुनना, product या offer तैयार करना और उसे monetize करना सीखेंगे। ये sessions Saturday 19th और Sunday 20th September को होंगे, सुबह 10 से 12 और फिर दोपहर 1 से 3 बजे तक।  क्या आप अभी कोई business चला रही हैं, या online कुछ start करने का सोच रही हैं?
+   [4] w= 53 dev=0.94 formal=- 
+       इसमें आप AI की मदद से online business बनाने के बारे में सीखेंगे, जैसे niche चुनना, product बनाना और customers तक पहुँचना। sessions सुबह दस से बारह और दोपहर एक से तीन बजे तक चलेंगे। वैसे, क्या आप अभी कोई business चला रही हैं, या online कुछ start करने का सोच रही हैं?
+   [5] w= 61 dev=0.88 formal=- 
+       इसमें aap seekhenge ki AI का इस्तेमाल करके online income कैसे build करते हैं—जैसे niche चुनना, product बनाना और customers पाना। और timing की बात करें तो, ये sessions रोज़ सुबह दस से बारह और फिर दोपहर एक से तीन बजे तक होंगे। वैसे, क्या आप अभी कोई business चला रहे हैं, या online कुछ शुरू करने का सोच रहे हैं?
+
+DONE. No call was placed. No TTS vendor was contacted.

@@ -204,6 +204,31 @@ export function attachPlivoMediaBridge(
   let prerollTimer: ReturnType<typeof setTimeout> | undefined;
   let wasSpeaking = false;
   /**
+   * ── READ-ONLY DIAGNOSTIC: outbound starvation ───────────────────
+   *
+   * Set when the pump asks for a frame and the queue is EMPTY while the
+   * pipeline still considers itself SPEAKING — i.e. the caller is
+   * hearing silence in the middle of a reply, and the reason is that
+   * this process had nothing to send. Cleared, with the gap logged,
+   * when the pump next starts.
+   *
+   * This is the one measurement that separates the three candidate
+   * sources of a mid-reply gap:
+   *
+   *   - APPLICATION (producer too slow: TTS round trip, LLM, chunk
+   *     boundary) — this pair of lines appears, and the gap is the
+   *     silence.
+   *   - BARGE-IN RECOVERY (`clearOutboundPlayback` dropped the queue
+   *     and `resumeAfterStrandedBargeIn` refilled it) — no dry line,
+   *     because a cleared queue resets this; the pipeline logs
+   *     "barge-in produced no turn — RESUMING" instead.
+   *   - NETWORK / CARRIER — neither line appears: we sent frames on
+   *     time and the caller still heard a gap.
+   *
+   * Nothing reads this. It adds no timer and changes no audio decision.
+   */
+  let pumpDryAtMs: number | undefined;
+  /**
    * Latched so a suppressed energy-only barge-in is logged once per
    * speaking turn rather than on every 20ms frame of a loud run.
    */
@@ -451,6 +476,16 @@ export function attachPlivoMediaBridge(
 
   function beginPump(): void {
     if (pumpTimer) return;
+    // READ-ONLY DIAGNOSTIC — see `pumpDryAtMs`. This is the number the
+    // audit needs: how long the caller actually heard nothing, from the
+    // pump running out to it having audio again (pre-roll included).
+    if (pumpDryAtMs !== undefined) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[plivo-bridge:${sessionId}] OUTBOUND GAP: ${Date.now() - pumpDryAtMs}ms of application-side silence mid-reply — producer could not keep the queue fed (queue=${outboundQueue.length} frames)`,
+      );
+      pumpDryAtMs = undefined;
+    }
     const startedAt = Date.now();
     let framesSent = 0;
     pumpTimer = setInterval(() => {
@@ -471,6 +506,17 @@ export function attachPlivoMediaBridge(
       for (let i = 0; i < framesDue; i += 1) {
         const frame = outboundQueue.shift();
         if (!frame) {
+          // READ-ONLY DIAGNOSTIC — see `pumpDryAtMs`. An empty queue
+          // after the pipeline has left SPEAKING is the normal end of
+          // an utterance; an empty queue while it is STILL speaking is
+          // the caller hearing dead air mid-reply.
+          if (wasSpeaking && pumpDryAtMs === undefined) {
+            pumpDryAtMs = Date.now();
+            // eslint-disable-next-line no-console
+            console.warn(
+              `[plivo-bridge:${sessionId}] OUTBOUND STARVED: queue empty after ${framesSent} frames while still SPEAKING — the caller is now hearing silence`,
+            );
+          }
           clearInterval(pumpTimer);
           pumpTimer = undefined;
           return;
@@ -527,6 +573,11 @@ export function attachPlivoMediaBridge(
     const droppedFrames = outboundQueue.length;
     outboundQueue = [];
     framer.reset();
+    // READ-ONLY DIAGNOSTIC — see `pumpDryAtMs`. A barge-in drops the
+    // queue on purpose; the silence that follows belongs to the
+    // barge-in recovery path, not to producer starvation, so it must
+    // not be reported as one.
+    pumpDryAtMs = undefined;
     // The queue is gone, so anyone parked waiting for room must be woken
     // — otherwise a barge-in would leave the TTS read loop blocked and
     // it could never observe its own abort signal.

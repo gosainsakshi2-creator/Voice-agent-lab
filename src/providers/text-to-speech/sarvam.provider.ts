@@ -610,6 +610,14 @@ export class SarvamTextToSpeechProvider implements TextToSpeechProvider {
 
     /** Frames received but not yet yielded, oldest first. */
     const pending: Uint8Array[] = [];
+    /**
+     * Wall clock at which the vendor's most recent audio frame ARRIVED
+     * on the socket — not the moment this generator got round to
+     * yielding it. See the idle-wait note below: the two differ by
+     * however long the consumer spent parked on transport backpressure,
+     * and only the arrival answers "has the vendor gone quiet?".
+     */
+    let lastArrivalAtMs = 0;
     let notify: (() => void) | undefined;
     let closed = false;
     let failure: Error | undefined;
@@ -653,6 +661,7 @@ export class SarvamTextToSpeechProvider implements TextToSpeechProvider {
       if (bytes.byteLength === 0) return;
 
       pending.push(bytes);
+      lastArrivalAtMs = Date.now();
       wake();
     });
 
@@ -830,11 +839,47 @@ export class SarvamTextToSpeechProvider implements TextToSpeechProvider {
           ? Math.min(MAX_IDLE_GAP_MS, Math.max(adaptiveBudget, Math.ceil(widestDeliveryMs)))
           : this.config.streamStartTimeoutMs;
 
+        /**
+         * ── Count the silence the vendor has ALREADY served ──────────
+         *
+         * The budget asks one question: "has the vendor stopped
+         * sending?". That is a property of ARRIVALS, so it has to be
+         * measured from the vendor's last frame — but the timer below
+         * started only once this loop finished draining, and draining
+         * `yield`s into the pipeline, which parks on the bridge's
+         * outbound backpressure (high water 2800ms, released at
+         * 2200ms). So on every real call the wait was
+         * `parkTime + budget` instead of `budget`, and because both
+         * `widestFrameGapMs` and `widestDeliveryMs` are also measured
+         * across that same `yield`, the park inflated the budget to the
+         * `MAX_IDLE_GAP_MS` ceiling as well. Measured against a
+         * modelled Plivo queue: a 300ms tail became 1210ms.
+         *
+         * That tail is not idle time. `runStreamingCompletion` awaits
+         * `synthesizeAndPlay` once per sentence, so the next sentence's
+         * TTS request cannot even START until this generator returns —
+         * every millisecond here is drained out of the cushion that is
+         * supposed to cover that request's round trip.
+         *
+         * So: charge the silence already elapsed against the budget,
+         * and never wait less than `MIN_IDLE_GAP_MS` from the moment we
+         * are actually listening again. Total vendor silence tolerated
+         * is `park + max(MIN_IDLE_GAP_MS, budget - park)`, which is
+         * never below `budget` — the truncation guarantee the three
+         * layers above exist for is preserved exactly, and only the
+         * accidental extra `park` is given back. With no backpressure
+         * (every unit test, and the first chunk of every turn) nothing
+         * has elapsed, so this is byte-for-byte the previous wait.
+         */
+        const waitMs = loggedFirst
+          ? Math.max(MIN_IDLE_GAP_MS, budget - (Date.now() - lastArrivalAtMs))
+          : budget;
+
         const gotFrame = await new Promise<boolean>((resolve) => {
           const timer = setTimeout(() => {
             notify = undefined;
             resolve(false);
-          }, budget);
+          }, waitMs);
           notify = () => {
             clearTimeout(timer);
             resolve(true);
@@ -853,7 +898,7 @@ export class SarvamTextToSpeechProvider implements TextToSpeechProvider {
             // termination visible instead of silent.
             // eslint-disable-next-line no-console
             console.log(
-              `[TTS:sarvam] idle gap ${budget}ms elapsed after ${sequence} frames - treating utterance as complete (widestGap=${widestFrameGapMs}ms gaps=${observedGapCount} delivery=${Math.round(widestDeliveryMs)}ms)`,
+              `[TTS:sarvam] idle gap ${budget}ms elapsed after ${sequence} frames - treating utterance as complete (waited=${waitMs}ms sinceLastArrival=${Date.now() - lastArrivalAtMs}ms widestGap=${widestFrameGapMs}ms gaps=${observedGapCount} delivery=${Math.round(widestDeliveryMs)}ms)`,
             );
             break;
           }

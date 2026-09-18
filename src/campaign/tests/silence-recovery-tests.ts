@@ -13,23 +13,25 @@
  * The fix speaks fixed lines through the existing attention-utterance
  * path and never reaches the model or the script:
  *
- *   silence 3s  -> "Hello, are you there?"      (once)
- *   silence 3s  -> "Hello, is anyone there?"    (once)
- *   silence 3s  -> host.end()                   (the existing hangup path)
+ *   silence 30s -> "Hello, are you there?"      (once)
+ *   silence 30s -> "Hello, is anyone there?"    (once)
+ *   silence 30s -> host.end()                   (the existing hangup path)
  *
  * and answers a post-block "Hello?" with the existing acknowledgement
  * plus one follow-up, then hands the floor back.
  *
  * SECTIONS
- *   A  3s of silence -> the first prompt, exactly once, no LLM request
- *   B  3s more       -> the second prompt, exactly once
- *   C  3s more       -> the call is ended exactly once, nothing else spoken
+ *   A  30s of silence -> the first prompt, exactly once, no LLM request
+ *   B  30s more      -> the second prompt, exactly once
+ *   C  30s more      -> the call is ended exactly once, nothing else spoken
  *   D  the caller speaks inside the window -> no prompt at all
  *   E  the caller answers the first prompt -> normal conversation, episode reset
  *   F  the caller answers the second prompt -> normal conversation, no hangup
  *   G  the window does not start until the assistant's audio has drained
  *   H  a long block is never truncated by recovery
  *   I  repeated "Hello?" after a finished block -> acknowledgement, follow-up, no script
+ *   I5-I8  one greeting is a hello and goes to the model; the SAME greeting
+ *      repeated on the next turn is the hearing check
  *   J  recovery itself makes zero language-model requests (asserted throughout)
  *   K  recovery prompts cannot produce FINAL_YES / a sheet row
  *   L  Fix 1: a backchannel over the block is not a barge-in and not a turn
@@ -38,11 +40,14 @@
  *   O  a remote hangup cancels pending recovery
  *   V  the strict hearing-check vocabulary, both sides
  *
- * TIMING. `SILENCE_RECOVERY_INTERVAL_MS` is 3000 in production and these
- * tests use the real constant, so each silence step is 3s of wall clock.
- * Audio is MULAW/8000 (one byte per sample), so a fake clip's playback
- * duration is exactly `bytes / 8` ms — which is what lets a test say
- * "the prompt came >= 3s after the block finished playing" and mean it.
+ * TIMING. `SILENCE_RECOVERY_INTERVAL_MS` is 30000 in production and these
+ * tests use the real constant, so each silence step is 30s of wall clock
+ * and the full ladder (prompt 1, prompt 2, end) is 90s. That is what
+ * makes this suite slow; it is also the only way the assertions mean
+ * what they say. Audio is MULAW/8000 (one byte per sample), so a fake
+ * clip's playback duration is exactly `bytes / 8` ms — which is what
+ * lets a test say "the prompt came >= 30s after the block finished
+ * playing" and mean it.
  *
  * NOTHING HERE PLACES A CALL, OPENS A SOCKET, CONTACTS A VENDOR, READS
  * THE DATABASE OR TOUCHES GOOGLE. Every provider is a local fake; the
@@ -52,7 +57,7 @@
 
 import assert from "node:assert/strict";
 
-const { ConversationPipeline, isHearingCheck, isEmphaticHearingCheck, isAttentionCheck } = await import(
+const { ConversationPipeline, isHearingCheck, isEmphaticHearingCheck, isAttentionCheck, isBareGreetingTurn } = await import(
   "../../core/session/conversation-pipeline"
 );
 const { SessionRecord } = await import("../../core/session/session-record");
@@ -89,9 +94,24 @@ const section = (t: string) => console.log(`\n${t}`);
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 /** The production constant, restated here so a change to it fails a test rather than silently shifting one. */
-const INTERVAL_MS = 3_000;
+const INTERVAL_MS = 30_000;
 /** Timer slack: setTimeout on a loaded machine, plus the 25ms re-arm floor. */
 const SLACK_MS = 250;
+/**
+ * How long a test will WAIT for a step of the ladder to happen.
+ *
+ * Only an upper bound for the harness — never an assertion. What proves
+ * the prompt did not come EARLY is `prompt.atMs - listeningAt >=
+ * INTERVAL_MS - SLACK_MS`, which is checked separately and is unchanged.
+ *
+ * It has to be expressed as a margin on top of `INTERVAL_MS` rather than
+ * as a constant: these waits were written as the interval plus a flat
+ * 1500ms back when the interval was 3s, which is 50% slack. At 30s that
+ * same 1500ms is 5% — tight enough that the last test in an
+ * eight-minute run timed out waiting for a prompt that was about to
+ * arrive.
+ */
+const STEP_WAIT_MS = INTERVAL_MS + 5_000;
 
 const PROMPT_1 = "Hello, are you there?";
 const PROMPT_2 = "Hello, is anyone there?";
@@ -421,6 +441,31 @@ await test("V4 — before any block only an EMPHATIC check qualifies: a presence
   }
 });
 
+await test("V5 — `isBareGreetingTurn`: the greeting alone, and nothing that carries content or a presence question", () => {
+  // The input to the cross-turn repeat rule: a turn that is a greeting
+  // and only a greeting. Every variant the existing vocabulary already
+  // supports, and no new one.
+  for (const u of ["Hello.", "Hi", "Hi?", "hey", "Hello?", "namaste", "हैलो", "Hello. Hello hello"]) {
+    assert.equal(isBareGreetingTurn(u), true, `expected a bare greeting turn: "${u}"`);
+  }
+  // A presence phrase is unmistakable on its own turn and never needs a
+  // second one, so it is deliberately NOT this; and nothing with
+  // content of its own is either. "haan ji" / "ji" are a pickup and an
+  // answer — they must keep reaching the classifier.
+  for (const u of [
+    "Can you hear me?",
+    "Hello, are you there?",
+    "sun rahe ho",
+    "haan ji",
+    "ji",
+    "Hello? What is this about?",
+    "Yes, tell me.",
+    "",
+  ]) {
+    assert.equal(isBareGreetingTurn(u), false, `expected NOT a bare greeting turn: "${u}"`);
+  }
+});
+
 await test("V3 — the pre-existing `isAttentionCheck` is byte-for-byte as before (\"haan ji\" still passes it)", () => {
   // Fix #2's remainder path still reads this; it is not this fix's to change.
   assert.equal(isAttentionCheck("haan ji"), true);
@@ -431,9 +476,9 @@ await test("V3 — the pre-existing `isAttentionCheck` is byte-for-byte as befor
 // ═════════════════════════════════════════════════════════════════
 // A, B, C, G, J — the full silence episode on one call
 // ═════════════════════════════════════════════════════════════════
-section("A/B/C/G/J. 3s -> prompt 1, 3s -> prompt 2, 3s -> the call ends");
+section("A/B/C/G/J. 30s -> prompt 1, 30s -> prompt 2, 30s -> the call ends");
 
-await test("A — after 3s of silence, \"Hello, are you there?\" exactly once, and no language-model request", async () => {
+await test("A — after 30s of silence, \"Hello, are you there?\" exactly once, and no language-model request", async () => {
   const h = startHarness({ openingLine: OPENING, replies: [] });
   try {
     await greetingDone(h);
@@ -459,15 +504,15 @@ await test("A — after 3s of silence, \"Hello, are you there?\" exactly once, a
   }
 });
 
-await test("B/C — 3s more -> \"Hello, is anyone there?\" once; 3s more -> host.end() exactly once, nothing else spoken", async () => {
+await test("B/C — 30s more -> \"Hello, is anyone there?\" once; 30s more -> host.end() exactly once, nothing else spoken", async () => {
   const h = startHarness({ openingLine: OPENING, replies: [] });
   try {
     await greetingDone(h);
-    await h.waitFor("prompt 1", () => count(h.syntheses, PROMPT_1) === 1, INTERVAL_MS + 1500);
+    await h.waitFor("prompt 1", () => count(h.syntheses, PROMPT_1) === 1, STEP_WAIT_MS);
     await h.waitForReplies(2);
     const listeningAfterPrompt1 = lastListeningAt(h);
 
-    await h.waitFor("prompt 2", () => count(h.syntheses, PROMPT_2) === 1, INTERVAL_MS + 1500);
+    await h.waitFor("prompt 2", () => count(h.syntheses, PROMPT_2) === 1, STEP_WAIT_MS);
     const prompt2 = h.syntheses.find((s) => s.text === PROMPT_2)!;
     assert.ok(
       prompt2.atMs - listeningAfterPrompt1 >= INTERVAL_MS - SLACK_MS,
@@ -478,7 +523,7 @@ await test("B/C — 3s more -> \"Hello, is anyone there?\" once; 3s more -> host
     const listeningAfterPrompt2 = lastListeningAt(h);
 
     assert.equal(h.endCalls(), 0, "not ended yet");
-    await h.waitFor("host.end()", () => h.endCalls() === 1, INTERVAL_MS + 1500);
+    await h.waitFor("host.end()", () => h.endCalls() === 1, STEP_WAIT_MS);
     const endedAt = Date.now();
     assert.ok(
       endedAt - listeningAfterPrompt2 >= INTERVAL_MS - SLACK_MS,
@@ -506,13 +551,17 @@ await test("D — a turn 1.5s into the window -> answered normally, no recovery 
     await greetingDone(h);
     await sleep(1500);
     h.say("Hi, yes, tell me.");
-    await h.waitForReplies(2);
+    // 20s, as every other block test in this file uses: BLOCK is ~305
+    // characters, so its fake clip is ~13.9s of audio and the session
+    // does not re-enter LISTENING until `drainPlayback` has slept it
+    // out. The 15s default raced that drain and lost.
+    await h.waitForReplies(2, 20_000);
     assert.equal(h.requests.length, 1, "one language-model request, for the caller's turn");
     assert.equal(count(h.syntheses, PROMPT_1), 0, "no recovery prompt");
     // And the window re-armed cleanly after the block: quiet again ->
-    // prompt 1 comes ~3s after THAT block drained, not earlier.
+    // prompt 1 comes ~30s after THAT block drained, not earlier.
     const blockListeningAt = lastListeningAt(h);
-    await h.waitFor("prompt after the block", () => count(h.syntheses, PROMPT_1) === 1, INTERVAL_MS + 1500);
+    await h.waitFor("prompt after the block", () => count(h.syntheses, PROMPT_1) === 1, STEP_WAIT_MS);
     const prompt = h.syntheses.find((s) => s.text === PROMPT_1)!;
     assert.ok(prompt.atMs - blockListeningAt >= INTERVAL_MS - SLACK_MS, `prompt came ${prompt.atMs - blockListeningAt}ms after the block drained`);
   } finally {
@@ -524,11 +573,11 @@ await test("D2 — an interim (not yet a turn) inside the window holds the promp
   const h = startHarness({ openingLine: OPENING, replies: [REPLY] });
   try {
     await greetingDone(h);
-    await sleep(2200);
+    await sleep(INTERVAL_MS - 800);
     // The caller has started a sentence; Deepgram has shown words but
     // not finalised. That is not silence.
     h.say("Actually I wanted to", { isFinal: false });
-    await sleep(1500); // past the original deadline
+    await sleep(2000); // past the original deadline
     assert.equal(count(h.syntheses, PROMPT_1), 0, "no prompt while words are pending");
     h.say("Actually I wanted to ask something.", { isFinal: true, isSpeechFinal: true });
     await h.waitForReplies(2);
@@ -548,7 +597,7 @@ await test("E — \"Yes, I'm here.\" after prompt 1 -> the model answers with th
   const h = startHarness({ openingLine: OPENING, replies: [REPLY] });
   try {
     await greetingDone(h);
-    await h.waitFor("prompt 1", () => count(h.syntheses, PROMPT_1) === 1, INTERVAL_MS + 1500);
+    await h.waitFor("prompt 1", () => count(h.syntheses, PROMPT_1) === 1, STEP_WAIT_MS);
     await h.waitForReplies(2);
     h.say("Yes, I'm here.");
     await h.waitForReplies(3);
@@ -568,7 +617,7 @@ await test("E — \"Yes, I'm here.\" after prompt 1 -> the model answers with th
     assert.equal(h.endCalls(), 0);
     // The episode counter reset with the turn: silence now begins a NEW
     // episode with prompt 1, not prompt 2.
-    await h.waitFor("a fresh episode's prompt 1", () => count(h.syntheses, PROMPT_1) === 2, INTERVAL_MS + 1500);
+    await h.waitFor("a fresh episode's prompt 1", () => count(h.syntheses, PROMPT_1) === 2, STEP_WAIT_MS);
     assert.equal(count(h.syntheses, PROMPT_2), 0);
   } finally {
     await h.stop();
@@ -579,7 +628,7 @@ await test("F — \"Yes.\" after prompt 2 -> normal conversation, no hangup", as
   const h = startHarness({ openingLine: OPENING, replies: [REPLY] });
   try {
     await greetingDone(h);
-    await h.waitFor("prompt 2", () => count(h.syntheses, PROMPT_2) === 1, 2 * INTERVAL_MS + 3000);
+    await h.waitFor("prompt 2", () => count(h.syntheses, PROMPT_2) === 1, 2 * STEP_WAIT_MS);
     await h.waitForReplies(3);
     h.say("Yes.");
     await h.waitForReplies(4);
@@ -598,7 +647,7 @@ await test("F — \"Yes.\" after prompt 2 -> normal conversation, no hangup", as
 // ═════════════════════════════════════════════════════════════════
 section("G/H. the window starts only after the audio has drained; nothing is truncated");
 
-await test("H — a ~13s block: committed IN FULL, never cancelled, and the prompt comes >= 3s after it drained", async () => {
+await test("H — a ~13s block: committed IN FULL, never cancelled, and the prompt comes >= 30s after it drained", async () => {
   const h = startHarness({ openingLine: OPENING, replies: [BLOCK] });
   try {
     await greetingDone(h);
@@ -618,7 +667,7 @@ await test("H — a ~13s block: committed IN FULL, never cancelled, and the prom
     const speaking = [...h.transitions].reverse().find((t) => t.to === "SPEAKING")!;
     assert.ok(blockListeningAt - speaking.atMs >= blockMs - SLACK_MS, `SPEAKING lasted ${blockListeningAt - speaking.atMs}ms for ${blockMs}ms of audio`);
 
-    await h.waitFor("prompt 1", () => count(h.syntheses, PROMPT_1) === 1, INTERVAL_MS + 1500);
+    await h.waitFor("prompt 1", () => count(h.syntheses, PROMPT_1) === 1, STEP_WAIT_MS);
     const prompt = h.syntheses.find((s) => s.text === PROMPT_1)!;
     assert.ok(prompt.atMs - blockListeningAt >= INTERVAL_MS - SLACK_MS, `prompt came ${prompt.atMs - blockListeningAt}ms after the block drained`);
     // No transition ever left SPEAKING for a barge-in reason.
@@ -693,6 +742,102 @@ await test("I4 — before any block, a single \"Hello.\" is the caller answering
     await h.waitForReplies(2, 20_000);
     assert.equal(h.requests.length, 1);
     assert.equal(count(h.syntheses, ACK), 0);
+  } finally {
+    await h.stop();
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════
+// I5-I8 — ONE GREETING IS A HELLO, TWO IN A ROW IS A HEARING PROBLEM
+//
+// After a block had been delivered the qualifying test was
+// `isHearingCheck`, which a SINGLE bare greeting satisfies, so one
+// "Hello?" out of a clear sky was answered with "Hey, can you hear me
+// okay?" on the spot. `isRepeatedGreeting` could not help: it is a
+// whole-utterance regex and sees "Hello? Hello?" but never "Hello."
+// followed a turn later by "Hello.".
+//
+// The rule is now: an UNMISTAKABLE check (a presence phrase, or the
+// greeting doubled inside one utterance) qualifies on its own turn as
+// it always has; a bare greeting qualifies only when the caller's
+// PREVIOUS turn was a bare greeting too. I5 and I6 are the two sides of
+// that boundary on the same conversation shape.
+// ═════════════════════════════════════════════════════════════════
+section("I5-I8. a single greeting vs. a repeated one");
+
+await test("I5 — after a block, a SINGLE \"Hello?\" is answered by the model, NOT by the hearing check", async () => {
+  const h = startHarness({ openingLine: OPENING, replies: [BLOCK, REPLY] });
+  try {
+    await greetingDone(h);
+    // A real contribution, so the block is delivered WITHOUT a greeting
+    // turn in front of it — nothing for the next "Hello?" to repeat.
+    h.say("Yes, tell me.");
+    await h.waitForReplies(2, 20_000);
+    assert.equal(h.requests.length, 1, "the caller's turn went to the model");
+
+    h.say("Hello?");
+    await h.waitForReplies(3, 20_000);
+    assert.equal(count(h.syntheses, ACK), 0, "one greeting is a person saying hello, not a hearing check");
+    assert.equal(count(h.syntheses, FOLLOW_UP), 0, "and no follow-up either");
+    assert.equal(h.requests.length, 2, "it took the contextual path and was answered normally");
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("I6 — the SECOND \"Hello?\" in succession IS the hearing check, and the existing flow is unchanged", async () => {
+  const h = startHarness({ openingLine: OPENING, replies: [BLOCK, REPLY] });
+  try {
+    await greetingDone(h);
+    h.say("Yes, tell me.");
+    await h.waitForReplies(2, 20_000);
+
+    h.say("Hello?");
+    await h.waitForReplies(3, 20_000);
+    assert.equal(count(h.syntheses, ACK), 0, "the first one is still not a hearing check");
+
+    // Same words, one turn later. Now it is a caller repeating
+    // themselves, which is exactly what the hearing check is for.
+    h.say("Hello?");
+    await h.waitForReplies(4, 20_000);
+    assert.equal(count(h.syntheses, ACK), 1, "the repeat is acknowledged, exactly once");
+    assert.equal(h.requests.length, 2, "and the acknowledgement made no language-model request");
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("I7 — the repeat rule follows the existing greeting vocabulary: \"Hey\" then \"Hey\" also qualifies", async () => {
+  const h = startHarness({ openingLine: OPENING, replies: [BLOCK, REPLY] });
+  try {
+    await greetingDone(h);
+    h.say("Yes, tell me.");
+    await h.waitForReplies(2, 20_000);
+
+    h.say("Hey");
+    await h.waitForReplies(3, 20_000);
+    assert.equal(count(h.syntheses, ACK), 0, "a single \"Hey\" is not a hearing check");
+
+    h.say("Hey?");
+    await h.waitForReplies(4, 20_000);
+    assert.equal(count(h.syntheses, ACK), 1, "\"Hey\" twice in succession is");
+    assert.equal(h.requests.length, 2, "no language-model request for the repeat");
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("I8 — ordinary caller speech, twice, never reaches the hearing check", async () => {
+  const h = startHarness({ openingLine: OPENING, replies: [BLOCK, REPLY] });
+  try {
+    await greetingDone(h);
+    h.say("Yes, tell me.");
+    await h.waitForReplies(2, 20_000);
+    h.say("What is the fee for this?");
+    await h.waitForReplies(3, 20_000);
+    assert.equal(count(h.syntheses, ACK), 0, "no acknowledgement");
+    assert.equal(count(h.syntheses, FOLLOW_UP), 0, "no follow-up");
+    assert.equal(h.requests.length, 2, "both turns were answered by the model");
   } finally {
     await h.stop();
   }
@@ -777,7 +922,7 @@ await test("L — \"haan ji\" over the block is a backchannel: no barge-in, no t
     assert.equal(h.history().filter((t) => t.role === "user" && /haan/i.test(t.content)).length, 0, "the backchannel became no turn");
     assert.equal(h.requests.length, 1, "no request for the backchannel");
     const blockListeningAt = lastListeningAt(h);
-    await h.waitFor("prompt 1", () => count(h.syntheses, PROMPT_1) === 1, INTERVAL_MS + 1500);
+    await h.waitFor("prompt 1", () => count(h.syntheses, PROMPT_1) === 1, STEP_WAIT_MS);
     const prompt = h.syntheses.find((s) => s.text === PROMPT_1)!;
     assert.ok(prompt.atMs - blockListeningAt >= INTERVAL_MS - SLACK_MS, `prompt came ${prompt.atMs - blockListeningAt}ms after drain`);
   } finally {
@@ -853,9 +998,9 @@ await test("O2 — aborted while prompt 1 is being spoken -> no prompt 2, no end
   const h = startHarness({ openingLine: OPENING, replies: [] });
   try {
     await greetingDone(h);
-    await h.waitFor("prompt 1", () => count(h.syntheses, PROMPT_1) === 1, INTERVAL_MS + 1500);
+    await h.waitFor("prompt 1", () => count(h.syntheses, PROMPT_1) === 1, STEP_WAIT_MS);
     h.abortLikeRemoteHangup();
-    await sleep(INTERVAL_MS + 1500);
+    await sleep(STEP_WAIT_MS);
     assert.equal(count(h.syntheses, PROMPT_2), 0);
     assert.equal(h.endCalls(), 0);
   } finally {

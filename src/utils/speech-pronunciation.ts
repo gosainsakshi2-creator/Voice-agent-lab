@@ -441,6 +441,42 @@ function pronounceGrouped(digits: string, lex: Lexicon): string {
 }
 
 /**
+ * VERIFIED PROPER-NAME PRONUNCIATIONS, spoken form only.
+ *
+ * A CLOSED LIST, NOT A TRANSLITERATOR. Every entry is one full name a
+ * human has checked, matched as a whole phrase. There is deliberately
+ * no rule that turns an arbitrary Indian-looking word into Devanagari:
+ * a general transliterator would reach every proper noun in every
+ * script — company names, product names, a caller's own name read back
+ * — and each one of those would be a guess spoken aloud with total
+ * confidence. Adding a name here is a decision somebody makes once.
+ *
+ * ONLY ON A HINDI/HINGLISH UTTERANCE, and that bound is the safety
+ * case. Devanagari already reaches all four TTS vendors on every Hindi
+ * call — `hindiOpeningLine()` in `system-prompt.ts` is Devanagari and
+ * is spoken through this same path — so this adds no new class of input
+ * to any provider. An ENGLISH call is a different matter: `language`
+ * there is sent to the vendor as an explicit tag (Cartesia `en`, Sarvam
+ * `en-IN`, ElevenLabs `languageCode: "en"`, which its own adapter notes
+ * is "honored by models that support explicit language enforcement"),
+ * and Devanagari under a forced English tag is UNVERIFIED on all four.
+ * Nobody has run it, so it is not done: an English call keeps the
+ * canonical spelling and today's behaviour exactly.
+ *
+ * Extending this to English calls is a measurement, not an edit — the
+ * TTS evidence harness (`npm run bench:tts`) is what would settle it.
+ *
+ * IDEMPOTENT BY CONSTRUCTION: each pattern matches only the Latin
+ * spelling, so a second pass over already-Devanagari output finds
+ * nothing. Asserted in the pronunciation tests.
+ */
+const VERIFIED_NAME_PRONUNCIATIONS: ReadonlyArray<readonly [RegExp, string]> = [
+  // FlexiFunnels co-founder and CEO. Named in the registration v7
+  // script; an English TTS voice reads "Saurabh" as "Sore-ab".
+  [/\bSaurabh\s+Bhatnagar\b/giu, "सौरभ भटनागर"],
+];
+
+/**
  * Rewrites numeric notation in `text` into the words the given
  * conversation language is spoken in. Meaning is never changed — only
  * how a value is read aloud. Safe on a full reply or on a single
@@ -457,6 +493,17 @@ export function pronounceForSpeech(text: string, language: SupportedLanguage): s
   const lex = hindi ? HINDI_LEXICON : ENGLISH_LEXICON;
 
   let spoken = text.replace(DOTTED_MERIDIEM, (_match, ap: string) => `${ap.toUpperCase()}M`);
+
+  // Verified proper names, spoken form only, and only where Devanagari
+  // is already the norm for this utterance. Reuses the same `hindi`
+  // flag as the numeric rules rather than testing `language` directly:
+  // an English sentence spoken on a Hindi call is exactly the
+  // mixed-script case no vendor has been measured on.
+  if (hindi) {
+    for (const [pattern, spokenName] of VERIFIED_NAME_PRONUNCIATIONS) {
+      spoken = spoken.replace(pattern, spokenName);
+    }
+  }
 
   // A part-of-day the sentence already stated is kept verbatim and the
   // reading is built without one, so neither it nor the unit word nor

@@ -1,0 +1,14 @@
+HINDI A/B PROBE — k=5 per arm, 7 scenarios, registration v7
+model=gpt-5.1
+
+
+════════════════════════════════════════════════════════════════════════
+1. caller asks for Hindi
+════════════════════════════════════════════════════════════════════════
+[LLM:gemma] FINAL PAYLOAD -> google/gemma-4-26b-a4b-it (openrouter chat.completions)
+messages (5):
+  [0] role=system chars=81285 "# ROLE You are a professional voice agent on a live phone call. You …"
+  [1] role=assistant chars=45 "Hello, this is Ishita from Team FlexiFunnels."
+  [2] role=user chars=6 "Hello."
+  [3] role=assistant chars=278 "I'm calling to invite you to a free two-day event we're running on the…"
+  [4] role=user chars=831 "[internal note, never speak or acknowledge this: the line below is the…"

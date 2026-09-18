@@ -65,6 +65,7 @@
     "test:registration-retry": "tsx src/campaign/tests/registration-retry-tests.ts",
     "test:registration-payload": "tsx src/campaign/tests/registration-payload-tests.ts",
     "test:registration-v7": "tsx src/campaign/tests/registration-v7-tests.ts",
+    "test:hindi-register": "tsx src/campaign/tests/hindi-register-tests.ts",
     "test:llm-benchmark": "tsx src/campaign/tests/llm-benchmark-harness-tests.ts",
     "test:first-turn-total": "tsx src/campaign/tests/first-turn-total-persistence-tests.ts",
     "test:stale-final-no": "tsx src/campaign/tests/stale-final-no-tests.ts",

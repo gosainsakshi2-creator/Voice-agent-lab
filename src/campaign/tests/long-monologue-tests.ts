@@ -263,7 +263,11 @@ await test("A8. the policy moved, so a call can be attributed to it", () => {
   // `callerQuestionPending` in call-runner.ts. The v2 assertion above is
   // kept: each bump is additive here, so no earlier id can come back.
   assert.notEqual(CONVERSATION_POLICY_ID, "script-faithful.v3", "the id must be bumped");
-  assert.equal(CONVERSATION_POLICY_ID, "script-faithful.v4");
+  // v5 is the not-in-English section — what "in the words it is
+  // written" means when the call is in Hindi. Same additive rule as
+  // above: no earlier id may come back.
+  assert.notEqual(CONVERSATION_POLICY_ID, "script-faithful.v4", "the id must be bumped");
+  assert.equal(CONVERSATION_POLICY_ID, "script-faithful.v5");
 });
 
 // ═════════════════════════════════════════════════════════════════

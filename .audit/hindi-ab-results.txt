@@ -1,0 +1,436 @@
+HINDI A/B PROBE — k=5 per arm, 7 scenarios, registration v7
+model=gpt-5.1
+
+
+════════════════════════════════════════════════════════════════════════
+1. caller asks for Hindi
+════════════════════════════════════════════════════════════════════════
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=5 roles=[system,assistant,user,assistant,user]
+[LLM:openai] Response: 5258ms contentLen=332 text="हाँ ज़रूर, हिंदी में बात करते हैं।  
+
+मैं आपको एक free दो दिन का online event पर invite कर रही हूँ, ..." finishReason=stop
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=5 roles=[system,assistant,user,assistant,user]
+[LLM:openai] Response: 3358ms contentLen=384 text="ठीक है, Hindi में बात करते हैं।  
+
+मैं आपको 19 और 20 September को होने वाले एक free 2-day online eve..." finishReason=stop
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=5 roles=[system,assistant,user,assistant,user]
+[LLM:openai] Response: 3130ms contentLen=347 text="ठीक है, Hindi में बात करते हैं।  
+
+मैं आपको एक free दो दिन का online event के लिए invite कर रही हूँ ..." finishReason=stop
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=5 roles=[system,assistant,user,assistant,user]
+[LLM:openai] Response: 2947ms contentLen=375 text="थीक है, Hindi में बात करते हैं।  
+
+मैं आपको एक free 2-day event के लिए invite कर रही हूँ, जो 19 और 2..." finishReason=stop
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=5 roles=[system,assistant,user,assistant,user]
+[LLM:openai] Response: 3095ms contentLen=368 text="हाँ ज़रूर, Hindi में बात करते हैं।  
+
+मैं आपको एक free दो दिन के event के लिए invite कर रही हूँ, जो ..." finishReason=stop
+
+-- CONTROL — median words 76, formal markers 0
+   [1] w= 68 dev=0.72 formal=- 
+       हाँ ज़रूर, हिंदी में बात करते हैं।   मैं आपको एक free दो दिन का online event पर invite कर रही हूँ, 19 और 20 September को, Zoom पर — AI Income Blueprint. इसमे आप सीखेंगे कि AI का use करके online income या business कैसे बनाना है, idea से लेके customers तक.   आप अभी कोई business चला रही हैं, या online कुछ start करने का सोच रही हैं?
+   [2] w= 81 dev=0.75 formal=- 
+       ठीक है, Hindi में बात करते हैं।   मैं आपको 19 और 20 September को होने वाले एक free 2-day online event के लिए invite कर रही हूँ — नाम है AI Income Blueprint. ये Zoom पर live रहेगा, और इसमें हम AI की help से online income या business कैसे शुरू करें और grow करें, ये पूरा step by step सिखाते हैं.   आप अभी कोई business चला रही हैं, या online कुछ नया start करने के बारे में सोच रही हैं?
+   [3] w= 74 dev=0.72 formal=- 
+       ठीक है, Hindi में बात करते हैं।   मैं आपको एक free दो दिन का online event के लिए invite कर रही हूँ — AI Income Blueprint — 19 और 20 September को, live Zoom पर होगा। इसमें हम AI use करके online income या business कैसे शुरू या grow कर सकते हैं, ये cover होता है.   आप अभी कोई business चला रही हैं, या online कुछ start करने के बारे में सोच रही हैं?
+   [4] w= 78 dev=0.80 formal=- 
+       थीक है, Hindi में बात करते हैं।   मैं आपको एक free 2-day event के लिए invite कर रही हूँ, जो 19 और 20 September को होगा — नाम है AI Income Blueprint. ये Zoom पर live रहेगा, और पूरा focus रहेगा कि AI का use करके online income या business कैसे बनाया जाए, idea से लेके ग्राहकों तक पहुँचने तक.   आप अभी कोई business चला रही हैं, या online कुछ start करने के बारे में सोच रही हैं?
+   [5] w= 78 dev=0.82 formal=- 
+       हाँ ज़रूर, Hindi में बात करते हैं।   मैं आपको एक free दो दिन के event के लिए invite कर रही हूँ, जो 19 और 20 September को होगा — AI Income Blueprint. ये Zoom पर live रहेगा, और इसमें हम AI की मदद से online income या business कैसे बनाना है, ये सिखाएँगे — idea से लेकर customers तक.   आप अभी कोई business चला रही हैं, या कुछ नया online शुरू करने के बारे में सोच रही हैं?
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=5 roles=[system,assistant,user,assistant,user]
+[LLM:openai] Response: 2472ms contentLen=374 text="ठीक है, Hindi में बात करते हैं।  
+
+मैं आपको एक free 2-day online event के लिए invite कर रही हूँ, 19 ..." finishReason=stop
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=5 roles=[system,assistant,user,assistant,user]
+[LLM:openai] Response: 2910ms contentLen=350 text="ठीक है, Hindi में बात करते हैं।  
+मैं आपको 19 और 20 September को होने वाले एक free 2-day online even..." finishReason=stop
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=5 roles=[system,assistant,user,assistant,user]
+[LLM:openai] Response: 4147ms contentLen=353 text="ठीक है, Hindi में बात करते हैं।  
+
+मैं आपको 19 aur 20 September ko होने वाले एक free 2-day online ev..." finishReason=stop
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=5 roles=[system,assistant,user,assistant,user]
+[LLM:openai] Response: 1740ms contentLen=120 text="ठीक है, Hindi में बात करते हैं।  
+आप अभी कोई business चला रही हैं, या online कुछ नया start करने के ब..." finishReason=stop
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=5 roles=[system,assistant,user,assistant,user]
+[LLM:openai] Response: 1558ms contentLen=112 text="हाँ, बिल्कुल, Hindi में बात करते हैं।  
+आप अभी कोई business चला रही हैं या online कुछ start करने का ..." finishReason=stop
+
+-- TREATMENT — median words 54, formal markers 0
+   [1] w= 77 dev=0.68 formal=- 
+       ठीक है, Hindi में बात करते हैं।   मैं आपको एक free 2-day online event के लिए invite कर रही हूँ, 19 और 20 September को — नाम है AI Income Blueprint. ये Zoom पर live रहेगा, और इसमें हम सिखाएँगे कि AI की मदद से online income या business कैसे build करना है, idea से लेकर customers तक।   आप अभी already कोई business चला रही हैं, या online कुछ start करने के बारे में सोच रही हैं?
+   [2] w= 72 dev=0.74 formal=- 
+       ठीक है, Hindi में बात करते हैं।   मैं आपको 19 और 20 September को होने वाले एक free 2-day online event के लिए invite कर रही हूँ — AI Income Blueprint. ये Zoom पर live रहेगा, और इसमें AI की मदद से online income या business कैसे बनाना है, ये सिखाया जाएगा.   आप अभी already कोई business चला रही हैं, या कुछ नया online start करने के बारे में सोच रही हैं?
+   [3] w= 73 dev=0.71 formal=- 
+       ठीक है, Hindi में बात करते हैं।   मैं आपको 19 aur 20 September ko होने वाले एक free 2-day online event के लिए invite कर रही हूँ — AI Income Blueprint. ये Zoom पर live रहेगा, और इसमें हम AI की मदद से online income या business शुरू करने और grow करने पर काम करेंगे.   Aap फिलहाल कोई business चला रही हैं, या online कुछ start करने के बारे में सोच रही हैं?
+   [4] w= 26 dev=1.06 formal=- 
+       ठीक है, Hindi में बात करते हैं।   आप अभी कोई business चला रही हैं, या online कुछ नया start करने के बारे में सोच रही हैं?
+   [5] w= 23 dev=1.03 formal=- 
+       हाँ, बिल्कुल, Hindi में बात करते हैं।   आप अभी कोई business चला रही हैं या online कुछ start करने का सोच रही हैं?
+
+════════════════════════════════════════════════════════════════════════
+2. agent explains the event, in Hindi
+════════════════════════════════════════════════════════════════════════
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=3 roles=[system,assistant,user]
+[LLM:openai] Response: 3709ms contentLen=364 text="हाँ, bilkul, Hindi mein baat karte हैं.
+
+Ye ek free 2‑day online event है – AI Income Blueprint – jo..." finishReason=stop
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=3 roles=[system,assistant,user]
+[LLM:openai] Response: 2949ms contentLen=425 text="हाँ, बिल्कुल, Hindi में बात करते हैं.
+
+Ye ek free 2‑day online event है, नाम है “AI Income Blueprint..." finishReason=stop
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=3 roles=[system,assistant,user]
+[LLM:openai] Response: 2806ms contentLen=395 text="हाँ, बिल्कुल, Hindi में बात करते हैं.  
+
+Ye एक free 2-day event है, naam है “AI Income Blueprint”. Y..." finishReason=stop
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=3 roles=[system,assistant,user]
+[LLM:openai] Response: 3312ms contentLen=387 text="हाँ जी, Hindi में बात करते हैं।  
+
+Ye ek free 2-day online event है — नाम है “AI Income Blueprint”. ..." finishReason=stop
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=3 roles=[system,assistant,user]
+[LLM:openai] Response: 3767ms contentLen=440 text="हाँ, बिल्कुल Hindi में बात करते हैं।
+
+Main aapko ek free two–day online event ke लिए call कर रही हूँ..." finishReason=stop
+
+-- CONTROL — median words 78, formal markers 0
+   [1] w= 70 dev=0.22 formal=- 
+       हाँ, bilkul, Hindi mein baat karte हैं. Ye ek free 2‑day online event है – AI Income Blueprint – jo 19 aur 20 September ko Zoom par hoga. Isme aap सीखेंगे ki AI use karke online income ya business kaise build करना है, idea choose करने se lekar customers tak पहुँचना तक.   Aap फिलहाल koi business चला रही हैं ya kuch online start करने ke baare mein soch rahi हैं?
+   [2] w= 79 dev=0.38 formal=- 
+       हाँ, बिल्कुल, Hindi में बात करते हैं. Ye ek free 2‑day online event है, नाम है “AI Income Blueprint”. Zoom pe live रहेगा 19 aur 20 September ko, jahan pe aapko step‑by‑step dikhाया जाएगा ki AI use karke online income kaise बनानी है — idea चुनने se lekar offer बनाना, website aur payment setup karna, aur customers tak पहुँचने tak.   Ab aap फिलहाल koi business चला रही हैं, ya online kuch start करने के बारे में सोच रही हैं?
+   [3] w= 77 dev=0.36 formal=- 
+       हाँ, बिल्कुल, Hindi में बात करते हैं.   Ye एक free 2-day event है, naam है “AI Income Blueprint”. Ye 19 aur 20 September ko live Zoom par hoga, jisme hum step by step ये cover करते हैं ki AI ka use karke online income kaise बनानी है — idea choose karna, क्या बेचें ये decide karna, aur customers tak पहुँचना.   Ab aap फिलहाल koi business चला रही हैं, ya online kuch start करने ka सोch रही हैं?
+   [4] w= 77 dev=0.49 formal=- 
+       हाँ जी, Hindi में बात करते हैं।   Ye ek free 2-day online event है — नाम है “AI Income Blueprint”. Zoom pe live होगा, 19 aur 20 September ko, jahan पे aapko सिखाया जाएगा ki AI use karke online income kaise build करनी है — idea चुनने से लेके, kya बेचना है, aur customers tak पहुँचने तक पूरा process.   Aap अभी koi business चला रही हैं, ya online kuch start करने के बारे में सोच रही हैं?
+   [5] w= 85 dev=0.25 formal=- 
+       हाँ, बिल्कुल Hindi में बात करते हैं। Main aapko ek free two–day online event ke लिए call कर रही हूँ, jiska नाम है “AI Income Blueprint”. Ye 19 aur 20 September ko Zoom par live hoga, aur isme aapko AI use karke online income ya business kaise start ya grow karna hai, ye step by step sikhaya जाएगा — idea choose karne se lekar customers tak laane tak.  Aap फिलहाल koi business चला रही हैं, ya online kuch start karne का सोचना चाह रही हैं?
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=3 roles=[system,assistant,user]
+[LLM:openai] Response: 3383ms contentLen=396 text="हाँ, bilkul, Hindi mein baat karte हैं 🙂  
+
+Ye ek free 2-day online event है — AI Income Blueprint ..." finishReason=stop
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=3 roles=[system,assistant,user]
+[LLM:openai] Response: 3303ms contentLen=416 text="हाँ, bilkul, Hindi mein baat karte हैं.  
+
+Ye ek 2-day free online event है – AI Income Blueprint – ..." finishReason=stop
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=3 roles=[system,assistant,user]
+[LLM:openai] Response: 4388ms contentLen=390 text="हाँ, बिल्कुल, Hindi में बात करते हैं।
+
+Ye एक free 2-day online event है, naam है “AI Income Blueprin..." finishReason=stop
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=3 roles=[system,assistant,user]
+[LLM:openai] Response: 2393ms contentLen=323 text="हाँ, बिल्कुल Hindi में बात करते हैं।
+
+Ye 2‑day ka free online event है – नाम है “AI Income Blueprint..." finishReason=stop
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=3 roles=[system,assistant,user]
+[LLM:openai] Response: 2853ms contentLen=375 text="हाँ Priya, Hindi में बात करते हैं 🙂  
+
+Ye ek free 2-day online event है, naam है “AI Income Bluepri..." finishReason=stop
+
+-- TREATMENT — median words 71, formal markers 0
+   [1] w= 76 dev=0.28 formal=- 
+       हाँ, bilkul, Hindi mein baat karte हैं 🙂   Ye ek free 2-day online event है — AI Income Blueprint — 19 aur 20 September ko, live Zoom pe. Isme step by step sikhaya जाएगा कि AI use karke online income kaise build करनी है, idea चुनने से ले कर offer बनाना, website, payments, aur customers tak sab.   Aap फिलहाल already koi business चला रही हैं, ya online kuch start करने के बारे में सोच रही हैं?
+   [2] w= 76 dev=0.15 formal=- 
+       हाँ, bilkul, Hindi mein baat karte हैं.   Ye ek 2-day free online event है – AI Income Blueprint – 19 aur 20 September ko, live Zoom pe. Isme step by step सिखाया जाएगा कि AI use karke online income या business kaise build करें, idea choose karne se leke offer banana, website, payments setup karna aur customers tak pahunchna tak.   Aap फिलहाल koi business चला रही हैं, ya online kuch start karne ka soch rahi हैं?
+   [3] w= 75 dev=0.55 formal=- 
+       हाँ, बिल्कुल, Hindi में बात करते हैं। Ye एक free 2-day online event है, naam है “AI Income Blueprint”. Zoom पे live होगा 19 और 20 September को, jahan पे step by step सिखाया जाएगा कि AI use karke online income kaise बनानी है — idea चुनने से लेके offer बनाना, website, payments, aur customers लाने तक.   Aap फिलहाल कोई business चला रही हैं, या online कुछ start करने के बारे में सोच रही हैं?
+   [4] w= 56 dev=0.33 formal=- 
+       हाँ, बिल्कुल Hindi में बात करते हैं। Ye 2‑day ka free online event है – नाम है “AI Income Blueprint”. Zoom पे live रहेगा, jahan पे aapko step‑by‑step दिखाया जाएगा ki AI use karke online income ya business kaise बनाना है, idea चुनने se lekar product/offer banana, website, payments setup karna aur customers tak पहुँचना तक.
+   [5] w= 71 dev=0.39 formal=- 
+       हाँ Priya, Hindi में बात करते हैं 🙂   Ye ek free 2-day online event है, naam है “AI Income Blueprint”.   Zoom pe live रहेगा, jahan pe aapko step by step dikhाया जाएगा ki AI use karke online income kaise बनानी है — idea चुनने से लेके, kya बेचना है, website, payment, aur customers तक.   Aap फिलहाल already कोई business चला रही हैं, ya online kuch start करने की सोच रही हैं?
+
+════════════════════════════════════════════════════════════════════════
+3. an event FAQ in Hindi
+════════════════════════════════════════════════════════════════════════
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=5 roles=[system,assistant,user,assistant,user]
+[LLM:openai] Response: 1622ms contentLen=148 text="हाँ, ये बिलकुल 100% free है, कोई card वगैरह की ज़रूरत नहीं है.  
+
+Laptop ज़रूरी नहीं है, aap phone s..." finishReason=stop
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=5 roles=[system,assistant,user,assistant,user]
+[LLM:openai] Response: 2671ms contentLen=168 text="हाँ, ये बिलकुल 100% free है, कोई card की ज़रूरत नहीं है.  
+
+Laptop ज़रूरी नहीं है, सब कुछ phone से भ..." finishReason=stop
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=5 roles=[system,assistant,user,assistant,user]
+[LLM:openai] Response: 1616ms contentLen=174 text="हाँ, ये bilkul 100% free है, कोई card वगैरह की ज़रूरत नहीं है.  
+
+Laptop ज़रूरी नहीं है, आप सिर्फ़ p..." finishReason=stop
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=5 roles=[system,assistant,user,assistant,user]
+[LLM:openai] Response: 1848ms contentLen=194 text="हाँ, ये बिलकुल completely free है, कोई card या payment की ज़रूरत नहीं है.  
+
+Laptop ज़रूरी नहीं है, ..." finishReason=stop
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=5 roles=[system,assistant,user,assistant,user]
+[LLM:openai] Response: 2083ms contentLen=174 text="हाँ, ये बिलकुल 100% free है, कोई card वगैरह की ज़रूरत नहीं है.  
+
+Laptop ज़रूरी नहीं है, आप सिर्फ़ p..." finishReason=stop
+
+-- CONTROL — median words 35, formal markers 0
+   [1] w= 29 dev=0.95 formal=- 
+       हाँ, ये बिलकुल 100% free है, कोई card वगैरह की ज़रूरत नहीं है.   Laptop ज़रूरी नहीं है, aap phone se bhi attend कर सकते हैं, बस इंटरनेट होना चाहिए.
+   [2] w= 36 dev=1.05 formal=- 
+       हाँ, ये बिलकुल 100% free है, कोई card की ज़रूरत नहीं है.   Laptop ज़रूरी नहीं है, सब कुछ phone से भी कर सकते हैं; बस अगर laptop हो तो follow करना थोड़ा आसान हो जाता है.
+   [3] w= 36 dev=1.00 formal=- 
+       हाँ, ये bilkul 100% free है, कोई card वगैरह की ज़रूरत नहीं है.   Laptop ज़रूरी नहीं है, आप सिर्फ़ phone से भी कर सकते हैं, बस laptop हो तो follow करना थोड़ा आसान हो जाता है.
+   [4] w= 39 dev=0.85 formal=- 
+       हाँ, ये बिलकुल completely free है, कोई card या payment की ज़रूरत नहीं है.   Laptop ज़रूरी नहीं है, आप सिर्फ़ phone से भी attend कर सकते हैं, बस laptop हो तो follow करना थोड़ा और आसान हो जाता है.
+   [5] w= 36 dev=1.09 formal=- 
+       हाँ, ये बिलकुल 100% free है, कोई card वगैरह की ज़रूरत नहीं है.   Laptop ज़रूरी नहीं है, आप सिर्फ़ phone से भी कर सकते हैं, बस laptop हो तो follow करना थोड़ा आसान हो जाता है.
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=5 roles=[system,assistant,user,assistant,user]
+[LLM:openai] Response: 3380ms contentLen=175 text="हाँ, ye bilkul completely free hai, कोई card वगैरह की ज़रूरत नहीं है.  
+
+Laptop ज़रूरी नहीं है, आप s..." finishReason=stop
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=5 roles=[system,assistant,user,assistant,user]
+[LLM:openai] Response: 2177ms contentLen=193 text="हाँ, ये बिलकुल 100% free है, किसी भी card की ज़रूरत नहीं है.  
+
+Laptop ज़रूरी नहीं है, आप सिर्फ़ pho..." finishReason=stop
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=5 roles=[system,assistant,user,assistant,user]
+[LLM:openai] Response: 2202ms contentLen=180 text="हाँ, ये bilkul 100% free है, कोई card वगैरह की ज़रूरत नहीं है.  
+Laptop ज़रूरी नहीं है, आप sirf phon..." finishReason=stop
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=5 roles=[system,assistant,user,assistant,user]
+[LLM:openai] Response: 2542ms contentLen=173 text="हाँ, bilkul 100% free hai, koi card वगैरह की ज़रूरत नहीं है.  
+
+Laptop ज़रूरी नहीं है, aap sirf phon..." finishReason=stop
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=5 roles=[system,assistant,user,assistant,user]
+[LLM:openai] Response: 1939ms contentLen=185 text="हाँ, ये बिलकुल completely free है, कोई card वगैरह की ज़रूरत नहीं है.  
+
+Laptop ज़रूरी नहीं है, आप सि..." finishReason=stop
+
+-- TREATMENT — median words 37, formal markers 0
+   [1] w= 35 dev=0.62 formal=- 
+       हाँ, ye bilkul completely free hai, कोई card वगैरह की ज़रूरत नहीं है.   Laptop ज़रूरी नहीं है, आप sirf phone se bhi follow कर सकते हैं, बस laptop हो तो thoda आसान हो जाता है.
+   [2] w= 40 dev=0.97 formal=- 
+       हाँ, ये बिलकुल 100% free है, किसी भी card की ज़रूरत नहीं है.   Laptop ज़रूरी नहीं है, आप सिर्फ़ phone से भी join करके सारी cheezein कर सकते हैं, बस laptop हो तो follow करना और आसान हो जाता है.
+   [3] w= 38 dev=0.82 formal=- 
+       हाँ, ये bilkul 100% free है, कोई card वगैरह की ज़रूरत नहीं है.   Laptop ज़रूरी नहीं है, आप sirf phone se bhi join करके सब follow कर सकते हैं, बस laptop हो तो थोड़ा आसान हो जाता है.
+   [4] w= 35 dev=0.70 formal=- 
+       हाँ, bilkul 100% free hai, koi card वगैरह की ज़रूरत नहीं है.   Laptop ज़रूरी नहीं है, aap sirf phone se bhi kar सकते हैं, बस laptop हो तो follow करना थोड़ा आसान हो जाता है.
+   [5] w= 37 dev=0.89 formal=- 
+       हाँ, ये बिलकुल completely free है, कोई card वगैरह की ज़रूरत नहीं है.   Laptop ज़रूरी नहीं है, आप सिर्फ़ phone से भी join कर सकती हैं, बस laptop हो तो follow करना थोड़ा easy हो जाता है.
+
+════════════════════════════════════════════════════════════════════════
+4. THE GATE, asked in Hindi
+════════════════════════════════════════════════════════════════════════
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=5 roles=[system,assistant,user,assistant,user]
+[LLM:openai] Response: 3166ms contentLen=403 text="ठीक है, बहुत अच्छी बात है कि आप start करना चाहती हैं. ये event शुरू से ही help करता है — niche चुनने..." finishReason=stop
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=5 roles=[system,assistant,user,assistant,user]
+[LLM:openai] Response: 2664ms contentLen=408 text="ठीक है, बिल्कुल सही time है शुरू करने का. ये event ऐसे ही लोगों के लिए है जो zero se start कर रहे है..." finishReason=stop
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=5 roles=[system,assistant,user,assistant,user]
+[LLM:openai] Response: 3020ms contentLen=380 text="ठीक है, bilkul theek time पर सोचा है आपने. Event की शुरुआत ही यहीं से होती है – niche चुनने से, क्या..." finishReason=stop
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=5 roles=[system,assistant,user,assistant,user]
+[LLM:openai] Response: 2845ms contentLen=360 text="ठीक है, बिल्कुल सही time है फिर आपके लिए. ये event isi cheez से start होता है — niche चुनने से लेकर ..." finishReason=stop
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=5 roles=[system,assistant,user,assistant,user]
+[LLM:openai] Response: 2852ms contentLen=358 text="ठीक है, बहुत बढ़िया, ये event बिल्कुल वहीं से start होता है — niche चुनने से ले कर क्या sell करना है..." finishReason=stop
+
+-- CONTROL — median words 74, formal markers 0, gate asked 5/5, REGISTERS 5/5
+   [1] w= 80 dev=0.61 formal=- gateWords=Y REGISTERS=YES
+       ठीक है, बहुत अच्छी बात है कि आप start करना चाहती हैं. ये event शुरू से ही help करता है — niche चुनने से लेकर क्या बेचना है और पूरी online setup बनाने तक.   Ye pura event is तरह से design किया गया है कि आप sessions के साथ–साथ अपना business practically build करो, सिर्फ dekhne वाला wala event नहीं है, और iske लिए coding या technical background की ज़रूरत नहीं है. Kya main aapka free seat reserve kar du?
+   [2] w= 80 dev=0.44 formal=- gateWords=Y REGISTERS=YES
+       ठीक है, बिल्कुल सही time है शुरू करने का. ये event ऐसे ही लोगों के लिए है जो zero se start कर रहे हैं — niche चुनने से लेके क्या बेच सकते हैं और online setup तक सब cover होगा.   Ye pura event is tareh se design hai ki aap sessions ke saath‑saath practical cheezein build karें, sirf dekhna nahi पड़ेगा, aur isme kisi coding ya technical background की ज़रूरत नहीं है. Kya main aapka free seat reserve कर दूँ?
+   [3] w= 73 dev=0.72 formal=- gateWords=Y REGISTERS=YES
+       ठीक है, bilkul theek time पर सोचा है आपने. Event की शुरुआत ही यहीं से होती है – niche चुनने से, क्या बेच सकते हैं ये decide करने से, और वहीं से step‑by‑step online income वाला सिस्टम बनवाया जाएगा. Ye पूरा event इस तरह design है कि आप साथ‑साथ build करोगी, सिर्फ़ dekhna नहीं पड़ेगा, और कोई coding या technical background की ज़रूरत नहीं है. Kya main aapka free seat reserve कर दूँ?
+   [4] w= 69 dev=0.51 formal=- gateWords=Y REGISTERS=YES
+       ठीक है, बिल्कुल सही time है फिर आपके लिए. ये event isi cheez से start होता है — niche चुनने से लेकर क्या sell करना है, सब वहीं पर decide और build कराया जाता है. Event isme aap sessions ke saath–saath practically build करती चलेंगी, sirf dekhna नहीं होगा, aur koi coding ya technical background की ज़रूरत नहीं है. Kya main aapke लिए ek free seat reserve कर दूँ?
+   [5] w= 70 dev=0.57 formal=- gateWords=Y REGISTERS=YES
+       ठीक है, बहुत बढ़िया, ये event बिल्कुल वहीं से start होता है — niche चुनने से ले कर क्या sell करना है ये decide करने तक, step by step.   Ye poora workshop इस तरह design किया गया है कि aap sessions के साथ-साथ hi apna online setup बनाओ, सिर्फ dekhna नहीं पड़ेगा, और koi coding ya technical background की ज़रूरत नहीं है. Kya main aapka free seat reserve कर दूँ?
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=5 roles=[system,assistant,user,assistant,user]
+[LLM:openai] Response: 2648ms contentLen=342 text="ठीक है, बहुत बढ़िया, ये event वैसे ही लोगों के लिए है जो zero se start कर रहे हैं — इसमें niche चुनन..." finishReason=stop
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=5 roles=[system,assistant,user,assistant,user]
+[LLM:openai] Response: 2932ms contentLen=353 text="ठीक है, बिलकुल सही टाइम है फिर. ये event बिल्कुल शुरुआत से ही help करता है — niche चुनने से लेके क्य..." finishReason=stop
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=5 roles=[system,assistant,user,assistant,user]
+[LLM:openai] Response: 2440ms contentLen=301 text="अच्छा, perfect, ये event उसी के लिए है — bilkul scratch से start करते हैं, niche चुनने से लेके क्या ..." finishReason=stop
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=5 roles=[system,assistant,user,assistant,user]
+[LLM:openai] Response: 2416ms contentLen=337 text="अच्छा, perfect, agar aap shuru se start करना चाहती हैं तो event में pehle hi niche choose करने, kya ..." finishReason=stop
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=5 roles=[system,assistant,user,assistant,user]
+[LLM:openai] Response: 3745ms contentLen=348 text="ठीक है, बिल्कुल सही टाइम है फिर आपके लिए. Event की starting ही यहीं से होती है — idea चुनने से, nich..." finishReason=stop
+
+-- TREATMENT — median words 67, formal markers 0, gate asked 5/5, REGISTERS 5/5
+   [1] w= 70 dev=0.75 formal=- gateWords=Y REGISTERS=YES
+       ठीक है, बहुत बढ़िया, ये event वैसे ही लोगों के लिए है जो zero se start कर रहे हैं — इसमें niche चुनने से लेके क्या बेचना है, ये सब cover होता है. ये पूरा event is tarah design है कि aap sessions ke saath‑saath अपना setup बनाती चलें, और इसमें कोई coding या technical background की ज़रूरत नहीं है. क्या मैं आपके लिए ek free seat reserve कर दूँ?
+   [2] w= 70 dev=0.78 formal=- gateWords=Y REGISTERS=YES
+       ठीक है, बिलकुल सही टाइम है फिर. ये event बिल्कुल शुरुआत से ही help करता है — niche चुनने से लेके क्या offer बेचना है और online setup तक.   Ye pura event is तरीके से बना है कि aap sessions ke साथ–साथ अपना काम practically बनाओ, सिर्फ़ सुनना नहीं है, और किसी coding या technical background की ज़रूरत नहीं है. क्या मैं आपके लिए ek free seat reserve कर दूँ?
+   [3] w= 59 dev=0.67 formal=- gateWords=Y REGISTERS=YES
+       अच्छा, perfect, ये event उसी के लिए है — bilkul scratch से start करते हैं, niche चुनने से लेके क्या बेचें और online setup तक.  Ye sessions ऐसे बने हैं कि आप साथ‑साथ build करोगी, sirf देखना नहीं है, और कोई coding ya technical background की जरूरत नहीं है. क्या मैं आपके लिए ek free seat reserve कर दूँ?
+   [4] w= 65 dev=0.56 formal=- gateWords=Y REGISTERS=YES
+       अच्छा, perfect, agar aap shuru se start करना चाहती हैं तो event में pehle hi niche choose करने, kya बेचना है ये decide करने aur पूरा online setup बनाने पे focus रहेगा.   Ye sessions is तरह से हैं कि आप साथ–साथ अपना काम बनाती चलेंगी, aur koi coding ya technical background की ज़रूरत नहीं है. Kya मैं आपके लिए ek free seat reserve कर दूँ?
+   [5] w= 70 dev=0.73 formal=- gateWords=Y REGISTERS=YES
+       ठीक है, बिल्कुल सही टाइम है फिर आपके लिए. Event की starting ही यहीं से होती है — idea चुनने से, niche decide करने से और क्या sell करना है ये clear करने से. Ye पूरा event इस तरह design है कि आप sessions के साथ–साथ practically build करती चलेंगी, और कोई coding या technical background की ज़रूरत नहीं है. क्या मैं आपके लिए ek free seat reserve कर दूँ?
+
+════════════════════════════════════════════════════════════════════════
+5. a follow-up question in Hindi
+════════════════════════════════════════════════════════════════════════
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=5 roles=[system,assistant,user,assistant,user]
+[LLM:openai] Response: 3793ms contentLen=350 text="Haan, timing hai dono din, Saturday 19th aur Sunday 20th ko, subah 10 se 12, phir dopahar 1 se 3, Zo..." finishReason=stop
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=5 roles=[system,assistant,user,assistant,user]
+[LLM:openai] Response: 2579ms contentLen=185 text="haan, timing dono din same hai — subah 10 se 12, phir dopahar 1 se 3, Zoom par live.  
+Ye event Saur..." finishReason=stop
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=5 roles=[system,assistant,user,assistant,user]
+[LLM:openai] Response: 2287ms contentLen=189 text="Timing subah दस से बारह, aur phir dopahar एक से तीन tak hai, dono din, Saturday aur Sunday.  
+
+Ye ev..." finishReason=stop
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=5 roles=[system,assistant,user,assistant,user]
+[LLM:openai] Response: 3360ms contentLen=198 text="Haan, timing dono din same है: सुबह दस से बारह, और फिर दोपहर एक से तीन, Zoom पर live sessions रहेंगे..." finishReason=stop
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=5 roles=[system,assistant,user,assistant,user]
+[LLM:openai] Response: 3619ms contentLen=362 text="Haan, timing dono din same hai — Saturday 19th aur Sunday 20th ko, subah 10 se 12, phir 1 se 3 baje ..." finishReason=stop
+
+-- CONTROL — median words 46, formal markers 0
+   [1] w= 60 dev=0.06 formal=- 
+       Haan, timing hai dono din, Saturday 19th aur Sunday 20th ko, subah 10 se 12, phir dopahar 1 se 3, Zoom par live sessions rahenge.   Isse Saurabh Bhatnagar (co-founder & CEO, FlexiFunnels) aur Karthik Ramani (co-founder & CTO) conduct कर रहे हैं.   Waise Priya, aap abhi already koi business chala rahi हैं, ya online kuch start karna soch rahi हैं?
+   [2] w= 34 dev=0.00 formal=- 
+       haan, timing dono din same hai — subah 10 se 12, phir dopahar 1 se 3, Zoom par live.   Ye event Saurabh Bhatnagar aur Karthik Ramani le rahe hain, dono FlexiFunnels ke co‑founders hain.
+   [3] w= 33 dev=0.15 formal=- 
+       Timing subah दस से बारह, aur phir dopahar एक से तीन tak hai, dono din, Saturday aur Sunday.   Ye event Saurabh Bhatnagar aur Karthik Ramani le रहे हैं, jo FlexiFunnels ke co-founders hain.
+   [4] w= 36 dev=0.41 formal=- 
+       Haan, timing dono din same है: सुबह दस से बारह, और फिर दोपहर एक से तीन, Zoom पर live sessions रहेंगे.   Ye event Saurabh Bhatnagar aur Karthik Ramani ले रहे हैं, जो FlexiFunnels के co-founders हैं.
+   [5] w= 66 dev=0.08 formal=- 
+       Haan, timing dono din same hai — Saturday 19th aur Sunday 20th ko, subah 10 se 12, phir 1 se 3 baje tak, Zoom par live sessions rahenge.   Ye event FlexiFunnels ke co‑founders le रहे हैं — Saurabh Bhatnagar (CEO) aur Karthik Ramani (CTO).   Main aapse poochूँ? Aap abhi already koi business chala रही हैं, ya online kuch start karne ke baare mein soch रही हैं?
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=5 roles=[system,assistant,user,assistant,user]
+[LLM:openai] Response: 1918ms contentLen=199 text="haan, timing dono din same hai — subah 10 se 12, phir dopahar 1 se 3, Zoom par live sessions रहेंगे...." finishReason=stop
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=5 roles=[system,assistant,user,assistant,user]
+[LLM:openai] Response: 2482ms contentLen=197 text="haan, timing dono din same है — subah 10 se 12, phir dupahar 1 se 3 baje tak, Zoom पर live sessions ..." finishReason=stop
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=5 roles=[system,assistant,user,assistant,user]
+[LLM:openai] Response: 2651ms contentLen=250 text="haan Priya, timing dono din same hai – Saturday 19th aur Sunday 20th September, subah 10 se 12, phir..." finishReason=stop
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=5 roles=[system,assistant,user,assistant,user]
+[LLM:openai] Response: 1959ms contentLen=198 text="haan, timing dono din same hai — subah 10 se 12, phir dopahar 1 se 3, Zoom pe live sessions honge.  ..." finishReason=stop
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=5 roles=[system,assistant,user,assistant,user]
+[LLM:openai] Response: 2059ms contentLen=234 text="haan, timing dono din same hai — Saturday 19th aur Sunday 20th ko, subah 10 se 12, phir 1 se 3 baje ..." finishReason=stop
+
+-- TREATMENT — median words 39, formal markers 0
+   [1] w= 36 dev=0.11 formal=- 
+       haan, timing dono din same hai — subah 10 se 12, phir dopahar 1 se 3, Zoom par live sessions रहेंगे.   Ye event Saurabh Bhatnagar aur Karthik Ramani le रहे हैं, dono FlexiFunnels ke co‑founders हैं.
+   [2] w= 37 dev=0.12 formal=- 
+       haan, timing dono din same है — subah 10 se 12, phir dupahar 1 se 3 baje tak, Zoom पर live sessions हैं.   Isko Saurabh Bhatnagar aur Karthik Ramani le रहे हैं, woh FlexiFunnels ke co‑founders हैं.
+   [3] w= 44 dev=0.02 formal=- 
+       haan Priya, timing dono din same hai – Saturday 19th aur Sunday 20th September, subah 10 se 12, phir 1 se 3 baje tak, Zoom par live sessions rahenge.   Ye event Saurabh Bhatnagar aur Karthik Ramani le rahe hain, dono FlexiFunnels ke co‑founders हैं.
+   [4] w= 36 dev=0.00 formal=- 
+       haan, timing dono din same hai — subah 10 se 12, phir dopahar 1 se 3, Zoom pe live sessions honge.   Ye event Saurabh Bhatnagar aur Karthik Ramani le rahe hain, jo FlexiFunnels ke co‑founders hain.
+   [5] w= 43 dev=0.04 formal=- 
+       haan, timing dono din same hai — Saturday 19th aur Sunday 20th ko, subah 10 se 12, phir 1 se 3 baje tak, Zoom par live sessions rahenge.   Ye event Saurabh Bhatnagar aur Karthik Ramani le rahe हैं, jo FlexiFunnels ke co-founders हैं.
+
+════════════════════════════════════════════════════════════════════════
+6. mixed Hindi/Hinglish
+════════════════════════════════════════════════════════════════════════
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=3 roles=[system,assistant,user]
+[LLM:openai] Response: 3055ms contentLen=415 text="ठीक है, Hindi में ही बताती हूँ.  
+
+Main aapko 19 aur 20 September ko होने वाले ek free 2‑day online ..." finishReason=stop
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=3 roles=[system,assistant,user]
+[LLM:openai] Response: 3520ms contentLen=455 text="Haan Priya, bilkul Hindi mein batati हूँ.  
+
+Main aapko 19 aur 20 September ko होने वाले ek free 2‑d..." finishReason=stop
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=3 roles=[system,assistant,user]
+[LLM:openai] Response: 4483ms contentLen=437 text="हाँ Priya, बिल्कुल Hindi में बताती हूँ।  
+Ye ek free 2‑day online event है, 19 aur 20 September को, ..." finishReason=stop
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=3 roles=[system,assistant,user]
+[LLM:openai] Response: 2738ms contentLen=454 text="ठीक है Priya, Hindi में ही बताती हूँ.  
+
+Main aapko ek free 2‑day online event ke liye invite kar ra..." finishReason=stop
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=3 roles=[system,assistant,user]
+[LLM:openai] Response: 2110ms contentLen=335 text="ज़रूर, Hindi में बताती हूँ.  
+
+ये एक free दो दिन का online Zoom event है — नाम है “AI Income Bluepri..." finishReason=stop
+
+-- CONTROL — median words 82, formal markers 0
+   [1] w= 81 dev=0.29 formal=- 
+       ठीक है, Hindi में ही बताती हूँ.   Main aapko 19 aur 20 September ko होने वाले ek free 2‑day online event ke लिए invite कर रही हूँ — नाम है “AI Income Blueprint”. Ye Zoom pe live रहेगा, aur isme hum AI का use karke online income kaise banानी है woh cover karte hain, idea चुनने se lekar customers tak pahunchne tak.   Aap फिलहाल koi business चला रही हैं, ya abhi online kuch start karne ke baare mein soch रही हैं?
+   [2] w= 89 dev=0.39 formal=- 
+       Haan Priya, bilkul Hindi mein batati हूँ.   Main aapko 19 aur 20 September ko होने वाले ek free 2‑day online event ke लिए invite कर रही हूँ — naam है “AI Income Blueprint”. Ye Zoom पर live रहेगा, aur isme हम step by step AI use karke online income ka system बनाना सिखाते हैं — idea चुनने se lekar kya बेचना है, kaise बेचना hai, aur customers tak kaise पहुँचना hai.   Aap फिलहाल कोई business चला रही हैं, ya online कुछ start करने के बारे में सोच रही हैं?
+   [3] w= 88 dev=0.42 formal=- 
+       हाँ Priya, बिल्कुल Hindi में बताती हूँ।   Ye ek free 2‑day online event है, 19 aur 20 September को, Zoom pe live hoga. Iska naam hai “AI Income Blueprint” aur ये पूरा event इस बात पे है कि AI use karke online income या business कैसे build किया जा सकता है — idea चुनने से लेके, kya sell करना है, aur customers tak पहुँचने तक. Ab aap mujhe ये बताइए, aap already koi business run कर रही हैं, ya abhi online kuch start करने का सोch रही हैं?
+   [4] w= 88 dev=0.22 formal=- 
+       ठीक है Priya, Hindi में ही बताती हूँ.   Main aapko ek free 2‑day online event ke liye invite kar rahi hoon, naam hai “AI Income Blueprint”. Ye 19 aur 20 September ko Zoom par live hoga, jahan aap seekhoge ki AI use karke online income kaise start ya grow करनी है — idea चुनने se leke kya बेचna hai, aur customers tak kaise pahunchna hai, sab cover hota hai.   Aap फिलहाल koi business चला रही हैं, ya abhi online kuch start करने के बारे में सोच रही हैं?
+   [5] w= 66 dev=0.67 formal=- 
+       ज़रूर, Hindi में बताती हूँ.   ये एक free दो दिन का online Zoom event है — नाम है “AI Income Blueprint”. इसमें हम दिखाएँगे कि AI use करके online income या business कैसे start या grow कर सकते हैं, idea चुनने से लेके customers तक पहुँचने तक.   Abhi aap already कोई business चला रही हैं, या online कुछ start करने के बारे में सोच रही हैं?
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=3 roles=[system,assistant,user]
+[LLM:openai] Response: 3872ms contentLen=402 text="ठीक है, Hindi में बताती हूँ.  
+
+Main aapko ek free 2‑day online event ke लिए invite कर रही हूँ, 19 a..." finishReason=stop
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=3 roles=[system,assistant,user]
+[LLM:openai] Response: 2443ms contentLen=389 text="ठीक है, Hindi में ही बताती हूँ.  
+
+ये एक free 2‑day online event है Zoom पर, नाम है “AI Income Bluep..." finishReason=stop
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=3 roles=[system,assistant,user]
+[LLM:openai] Response: 3147ms contentLen=463 text="हाँ Priya, bilकुल Hindi में बताती हूँ।  
+मैं आपको एक free 2‑day online event के लिए invite कर रही हू..." finishReason=stop
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=3 roles=[system,assistant,user]
+[LLM:openai] Response: 5761ms contentLen=380 text="Ji, bilकुल Hindi में बताती हूँ Priya ji.  
+
+Ye एक free 2‑day online event है Zoom पर – naam है “AI I..." finishReason=stop
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=3 roles=[system,assistant,user]
+[LLM:openai] Response: 3423ms contentLen=438 text="Bilkul, Hindi में बताती हूँ.  
+
+मैं आपको 19 और 20 September को होने वाले एक free 2-day online event ..." finishReason=stop
+
+-- TREATMENT — median words 82, formal markers 0
+   [1] w= 75 dev=0.29 formal=- 
+       ठीक है, Hindi में बताती हूँ.   Main aapko ek free 2‑day online event ke लिए invite कर रही हूँ, 19 aur 20 September ko – AI Income Blueprint. Ye Zoom pe live रहेगा, jismein step‑by‑step सिखाया जाएगा ki AI use karke online income kaise बनानी है – idea चुनने se leke kya बेचना hai, website, payments aur customers tak.   Aap फिलहाल koi business चला रही हैं, ya online kuchh start karne ka soch rahi हैं?
+   [2] w= 78 dev=0.81 formal=- 
+       ठीक है, Hindi में ही बताती हूँ.   ये एक free 2‑day online event है Zoom पर, नाम है “AI Income Blueprint”. इसमें हम दिखाते हैं कि AI use करके online income या business कैसे बनाया जा सकता है – idea चुनने से लेकर क्या बेचना है, कैसे बेचना है और customers तक पहुँचने तक पूरा roadmap मिलता है.   Aap फिलहाल कोई अपना business चला रही हैं, या abhi online कुछ start करने के बारे में सोच रही हैं?
+   [3] w= 94 dev=0.74 formal=- 
+       हाँ Priya, bilकुल Hindi में बताती हूँ।   मैं आपको एक free 2‑day online event के लिए invite कर रही हूँ, जो 19 और 20 September को Zoom पर होगा — नाम है “AI Income Blueprint”. इसमें हम step by step ये cover करते हैं कि AI use करके online income कैसे बनानी है — मतलब किस niche में जाना है, क्या बेचना है, अपना offer या product कैसे बनाना है, और फिर customers तक कैसे पहुँचना है.   Aap फिलहाल already कोई business चला रही हैं, या अभी online शुरू करने का सोच रही हैं?
+   [4] w= 72 dev=0.40 formal=- 
+       Ji, bilकुल Hindi में बताती हूँ Priya ji.   Ye एक free 2‑day online event है Zoom पर – naam है “AI Income Blueprint”. Isme हम step by step दिखाएँगे कि AI use करके online income कैसे बनानी है – जैसे kaunsa niche चुनना, kya sell करना, simple website aur offer बनाना, aur customers tak पहुँचना.   Aap फिलहाल koi business चला रही हैं, ya abhi kuch online start करने का सोch rahi हैं?
+   [5] w= 89 dev=0.78 formal=- 
+       Bilkul, Hindi में बताती हूँ.   मैं आपको 19 और 20 September को होने वाले एक free 2-day online event के लिए invite कर रही हूँ — नाम है AI Income Blueprint. ये Zoom पे live रहेगा, और इसमें हम बताते हैं कि AI use करके online income या business कैसे शुरू करना या grow करना है — idea चुनने से लेके क्या बेचना है, और customers तक पहुँचने तक पूरा प्रोसेस.   Aap फिलहाल कोई business चला रही हैं, या online कुछ start करने के बारे में सोच रही हैं?
+
+════════════════════════════════════════════════════════════════════════
+7. a fact-carrying answer in Hindi
+════════════════════════════════════════════════════════════════════════
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=5 roles=[system,assistant,user,assistant,user]
+[LLM:openai] Response: 4140ms contentLen=587 text="Haan, bataati hoon.  
+Isme aapko step‑by‑step सिखाया जाएगा ki AI use karke online income kaise build..." finishReason=stop
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=5 roles=[system,assistant,user,assistant,user]
+[LLM:openai] Response: 6881ms contentLen=806 text="Priya, ये 2-day का AI Income Blueprint event है, jisme aapko step by step sikhaya जाएगा कि AI use ka..." finishReason=stop
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=5 roles=[system,assistant,user,assistant,user]
+[LLM:openai] Response: 2646ms contentLen=401 text="ठीक है, bataati हूँ.  
+Isme aapko niche choose karna, offer ya product banana, buyer ko samajhna, we..." finishReason=stop
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=5 roles=[system,assistant,user,assistant,user]
+[LLM:openai] Response: 3759ms contentLen=454 text="Priya, ये 2‑day ka AI Income Blueprint event है, जिसमें आप सीखोगे:
+
+niche कैसे चुनना है, kya offer य..." finishReason=stop
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=5 roles=[system,assistant,user,assistant,user]
+[LLM:openai] Response: 3838ms contentLen=524 text="थोड़ा सा detail बताती हूँ।
+
+Isme aapko niche चुनना, offer या product बनाना, customer ko samajhna, we..." finishReason=stop
+
+-- CONTROL — median words 97, formal markers 0
+   [1] w=100 dev=0.04 formal=- 
+       Haan, bataati hoon.   Isme aapko step‑by‑step सिखाया जाएगा ki AI use karke online income kaise build karein — jaise niche choose karna, offer ya product बनाना, buyer ko samajhna, website banana, checkout aur payments set karna, lead forms, follow‑ups aur automation, traffic lana, conversion improve karna aur AI se business automate karke scale karna.   Timing dono din same hai: Saturday 19th aur Sunday 20th ko, subah 10 se 12, phir dopahar 1 se 3 baje tak, live on Zoom.   Ab aap mujhe yeh batao, aap already koi business chala rahe ho ya abhi online kuch start karna soch rahe ho?
+   [2] w=148 dev=0.34 formal=- 
+       Priya, ये 2-day का AI Income Blueprint event है, jisme aapko step by step sikhaya जाएगा कि AI use karke online income kaise build करें.   Isme aap log niche चुनना, offer ya product बनाना, apne buyer ko समझना, website, checkout, payment, lead forms, follow-ups aur automation सब build करते हो, साथ–साथ live sessions ke दौरान.   Timing दोनों दिन same है:   शनिवार 19 और रविवार 20 September ko, सुबह 10 se 12, और दुबारा 1 se 3, Zoom पर live.   ये पूरा event इस तरह design है ki aap sirf dekhoge नहीं, balki साथ–साथ अपना system बनाओगे.   Ab main aapko script ke next part pe ले जाती हूँ:   ये पूरा event is tarah se bana hai ki aap sessions ke साथ–साथ अपना system build करो, sirf dekhna नहीं पड़े. Aur iske लिए kisi coding ya technical background की ज़रूरत नहीं है. Kya main aapka free seat reserve कर दूँ?
+   [3] w= 69 dev=0.10 formal=- 
+       ठीक है, bataati हूँ.   Isme aapko niche choose karna, offer ya product banana, buyer ko samajhna, website, checkout, payments, lead form, follow-ups aur automation sab live bana‑bना के sikhaya जाएगा, taaki aap AI use karke online income waala system ready कर पाओ. Timing dono din same है — Saturday 19th aur Sunday 20th September ko, subah 10 se 12, phir dopahar 1 se 3, Zoom pe live sessions रहेंगे.
+   [4] w= 81 dev=0.46 formal=- 
+       Priya, ये 2‑day ka AI Income Blueprint event है, जिसमें आप सीखोगे: niche कैसे चुनना है, kya offer या product बेचना है, apne buyer ko समझना, website बनाना, checkout और payment setup करना, leads collect करना, follow‑ups और automation लगाना, traffic लाना, local clients लेना, conversion improve करना और AI से business को scale करना. Timing: शनिवार 19 और रविवार 20 September ko, दोनों दिन सुबह 10 se 12 और फिर दोपहर 1 se 3, total चार‑चार घंटे live Zoom पर.
+   [5] w= 89 dev=0.13 formal=- 
+       थोड़ा सा detail बताती हूँ। Isme aapko niche चुनना, offer या product बनाना, customer ko samajhna, website, checkout aur payment setup, lead forms, follow-ups aur automation, traffic lana, local clients लेना, conversion improve karna aur AI se business automate karke scale karna सिखाया जाएगा. Timing dono din same hai — Saturday 19th aur Sunday 20th September ko, subah 10 se 12, phir dopahar 1 se 3 baje tak, live on Zoom.   अब aap batao, aap already koi business चला रही hain ya abhi kuch online start karna chahti hain?
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=5 roles=[system,assistant,user,assistant,user]
+[LLM:openai] Response: 4343ms contentLen=566 text="थैंक्यू पूछने के लिए Priya।
+
+Isme aapko AI use karke online income / business build करना सिखाया जाएग..." finishReason=stop
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=5 roles=[system,assistant,user,assistant,user]
+[LLM:openai] Response: 4183ms contentLen=446 text="हाँ, बताती हूँ।  
+Is event में aapko ये चीज़ें practically करवा के सिखाई जाएँगी: niche चुनना, क्या ब..." finishReason=stop
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=5 roles=[system,assistant,user,assistant,user]
+[LLM:openai] Response: 4153ms contentLen=512 text="हाँ, अच्छा सवाल है।  
+
+Isme aapko ये cheezein practically करवाई जाएँगी:  
+niche चुनना, क्या बेच सकते..." finishReason=stop
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=5 roles=[system,assistant,user,assistant,user]
+[LLM:openai] Response: 4341ms contentLen=645 text="haan, bataati hoon.  
+
+Isme aapko step by step सिखाया जाएगा ki:  
+- kaunsa niche चुनना है  
+- kya of..." finishReason=stop
+[LLM:openai] generateCompletion: model=gpt-5.1 messageCount=5 roles=[system,assistant,user,assistant,user]
+[LLM:openai] Response: 3352ms contentLen=423 text="haan, main batati hoon.  
+
+Isme aapko step by step sikhaya जाएगा ki online income kaise build karni ..." finishReason=stop
+
+-- TREATMENT — median words 93, formal markers 0
+   [1] w=100 dev=0.23 formal=- 
+       थैंक्यू पूछने के लिए Priya। Isme aapko AI use karke online income / business build करना सिखाया जाएगा – niche चुनना, kya offer / product बेचना है ये decide करना, buyer ko samajhna, website aur checkout बनाना, payments collect करना, leads लेना, follow-ups aur automation set करना, traffic lana, local clients lena aur AI se business automate karke scale karna. Timing dono din same है – Saturday 19th aur Sunday 20th September:   subah 10 se 12, phir dopahar 1 se 3, live on Zoom.   Ab aap already koi business चला रही हैं ya bilkul scratch se start करना चाहती हैं?
+   [2] w= 83 dev=0.62 formal=- 
+       हाँ, बताती हूँ।   Is event में aapko ये चीज़ें practically करवा के सिखाई जाएँगी: niche चुनना, क्या बेच सकते हैं ये decide करना, apna offer या product बनाना, website और checkout तैयार करना, payments collect करना, leads लेना, follow-up और basic automation set करना, aur AI से apne business को बेहतर करना और scale करना। Timing ये है: शनिवार 19 और रविवार 20 September को, रोज़ सुबह 10 se 12, फिर दुपहर 1 se 3, यानी दोनों दिन 4–4 ghante live Zoom पर.
+   [3] w= 92 dev=0.45 formal=- 
+       हाँ, अच्छा सवाल है।   Isme aapko ये cheezein practically करवाई जाएँगी:   niche चुनना, क्या बेच सकते हैं ये decide करना, offer या product बनाना, simple website और checkout बनाना, payment collect करना, leads लेना, follow-up aur basic automation AI से set करना, और traffic लाना / local clients तक पहुँचना.   Timing: ये 2 दिन का live Zoom event है —   शनिवार 19 aur रविवार 20 September ko,   subah 10 se 12, phir dopahar 1 se 3, dono din.   Aur aap फिलहाल koi business चला रही हैं, ya start करना चाहती हैं online?
+   [4] w=114 dev=0.07 formal=- 
+       haan, bataati hoon.   Isme aapko step by step सिखाया जाएगा ki:   - kaunsa niche चुनना है   - kya offer / product बेचना है   - customer ko kaise samajhna hai   - website, checkout, payment, lead form aur follow-up automations kaise ready karne hain   - traffic kaise लाना है, local clients kaise lena hai, aur AI se business ko automate karke scale kaise karna hai.   Timing: dono din, Saturday 19th aur Sunday 20th September ko, subah 10 se 12, phir dopahar 1 se 3 baje tak, Zoom par live sessions rahenge.   Ab main aapse ek chhota sa sawaal poochu? Aap abhi already koi business chala rahi hain ya online kuch start karne ka soch rahi hain?
+   [5] w= 74 dev=0.16 formal=- 
+       haan, main batati hoon.   Isme aapko step by step sikhaya जाएगा ki online income kaise build karni है —   niche kaise choose करना है, offer / product kaise बनाना है, apne buyer ko समझना, website, checkout, payments, lead forms, follow‑ups aur automation tak सब live sessions mein साथ‑साथ build करवाया जाएगा.   Timing dono din same है:   subah 10 se 12, phir dopahar 1 se 3, Saturday 19th aur Sunday 20th ko, live on Zoom.
+
+DONE. No call was placed. No TTS vendor was contacted.

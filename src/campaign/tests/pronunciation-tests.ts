@@ -492,6 +492,75 @@ test("E9 — a slash rate does not disturb the numeric register decision", () =>
   speaks("You get 2 sessions/week at 7:30 PM.", HI, "You get 2 sessions per week at seven thirty PM.");
 });
 
+// ── SECTION F — verified proper-name pronunciation, speech only ──
+//
+// The canonical spelling is what history, the classifier, the sheet and
+// every contact record hold; only the string handed to `synthesize` is
+// rewritten, and only where Devanagari is already the norm for the
+// utterance. See `VERIFIED_NAME_PRONUNCIATIONS`.
+console.log("\nSECTION F — verified proper names");
+
+const HOST = "Saurabh Bhatnagar";
+const HOST_SPOKEN = "सौरभ भटनागर";
+
+test("F1 — a Hindi utterance speaks the verified name in Devanagari", () => {
+  speaks(`यह session ${HOST} लेंगे।`, HI, `यह session ${HOST_SPOKEN} लेंगे।`);
+  speaks(`${HOST} जी होस्ट कर रहे हैं।`, HINGLISH, `${HOST_SPOKEN} जी होस्ट कर रहे हैं।`);
+});
+
+test("F2 — an ENGLISH call is untouched: canonical spelling reaches TTS", () => {
+  // Devanagari under an explicit `en` language tag is unverified on
+  // Cartesia, Sarvam and ElevenLabs. Until it is measured, an English
+  // call keeps exactly today's behaviour.
+  const line = `The event is hosted by ${HOST}, co-founder and CEO.`;
+  speaks(line, EN, line);
+});
+
+test("F3 — a clearly-English utterance on a Hindi call is also untouched", () => {
+  // Same unverified mixed-script case, reached through the utterance
+  // override rather than the call language.
+  const line = `The event is hosted by ${HOST}, co-founder and CEO.`;
+  speaks(line, HI, line);
+});
+
+test("F4 — the mapping is idempotent", () => {
+  for (const language of [EN, HI, HINGLISH] as const) {
+    for (const text of [`यह session ${HOST} लेंगे।`, `${HOST} जी।`, `Hosted by ${HOST}.`]) {
+      const once = pronounceForSpeech(text, language);
+      assert.equal(pronounceForSpeech(once, language), once, `${language}: ${JSON.stringify(once)}`);
+    }
+  }
+});
+
+test("F5 — NO arbitrary English or Indian name is transliterated", () => {
+  // The list is closed. Every one of these is a name or a word the
+  // rewrite must leave exactly alone, in every language.
+  for (const language of [EN, HI, HINGLISH] as const) {
+    for (const text of [
+      "यह session Karthik Ramani लेंगे।",
+      "यह session Saurabh लेंगे।",
+      "यह session Bhatnagar जी लेंगे।",
+      "यह FlexiFunnels का event है।",
+      "यह Priya Sharma का account है।",
+      "मैं Ishita बोल रही हूँ।",
+    ]) {
+      assert.equal(
+        pronounceForSpeech(text, language),
+        text,
+        `${language}: nothing but a verified full name may be rewritten`,
+      );
+    }
+  }
+});
+
+test("F6 — the name rewrite does not disturb the numeric rules", () => {
+  speaks(
+    `${HOST} का session 7:30 PM पर है।`,
+    HI,
+    `${HOST_SPOKEN} का session saadhe saat baje shaam ko पर है।`,
+  );
+});
+
 // ─────────────────────────────────────────────────────────────────
 console.log(
   `\n${failures.length === 0 ? "ALL PASSED" : "FAILURES"} — ${passed} passed, ${failures.length} failed`,

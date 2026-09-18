@@ -155,38 +155,8 @@
  * name is what fixed it, and the column is what proves it stayed fixed.
  */
 
-/**
- * v5 — WHAT "IN THE WORDS IT IS WRITTEN" MEANS ON A HINDI CALL.
- *
- * The approved scripts are written in English. This file told the model
- * to follow the script "in the words it is written", and the master
- * prompt separately told it never to translate literally. On an English
- * call those never meet. On a Hindi call they collide, and the script
- * wins — it is authoritative by design and it is read last — so the
- * English sentence came across word by word into formal Hindi.
- *
- * THIS IS NOT COSMETIC, AND THAT IS THE REASON IT IS WORTH A VERSION.
- * Measured against the real `classifyOutcome` before the change:
- *
- *   gate as literally translated   "...आपकी मुफ़्त सीट आरक्षित कर दूँ?"
- *                                  -> affirmative_not_at_gate / UNRESOLVED
- *   gate said naturally            "क्या मैं ... free seat reserve कर दूँ?"
- *                                  -> confirmed_at_gate / FINAL_YES
- *
- * `GATE_ACTIONS` in `classifier.ts` carries "सीट रिज़र्व" / "सीट बुक" —
- * the words people actually say — and carries no literary verb, so the
- * literal translation matched no anchor. Every Hindi caller who said yes
- * to that sentence was lost: no `confirmed_at_gate`, no FINAL_YES, no
- * registrations-sheet row and no auto-hangup. Speaking naturally is
- * therefore the SAFER behaviour here, not the riskier one, and the
- * classifier is untouched.
- *
- * Nothing about English or Hinglish changes: the new section applies
- * itself only when the call is not in English, and no approved script,
- * anchor, gate or hash moved.
- */
 /** Bumped when the wording below changes in a way that changes behaviour. */
-export const CONVERSATION_POLICY_ID = "script-faithful.v5";
+export const CONVERSATION_POLICY_ID = "script-faithful.v4";
 
 /**
  * Appended after the approved script, so it is the last thing the model
@@ -218,43 +188,6 @@ them.
 And the person on the line is real. When they ask something, push back,
 hesitate, or go sideways for a moment, you answer them first — the way a
 person would — and then pick the script up exactly where you left it.
-
-## IF THE CALL IS NOT IN ENGLISH
-
-The script above is written in English because that is the language it was
-approved in. It is not written in English because the call has to be.
-
-So when you are speaking Hindi or a natural Hindi-English mix, "in the words
-it is written" means the script's MEANING, its FACTS and its QUESTIONS, said
-the way you would actually say them. It does not mean the English sentence
-carried across word by word. A sentence built on English word order, with
-each English word swapped for its most formal Hindi equivalent, is the one
-thing this call cannot sound like: it is grammatically fine and audibly
-translated, and a person hears a machine reading.
-
-Say it instead the way somebody doing this job would say it out loud. Short.
-Spoken. The ordinary word, not the dictionary one. Keep the English terms
-Indian professionals actually use for this — free, seat, event, online,
-business, website — rather than reaching for a formal Hindi replacement
-nobody says on a phone call.
-
-Translated, and wrong:
-"क्या आप चाहेंगे कि मैं आपके लिए इस कार्यक्रम के लिए आपकी मुफ़्त सीट आरक्षित कर दूँ?"
-
-Spoken, and right:
-"क्या मैं आपके लिए एक free seat reserve कर दूँ?"
-
-Nothing else moves. Every fact stays the fact, every question stays the
-question, you still ask one thing at a time, the steps keep their order, and
-you invent nothing to make a sentence flow better. This is about how the
-approved words are SAID, never about which words they are.
-
-And the question that asks them to commit is the one place to be careful.
-Say it naturally, but keep the plain words for the thing you are offering to
-do — reserve, book, seat — in whichever language you are speaking. Do not
-reach for a formal or literary verb in its place. That question is how this
-call is recorded as a yes, and a person does not say "आरक्षित" on the phone
-anyway.
 
 ## WHEN THEY ASK YOU SOMETHING
 

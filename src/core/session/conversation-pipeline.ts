@@ -37,6 +37,7 @@ import type { AudioPayload, ConversationTurn } from "../../types/provider.types"
 import type { CompletionRequest } from "../../interfaces/providers/language-model-provider.interface";
 import type { LanguageModelProvider } from "../../interfaces/providers/language-model-provider.interface";
 import type { LlmStreamEvent } from "../../types/streaming.types";
+import type { TurnOutcome } from "../../types/benchmark.types";
 import type { SpeechToTextProvider } from "../../interfaces/providers/speech-to-text-provider.interface";
 import type { TextToSpeechProvider, SynthesisTaskRequest } from "../../interfaces/providers/text-to-speech-provider.interface";
 import type { TelephonyProvider } from "../../interfaces/providers/telephony-provider.interface";
@@ -239,6 +240,19 @@ interface ThinkingAndSpeakingResult {
   readonly reportedCompletionTokens?: number;
   /** FIX #7A — number of sentence-level TTS invocations this turn produced (1 on the non-streaming LLM path). Telemetry only. */
   readonly ttsChunkCount: number;
+
+  // --- PHASE A: TURN DISPOSITION. Telemetry only — every value below
+  // is read off a branch this method had already taken, and nothing
+  // here is consulted to decide anything. REQUIRED (not optional) so
+  // the compiler, rather than a reviewer, guarantees that every return
+  // path of a generated turn states what became of it. ---
+
+  /** What became of this reply. See `TurnOutcome`. */
+  readonly turnOutcome: TurnOutcome;
+  /** Raw model-output characters, before `toSpokenText`. A count, never the text. */
+  readonly charsGenerated: number;
+  /** Did the newer caller utterance observed at the supersession check take the floor? A boolean, never the text. */
+  readonly supersederTakesFloor?: boolean;
 
   // --- PHASE 3 BATCH 2A: what the vendor SDK actually did on this
   // turn's request. Observed, never configured. ---
@@ -2262,9 +2276,37 @@ export class ConversationPipeline {
             this.contextualReplyCommitted = true;
           }
           strandedRemainder = unspokenTail(result.assistantText, heard);
-        } else {
+        } else if (result.assistantText.trim().length > 0) {
           this.record.memory.recordAssistantTurn(result.assistantText);
           this.contextualReplyCommitted = true;
+        } else {
+          // PHASE A — AN EMPTY GENERATION IS NOT AN ASSISTANT TURN.
+          //
+          // The guard mirrors the `heard.length > 0` one in the
+          // cancelled branch above, and for the same reason: a turn is
+          // committed because the caller HEARD it, and there is nothing
+          // here to have heard. A provider stream that failed, that
+          // ended with no content, or that was abandoned before its
+          // first token used to land here as `recordAssistantTurn("")`,
+          // which put an empty assistant message into the history and
+          // then into every later request — the model being shown that
+          // it answered, with nothing. The 2026-09-17 audit measured 14
+          // such turns on gemma-4 (14% of its assistant turns), 10 of
+          // which reached a later request; gpt-5.1 had none.
+          //
+          // Nothing replaces it: no placeholder, no apology, no fallback
+          // line. The history simply stays as it was, so the next
+          // request sees the caller's turn still unanswered — which is
+          // what actually happened.
+          //
+          // `contextualReplyCommitted` deliberately stays false for the
+          // same reason it is false for a cancelled reply that played
+          // nothing: no script content reached the caller.
+          // eslint-disable-next-line no-console
+          console.warn(
+            `[PIPELINE:${sid}] Response #${responseId} produced NO text (outcome=${result.turnOutcome}` +
+              ` charsGenerated=${result.charsGenerated} ttsChunks=${result.ttsChunkCount}) — not committed to history`,
+          );
         }
         this.record.bargeIn.reset();
 
@@ -2351,6 +2393,13 @@ export class ConversationPipeline {
           llmRetryReasons: result.llmRetryReasons,
           finalTranscriptCount: turn.finalTranscriptCount,
           interFinalGapsMs: turn.interFinalGapsMs,
+          // PHASE A — the turn's disposition, passed straight through
+          // from the branch that took it. Counts and one boolean; no
+          // transcript, no reply text, no prompt.
+          turnOutcome: result.turnOutcome,
+          charsGenerated: result.charsGenerated,
+          ttsChunkCount: result.ttsChunkCount,
+          supersederTakesFloor: result.supersederTakesFloor,
         });
 
         // Last, after everything this turn owns has been committed and
@@ -3342,12 +3391,118 @@ export class ConversationPipeline {
    * been spoken yet, so the barge-in path is untouched.
    */
   private newerUserTurnWaiting(): boolean {
-    if (this.record.turnDetector.hasBufferedTurn()) return true;
+    // ── PHASE B — THE BUFFERED SIGNAL IS FILTERED, AS IT ALREADY IS
+    // EVERYWHERE ELSE ────────────────────────────────────────────────
+    //
+    // This branch used to be `return true` for ANY buffered turn. That
+    // is the one place in the pipeline where a waiting turn was taken at
+    // face value: `drainPlayback` — the same question asked while the
+    // reply is PLAYING — has always run it through
+    // `bufferedTurnTakesTheFloor` first, and the pending branch below
+    // has always excluded a bare greeting and a bare acknowledgement.
+    // So a "haan ji" or an "okay" that landed while the assistant was
+    // SPEAKING was correctly ignored, and the identical utterance
+    // landing a second earlier, while it was still THINKING, destroyed
+    // the whole reply.
+    //
+    // The 2026-09-17 audit measured that: 18 of 51 gemma-4 turns were
+    // discarded after their first token with TTS never invoked, and 11
+    // of those 18 superseding utterances fail `bufferedTurnTakesTheFloor`
+    // — i.e. the reply was thrown away for something this codebase
+    // already classifies as not taking the floor. Gemma is over-exposed
+    // only because its time-to-first-token leaves a much wider window
+    // for one to arrive; the defect is not Gemma's.
+    //
+    // NO NEW POLICY AND NO NEW THRESHOLD. `bufferedTurnTakesTheFloor` is
+    // called unchanged, on the same `bufferedTurnText()` the drain reads,
+    // so "what counts as taking the floor" has exactly one definition and
+    // this branch now shares it. A buffered turn that DOES take the
+    // floor supersedes exactly as it does today.
+    if (this.record.turnDetector.hasBufferedTurn()) {
+      if (bufferedTurnTakesTheFloor(this.record.turnDetector.bufferedTurnText())) return true;
+      // ...and if it does not, fall through rather than return `false`.
+      // The caller may have gone on to say something real since that
+      // turn was buffered (`emitTurnEnd` clears the pending finals
+      // before buffering, so anything below is strictly newer than it).
+      // That second signal is judged on its own terms by the branch
+      // below, which is untouched — so a genuine follow-up still
+      // supersedes, and only the acknowledgement alone stops doing so.
+    }
 
     const resumed = this.record.turnDetector.getPendingTurnText().trim();
     if (resumed.length === 0) return false;
     if (BARE_GREETING_ONLY.test(resumed)) return false;
     return !isBareAcknowledgement(resumed);
+  }
+
+  /**
+   * The THINKING-side supersession decision, and the telemetry for it,
+   * read ONCE per check.
+   *
+   * PHASE A introduced this as telemetry: which of
+   * `newerUserTurnWaiting`'s two signals fired, and whether the
+   * utterance behind it takes the floor. PHASE B makes the floor
+   * verdict load-bearing for the BUFFERED signal — so the decision and
+   * the description of it must come from one evaluation, or the record
+   * could name a signal other than the one that decided.
+   *
+   * `newerUserTurnWaiting()` remains the decision. Everything else here
+   * re-reads the same three accessors it reads: `hasBufferedTurn`,
+   * `bufferedTurnText` and `getPendingTurnText` are all documented pure
+   * observations — they arm no timer, consume nothing, clear nothing and
+   * touch no threshold — and there is no `await` between the reads, so
+   * no turn can land in the middle of one assessment.
+   *
+   * `takesFloor` is reported in two situations, and this is deliberately
+   * WIDER than Phase A shipped:
+   *
+   *   - a supersession happened: the verdict of the utterance that
+   *     caused it (Phase A's meaning, unchanged); and
+   *   - a buffered turn was waiting and was judged NOT to take the
+   *     floor, so the reply was KEPT. That is the Phase B filter doing
+   *     its work, and it is the only way the fix is measurable in
+   *     production — without it, `supersederTakesFloor: false` simply
+   *     stops appearing and a fix that silently stopped working would
+   *     look identical to one that never has to fire.
+   *
+   * The value still means exactly what it meant: "did the newer
+   * utterance take the floor". Only the set of turns it is recorded on
+   * is larger. It is `undefined` when nothing newer was waiting at all.
+   *
+   * The utterance itself is NEVER returned or logged; only the boolean
+   * verdict and which signal it came from.
+   */
+  private describeSupersession():
+    | {
+        readonly supersedes: true;
+        readonly outcome: Extract<TurnOutcome, "superseded_buffered" | "superseded_pending">;
+        readonly takesFloor: boolean;
+      }
+    | { readonly supersedes: false; readonly takesFloor: boolean | undefined } {
+    const detector = this.record.turnDetector;
+    const bufferedTakesFloor = detector.hasBufferedTurn()
+      ? bufferedTurnTakesTheFloor(detector.bufferedTurnText())
+      : undefined;
+
+    if (!this.newerUserTurnWaiting()) {
+      // Nothing supersedes. `bufferedTakesFloor` is `false` here exactly
+      // when a buffered turn was waiting and the Phase B filter is why
+      // this reply survived; `undefined` when none was waiting.
+      return { supersedes: false, takesFloor: bufferedTakesFloor };
+    }
+
+    if (bufferedTakesFloor === true) {
+      return { supersedes: true, outcome: "superseded_buffered", takesFloor: true };
+    }
+    // The pending signal is what decided: either no turn was buffered,
+    // or one was and it did not take the floor, and the caller has since
+    // resumed with something the branch below `newerUserTurnWaiting`'s
+    // buffered check accepts.
+    return {
+      supersedes: true,
+      outcome: "superseded_pending",
+      takesFloor: bufferedTurnTakesTheFloor(detector.getPendingTurnText()),
+    };
   }
 
   /**
@@ -4987,6 +5142,17 @@ await this.drainPlayback(speakingSignal, true);
       // TTS here: `generateCompletion` is a single await with no
       // synthesis interleaved inside it.
       return {
+        // PHASE A — the non-streaming path has no supersession check and
+        // no mid-stream failure to observe: it either produced audio or
+        // produced nothing to produce audio from. `firstChunkMs` is the
+        // same "real audio existed" test the streaming path uses.
+        turnOutcome:
+          firstChunkMs !== undefined
+            ? "spoken"
+            : spokenContent.trim().length === 0
+              ? "empty_response"
+              : "aborted",
+        charsGenerated: spokenContent.length,
         assistantText: spokenContent,
         llmMs,
         llmGenerationMs: llmMs,
@@ -5061,6 +5227,11 @@ await this.drainPlayback(speakingSignal, true);
      * from cancelling — and logging — the same reply twice.
      */
     let superseded = false;
+    // PHASE A — TELEMETRY ONLY. Set by whichever branch below actually
+    // disposed of this reply; `undefined` until one does, and resolved
+    // against the measurements at the return sites. Nothing reads it.
+    let outcome: TurnOutcome | undefined;
+    let supersederTakesFloor: boolean | undefined;
     const startedAt = preOpened?.openedAtMs ?? Date.now();
 
     try {
@@ -5108,6 +5279,7 @@ await this.drainPlayback(speakingSignal, true);
             // speaking the entire echoed prompt to the caller.
             if (isContaminatedOutput(fullText)) {
               contaminated = true;
+              outcome = "contaminated";
               break;
             }
 
@@ -5136,14 +5308,37 @@ await this.drainPlayback(speakingSignal, true);
             // changes. And the loop cannot stall: a buffered turn is
             // delivered to the next subscriber immediately, so every
             // supersession is followed by a real turn.
-            if (speakingSignal === undefined && this.newerUserTurnWaiting()) {
-              // eslint-disable-next-line no-console
-              console.log(
-                `[PIPELINE:${this.record.id}] reply SUPERSEDED before it was spoken — the caller has already said something newer`,
-              );
-              superseded = true;
-              this.triggerExternalBargeIn();
-              break;
+            if (speakingSignal === undefined) {
+              // PHASE A/B — the decision and its description, from one
+              // evaluation, taken BEFORE `triggerExternalBargeIn` so it
+              // describes the detector as it stood when the decision was
+              // made. See `describeSupersession`.
+              const supersession = this.describeSupersession();
+              if (supersession.takesFloor !== undefined) {
+                supersederTakesFloor = supersession.takesFloor;
+              }
+              if (supersession.supersedes) {
+                outcome = supersession.outcome;
+                // eslint-disable-next-line no-console
+                console.log(
+                  `[PIPELINE:${this.record.id}] reply SUPERSEDED before it was spoken — the caller has already said something newer` +
+                    ` (signal=${supersession.outcome} supersederTakesFloor=${supersession.takesFloor} charsGenerated=${fullText.length})`,
+                );
+                superseded = true;
+                this.triggerExternalBargeIn();
+                break;
+              }
+              if (supersession.takesFloor === false) {
+                // PHASE B — a turn IS waiting, and it does not take the
+                // floor. The reply continues down the unchanged path and
+                // is spoken; the waiting turn is answered on the next
+                // iteration exactly as it would have been.
+                // eslint-disable-next-line no-console
+                console.log(
+                  `[PIPELINE:${this.record.id}] a waiting caller turn does NOT take the floor — the reply is KEPT` +
+                    ` (charsGenerated=${fullText.length})`,
+                );
+              }
             }
 
             speakingSignal ??= this.enterSpeaking();
@@ -5187,6 +5382,11 @@ await this.drainPlayback(speakingSignal, true);
       // Deliberately reports only what was already measured on this
       // turn — no prompt text, no transcript, no reply content, no
       // credential — plus the provider's own message.
+      // PHASE A — records that the stream is what ended this turn. The
+      // resolution at the return site still lets a turn whose partial
+      // text DID reach the caller report `spoken`, because it was not a
+      // silent turn; `charsGenerated` and this line describe the rest.
+      outcome = "stream_error";
       // eslint-disable-next-line no-console
       console.error(
         `[LLM:${this.record.id}] streaming completion FAILED mid-turn` +
@@ -5227,6 +5427,12 @@ await this.drainPlayback(speakingSignal, true);
       // leaks into them.
       if (speakingSignal) await this.drainPlayback(speakingSignal);
       return {
+        // PHASE A — `contaminated` is the disposition of the GENERATED
+        // reply, which is what this field is about; the fixed fallback
+        // spoken in its place is not a model turn. `charsGenerated`
+        // counts the suppressed output, not the fallback.
+        turnOutcome: "contaminated",
+        charsGenerated: fullText.length,
         assistantText: fallback,
         llmMs: llmFirstTokenMs,
         llmGenerationMs,
@@ -5251,16 +5457,39 @@ await this.drainPlayback(speakingSignal, true);
     // The same supersession test, for the reply that never reached a
     // sentence cut and so arrives here whole. Same two conditions:
     // nothing spoken yet, and the caller has already moved on.
+    // PHASE A/B — assessed once, under exactly the conditions that
+    // guarded the old `newerUserTurnWaiting()` call in the chain below,
+    // so the same turns are assessed as before. Read-only.
+    const tailSupersession =
+      !superseded && remainder.length > 0 && speakingSignal === undefined
+        ? this.describeSupersession()
+        : undefined;
+    if (tailSupersession !== undefined && tailSupersession.takesFloor !== undefined) {
+      supersederTakesFloor = tailSupersession.takesFloor;
+    }
+
     if (superseded) {
       // Already cancelled above; the remainder belongs to the reply the
       // caller has moved on from, so none of it is spoken.
-    } else if (remainder.length > 0 && speakingSignal === undefined && this.newerUserTurnWaiting()) {
+    } else if (tailSupersession !== undefined && tailSupersession.supersedes) {
+      outcome = tailSupersession.outcome;
       // eslint-disable-next-line no-console
       console.log(
-        `[PIPELINE:${this.record.id}] reply SUPERSEDED before it was spoken — the caller has already said something newer`,
+        `[PIPELINE:${this.record.id}] reply SUPERSEDED before it was spoken — the caller has already said something newer` +
+          ` (signal=${tailSupersession.outcome} supersederTakesFloor=${tailSupersession.takesFloor} charsGenerated=${fullText.length})`,
       );
       this.triggerExternalBargeIn();
     } else if (remainder.length > 0 && !(speakingSignal?.aborted ?? false)) {
+      // PHASE B — reached, rather than superseded, when a waiting turn
+      // does not take the floor. The reply is spoken by the unchanged
+      // path below and the waiting turn is answered next iteration.
+      if (tailSupersession?.takesFloor === false) {
+        // eslint-disable-next-line no-console
+        console.log(
+          `[PIPELINE:${this.record.id}] a waiting caller turn does NOT take the floor — the reply is KEPT` +
+            ` (charsGenerated=${fullText.length})`,
+        );
+      }
       speakingSignal ??= this.enterSpeaking();
       if (!speakingSignal.aborted) {
         const spoken = await this.synthesizeAndPlay(remainder, speakingSignal);
@@ -5289,7 +5518,25 @@ await this.drainPlayback(speakingSignal, true);
     // caller's next loop iteration either way.
     void loopSignal;
 
+    // PHASE A — the turn's disposition, resolved from what was already
+    // measured. `ttsFirstChunkMs` (not `ttsChunkCount`) is the test for
+    // `spoken`: it is set only by a real first audio chunk, whereas the
+    // chunk counter also counts a `synthesizeAndPlay` that returned
+    // through its skip guard. Branch-set outcomes win, except that a
+    // turn the caller actually heard reports `spoken` even if the
+    // stream failed on the way — see `TurnOutcome`.
+    const charsGenerated = (finalText ?? fullText).length;
+    const resolvedOutcome: TurnOutcome =
+      outcome === "superseded_buffered" || outcome === "superseded_pending" || outcome === "contaminated"
+        ? outcome
+        : ttsFirstChunkMs !== undefined
+          ? "spoken"
+          : (outcome ?? (assistantText.trim().length === 0 ? "empty_response" : "aborted"));
+
     return {
+      turnOutcome: resolvedOutcome,
+      charsGenerated,
+      ...(supersederTakesFloor !== undefined ? { supersederTakesFloor } : {}),
       assistantText,
       llmMs: llmFirstTokenMs,
       llmGenerationMs,

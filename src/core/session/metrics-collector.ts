@@ -110,6 +110,18 @@ export interface TurnLatencyInput {
   readonly finalTranscriptCount?: number | undefined;
   /** PHASE 3 PHASE 0 — gaps between consecutive finals within the turn. */
   readonly interFinalGapsMs?: readonly number[] | undefined;
+  // PHASE A — TURN DISPOSITION. Optional for the same
+  // backward-compatibility reason every batch above is: existing
+  // construction sites omit them, and omitting is identical to "not
+  // reported". Counts and one closed string union — never text.
+  /** What became of this turn's reply. See `TurnOutcome`. */
+  readonly turnOutcome?: TurnLatencyBreakdown["turnOutcome"];
+  /** Raw model-output characters this turn produced. A count, so 0 is meaningful. */
+  readonly charsGenerated?: number | undefined;
+  /** Sentence-level TTS invocations this turn made. A count, so 0 is meaningful. */
+  readonly ttsChunkCount?: number | undefined;
+  /** Did the newer caller utterance observed at the supersession check take the floor? */
+  readonly supersederTakesFloor?: boolean | undefined;
 }
 
 /**
@@ -144,6 +156,17 @@ const ENDPOINT_MARKER_OUTCOMES: ReadonlySet<string> = new Set([
   "not_releasable_hold_phrase",
   "not_releasable_incomplete",
   "evidenced_confirmation",
+]);
+
+/** PHASE A — the closed set `turnOutcome` may hold. See `TurnOutcome`. */
+const TURN_OUTCOMES: ReadonlySet<string> = new Set([
+  "spoken",
+  "superseded_buffered",
+  "superseded_pending",
+  "contaminated",
+  "stream_error",
+  "empty_response",
+  "aborted",
 ]);
 
 function positiveOrUndefined(value: number | undefined): number | undefined {
@@ -258,6 +281,19 @@ export class SessionMetricsCollector {
       ? input.interFinalGapsMs.filter((g) => Number.isFinite(g) && g >= 0)
       : [];
     const interFinalGapsMs = gaps.length > 0 ? gaps : undefined;
+    // PHASE A — validated against the closed union exactly the way
+    // `endpointMarkerOutcome` above is, so the field can only ever hold
+    // a disposition the pipeline actually claimed.
+    const turnOutcome = TURN_OUTCOMES.has(input.turnOutcome as string) ? input.turnOutcome : undefined;
+    // Counts, not latencies: 0 is a REAL reading for both (an empty
+    // generation, a turn that never reached TTS), and
+    // `positiveOrUndefined` preserves it.
+    const charsGenerated = positiveOrUndefined(input.charsGenerated);
+    const ttsChunkCount = positiveOrUndefined(input.ttsChunkCount);
+    // A boolean, so neither guard above applies: stored only when the
+    // pipeline actually classified a superseding utterance.
+    const supersederTakesFloor =
+      typeof input.supersederTakesFloor === "boolean" ? input.supersederTakesFloor : undefined;
 
     this.turnLatencies.push({
       turnIndex: input.turnIndex,
@@ -291,6 +327,10 @@ export class SessionMetricsCollector {
       ...(llmRetryReasons !== undefined ? { llmRetryReasons } : {}),
       ...(finalTranscriptCount !== undefined ? { finalTranscriptCount } : {}),
       ...(interFinalGapsMs !== undefined ? { interFinalGapsMs } : {}),
+      ...(turnOutcome !== undefined ? { turnOutcome } : {}),
+      ...(charsGenerated !== undefined ? { charsGenerated } : {}),
+      ...(ttsChunkCount !== undefined ? { ttsChunkCount } : {}),
+      ...(supersederTakesFloor !== undefined ? { supersederTakesFloor } : {}),
     });
 
     this.costTotals.speechToText += input.sttCostUsd;

@@ -119,6 +119,48 @@ export interface EstimatedCostMetric {
 }
 
 /**
+ * What actually became of one turn's generated reply.
+ *
+ * PHASE A — TELEMETRY ONLY. Nothing reads this to make a decision; it
+ * exists because the 2026-09-17 Gemma audit could only establish WHERE
+ * a reply was lost by elimination and by correlating stored transcripts
+ * against `tts`/`ttsSynthesisMs`. The outcome is now stated by the code
+ * that took the branch, so the same question is a query.
+ *
+ *   `spoken`              — at least one real audio chunk was produced
+ *                           for this turn. The caller heard a reply.
+ *   `superseded_buffered` — discarded before any audio because the turn
+ *                           detector was already HOLDING a completed
+ *                           newer caller turn.
+ *   `superseded_pending`  — discarded before any audio because the
+ *                           caller had RESUMED speaking (finals held,
+ *                           not yet endpointed).
+ *   `contaminated`        — the model echoed its own instructions; the
+ *                           remainder was suppressed and the fixed
+ *                           fallback spoken instead.
+ *   `stream_error`        — the provider stream failed and nothing was
+ *                           spoken.
+ *   `empty_response`      — the stream ended normally with no content
+ *                           and nothing was spoken.
+ *   `aborted`             — the turn ended with nothing spoken for any
+ *                           other reason (session ending, a signal
+ *                           already aborted on entry).
+ *
+ * Exactly one value per recorded turn. `spoken` outranks
+ * `stream_error`/`empty_response`: a mid-stream failure whose partial
+ * text still reached the caller is not a silent turn, and
+ * `charsGenerated` plus the provider's own error log still describe it.
+ */
+export type TurnOutcome =
+  | "spoken"
+  | "superseded_buffered"
+  | "superseded_pending"
+  | "contaminated"
+  | "stream_error"
+  | "empty_response"
+  | "aborted";
+
+/**
  * A single latency sample tied to the turn it was measured in,
  * allowing per-turn benchmarking rather than only session-level
  * averages.
@@ -416,6 +458,80 @@ export interface TurnLatencyBreakdown {
    * single final yields no array at all rather than a misleading `[0]`.
    */
   readonly interFinalGapsMs?: readonly number[];
+
+  // --- PHASE A: TURN DISPOSITION. Telemetry only; read by nothing that
+  // makes a decision, and derived entirely from branches the pipeline
+  // had already taken. Optional for the same backward-compatibility
+  // reason every batch above is: records written before this field
+  // existed simply omit it. ---
+
+  /** What became of this turn's reply. See `TurnOutcome`. */
+  readonly turnOutcome?: TurnOutcome;
+  /**
+   * Characters of RAW model output this turn produced, before
+   * `toSpokenText` and before any sentence was selected for synthesis.
+   * `0` is meaningful — it is what an `empty_response` looks like — so
+   * it is stored rather than collapsed into absence.
+   *
+   * A COUNT, never the text. No transcript, no reply content and no
+   * prompt ever reaches this record.
+   */
+  readonly charsGenerated?: number;
+  /** Sentence-level TTS invocations this turn made. `0` means TTS was never reached. */
+  readonly ttsChunkCount?: number;
+  /**
+   * Whether the newer caller utterance observed at the THINKING-side
+   * supersession check would be judged to TAKE THE FLOOR by
+   * `bufferedTurnTakesTheFloor` — the same classification the playback
+   * drain applies to a turn waiting behind a reply that is playing.
+   *
+   * A BOOLEAN, never the utterance. Absent when nothing newer was
+   * waiting when the reply was ready.
+   *
+   * ── THE CONTRACT, AND HOW TO READ THE TWO FIELDS TOGETHER ─────────
+   *
+   * `turnOutcome` identifies WHAT ACTUALLY HAPPENED to the reply. This
+   * field only describes whether the newer utterance TOOK THE FLOOR.
+   * They answer different questions and must be read as a pair.
+   *
+   * NEVER INFER SUPERSESSION FROM THIS FIELD — neither from its
+   * presence nor from its value. It is recorded on superseded turns AND
+   * on turns that were kept, and `false` appears under both. The only
+   * discriminator is `turnOutcome`.
+   *
+   * The four combinations that occur:
+   *
+   *   `spoken` + absent
+   *     Nothing newer was waiting when the reply was ready. The
+   *     ordinary case.
+   *
+   *   `spoken` + `false`
+   *     Something WAS waiting, it did not take the floor, and the reply
+   *     was therefore kept and spoken. THIS PAIR IS THE PRODUCTION
+   *     SIGNATURE OF THE PHASE B FIX FIRING — before Phase B that reply
+   *     was discarded and the caller heard silence. Counting it is what
+   *     separates a fix that rarely needs to fire from one that has
+   *     silently stopped working.
+   *
+   *   `superseded_buffered` / `superseded_pending` + `true`
+   *     The newer utterance took the floor and won. Unchanged by
+   *     Phase B, and the intended behaviour.
+   *
+   *   `superseded_pending` + `false`
+   *     LEGITIMATE, AND NOT THE DEFECT PHASE B CLOSED. The pending
+   *     branch of `newerUserTurnWaiting` has its own, older policy: it
+   *     excludes a bare greeting and a bare acknowledgement, and it
+   *     deliberately does NOT exclude an attention check. So a caller
+   *     who resumes mid-utterance with "are you there" or "can you hear
+   *     me" supersedes through that branch while
+   *     `bufferedTurnTakesTheFloor` — which treats an attention check as
+   *     taking no floor — reports `false`. Phase B changed only the
+   *     BUFFERED branch; this pending case is untouched and is working
+   *     as designed. Do not read it as a reply wrongly discarded.
+   *
+   * (`superseded_*` + absent, and `spoken` + `true`, are unreachable.)
+   */
+  readonly supersederTakesFloor?: boolean;
 }
 
 /**

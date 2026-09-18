@@ -549,6 +549,10 @@ async function runScripted(input: {
         ringTimeoutSeconds: 5,
         maxCallSeconds: 60,
         maxSilenceSeconds: WINDOW_SECONDS,
+        // A confirmed registration now waits for the person's closing
+        // word; scaled down with the silence window so D5's plain yes
+        // still ends inside it, named as its own hangup.
+        closingWaitSeconds: 1,
       },
       campaign,
       script: registrationScript!,

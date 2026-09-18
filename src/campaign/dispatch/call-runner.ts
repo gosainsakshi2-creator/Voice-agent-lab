@@ -52,7 +52,7 @@ import {
 import { recordClassifyMs, saveOutcome } from "../db/repositories/outcome.repo";
 import { classifyOutcome } from "../outcome/classifier";
 import { isFinalYes, syncFinalYesToSheet } from "../integrations/final-yes-sheet";
-import { dispositionFor } from "../outcome/disposition";
+import { dispositionFor, type ContactDisposition } from "../outcome/disposition";
 import {
   containsPhrase,
   hasExplicitRefusal,
@@ -115,6 +115,15 @@ export interface ManagerLike {
    * it behaves exactly as before.
    */
   lastActivityAt?(sessionId: SessionId): number;
+  /**
+   * OPTIONAL. Tells the live pipeline that this call's registration is
+   * confirmed and the hangup is being held for the person's closing
+   * word, so a bare "okay, thank you" is answered with one fixed
+   * goodbye rather than a generated reply. Idempotent. Optional so a
+   * manager without it (every fake in the test suites) still runs
+   * every call — it loses the fixed goodbye, not the closing wait.
+   */
+  armScriptedClosing?(sessionId: SessionId): unknown;
 }
 
 export interface CallRunnerDeps {
@@ -557,6 +566,9 @@ export async function runCall(
     // Set by the watchdog when the conversation has reached a final
     // answer, and read once below to name the hangup.
     let finalAnswer: "FINAL_YES" | "FINAL_NO" | undefined;
+    // True once the pipeline has been told the registration is
+    // confirmed — see `closingResponsePending` and `armScriptedClosing`.
+    let closingArmed = false;
 
     const finished = new Promise<void>((resolve) => {
       unwatch = observer.watch(sessionId as string, (event) => {
@@ -631,8 +643,49 @@ export async function runCall(
           // The person has decided, and has already heard the agent's
           // reply to it. Nothing is left on this call, so it ends here
           // instead of holding the line open until the silence timeout.
-          // Read-only — see `definitiveAnswerSoFar`.
-          finalAnswer = definitiveAnswerSoFar(manager, sessionId as SessionId, campaign);
+          // Read-only — see `liveRegistrationReadingSoFar`.
+          const live = liveRegistrationReadingSoFar(manager, sessionId as SessionId, campaign);
+          // The classifier has read a confirmed registration in what has
+          // been said so far — possibly before the agent has even replied
+          // to it. Tell the pipeline once, now, so its fixed goodbye is
+          // ready before the person can possibly say "okay, thanks".
+          if (live.registrationConfirmed && !closingArmed) {
+            closingArmed = true;
+            armScriptedClosing(manager, sessionId as SessionId);
+          }
+          // ── A confirmed registration waits for the person's closing word ──
+          //
+          // The confirmation has been spoken and the person has not yet
+          // said anything back. Ending the call on THIS tick — which is
+          // what happened before — took "okay, thank you" out of their
+          // mouth and made every registration end like a dropped line.
+          // So the FINAL_YES is held, exactly as it is already held for
+          // an open question (`callerQuestionPending`), until the person
+          // takes their turn: their closing word is answered by the
+          // pipeline's fixed goodbye, that goodbye commits, and the very
+          // same reading below then fires with the person having spoken.
+          //
+          // Bounded, on the SAME silence clock as MAX_SILENCE above and
+          // measured in the same state: a person who says nothing for
+          // `closingWaitSeconds` after hearing the confirmation is done,
+          // and the call ends as the FINAL_YES it always was — just not
+          // in the half-second before they could speak. The verdict, the
+          // disposition, the sheet row and the hangup name are untouched;
+          // only WHEN moves. See `closingResponsePending`.
+          if (live.verdict === "FINAL_YES" && live.awaitingClosingResponse) {
+            if (
+              sessionState === SessionState.LISTENING &&
+              now - Math.max(lastActivityAt, heardAt) > config.closingWaitSeconds * 1000
+            ) {
+              finalAnswer = "FINAL_YES";
+              return "FINAL_ANSWER" as const;
+            }
+            // Holding for the person. The AGENT_CLOSED reading below is
+            // skipped on purpose: a confirmation that happens to end on a
+            // sign-off is still the confirmation they have not answered.
+            continue;
+          }
+          finalAnswer = live.verdict;
           if (finalAnswer) return "FINAL_ANSWER" as const;
           // SECOND, and only if the above found nothing: the AGENT has
           // said goodbye. The conversation reached its end without the
@@ -1164,8 +1217,43 @@ export function definitiveAnswerIn(
   turns: readonly ConversationTurn[],
   campaignType: string,
 ): "FINAL_YES" | "FINAL_NO" | undefined {
-  const last = turns[turns.length - 1];
-  if (!last || last.role !== "assistant") return undefined;
+  return liveRegistrationReading(turns, campaignType).verdict;
+}
+
+/**
+ * The watchdog's whole reading of a live transcript, in one pass of the
+ * classifier.
+ *
+ *   - `verdict` is `definitiveAnswerIn`, unchanged in every respect —
+ *     the person's final answer, acted on only once the agent has
+ *     replied to it and nobody has a question open.
+ *   - `registrationConfirmed` is the classifier's own `isFinalYes` on
+ *     everything said SO FAR, whoever spoke last. It is true from the
+ *     moment the person's yes is committed, before the agent's reply
+ *     exists, and is what tells the pipeline to ready its goodbye.
+ *   - `awaitingClosingResponse` is the one new judgement: the verdict
+ *     is FINAL_YES, the agent's confirmation has been spoken, and the
+ *     person has not said a word since. See `closingResponsePending`.
+ *
+ * Never throws, for the same reason `definitiveAnswerIn` never did.
+ */
+export interface LiveRegistrationReading {
+  readonly verdict: "FINAL_YES" | "FINAL_NO" | undefined;
+  readonly registrationConfirmed: boolean;
+  readonly awaitingClosingResponse: boolean;
+}
+
+const NO_READING: LiveRegistrationReading = {
+  verdict: undefined,
+  registrationConfirmed: false,
+  awaitingClosingResponse: false,
+};
+
+export function liveRegistrationReading(
+  turns: readonly ConversationTurn[],
+  campaignType: string,
+): LiveRegistrationReading {
+  if (turns.length === 0) return NO_READING;
 
   const stored = toStoredTranscript(turns);
   const classification = classifyOutcome({
@@ -1181,6 +1269,68 @@ export function definitiveAnswerIn(
     outcomeType: classification.outcomeType,
     failureClass: "COMPLETED",
   });
+
+  const registrationConfirmed = isFinalYes(classification, disposition);
+  const verdict = verdictFrom(turns, stored.turns, classification, disposition);
+  return {
+    verdict,
+    registrationConfirmed,
+    awaitingClosingResponse:
+      verdict === "FINAL_YES" && closingResponsePending(stored.turns, classification),
+  };
+}
+
+/**
+ * Has the person NOT yet responded to the agent's confirmation of their
+ * registration?
+ *
+ * The confirmation is located, not guessed: the classifier records
+ * every at-gate affirmation with the index of the turn it was said in,
+ * so the confirming turn is the LATEST decisive one, and the
+ * confirmation is the first non-empty assistant turn after it. This
+ * returns true when no non-empty user turn follows that confirmation —
+ * i.e. the last thing that happened on the call is the agent saying
+ * "your seat is reserved", and the person is owed the chance to say
+ * "okay, thank you" (or to ask something) before the line is dropped.
+ *
+ * It WITHHOLDS a hangup and can never produce one. Every path that
+ * cannot locate the confirmation — no at-gate signal, no reply after
+ * it — reports `false`, which is exactly the behaviour the watchdog had
+ * before this reading existed.
+ */
+function closingResponsePending(
+  transcript: readonly TranscriptTurn[],
+  classification: OutcomeClassification,
+): boolean {
+  const gateYes = classification.detail.signals.filter(
+    (signal) => signal.kind === "affirmation" && signal.atGate && signal.decisive !== false,
+  );
+  if (gateYes.length === 0) return false;
+  const confirmingIndex = gateYes.reduce((latest, signal) => Math.max(latest, signal.turnIndex), -1);
+  const confirmationIndex = transcript.findIndex(
+    (turn, index) => index > confirmingIndex && turn.role === "assistant" && turn.text.trim().length > 0,
+  );
+  if (confirmationIndex === -1) return false;
+  return !transcript.some(
+    (turn, index) => index > confirmationIndex && turn.role === "user" && turn.text.trim().length > 0,
+  );
+}
+
+/**
+ * The body `definitiveAnswerIn` has always had, with the classification
+ * handed in rather than computed, so `liveRegistrationReading` can run
+ * the classifier once for all three of its answers. Byte-for-byte the
+ * same decisions, in the same order.
+ */
+function verdictFrom(
+  turns: readonly ConversationTurn[],
+  storedTurns: readonly TranscriptTurn[],
+  classification: OutcomeClassification,
+  disposition: ContactDisposition,
+): "FINAL_YES" | "FINAL_NO" | undefined {
+  const last = turns[turns.length - 1];
+  if (!last || last.role !== "assistant") return undefined;
+  const stored = { turns: storedTurns };
 
   // A yes is acted on only once the agent has ANSWERED it. If the
   // agent's latest turn is itself a question — it read the person's
@@ -1487,16 +1637,30 @@ function agentClosedSoFar(manager: ManagerLike, sessionId: SessionId): boolean {
 }
 
 /** The same reading, against a live session, contained. */
-function definitiveAnswerSoFar(
+function liveRegistrationReadingSoFar(
   manager: ManagerLike,
   sessionId: SessionId,
   campaign: CampaignRecord,
-): "FINAL_YES" | "FINAL_NO" | undefined {
-  if (typeof manager.getTranscript !== "function") return undefined;
+): LiveRegistrationReading {
+  if (typeof manager.getTranscript !== "function") return NO_READING;
   try {
-    return definitiveAnswerIn(manager.getTranscript(sessionId), campaign.campaignType);
+    return liveRegistrationReading(manager.getTranscript(sessionId), campaign.campaignType);
   } catch {
-    return undefined;
+    return NO_READING;
+  }
+}
+
+/**
+ * Tells the pipeline the registration is confirmed, contained the same
+ * way every other optional manager call here is: a manager without the
+ * method, or a session that is gone, changes nothing.
+ */
+function armScriptedClosing(manager: ManagerLike, sessionId: SessionId): void {
+  if (typeof manager.armScriptedClosing !== "function") return;
+  try {
+    manager.armScriptedClosing(sessionId);
+  } catch {
+    // The session ended between the read and the call — nothing to arm.
   }
 }
 

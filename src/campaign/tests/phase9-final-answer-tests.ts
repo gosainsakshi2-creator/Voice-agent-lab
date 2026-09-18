@@ -555,7 +555,12 @@ if (!process.env["DATABASE_URL"]) {
       {
         manager: manager as never,
         observer: new SessionObserver(manager as never),
-        config: { ...config, dialingEnabled: true, ringTimeoutSeconds: 5, maxCallSeconds: 60, maxSilenceSeconds },
+        // `closingWaitSeconds` scaled down like the silence window: the
+        // fake manager here cannot speak for the caller, so a confirmed
+        // registration ends at the closing-wait bound rather than on
+        // the caller's "okay, thanks" — see post-registration-closing-tests.ts
+        // for the exchange itself.
+        config: { ...config, dialingEnabled: true, ringTimeoutSeconds: 5, maxCallSeconds: 60, maxSilenceSeconds, closingWaitSeconds: 1 },
         campaign,
         script: registrationScript!,
       },

@@ -500,6 +500,26 @@ export class DefaultVoiceSessionManager implements VoiceSessionManager, Pipeline
   }
 
   /**
+   * ADDITIVE, NOT PART OF `VoiceSessionManager`. The campaign layer has
+   * established — through its own outcome classifier — that this call's
+   * registration is confirmed, and is holding the hangup for the
+   * person's closing response. Tells the pipeline to answer a bare
+   * closing acknowledgement with its one fixed goodbye instead of a
+   * generated reply (see `ConversationPipeline.armScriptedClosing`).
+   *
+   * Idempotent, speaks nothing by itself, and changes nothing about
+   * STT, turn detection, barge-in or playback. A session with no
+   * pipeline (not yet connected, or already ended) reports `false` and
+   * the caller behaves exactly as before.
+   */
+  armScriptedClosing(sessionId: SessionId): boolean {
+    const pipeline = this.pipelines.get(sessionId);
+    if (!pipeline) return false;
+    pipeline.armScriptedClosing();
+    return true;
+  }
+
+  /**
    * ADDITIVE, NOT PART OF `VoiceSessionManager`. Mirrors
    * `pushInboundAudio` / `onOutboundAudio` / `signalBargeIn` above:
    * a small read-only accessor added for the integration layer so

@@ -176,6 +176,49 @@ const EVIDENCED_CONFIRMATION_LONG_MS = 250;
  */
 const EVIDENCED_CONFIRMATION_OPEN_MS = 300;
 /**
+ * ---------------- A LONG turn breathes (PHASE 4) -------------------
+ *
+ * The evidenced tiers above are sized for the claim they act on: the
+ * provider's endpointer has measured ~400ms of silence and the text
+ * does not AFFIRMATIVELY read as unfinished. For a short answer that is
+ * conclusive. For a long one it is not, and this is the gap the live
+ * calls kept falling into: a caller two or three clauses into an
+ * explanation draws breath at a clause boundary — "I've been running a
+ * small shop." ... "in Pune for two years, and" — and the first half
+ * carries no dangling word, no comma, nothing `looksIncomplete` can
+ * see. ~650ms after their last word the reply lands on top of the
+ * second half. The guards are correct about the TEXT; what they cannot
+ * know is that the base rate of a mid-thought pause at a complete-
+ * looking point rises with how long the caller has already been
+ * talking. A person who has said twelve words is telling you something;
+ * a person who has said "Haan." is answering you.
+ *
+ * So a long turn — by word count, or by how long the caller has been
+ * speaking — gets ONE wider evidenced window on the `feed` fast path,
+ * in place of the 250/300ms tier. It is still a confirmation, not a
+ * silence window: any segment arriving inside it cancels the release
+ * exactly as before (`feed` resets `stage`), so a caller who does carry
+ * on costs nothing, and only a long turn that really did end pays the
+ * difference. Short turns — every answer at the gate, every "yes",
+ * "haan", "okay", every short question — take exactly the tier they
+ * take today.
+ *
+ * Deliberately NOT applied to `noteEndOfSpeech`: an `UtteranceEnd` is
+ * Deepgram's claim that the caller stopped 1000ms ago, so more than a
+ * second of real quiet is already in evidence there and the
+ * inferred/collapse paths have waited out a full silence window.
+ * Only the one path acting on ~400ms of measured silence changes.
+ */
+const EVIDENCED_CONFIRMATION_LONG_TURN_MS = 600;
+/** A turn this long is an explanation, not an answer — see above. */
+const LONG_TURN_MIN_WORDS = 12;
+/**
+ * ...or one the caller has been speaking for this long, from their first
+ * recognised word. Catches the slow, hesitant speaker whose twelve
+ * words take longer than a fast speaker's twenty.
+ */
+const LONG_TURN_MIN_DURATION_MS = 5_000;
+/**
  * A turn with no sentence-final punctuation is the likelier mid-thought
  * pause, so it gets the longer hold. Still bounded — this is a
  * confirmation, not another silence window.
@@ -467,6 +510,22 @@ export interface TurnDetectionEvent {
 }
 
 /**
+ * OBSERVATION ONLY — see `onContinuationHold`. The detector has just
+ * decided the caller is MID-THOUGHT and armed a continuation grace for
+ * `text` rather than releasing it.
+ */
+export interface ContinuationHoldEvent {
+  /** The finals accumulated so far for the turn being held. */
+  readonly text: string;
+  /** How long the grace just armed will wait before the next decision. */
+  readonly graceMs: number;
+  /** True when the whole turn is a request for a moment ("wait", "ek minute"). */
+  readonly askedForAMoment: boolean;
+  /** Wall-clock ms from the first segment of this turn to now. */
+  readonly turnDurationMs: number;
+}
+
+/**
  * Feed transcript segments in as they arrive (partial or final);
  * receive an `onTurnEnd` callback exactly once per detected user
  * turn. Callers own the timer clock via `now()` injection so this
@@ -571,6 +630,12 @@ export class AdaptiveTurnDetector {
    * changes a decision because one is present.
    */
   private readonly pendingListeners = new Set<(text: string) => void>();
+  /**
+   * OBSERVERS of a continuation grace being armed — see
+   * `onContinuationHold`. Notified, never consulted: nothing in this
+   * detector reads them or changes a decision because one is present.
+   */
+  private readonly continuationHoldListeners = new Set<(event: ContinuationHoldEvent) => void>();
   constructor(
     private readonly now: () => number = Date.now,
     private readonly immediateOnFinal = false,
@@ -611,6 +676,48 @@ export class AdaptiveTurnDetector {
     const text = this.pendingFinalText.trim();
     if (text.length === 0) return;
     for (const listener of this.pendingListeners) listener(text);
+  }
+
+  /**
+   * OBSERVATION ONLY: the detector has just armed a CONTINUATION GRACE
+   * for the held text — i.e. the silence window expired, the text
+   * reads as a thought still in progress (a dangling conjunction, a
+   * comma, a request for a moment) and the detector is giving the
+   * caller room to finish rather than releasing the turn.
+   *
+   * This is the one instant in the whole endpointing flow at which the
+   * detector has POSITIVE evidence of two things at once: the caller
+   * has gone quiet for over a second, AND they are not finished. It is
+   * exactly where a human listener says "mm-hmm" — into the pause, to
+   * show they are still there, without taking the floor. The pipeline
+   * subscribes here for that lightweight acknowledgement cue and for
+   * nothing else.
+   *
+   * It is NOT a release and it is NOT a claim the turn will continue:
+   * if the caller stays quiet the grace expires and the turn is
+   * released through `emitTurnEnd` exactly as before, and if they
+   * resume, `feed` cancels the grace exactly as before. No
+   * notification is sent for either.
+   *
+   * Deliberately NOT fired for: the adaptive silence window, the
+   * chunk-boundary grace, the post-speech confirmation, the
+   * pending-interim re-wait, a filler-only drop, or a forced end.
+   *
+   * Arms no timer, consumes nothing, clears nothing and touches no
+   * threshold — every window in this file is byte-for-byte what it was.
+   */
+  onContinuationHold(listener: (event: ContinuationHoldEvent) => void): () => void {
+    this.continuationHoldListeners.add(listener);
+    return () => this.continuationHoldListeners.delete(listener);
+  }
+
+  private notifyContinuationHold(graceMs: number, askedForAMoment: boolean): void {
+    if (this.continuationHoldListeners.size === 0) return;
+    const text = this.pendingFinalText.trim();
+    if (text.length === 0) return;
+    const turnDurationMs = this.turnStartedAtMs !== null ? this.now() - this.turnStartedAtMs : 0;
+    const event: ContinuationHoldEvent = { text, graceMs, askedForAMoment, turnDurationMs };
+    for (const listener of this.continuationHoldListeners) listener(event);
   }
 
   onTurnEnd(listener: (event: TurnDetectionEvent) => void): () => void {
@@ -741,7 +848,14 @@ export class AdaptiveTurnDetector {
       // takes the full inference path below.
       if (this.lastFinalWasEndpoint && !this.pendingInterim && this.isReleasableThought()) {
         this.stage = "confirming";
-        this.rearmTimer(this.evidencedConfirmationWindowMs(this.pendingFinalText));
+        // PHASE 4: a LONG turn takes the wider evidenced window here and
+        // only here — see the block above `EVIDENCED_CONFIRMATION_LONG_TURN_MS`.
+        // Every other turn takes exactly the tier it took before.
+        this.rearmTimer(
+          this.isLongTurn(nowMs)
+            ? EVIDENCED_CONFIRMATION_LONG_TURN_MS
+            : this.evidencedConfirmationWindowMs(this.pendingFinalText),
+        );
         // Observers are told only when the endpoint claim is EXPLICIT
         // (`speech_final: true` on this very final). A provider that
         // reports nothing (`isSpeechFinal` absent) takes this fast path
@@ -780,6 +894,20 @@ export class AdaptiveTurnDetector {
     const text = this.pendingFinalText.trim();
     if (text.length === 0 || FILLER_ONLY.test(text) || HOLD_PHRASE_ONLY.test(text)) return false;
     return !looksIncomplete(text);
+  }
+
+  /**
+   * PHASE 4 — is the held turn an EXPLANATION rather than an answer?
+   * By word count, or by how long the caller has been speaking since
+   * their first recognised segment. See the block above
+   * `EVIDENCED_CONFIRMATION_LONG_TURN_MS`. Read only by the `feed`
+   * fast path; decides nothing else.
+   */
+  private isLongTurn(nowMs: number): boolean {
+    const text = this.pendingFinalText.trim();
+    if (text.length === 0) return false;
+    if (text.split(/\s+/).length >= LONG_TURN_MIN_WORDS) return true;
+    return this.turnStartedAtMs !== null && nowMs - this.turnStartedAtMs >= LONG_TURN_MIN_DURATION_MS;
   }
 
   /**
@@ -1087,7 +1215,12 @@ export class AdaptiveTurnDetector {
         this.continuationGraces < MAX_CONTINUATION_GRACES
       ) {
         this.continuationGraces += 1;
-        this.rearmTimer(askedForAMoment ? HOLD_GRACE_MS : CONTINUATION_GRACE_MS);
+        const graceMs = askedForAMoment ? HOLD_GRACE_MS : CONTINUATION_GRACE_MS;
+        this.rearmTimer(graceMs);
+        // Observers are told AFTER the grace is armed, so a listener
+        // that reads the detector sees the state this branch leaves
+        // behind. Notification only — see `onContinuationHold`.
+        this.notifyContinuationHold(graceMs, askedForAMoment);
         return;
       }
 

@@ -4,16 +4,146 @@
 > It is deliberately short. Stable project truth lives in [MEMORY.md](MEMORY.md);
 > this file only holds *what is happening right now*.
 
-**Updated:** 2026-09-04
-**Branch:** `voice-agent-improvements` — **four campaign-layer files UNCOMMITTED**
-(see the 2026-09-04 section below). Everything else is committed.
-**Last commit:** `a7d20cd` — Hearing check behavior fix hello fix
+**Updated:** 2026-09-18
+**Branch:** `voice-agent-improvements` — **eleven files changed + three new test
+suites UNCOMMITTED** (see the 2026-09-18 section below). Nothing committed,
+nothing pushed, nothing dialed, nothing deployed.
+**Last commit:** `2630106` — Gemma 4 call failure
 **Dialing:** `CAMPAIGN_DIALING_ENABLED=true` — **real calls are live**
-**Latest pass:** **2026-09-04 — buffered-turn / hearing handling (committed) and
-answer-to-question binding hardening (uncommitted).** The LATENCY AUDIT section
-after it is still the reference for any latency thread; the two "latency fix"
-commits made this morning were reverted (`ffcf969`, `a24c50a`) and nothing from
-them was reintroduced.
+**Latest pass:** **2026-09-18 — three conversation-behaviour fixes in the
+registration campaign: the agent's own backchannel cue, long-turn completion,
+and the post-registration closing exchange.** The LATENCY AUDIT section further
+down is still the reference for any latency thread; no latency, STT, TTS,
+provider, VAD or transport setting was touched by this pass.
+
+---
+
+## 2026-09-18 — BACKCHANNEL CUE, LONG-TURN COMPLETION, POST-REGISTRATION CLOSING
+
+**Status: IMPLEMENTED, TYPECHECKED (`tsc --noEmit --incremental false` clean),
+TESTED, UNCOMMITTED.** Approved scope was three conversation behaviours only.
+Explicitly NOT changed: STT provider selection, TTS provider configuration,
+endpointing values, VAD thresholds, the media bridges, the playback queue,
+script wording, `COMMIT_ANCHORS`, the classifier, `isFinalYes`, the sheet
+writer, `definitiveAnswerIn`'s verdict.
+
+### 1. The agent's own backchannel cue ("mm-hmm" into a long caller's pause)
+
+Root cause: nothing agent-side existed. Every "backchannel" in the pipeline
+was caller-side (ignoring the caller's "okay" while the agent speaks). Every
+spoken line went through `enterSpeaking()` → SPEAKING, where three filters can
+DROP caller segments — so a normal utterance was the wrong vehicle.
+
+Fix — `turn-detection.ts` + `conversation-pipeline.ts`:
+- `AdaptiveTurnDetector.onContinuationHold(listener)` — an OBSERVER hook fired
+  when `emitTurnEnd` arms a continuation grace (silence window expired AND the
+  text reads mid-thought). Notification only; no window, threshold or decision
+  changed. `ContinuationHoldEvent` carries text, graceMs, askedForAMoment,
+  turnDurationMs.
+- The pipeline subscribes after the greeting (`considerBackchannelCue`) and,
+  when every gate holds — LISTENING, `awaitingTurn`, identity confirmed, no
+  attention episode / held remainder, ≥ `BACKCHANNEL_CUE_MIN_WORDS` (8) words
+  pending, ≤ 2 cues per turn, ≥ 6s apart, no loud caller energy in the last
+  400ms, not a hold phrase ("wait") — synthesises one cue from a fixed
+  per-language table (`backchannelCueFor`: en "Mm-hmm./Okay./Right./Hmm.",
+  hi-en "Hmm./Achha./Ji./Okay.", hi "हम्म।/अच्छा।/जी।"), caches it per call,
+  re-checks every gate after synthesis, and hands it to the transport through
+  `playBackchannelAudio`: raw `mediaStream.sendAudio` + outbound listeners
+  ONLY — no state transition, no `playAudioChunk` accounting, no turn timing
+  marks, no `recordAssistantTurn`, no LLM. Cost is charged via
+  `recordAuxiliaryCost`.
+- Echo guard: `isBackchannelCueEcho` drops a bare 1–2-word acknowledgement
+  arriving in LISTENING within 2s of a cue being played, before the detector
+  (the 4-word self-echo guard cannot see a one-word cue).
+- Architectural note recorded: the cue lands INTO the detector's held pause,
+  not over arriving speech; the Vobiz bridge's energy-only barge-in is
+  suppressed while STT is alive, so a queued cue cannot trigger it.
+
+### 2. Long turns released before the caller finished
+
+Root cause: the `feed` fast path in `turn-detection.ts`. Deepgram's
+`speech_final` fires after 400ms of silence; if the text does not END on a
+continuation word / fragment punctuation the turn was released 150–300ms
+later — ~650ms of quiet answered a long explanation at a clause boundary.
+
+Fix — ONE tier on ONE path: `EVIDENCED_CONFIRMATION_LONG_TURN_MS = 600` is
+armed instead of the 250/300ms tier when the pending turn has
+≥ `LONG_TURN_MIN_WORDS` (12) words or has run ≥ `LONG_TURN_MIN_DURATION_MS`
+(5s) (`isLongTurn`). Short answers, short questions, the `noteEndOfSpeech`
+marker path (already ≥1s of quiet), the inference path and every grace are
+byte-for-byte unchanged. Cost: up to +350ms on a long turn that really did
+finish; nothing on one where the caller carries on (the window is cancelled
+by any segment). Short pauses inside a SHORT exchange are deliberately still
+two turns (turn-completion D3 pins the trade-off).
+
+### 3. Immediate hangup after registration
+
+Root cause: `runCall`'s watchdog called `definitiveAnswerIn` every 500ms and
+it returned FINAL_YES the moment the confirmation reply committed. The sheet
+write is separate (`finalize` step 6, once, after the call) and untouched.
+
+Fix — `call-runner.ts`, `dispatch.config.ts`, `voice-session-manager.impl.ts`,
+`conversation-pipeline.ts`:
+- `liveRegistrationReading(turns, campaignType)` returns `{ verdict,
+  registrationConfirmed, awaitingClosingResponse }`. `verdict` IS
+  `definitiveAnswerIn` (now a thin wrapper, same decisions in the same order,
+  one classifier pass). `registrationConfirmed` = `isFinalYes` on what has
+  been said so far, whoever spoke last. `awaitingClosingResponse` =
+  FINAL_YES + no non-empty user turn after the first assistant turn that
+  follows the LAST decisive at-gate affirmation (`closingResponsePending`,
+  located from the classifier's own `signals[].turnIndex`).
+- Watchdog: on `registrationConfirmed` it calls the new optional
+  `manager.armScriptedClosing(sessionId)` once (from the yes, before the
+  agent has replied). While `awaitingClosingResponse` it HOLDS the FINAL_YES
+  (and skips AGENT_CLOSED), bounded by the new `closingWaitSeconds`
+  (`CAMPAIGN_CLOSING_WAIT_SECONDS`, default 8, clamped ≥1, must stay below
+  the 40s silence window and the 30s recovery interval) on the SAME silence
+  clock; at the bound it ends as `agent_hangup:final_yes` exactly as before.
+- Pipeline: `armScriptedClosing()`; `handleScriptedClosing` in the main loop
+  (after attention + identity, before the LLM) answers a bare closing
+  acknowledgement (`isClosingAcknowledgement`: thanks / goodbye / positive
+  closer / acknowledgement stack, no `?`, no negation, ≤8 words, full
+  segmentation with backtracking) with ONE fixed goodbye via
+  `speakAttentionUtterance` ("Thank you. Have a great day. Bye!" /
+  "Thank you. Aapka din shubh ho. Bye!" / "शुक्रिया। आपका दिन शुभ हो। बाय!" —
+  chosen to survive `toSpokenText`; "Okay, thank you." is collapsed to
+  "Okay." by the speech formatter). Once per call; declined when the agent's
+  latest turn asks a question. `startSpeculation` declines to pre-open a
+  request for such a turn (same family as its hearing/identity guards).
+- Flow: yes → confirmation → HOLD → "Okay, thank you." → goodbye → FINAL_YES
+  hangup. A question after the confirmation takes the existing LLM path and
+  the existing `callerQuestionPending` hold; a retraction still flips to
+  FINAL_NO; a silent person is hung up at the bound.
+
+### Tests
+
+New: `test:turn-completion` (18/18), `test:backchannel-cue` (13/13),
+`test:post-registration-closing` (27/27; section D drives the real `runCall`).
+Updated (they pinned the immediate hangup): post-registration-question C6
+(now asserts the hold + bound), and `closingWaitSeconds: 1` in the scaled
+configs of phase9 C, agent-hangup, announced-question and
+post-registration-question.
+
+Regression, this tree: turn-release 19/19 · barge-in 52/52 · end-of-speech
+17/17 · speculative-llm 23/23 · self-echo 7/7 · phase9 22/22 · agent-hangup
+24/24 · announced-question 20/20 · confirmation-binding 127/127 · contraction
+40/40 · phase8 33/33 · long-monologue 62/62 · attention 33/33 · buffered-turn
+24/24 · hearing-loop 13/13 · ack-continuity 10/10 · identity-gate 38/38 ·
+stt-clock 14/14 · post-registration-question 21/22.
+Run alone afterwards: conversation-continuity 42/42 · silence-recovery 27/27.
+
+**Pre-existing failure (not this change):** post-registration-question **B6**
+expects a refusal-with-a-question to read FINAL_NO; the committed
+`call-runner.ts` (`2630106`) already applies `callerQuestionPending` on the
+FINAL_NO branch, so B6 returns `undefined` on HEAD too — verified by running
+the B6 transcript against `git show HEAD:...call-runner.ts`.
+
+**Files UNCOMMITTED:** `src/core/session/turn-detection.ts`,
+`src/core/session/conversation-pipeline.ts`,
+`src/core/session/voice-session-manager.impl.ts`,
+`src/campaign/dispatch/call-runner.ts`, `src/campaign/config/dispatch.config.ts`,
+`docs/RUNBOOK.md`, `package.json`, four updated test files, three new test
+files.
 
 ---
 

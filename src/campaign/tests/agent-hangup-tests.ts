@@ -469,6 +469,10 @@ async function runScripted(input: {
         ringTimeoutSeconds: 5,
         maxCallSeconds: 60,
         maxSilenceSeconds: WINDOW_SECONDS,
+        // The scripted sessions here cannot speak for the caller, so a
+        // confirmed registration (C1) ends at the closing-wait bound —
+        // inside the silence window, so the hangup keeps its own name.
+        closingWaitSeconds: 1,
       },
       campaign,
       script: registrationScript!,

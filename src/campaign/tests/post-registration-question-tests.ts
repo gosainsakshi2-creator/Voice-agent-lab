@@ -590,6 +590,8 @@ async function runScripted(input: {
         ringTimeoutSeconds: 5,
         maxCallSeconds: 60,
         maxSilenceSeconds: WINDOW_SECONDS,
+        // Scaled down with the silence window — see C6.
+        closingWaitSeconds: 1,
       },
       campaign,
       script: registrationScript!,
@@ -718,7 +720,15 @@ try {
     assert.equal(stored.type, "registered_confirmed");
   });
 
-  await test("C6. a plain yes with no question still ends promptly as final_yes", async () => {
+  await test("C6. a plain yes with no question ends as final_yes — after the person's closing word, or at the closing-wait bound", async () => {
+    // Since the post-registration closing change, a confirmed
+    // registration is no longer ended on the tick after the
+    // confirmation commits: the line is held for the person's "okay,
+    // thank you" (answered by the pipeline's fixed goodbye) and, if
+    // they say nothing, ends at `closingWaitSeconds`. Both endings are
+    // still `agent_hangup:final_yes`, and both are still inside the
+    // silence window. The full exchange is driven in
+    // post-registration-closing-tests.ts; this is the control.
     const plain = await runScripted({
       transcriptSoFar: [agent(GREETING), agent(GATE), caller("Yes, please.")],
       drive: async (s) => {
@@ -731,12 +741,16 @@ try {
     assert.equal(
       await hangupReasonOf(plain.outcome.attemptId!),
       "agent_hangup:final_yes",
-      "a completed confirmation must be unaffected by the fix",
+      "a completed confirmation still ends as the registration it is",
     );
     const afterReplyMs = plain.telemetry.endedAt - plain.telemetry.firstReplyCommittedAt;
     assert.ok(
+      afterReplyMs >= 1_000,
+      `...but not on the very next tick — the person is given the closing wait (${afterReplyMs}ms)`,
+    );
+    assert.ok(
       afterReplyMs < WINDOW_MS,
-      `...and promptly, not a silence window later (${afterReplyMs}ms)`,
+      `...and still inside the silence window (${afterReplyMs}ms)`,
     );
     assert.notEqual(plain.telemetry.endedInState, SessionState.SPEAKING);
   });

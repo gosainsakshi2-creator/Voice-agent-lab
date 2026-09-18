@@ -48,7 +48,7 @@ import { currentTurnNote, languageHintFor, openingLineFor } from "./system-promp
 import { classifyIdentityAnswer } from "../../campaign/domain/identity-answer";
 import { SentenceChunker } from "./sentence-chunker";
 import { isBareAcknowledgement } from "./turn-detection";
-import type { EndpointMarkerOutcome } from "./turn-detection";
+import type { ContinuationHoldEvent, EndpointMarkerOutcome } from "./turn-detection";
 import { voicemailPhraseIn } from "./voicemail-detection";
 import { combineSignals, abortableSleep } from "./abort-utils";
 import { estimateAudioSeconds, withByteCounter } from "./audio-utils";
@@ -832,6 +832,216 @@ function hearingFollowUpFor(language: SupportedLanguage): string {
       return "Bas confirm karna tha ki aap mujhe sun paa rahe hain. Jo maine abhi kaha, woh aapne suna?";
     default:
       return "I just want to make sure you can hear me. Did you catch what I was saying?";
+  }
+}
+
+/**
+ * ---------------- The agent's OWN backchannel cue ----------------
+ *
+ * A person listening to a long explanation says "mm-hmm" into the
+ * pauses. Nothing in this pipeline did, so a caller two or three
+ * clauses into an answer heard dead air every time they drew breath,
+ * and the ones who noticed said "hello?" — which is the attention
+ * flow, a hearing check, and a wasted turn.
+ *
+ * The cue is a SPEECH-SIDE act, not a semantic turn, and every rule
+ * below exists to keep it that way:
+ *
+ *   - It is triggered by the turn detector's `onContinuationHold`
+ *     observer and by nothing else. That hook fires at exactly one
+ *     instant: the caller has been quiet for the whole adaptive
+ *     silence window (1.1s+) AND the text they have said so far reads
+ *     as unfinished. So the cue lands INTO a pause the detector is
+ *     already holding open, never over speech that is arriving.
+ *   - It is played through `playBackchannelAudio`, which hands bytes
+ *     to the transport and touches NOTHING else: no state transition
+ *     (the session stays LISTENING), no `enterSpeaking`, no playback
+ *     accounting (`outboundQueuedMs`, `spokenUtterances`,
+ *     `firstAudioQueuedAtMs`), no turn timing, no `recordAssistantTurn`.
+ *     The language model never sees it and the transcript never
+ *     contains it. Because the session is not SPEAKING, none of the
+ *     SPEAKING-only filters (backchannel, uncorroborated, self-echo)
+ *     can drop a caller segment because of it, and barge-in is
+ *     untouched — there is nothing to barge into.
+ *   - It is deterministic. A short fixed vocabulary per language,
+ *     rotated so the same word is never said twice in a row,
+ *     synthesised once per call and cached. No language-model request.
+ *   - It is rare. Only for a turn that already has
+ *     `BACKCHANNEL_CUE_MIN_WORDS` words (a story, not an answer), at
+ *     most `BACKCHANNEL_CUE_MAX_PER_TURN` per turn, never within
+ *     `BACKCHANNEL_CUE_MIN_GAP_MS` of the last one, never while the
+ *     transport heard loud caller energy in the last few hundred ms,
+ *     never during the greeting, an identity gate, an attention
+ *     episode or a held script position, and only while the main loop
+ *     is idle awaiting a turn (`awaitingTurn`).
+ *
+ * THE ONE HAZARD, and its guard: on a speakerphone our own cue can
+ * come back up the inbound track and be transcribed as the caller
+ * saying "hmm". The existing self-echo guard needs four words and
+ * cannot see a one-word cue, so `isBackchannelCueEcho` drops a bare
+ * one-or-two-word acknowledgement that arrives within
+ * `BACKCHANNEL_CUE_ECHO_WINDOW_MS` of a cue being played — before it
+ * reaches the turn detector. A caller's genuine continuation carries
+ * content and is never matched.
+ *
+ * Nothing about STT, endpointing, turn detection, barge-in, TTS
+ * provider selection or playback architecture changes: the cue is one
+ * extra consumer of an observer hook and one extra writer to a
+ * transport path that already exists.
+ */
+/** A turn must already be this long before a cue is even considered. */
+const BACKCHANNEL_CUE_MIN_WORDS = 8;
+/** Never more than this many cues into one caller turn. */
+const BACKCHANNEL_CUE_MAX_PER_TURN = 2;
+/** ...and never two cues closer together than this. */
+const BACKCHANNEL_CUE_MIN_GAP_MS = 6_000;
+/**
+ * Loud near-end energy this recent means the caller is already
+ * resuming; a cue now would land on their first word.
+ */
+const BACKCHANNEL_CUE_RECENT_ENERGY_MS = 400;
+/** A bare acknowledgement arriving this soon after a cue is read as our own echo. */
+const BACKCHANNEL_CUE_ECHO_WINDOW_MS = 2_000;
+/** Longest a cue is allowed to be — anything longer is a reply, not a cue. */
+const BACKCHANNEL_CUE_MAX_AUDIO_MS = 1_500;
+
+/**
+ * The cue vocabulary, per language. Deliberately non-committal: nothing
+ * here can be heard as agreement with a proposition ("yes", "correct",
+ * "exactly") or as taking the floor. Every form survives `toSpokenText`
+ * unchanged and is under `SELF_ECHO_MIN_WORDS`, which is why the echo
+ * guard above exists.
+ */
+const BACKCHANNEL_CUES: Readonly<Record<string, readonly string[]>> = {
+  en: ["Mm-hmm.", "Okay.", "Right.", "Hmm."],
+  hi: ["हम्म।", "अच्छा।", "जी।"],
+  "hi-en": ["Hmm.", "Achha.", "Ji.", "Okay."],
+};
+
+/** The n-th cue for a language, rotating through the table so no two consecutive cues repeat. */
+export function backchannelCueFor(language: SupportedLanguage, index: number): string {
+  const cues = BACKCHANNEL_CUES[language] ?? BACKCHANNEL_CUES["en"] ?? ["Okay."];
+  return cues[((index % cues.length) + cues.length) % cues.length] ?? "Okay.";
+}
+
+/**
+ * ---------------- The scripted closing after a registration ---------
+ *
+ * Once a registration is confirmed and the confirmation has been
+ * spoken, the call used to be ended by the campaign watchdog on its
+ * very next tick — before the person could say "okay, thank you". The
+ * campaign layer now HOLDS that hangup and waits for the person (see
+ * `closingResponsePending` in `call-runner.ts`), and asks this
+ * pipeline, through `armScriptedClosing`, to answer their closing
+ * pleasantry with ONE short fixed goodbye rather than a generated
+ * reply. Fixed, for the same reason the hearing lines are: the goodbye
+ * must never be an opportunity to restate the pitch, re-ask the gate or
+ * ask anything at all, and a generated line cannot promise that.
+ *
+ * Only a BARE closing acknowledgement is answered this way — the whole
+ * utterance is thanks, an acknowledgement, a goodbye, or a courtesy
+ * word, and nothing else. Anything with content — a question ("what
+ * time is it?"), an objection, a retraction ("no, cancel it") — takes
+ * the normal contextual path exactly as it does today, and the campaign
+ * layer's existing question guards keep the line open for it. The
+ * vocabulary therefore contains NO negation of any kind.
+ */
+const CLOSING_ACKNOWLEDGEMENT_TOKENS = [
+  // Thanks.
+  "thank you", "thanks", "thank you so much", "thanks a lot", "thank you very much",
+  "many thanks", "thanks so much", "thankyou",
+  "dhanyavaad", "dhanyavad", "dhanyawad", "shukriya", "bahut shukriya", "bahut dhanyavaad",
+  "धन्यवाद", "शुक्रिया", "बहुत धन्यवाद",
+  // Goodbyes.
+  "bye", "bye bye", "goodbye", "good bye", "see you", "see you there", "take care",
+  "have a good day", "have a great day", "have a nice day",
+  "phir milenge", "milte hain", "फिर मिलेंगे",
+  // Positive closers that carry no proposition of their own.
+  "perfect", "great", "wonderful", "awesome", "lovely", "sounds good", "good",
+  "done", "noted", "okay done", "cool", "super", "excellent", "nice", "alright",
+  "badhiya", "bahut badhiya", "bahut achha", "bahut accha", "sahi hai", "chalo", "chaliye",
+  "बढ़िया", "बहुत बढ़िया", "बहुत अच्छा", "चलो", "चलिए",
+  // Courtesy words that ride along with any of the above.
+  "ji", "sir", "madam", "ma'am", "maam", "please", "okay then", "ok then", "then",
+  "जी", "सर", "मैडम",
+];
+
+/** Punctuation that may sit between closing words without changing what they are. */
+const CLOSING_PUNCTUATION = /[,.!…।\-–—"'’()]/gu;
+
+/** The closing phrases as word arrays, longest first, so a greedy match prefers "thank you so much" to "thank you". */
+const CLOSING_PHRASES: readonly (readonly string[])[] = CLOSING_ACKNOWLEDGEMENT_TOKENS.map((phrase) =>
+  phrase.toLowerCase().replace(CLOSING_PUNCTUATION, "").split(/\s+/).filter((w) => w.length > 0),
+).sort((a, b) => b.length - a.length);
+
+/** Longer than this is a sentence, not a pleasantry. */
+const CLOSING_ACKNOWLEDGEMENT_MAX_WORDS = 8;
+
+/**
+ * Is the WHOLE utterance the person closing the conversation — a bare
+ * acknowledgement, a thank-you, a goodbye, or a courtesy stack of them
+ * ("Okay, thank you.", "Great, thanks ji.", "Theek hai, bye.")?
+ *
+ * Read word by word: at every position the utterance must continue
+ * with either a phrase from the closing table (longest first) or a
+ * single word `isBareAcknowledgement` already knows. Anything else —
+ * one word of content — fails it, so "thank you, but I have a
+ * question" and "okay, and what about the link" never match.
+ *
+ * A question mark anywhere is disqualifying: a question is never a
+ * closing. Negations are absent from the table by construction, so
+ * "no thanks" and "nahi" fall through to the contextual path, where
+ * the classifier and the campaign layer already read them.
+ *
+ * Exported so the boundary can be asserted by a test.
+ */
+export function isClosingAcknowledgement(text: string): boolean {
+  const trimmed = text.trim();
+  if (trimmed.length === 0 || trimmed.includes("?")) return false;
+  const words = trimmed
+    .toLowerCase()
+    .replace(CLOSING_PUNCTUATION, " ")
+    .split(/\s+/)
+    .filter((word) => word.length > 0);
+  if (words.length === 0 || words.length > CLOSING_ACKNOWLEDGEMENT_MAX_WORDS) return false;
+
+  // Every way of segmenting the words into closing phrases and bare
+  // acknowledgements is tried, not just the greedy one: "haan ji theek
+  // hai bye" must not have "haan ji theek" taken as one acknowledgement
+  // and "hai" left stranded. At most eight words, so this is cheap.
+  const reachable = new Array<boolean>(words.length + 1).fill(false);
+  reachable[0] = true;
+  for (let at = 0; at < words.length; at += 1) {
+    if (!reachable[at]) continue;
+    for (const phrase of CLOSING_PHRASES) {
+      if (phrase.length === 0 || at + phrase.length > words.length) continue;
+      if (phrase.every((word, offset) => words[at + offset] === word)) reachable[at + phrase.length] = true;
+    }
+    // The shared acknowledgement table has multi-word entries of its
+    // own ("theek hai", "haan ji", "got it", "samajh gaya").
+    for (let span = 1; span <= Math.min(3, words.length - at); span += 1) {
+      if (isBareAcknowledgement(words.slice(at, at + span).join(" "))) reachable[at + span] = true;
+    }
+  }
+  return reachable[words.length] === true;
+}
+
+/**
+ * The one fixed goodbye. Short, asks nothing, restates nothing, and
+ * ends on a sign-off the campaign layer's `agentClosedIn` already
+ * recognises. Every form survives `toSpokenText` unchanged — which is
+ * why none of them opens with "Okay, thank you": the speech formatter
+ * collapses that stack to a bare "Okay." on its way to the synthesiser,
+ * and the thanks is the part that must be heard.
+ */
+function scriptedClosingFor(language: SupportedLanguage): string {
+  switch (language) {
+    case "hi":
+      return "शुक्रिया। आपका दिन शुभ हो। बाय!";
+    case "hi-en":
+      return "Thank you. Aapka din shubh ho. Bye!";
+    default:
+      return "Thank you. Have a great day. Bye!";
   }
 }
 
@@ -1937,6 +2147,33 @@ export class ConversationPipeline {
    */
   private awaitingTurn = false;
   /**
+   * ---------------- The agent's own backchannel cue ----------------
+   * See the block above `BACKCHANNEL_CUE_MIN_WORDS`. All of this is
+   * speech-side bookkeeping: none of it is read by turn detection,
+   * barge-in, the language model, memory, metrics or playback
+   * accounting.
+   */
+  /** Synthesised cue audio, keyed by `language|text`, so each cue costs one TTS request per call. */
+  private readonly backchannelCueCache = new Map<string, AudioPayload>();
+  /** Cues played into the caller turn currently being held. Reset when a turn is acquired. */
+  private backchannelCuesThisTurn = 0;
+  /** Wall clock of the last cue handed to the transport, `0` if none yet. */
+  private lastBackchannelCueAtMs = 0;
+  /** Rotation index into the cue vocabulary — see `backchannelCueFor`. */
+  private backchannelCueIndex = 0;
+  /** True while a cue is being synthesised or handed over; at most one at a time. */
+  private backchannelCueInFlight = false;
+  /** Wall clock at which the last cue's audio was handed to the transport — the echo guard's origin. */
+  private lastBackchannelCuePlayedAtMs = 0;
+  /**
+   * ---------------- The scripted closing after a registration -------
+   * See the block above `CLOSING_ACKNOWLEDGEMENT_TOKENS`. Armed by the
+   * campaign layer through `armScriptedClosing`; consumed by
+   * `handleScriptedClosing` at most once per call.
+   */
+  private scriptedClosingArmed = false;
+  private scriptedClosingSpoken = false;
+  /**
    * ---------------- Metrics bookkeeping (read-only observers) ----------------
    * Everything below is written from points that already exist in the
    * flow and is read only by `recordTurn`. Nothing here feeds turn
@@ -2176,6 +2413,15 @@ export class ConversationPipeline {
     // the greeting (see above), so nothing has to be caught up here.
     this.greetingDone = true;
 
+    // The agent's own backchannel cue — see `BACKCHANNEL_CUE_MIN_WORDS`.
+    // Subscribed only now, so nothing the caller says during the
+    // greeting can draw a cue, and released when the loop exits.
+    // Observation of an existing detector decision; the detector's
+    // timing is byte-for-byte unchanged by the subscription.
+    const unsubscribeContinuationHold = this.record.turnDetector.onContinuationHold((event) =>
+      this.considerBackchannelCue(event),
+    );
+
     // --- Main loop ---
     // eslint-disable-next-line no-console
     console.log(`[PIPELINE:${sid}] entering main loop — state=${this.record.state} aborted=${loopSignal.aborted}`);
@@ -2192,6 +2438,10 @@ export class ConversationPipeline {
           console.log(`[PIPELINE:${sid}] acquireNextUserTurn returned null or aborted — exiting loop`);
           break;
         }
+
+        // The caller's turn is over, so the cue budget belongs to the
+        // next one. Speech-side bookkeeping only — see `considerBackchannelCue`.
+        this.backchannelCuesThisTurn = 0;
 
         // eslint-disable-next-line no-console
         console.log(`[STT:${sid}] Transcript received: "${turn.text.slice(0, 80)}${turn.text.length > 80 ? "..." : ""}" userSpeechMs=${turn.userSpeechMs} sttLagMs=${turn.sttLagMs ?? "n/a"}`);
@@ -2347,6 +2597,28 @@ export class ConversationPipeline {
         // "I can hear you" from ever meaning "I am Sakshi".
         if (await this.handleIdentityGate(turn.text, loopSignal)) {
           this.abandonSpeculation("the identity gate answered the turn without the language model");
+          timer.summarize();
+          timer.printLatencyBreakdown({
+            speechEndAtMs: turn.userSpeechEndedAtMs,
+            endpointEvidenceAtMs: turn.endpointEvidenceAtMs,
+            endpointEvidenceKind: turn.endpointEvidenceKind,
+          });
+          this.activeTimer = undefined;
+          continue;
+        }
+
+        // ── The person closing a confirmed registration ─────────────
+        //
+        // "Okay, thank you." / "Great." / "Theek hai." after the
+        // confirmation has been spoken. Answered with ONE fixed goodbye
+        // and never handed to the language model — see
+        // `CLOSING_ACKNOWLEDGEMENT_TOKENS`. Reached only once the
+        // campaign layer has armed it (`armScriptedClosing`), and
+        // returns false for everything with content of its own, so a
+        // question after the confirmation reaches `runThinkingAndSpeaking`
+        // on exactly the path it takes today.
+        if (await this.handleScriptedClosing(turn.text, loopSignal)) {
+          this.abandonSpeculation("the closing was spoken without the language model");
           timer.summarize();
           timer.printLatencyBreakdown({
             speechEndAtMs: turn.userSpeechEndedAtMs,
@@ -2591,6 +2863,7 @@ export class ConversationPipeline {
     }
 
     // eslint-disable-next-line no-console
+    unsubscribeContinuationHold();
     console.log(`[PIPELINE:${sid}] run() exiting — state=${this.record.state} aborted=${loopSignal.aborted}`);
   }
 
@@ -3100,6 +3373,232 @@ export class ConversationPipeline {
     return { heard, unheard: cancelled ? unspokenTail(text, heard) : "" };
   }
 
+  // ---------------------------------------------------------------
+  // The scripted closing after a confirmed registration
+  // ---------------------------------------------------------------
+
+  /**
+   * ADDITIVE. The campaign layer has established that this call's
+   * registration is confirmed (the classifier's own reading, in
+   * `call-runner.ts`) and is now holding the hangup for the person's
+   * closing response. From here on, a bare closing acknowledgement is
+   * answered with one fixed goodbye instead of a generated reply — see
+   * `handleScriptedClosing`. Idempotent; nothing is spoken by arming.
+   *
+   * The pipeline is deliberately NOT the one deciding a registration
+   * happened: that judgement is the outcome classifier's, it lives in
+   * the campaign layer, and the dependency direction forbids this file
+   * from importing it. The campaign layer says WHEN; this file only
+   * knows HOW to close.
+   */
+  armScriptedClosing(): void {
+    if (this.scriptedClosingArmed) return;
+    this.scriptedClosingArmed = true;
+    // eslint-disable-next-line no-console
+    console.log(`[PIPELINE:${this.record.id}] scripted closing ARMED — a bare closing acknowledgement will be answered with the fixed goodbye`);
+  }
+
+  /**
+   * Answers the person's closing pleasantry with the fixed goodbye,
+   * once, and only while armed. See `CLOSING_ACKNOWLEDGEMENT_TOKENS` for
+   * what qualifies and why nothing else does.
+   *
+   * One extra guard beyond the vocabulary: the agent's latest committed
+   * turn must not ASK anything. An "okay" said to "shall I send you the
+   * link?" is an answer, and the contextual path must take it, exactly
+   * as `definitiveAnswerIn` in the campaign layer already refuses to
+   * hang up while the agent's latest turn is a question.
+   *
+   * Spoken through `speakAttentionUtterance`, the existing fixed-line
+   * path: no language-model request, the goodbye is committed to
+   * memory as an assistant turn once its audio has drained, and the
+   * campaign watchdog then reads a transcript that ends on the agent
+   * after the person has spoken — which is what releases the held
+   * hangup. Nothing here ends the call; the hangup stays where it has
+   * always been.
+   */
+  private async handleScriptedClosing(userText: string, loopSignal: AbortSignal): Promise<boolean> {
+    if (!this.scriptedClosingArmed || this.scriptedClosingSpoken) return false;
+    const trimmed = userText.trim();
+    if (!isClosingAcknowledgement(trimmed)) return false;
+    // The person's turn has just been recorded, so the assistant's
+    // latest turn is the confirmation (or an answer) they are closing on.
+    const lastAssistant = [...this.record.memory.history()]
+      .reverse()
+      .find((turn) => turn.role === "assistant");
+    if (lastAssistant !== undefined && lastAssistant.content.includes("?")) return false;
+
+    this.scriptedClosingSpoken = true;
+    const line = scriptedClosingFor(this.record.memory.currentLanguage);
+    // eslint-disable-next-line no-console
+    console.log(
+      `[PIPELINE:${this.record.id}] closing acknowledgement "${trimmed.slice(0, 40)}" after a confirmed registration — speaking the fixed goodbye: "${line}"`,
+    );
+    await this.speakAttentionUtterance(line, loopSignal, "closing after a confirmed registration", "CLOSING");
+    return true;
+  }
+
+  // ---------------------------------------------------------------
+  // The agent's own backchannel cue — see `BACKCHANNEL_CUE_MIN_WORDS`
+  // ---------------------------------------------------------------
+
+  /**
+   * Every condition under which a cue must NOT be played, gathered in
+   * one place so the decision at trigger time and the re-check after
+   * synthesis cannot disagree. Read-only over state that already
+   * exists.
+   */
+  private backchannelCueGatesHold(): boolean {
+    return (
+      this.greetingDone &&
+      !this.voicemailDetected &&
+      this.awaitingTurn &&
+      this.record.state === SessionState.LISTENING &&
+      this.identityState === "confirmed" &&
+      !this.attentionEpisodeOpen &&
+      this.heldScriptRemainder.length === 0 &&
+      !this.scriptedClosingSpoken &&
+      !(this.record.loopAbortController?.signal.aborted ?? true)
+    );
+  }
+
+  /**
+   * The detector has just armed a continuation grace: the caller has
+   * been quiet for the whole silence window and their text so far reads
+   * as unfinished. Decide — deterministically and with every bound
+   * above — whether to say "mm-hmm" into that pause.
+   *
+   * Synchronous and never throws: it is called from inside the
+   * detector's own timer callback. The synthesis and hand-over run on a
+   * detached promise that re-checks every gate before a byte is sent.
+   */
+  private considerBackchannelCue(event: ContinuationHoldEvent): void {
+    // "Wait" / "ek minute" is a request for time. Silence IS the answer
+    // to it; an "okay" there reads as impatience.
+    if (event.askedForAMoment) return;
+    if (this.backchannelCueInFlight) return;
+    if (!this.backchannelCueGatesHold()) return;
+    if (event.text.split(/\s+/).length < BACKCHANNEL_CUE_MIN_WORDS) return;
+    if (this.backchannelCuesThisTurn >= BACKCHANNEL_CUE_MAX_PER_TURN) return;
+    const now = Date.now();
+    if (this.lastBackchannelCueAtMs !== 0 && now - this.lastBackchannelCueAtMs < BACKCHANNEL_CUE_MIN_GAP_MS) return;
+    // The transport heard the caller loud and near a moment ago: they
+    // are already resuming, and a cue now lands on their first word.
+    if (this.record.lastCallerEnergyAt !== 0 && now - this.record.lastCallerEnergyAt < BACKCHANNEL_CUE_RECENT_ENERGY_MS) {
+      return;
+    }
+
+    // Counted as spent whether or not it plays, so a failing TTS
+    // provider cannot be asked again on the very next grace.
+    this.backchannelCuesThisTurn += 1;
+    this.lastBackchannelCueAtMs = now;
+    this.backchannelCueInFlight = true;
+    const language = this.record.memory.currentLanguage;
+    const cue = backchannelCueFor(language, this.backchannelCueIndex);
+    this.backchannelCueIndex += 1;
+    void this.speakBackchannelCue(cue, language, event.text).finally(() => {
+      this.backchannelCueInFlight = false;
+    });
+  }
+
+  /**
+   * Synthesise (once per call, cached) and hand over one cue. Between
+   * the two, every gate is re-checked and the detector's held text is
+   * compared with what it was: a caller who resumed while the cue was
+   * being synthesised has new finals, and the cue is dropped rather
+   * than played into their sentence. The cache means only the first cue
+   * of a call can ever be late enough for that to matter.
+   */
+  private async speakBackchannelCue(cue: string, language: SupportedLanguage, heldText: string): Promise<void> {
+    const sid = this.record.id;
+    const key = `${language}|${cue}`;
+    let audio = this.backchannelCueCache.get(key);
+    if (audio === undefined) {
+      const startedAt = Date.now();
+      try {
+        const task: SynthesisTaskRequest = {
+          sessionId: sid,
+          request: { text: pronounceForSpeech(toSpokenText(cue), language), language },
+        };
+        audio = await this.providers.tts.synthesize(task);
+      } catch (error) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[BACKCHANNEL:${sid}] cue "${cue}" not synthesised — ${error instanceof Error ? error.message : String(error)}; the caller simply hears the pause`,
+        );
+        return;
+      }
+      const audioMs = estimateAudioSeconds(audio) * 1000;
+      if (audio.data.byteLength === 0 || audioMs > BACKCHANNEL_CUE_MAX_AUDIO_MS) {
+        // eslint-disable-next-line no-console
+        console.warn(`[BACKCHANNEL:${sid}] cue "${cue}" rejected — ${Math.round(audioMs)}ms of audio is not a cue`);
+        return;
+      }
+      this.backchannelCueCache.set(key, audio);
+      // A real TTS request, charged where the greeting's is.
+      this.record.metrics.recordAuxiliaryCost({
+        textToSpeech: estimateTtsCost(this.providers.tts.descriptor.id, cue.length, audioMs / 1000),
+      });
+      // eslint-disable-next-line no-console
+      console.log(`[BACKCHANNEL:${sid}] cue "${cue}" synthesised in ${Date.now() - startedAt}ms (${Math.round(audioMs)}ms of audio, cached)`);
+    }
+
+    // The pause may have ended while we synthesised.
+    if (!this.backchannelCueGatesHold()) return;
+    if (this.record.turnDetector.getPendingTurnText().trim() !== heldText.trim()) return;
+    if (
+      this.record.lastCallerEnergyAt !== 0 &&
+      Date.now() - this.record.lastCallerEnergyAt < BACKCHANNEL_CUE_RECENT_ENERGY_MS
+    ) {
+      return;
+    }
+
+    await this.playBackchannelAudio(audio);
+    this.lastBackchannelCuePlayedAtMs = Date.now();
+    // eslint-disable-next-line no-console
+    console.log(
+      `[BACKCHANNEL:${sid}] cue "${cue}" played into the caller's pause (${this.backchannelCuesThisTurn}/${BACKCHANNEL_CUE_MAX_PER_TURN} this turn) — held text: "${heldText.slice(0, 60)}${heldText.length > 60 ? "..." : ""}"`,
+    );
+  }
+
+  /**
+   * Hands cue audio to the transport and does NOTHING else. This is
+   * deliberately not `playAudioChunk`: that method is the reply
+   * pipeline's accounting point (`outboundQueuedMs`,
+   * `outboundPlaybackStartedAt`, `firstAudioQueuedAtMs`, the
+   * `audio-queued` timing mark), all of which describe a reply the
+   * session is SPEAKING. A cue is none of that, and letting it through
+   * there would put its few hundred ms into the next turn's latency
+   * figures and into `remainingSpeechMs`. The transport path itself —
+   * `mediaStream.sendAudio` and the outbound listeners, with their
+   * backpressure — is the same one every reply uses.
+   */
+  private async playBackchannelAudio(audio: AudioPayload): Promise<void> {
+    if (audio.data.byteLength === 0) return;
+    if (this.record.mediaStream) {
+      await this.record.mediaStream.sendAudio(audio);
+    }
+    for (const listener of this.record.outboundAudioListeners) {
+      const pending = listener(audio);
+      if (pending) await pending;
+    }
+  }
+
+  /**
+   * Is this segment our own cue coming back up the inbound track? See
+   * the hazard note above `BACKCHANNEL_CUE_MIN_WORDS`. Only ever true
+   * within `BACKCHANNEL_CUE_ECHO_WINDOW_MS` of a cue actually being
+   * played, and only for a bare one-or-two-word acknowledgement.
+   */
+  private isBackchannelCueEcho(segment: TranscriptSegment): boolean {
+    if (this.lastBackchannelCuePlayedAtMs === 0) return false;
+    if (Date.now() - this.lastBackchannelCuePlayedAtMs > BACKCHANNEL_CUE_ECHO_WINDOW_MS) return false;
+    const text = segment.text.trim();
+    if (text.length === 0) return false;
+    if (text.split(/\s+/).length > 2) return false;
+    return isBareAcknowledgement(text);
+  }
+
   /**
    * READ-ONLY. Does the caller have something in flight that is going to
    * become a turn? Pure observation over the turn detector's two
@@ -3317,6 +3816,11 @@ export class ConversationPipeline {
     // reaches the model, so a request pre-opened for it would only be
     // abandoned. Same family as the two guards on the line above.
     if (this.contextualReplyCommitted ? isHearingCheck(text) : isEmphaticHearingCheck(text)) return;
+    // Same family again: once the campaign layer has armed the scripted
+    // closing, a bare closing acknowledgement is answered by the fixed
+    // goodbye (`handleScriptedClosing`) and never reaches the model, so
+    // a request pre-opened for it could only ever be abandoned.
+    if (this.scriptedClosingArmed && !this.scriptedClosingSpoken && isClosingAcknowledgement(text)) return;
 
     if (this.speculation !== undefined) {
       // The same pending turn re-announced (e.g. `speech_final` on the
@@ -4384,6 +4888,25 @@ export class ConversationPipeline {
 
           if (spokeOverTheAssistant) {
             this.triggerExternalBargeIn();
+          }
+
+          // ── Our own backchannel cue, back up the inbound track ─────
+          //
+          // A bare one-or-two-word acknowledgement landing within
+          // `BACKCHANNEL_CUE_ECHO_WINDOW_MS` of a cue we just played, in
+          // LISTENING, is our own "mm-hmm" echoing out of the caller's
+          // handset. The four-word self-echo guard above cannot see it.
+          // Dropped like the filters above: not fed to the detector, so
+          // it can neither extend the caller's turn text nor re-arm a
+          // window they were not speaking into. Anything with content
+          // is never matched and falls through untouched.
+          if (this.record.state === SessionState.LISTENING && this.isBackchannelCueEcho(segment)) {
+            this.record.liveUserTranscript = this.record.turnDetector.getPendingTurnText();
+            // eslint-disable-next-line no-console
+            console.log(
+              `[TURN:${this.record.id}] backchannel-cue echo ignored: "${segment.text.trim()}" — ${Date.now() - this.lastBackchannelCuePlayedAtMs}ms after our own cue`,
+            );
+            continue;
           }
 
           // FIX #7A — telemetry only: arrival of `speech_final`

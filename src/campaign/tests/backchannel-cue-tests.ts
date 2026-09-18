@@ -489,6 +489,78 @@ await test("E2. a caller's genuine continuation in the same window is NOT droppe
 });
 
 // ═════════════════════════════════════════════════════════════════
+section("G. A CONTINUOUS LONG SENTENCE — NO 1.1s PAUSE — STILL GETS ONE AUDIBLE CUE");
+
+/** A long answer as Deepgram delivers it: chunk-boundary finals, no endpoint until the end. */
+const CHUNKS = [
+  "I have been running a small clothing shop",
+  "in Pune for about two years now",
+  "and mostly I sell to people in my own area",
+  "but now I want to start selling online as well.",
+];
+
+await test("G1. chunk-boundary finals from a caller who never pauses produce one cue, sent to the outbound path in LISTENING, before the turn is released", async () => {
+  const h = startHarness({ replies: ["Great, that sounds like a good fit."] });
+  try {
+    await ready(h);
+    const outboundBefore = h.outbound.length;
+    // No gap here ever reaches the silence window: the hold trigger cannot fire.
+    for (let i = 0; i < CHUNKS.length - 1; i += 1) {
+      h.say(CHUNKS[i]!, { isFinal: true, isSpeechFinal: false });
+      await sleep(350);
+    }
+    await h.waitFor("the cue to reach the transport", () => h.outbound.length > outboundBefore, 1_500);
+    const cue = h.outbound[outboundBefore]!;
+    assert.equal(cue.state, SessionState.LISTENING, "played without leaving LISTENING");
+    assert.ok(cue.bytes > 0 && cue.bytes <= 8000 * 1.5, `a short clip: ${cue.bytes} bytes`);
+    assert.equal(h.requests.length, 0, "no language-model request yet — the turn is still the caller's");
+    assert.equal(h.history().filter((t) => t.role === "assistant").length, 1, "greeting only — the cue is not an assistant turn");
+    // The caller finishes; the whole sentence is one turn, answered once.
+    h.say(CHUNKS[CHUNKS.length - 1]!, { isFinal: true, isSpeechFinal: true });
+    await h.waitForReplies(2, 8_000);
+    assert.equal(h.requests.length, 1);
+    const userTurns = h.history().filter((t) => t.role === "user").map((t) => t.content);
+    assert.deepEqual(userTurns, [CHUNKS.join(" ")], "nothing the caller said was lost or split");
+    assert.ok(h.transitions.every((t) => !/barge.?in/i.test(t.reason ?? "")), "no barge-in");
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("G2. the cooldown holds — many chunk boundaries inside 6s are still ONE cue", async () => {
+  const h = startHarness({ replies: ["Great."] });
+  try {
+    await ready(h);
+    for (let round = 0; round < 3; round += 1) {
+      for (let i = 0; i < CHUNKS.length - 1; i += 1) {
+        h.say(CHUNKS[i]!, { isFinal: true, isSpeechFinal: false });
+        await sleep(300);
+      }
+    }
+    await sleep(400);
+    assert.equal(h.synthesized.filter(isCue).length, 1, `one cue inside the cooldown, saw ${h.synthesized.filter(isCue).length}`);
+    h.say(CHUNKS[CHUNKS.length - 1]!, { isFinal: true, isSpeechFinal: true });
+    await h.waitForReplies(2, 8_000);
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("G3. short chunk-boundary finals draw no cue — the word floor still holds", async () => {
+  const h = startHarness({ replies: ["Sure."] });
+  try {
+    await ready(h);
+    h.say("I think", { isFinal: true, isSpeechFinal: false });
+    await sleep(300);
+    h.say("maybe on Sunday.", { isFinal: true, isSpeechFinal: true });
+    await h.waitForReplies(2, 8_000);
+    assert.ok(!h.synthesized.some(isCue), `a six-word turn must draw no cue: ${JSON.stringify(h.synthesized)}`);
+  } finally {
+    await h.stop();
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════
 section("F. THE VOCABULARY");
 
 await test("F1. cues rotate and never repeat back to back", () => {

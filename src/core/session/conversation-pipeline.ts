@@ -847,12 +847,16 @@ function hearingFollowUpFor(language: SupportedLanguage): string {
  * The cue is a SPEECH-SIDE act, not a semantic turn, and every rule
  * below exists to keep it that way:
  *
- *   - It is triggered by the turn detector's `onContinuationHold`
- *     observer and by nothing else. That hook fires at exactly one
- *     instant: the caller has been quiet for the whole adaptive
- *     silence window (1.1s+) AND the text they have said so far reads
- *     as unfinished. So the cue lands INTO a pause the detector is
- *     already holding open, never over speech that is arriving.
+ *   - It is CONSIDERED at exactly two instants, both of them existing
+ *     signals that the caller is mid-turn: the turn detector's
+ *     `onContinuationHold` observer (the caller has been quiet for the
+ *     whole adaptive silence window AND their text reads unfinished),
+ *     and a word-bearing final the provider did not endpoint — a
+ *     Deepgram chunk boundary, i.e. the caller still talking. The
+ *     first alone was unreachable on a real call (continuous speech
+ *     never lets the silence window expire), so the second is what
+ *     makes the cue audible; the recent-energy gate below is what
+ *     keeps it landing in a breath rather than on a word.
  *   - It is played through `playBackchannelAudio`, which hands bytes
  *     to the transport and touches NOTHING else: no state transition
  *     (the session stays LISTENING), no `enterSpeaking`, no playback
@@ -3543,9 +3547,12 @@ export class ConversationPipeline {
       console.log(`[BACKCHANNEL:${sid}] cue "${cue}" synthesised in ${Date.now() - startedAt}ms (${Math.round(audioMs)}ms of audio, cached)`);
     }
 
-    // The pause may have ended while we synthesised.
+    // The turn may have moved on while we synthesised. The SAME turn
+    // having grown (the caller carried on and another chunk landed) is
+    // fine — that is the long turn this cue is for; a different turn,
+    // or none, is not.
     if (!this.backchannelCueGatesHold()) return;
-    if (this.record.turnDetector.getPendingTurnText().trim() !== heldText.trim()) return;
+    if (!this.record.turnDetector.getPendingTurnText().trim().startsWith(heldText.trim())) return;
     if (
       this.record.lastCallerEnergyAt !== 0 &&
       Date.now() - this.record.lastCallerEnergyAt < BACKCHANNEL_CUE_RECENT_ENERGY_MS
@@ -4940,6 +4947,36 @@ export class ConversationPipeline {
           if (this.speculation !== undefined) this.abandonSpeculation("caller resumed speaking");
 
           this.record.turnDetector.feed(segment);
+
+          // ── The caller is STILL TALKING: a chunk boundary mid-turn ──
+          //
+          // A word-bearing final the provider did NOT endpoint
+          // (`isSpeechFinal === false`) is Deepgram closing a chunk while
+          // the caller carries on — the one signal that says "long turn
+          // in progress" while it is in progress. The continuation-hold
+          // trigger alone was unreachable on a real call: every such
+          // chunk re-arms the silence window before it can expire, and
+          // the eventual endpoint releases the turn, so a person giving a
+          // long answer without a 1.1s mid-thought pause never drew a
+          // cue. Same decision, same gates (word floor, per-turn cap,
+          // cooldown, recent-energy, attention, identity, LISTENING and
+          // idle), same cached audio, same raw transport path — only the
+          // moment it is consulted is added. Observation of a segment
+          // already fed; changes nothing about what the detector does
+          // with it.
+          if (
+            segment.isFinal &&
+            segment.isSpeechFinal === false &&
+            segment.text.trim().length > 0 &&
+            this.record.state === SessionState.LISTENING
+          ) {
+            this.considerBackchannelCue({
+              text: this.record.turnDetector.getPendingTurnText(),
+              graceMs: 0,
+              askedForAMoment: false,
+              turnDurationMs: 0,
+            });
+          }
         }
       } catch {
         // A broken streaming STT connection here degrades to

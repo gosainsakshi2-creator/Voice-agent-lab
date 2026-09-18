@@ -55,9 +55,19 @@ Fix — `turn-detection.ts` + `conversation-pipeline.ts`:
 - Echo guard: `isBackchannelCueEcho` drops a bare 1–2-word acknowledgement
   arriving in LISTENING within 2s of a cue being played, before the detector
   (the 4-word self-echo guard cannot see a one-word cue).
-- Architectural note recorded: the cue lands INTO the detector's held pause,
-  not over arriving speech; the Vobiz bridge's energy-only barge-in is
+- Architectural note recorded: the Vobiz bridge's energy-only barge-in is
   suppressed while STT is alive, so a queued cue cannot trigger it.
+- **2026-09-18 follow-up (audible on real calls):** the hold trigger alone was
+  unreachable on a live call — a continuous long sentence re-arms the silence
+  window at every Deepgram chunk boundary, so `onContinuationHold` never fired
+  and the endpoint released the turn instead. `startContinuousStt` now also
+  consults `considerBackchannelCue` on a word-bearing final the provider did
+  NOT endpoint (`isSpeechFinal === false`, i.e. the caller still talking), in
+  LISTENING, with every existing gate unchanged; the post-synthesis re-check
+  accepts the same turn having GROWN (`startsWith`) rather than requiring it
+  unchanged. Delivery path verified: every production TTS `synthesize` returns
+  PCM_16, which the bridge encodes regardless of state. backchannel-cue suite
+  16/16 (G1–G3 added).
 
 ### 2. Long turns released before the caller finished
 

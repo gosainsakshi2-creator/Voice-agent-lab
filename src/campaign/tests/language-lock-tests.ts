@@ -1075,6 +1075,163 @@ await test("F4 — ConversationMemory clamps a raw per-turn language once locked
   assert.equal(memory.currentLanguage, EN);
 });
 
+// ═════════════════════════════════════════════════════════════════
+section("G — a no-floor utterance cannot move the UNLOCKED active language (2026-09-21)");
+//
+// Real call aa0f2e03: English campaign, the caller said "Hello" in
+// English, Soniox wrote "हेलो।"; the lock correctly refused it as
+// evidence, yet the per-turn language became Hindi and the fixed
+// identity line was spoken as "माफ़ कीजिए — …". Now `utteranceTakesNoFloor`
+// — the lock's own clause 2, and ONLY that clause — also keeps the
+// active language where it was. Everything that takes the floor still
+// follows the detection exactly as D3 / D4 / D4b pin.
+// ═════════════════════════════════════════════════════════════════
+
+const HI_GREETING = "हेलो।";
+/** In the acknowledgement table, in Devanagari. */
+const HI_ACKS = ["हाँ।", "जी।"];
+/** Devanagari rendering of the English word "yes" — in NO table, so it takes the floor. */
+const HI_SCRIPT_YES = "यस।";
+
+await test("G1 — English campaign: a Devanagari bare greeting keeps the active language ENGLISH and locks nothing", async () => {
+  const h = startHarness({ openingLine: OPENING, replies: REPLIES, configuredLanguage: EN });
+  try {
+    await greetingDone(h);
+    await h.settle(HI_GREETING);
+    assert.ok(h.userTurns().includes(HI_GREETING), "it is a committed turn");
+    assert.equal(h.lock(), undefined, "a bare greeting is not lock evidence");
+    assert.equal(h.language(), EN, "…and cannot move the active language either");
+    assert.equal(h.synthesized.at(-1)?.language, EN, "the reply to it is synthesised in English");
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("G2 — English campaign: a Devanagari bare acknowledgement keeps the active language ENGLISH", async () => {
+  for (const ack of HI_ACKS) {
+    const h = startHarness({ openingLine: OPENING, replies: REPLIES, configuredLanguage: EN });
+    try {
+      await greetingDone(h);
+      // Spend the pickup allowance on something neutral first so the
+      // acknowledgement is judged as a turn of its own.
+      await h.settle(NEUTRAL_ONLY);
+      await h.settle(ack);
+      assert.equal(h.lock(), undefined, `"${ack}" is not lock evidence`);
+      assert.equal(h.language(), EN, `"${ack}" must not move the active language`);
+    } finally {
+      await h.stop();
+    }
+  }
+});
+
+await test("G2b — BOUNDARY: 'यस।' is in no acknowledgement table, so it takes the floor and still follows the detection (documented, not widened)", async () => {
+  const h = startHarness({ openingLine: OPENING, replies: REPLIES, configuredLanguage: EN });
+  try {
+    await greetingDone(h);
+    await h.settle(NEUTRAL_ONLY);
+    await h.settle(HI_SCRIPT_YES);
+    assert.equal(h.lock(), undefined, "one word is below the lock floor");
+    assert.equal(h.language(), HI, "the rule is deliberately no wider than the existing tables");
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("G3 — English campaign: an English greeting stays English", async () => {
+  const h = startHarness({ openingLine: OPENING, replies: REPLIES, configuredLanguage: EN });
+  try {
+    await greetingDone(h);
+    await h.settle("Hello?");
+    assert.equal(h.lock(), undefined);
+    assert.equal(h.language(), EN);
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("G4 — English campaign: SUBSTANTIVE Devanagari still follows the caller into Hindi (existing adaptation and lock)", async () => {
+  const h = startHarness({ openingLine: OPENING, replies: REPLIES, configuredLanguage: EN });
+  try {
+    await greetingDone(h);
+    await h.settle(HI_GREETING);
+    assert.equal(h.language(), EN, "the greeting alone changed nothing");
+    await h.settle(HI_MEANINGFUL);
+    assert.equal(h.lock(), HI, "the first meaningful Hindi utterance locks Hindi — delayed by the greeting, not lost");
+    assert.equal(h.language(), HI);
+    assert.equal(h.lastHint(), HI);
+    assert.equal(h.synthesized.at(-1)?.language, HI, "and the reply is synthesised in Hindi");
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("G5 — a LOCKED Hindi call: a greeting or acknowledgement leaves the lock and the active language untouched", async () => {
+  const h = startHarness({ openingLine: OPENING, replies: REPLIES, configuredLanguage: EN });
+  try {
+    await greetingDone(h);
+    await h.settle(HI_MEANINGFUL);
+    assert.equal(h.lock(), HI);
+    for (const text of ["Hello?", "Okay.", "Yes.", HI_GREETING, "हाँ।"]) {
+      await h.settle(text);
+      assert.equal(h.lock(), HI, `"${text}" cannot move a lock`);
+      assert.equal(h.language(), HI, `"${text}" cannot move the active language of a locked call`);
+    }
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("G6 — the floor-taking cases keep EXACTLY their existing per-turn behaviour (D3 / D4 / D4b restated)", async () => {
+  // D3: below the lock word floor, but substantive — still follows the detection.
+  const short = startHarness({ openingLine: OPENING, replies: REPLIES, configuredLanguage: EN });
+  try {
+    await greetingDone(short);
+    short.say(HI_TOO_SHORT);
+    await short.waitForReplies(2);
+    assert.equal(short.lock(), undefined);
+    assert.equal(short.lastHint(), HI, "D3 unchanged: the per-turn hint follows the detection");
+    assert.equal(short.language(), HI);
+  } finally {
+    await short.stop();
+  }
+  // D4: the English fall-through with a Hindi word in it — still follows the detection.
+  const ambiguous = startHarness({ openingLine: OPENING, replies: REPLIES, configuredLanguage: HI });
+  try {
+    await greetingDone(ambiguous);
+    ambiguous.say(AMBIGUOUS);
+    await ambiguous.waitForReplies(2);
+    assert.equal(ambiguous.lock(), undefined);
+    assert.equal(ambiguous.lastHint(), EN, "D4 unchanged: this turn still gets the English hint");
+  } finally {
+    await ambiguous.stop();
+  }
+  // D4b: an explicit language request — still follows the detection.
+  const asks = startHarness({ openingLine: OPENING, replies: REPLIES, configuredLanguage: HI });
+  try {
+    await greetingDone(asks);
+    await asks.settle(ASKS_FOR_HINDI);
+    assert.equal(asks.lock(), undefined);
+    assert.equal(asks.lastHint(), EN, "D4b unchanged: the model still sees the request with the detected hint");
+  } finally {
+    await asks.stop();
+  }
+});
+
+await test("G7 — the pre-opened request is still adopted on a no-floor turn (both language paths agree)", async () => {
+  const h = startHarness({ openingLine: OPENING, replies: REPLIES, configuredLanguage: EN });
+  try {
+    await greetingDone(h);
+    await h.settle(NEUTRAL_ONLY);
+    const before = h.requests.length;
+    await h.settle("जी हाँ, ठीक है।");
+    assert.equal(h.language(), EN, "a Devanagari acknowledgement stack does not move the language");
+    assert.equal(h.requests.length, before + 1, "exactly one request served the turn — no abandoned pre-open on a language mismatch");
+    assert.equal(h.lastHint(), EN, "and it carried the active language's hint");
+  } finally {
+    await h.stop();
+  }
+});
+
 await test("F5 — an unlocked call still behaves exactly as it did: the language follows the detection", () => {
   const memory = new ConversationMemory(EN, "SYSTEM");
   memory.recordUserTurn(HI_MEANINGFUL, HI);

@@ -70,6 +70,25 @@ retry planner, schema, recording.
    which produced the "aló / ¿aló / allô / hola" pickups (107 turns) —
    separate change, after the Soniox result is attributable on real
    calls. **Real-call verification still required** for both.
+   **Language-state fix (same day, call aa0f2e03 14:56 UTC):** with the
+   new hints live Soniox wrote the caller's English "Hello" as "हेलो।";
+   `qualifiesForLanguageLock` refused it as evidence, but
+   `commitTurnLanguage` still returned the raw detection for every
+   unlocked turn, so `memory.language` became Hindi and every fixed line
+   spoke Hindi ("माफ़ कीजिए — Am I speaking with…?", hearing line,
+   give-up); "Yes" came back as "यस।" and the gate never opened. Fix:
+   `effectiveLanguageFor` and `commitTurnLanguage` in the pipeline — an
+   unlocked turn that `utteranceTakesNoFloor` (the lock's clause 2, and
+   ONLY that clause) keeps the active language; everything that takes the
+   floor follows the detection exactly as before, so D3 ("Ji boliye"), D4
+   (ambiguous fall-through) and D4b ("Please speak in Hindi") are
+   unchanged and the lock itself is untouched. Reusing the whole
+   `qualifiesForLanguageLock` was tried and reverted because it changed
+   those three. Boundary pinned, not widened: "यस।" is in no table, so it
+   still follows detection (G2b). language-lock 41/41 (G1–G7 added),
+   identity-gate 47/47 (D10j reproduction). Additive console telemetry in
+   `soniox.provider.ts`: hints+model at connection, distinct per-token
+   detected languages per final message.
 2. **Script repetition.** No pipeline path re-speaks script unasked beyond
    (1) and barge-in-driven regeneration (4/5). New `test:script-repetition`
    (7/7) pins: hello / normal / fragmented answer after a block → no replay,

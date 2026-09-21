@@ -467,6 +467,24 @@ export class SonioxSpeechToTextProvider implements SpeechToTextProvider {
         finish();
         return;
       }
+      // TELEMETRY ONLY (2026-09-21) — Soniox reports a language per
+      // token and this adapter stamps every segment with the REQUEST
+      // language instead, so a transcript arriving in a script the caller
+      // never spoke could not be attributed after the fact. Logged for
+      // finals only, one line per final message; nothing reads it.
+      const finalLanguages = [
+        ...new Set(
+          (message.tokens ?? [])
+            .filter((t) => t.is_final === true && t.text !== SONIOX_END_TOKEN && (t.text ?? "").length > 0)
+            .map((t) => t.language ?? "?"),
+        ),
+      ];
+      if (finalLanguages.length > 0) {
+        // eslint-disable-next-line no-console
+        console.log(
+          `[STT:soniox:${request.sessionId}] final tokens detected language=[${finalLanguages.join(",")}] requested=${request.language} hints=[${sonioxLanguageHints(request.language).join(",")}]`,
+        );
+      }
       for (const segment of segmentsFromSonioxMessage(message, request.language)) {
         queue.push(segment);
       }
@@ -498,6 +516,13 @@ export class SonioxSpeechToTextProvider implements SpeechToTextProvider {
       on("open", () => {
         everOpened = true;
         attempts = 0; // A successful open retires the failure budget.
+        // TELEMETRY ONLY (2026-09-21) — which hints this connection was
+        // actually opened with, so a wrong-script transcript can be set
+        // against the bias that was in force. The key is not logged.
+        // eslint-disable-next-line no-console
+        console.log(
+          `[STT:soniox:${request.sessionId}] connecting model=${this.config.model} requested=${request.language} language_hints=[${sonioxLanguageHints(request.language).join(",")}]`,
+        );
         // The config frame. The key is sent to Soniox and nowhere
         // else — it is never logged, never returned, never attached to
         // a segment or a metric.

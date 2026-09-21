@@ -894,6 +894,18 @@ await test("D10h. the consumed pickup greeting has ONE lifecycle: it is never co
   }
 });
 
+await test("D10j. THE REPRODUCTION: a post-opening 'हेलो।' on an ENGLISH campaign is re-asked in ENGLISH, not Hindi", async () => {
+  // Real call aa0f2e03 (2026-09-21 14:56 UTC): Soniox wrote the caller's
+  // English "Hello" as "हेलो।"; the re-ask came back as "माफ़ कीजिए — …"
+  // because the bare greeting moved the per-turn language to Hindi even
+  // though the lock had refused it as evidence.
+  const r = await run(["हेलो।", "Yes."], { openingLine: ID_FIRST_OPEN, skipPickup: true, afterOpening: true });
+  assert.ok(idAsks(r.spoken) >= 1, "a hello after the question is still not an answer — the question is put again");
+  assert.ok(r.spoken.some((t) => t.startsWith("Sorry")), "…in ENGLISH");
+  assert.equal(r.spoken.filter((t) => t.startsWith("माफ़")).length, 0, "never in Hindi on an English call for a bare greeting");
+  assert.equal(r.llmRequests, 1, "and the English 'Yes.' then opens the gate");
+});
+
 await test("D10i. a 'Hello' LATER in the call is not a pickup: it is committed and handled on the normal path", async () => {
   const h = startHarness({ openingLine: ID_FIRST_OPEN, identityLine: ID_LINE, replies: [PITCH, "Yes, I'm here — shall I continue?"], replyDelayMs: 0 });
   try {

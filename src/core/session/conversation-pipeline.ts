@@ -5950,10 +5950,14 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
    * done.
    */
   private effectiveLanguageFor(text: string): SupportedLanguage {
-    return (
-      this.record.memory.languageLock ??
-      detectLanguage(text, this.record.memory.currentLanguage).language
-    );
+    const locked = this.record.memory.languageLock;
+    if (locked !== undefined) return locked;
+    const current = this.record.memory.currentLanguage;
+    // A bare greeting, acknowledgement, filler or presence check takes
+    // no floor and cannot move the active language either — see
+    // `commitTurnLanguage`. Same helper the lock's clause 2 uses.
+    if (utteranceTakesNoFloor(text.trim())) return current;
+    return detectLanguage(text, current).language;
   }
 
   /**
@@ -5980,7 +5984,41 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
     const locked = this.record.memory.languageLock;
     if (locked !== undefined) return locked;
 
-    const detected = detectLanguage(text, this.record.memory.currentLanguage);
+    const current = this.record.memory.currentLanguage;
+    const detected = detectLanguage(text, current);
+
+    // ── A no-floor utterance cannot move the active language ────────
+    //
+    // Real call aa0f2e03 (2026-09-21): English campaign, the caller
+    // said "Hello" in English, Soniox wrote "हेलो।". The detector read
+    // the script as Hindi; the lock correctly refused a bare greeting as
+    // evidence; and the per-turn language was moved to Hindi anyway,
+    // because this path returned the raw detection for every unlocked
+    // turn. Every fixed line then spoke Hindi ("माफ़ कीजिए — Am I
+    // speaking with…?", the hearing line, the give-up) and the gate
+    // never opened.
+    //
+    // So a bare greeting, a bare acknowledgement or filler, or a pure
+    // presence check — `utteranceTakesNoFloor`, the SAME predicate the
+    // lock's clause 2 already applies — leaves the active language where
+    // it was. Deliberately ONLY that predicate: a short substantive
+    // utterance below the lock's word floor, an ambiguous fall-through,
+    // and an explicit "please speak in Hindi" all still follow the
+    // detection exactly as before (language-lock D3/D4/D4b pin that),
+    // and the lock itself is untouched — such an utterance cannot
+    // qualify for it anyway. `effectiveLanguageFor` applies the same
+    // rule so a pre-opened request still matches at release.
+    if (utteranceTakesNoFloor(text.trim())) {
+      if (detected.language !== current) {
+        // eslint-disable-next-line no-console
+        console.log(
+          `[LANGUAGE:${this.record.id}] per-turn detection ${detected.language} IGNORED — a no-floor utterance (basis=${detected.basis});` +
+            ` active language stays ${current}: "${text.trim().slice(0, 80)}"`,
+        );
+      }
+      return current;
+    }
+
     if (this.qualifiesForLanguageLock(text, detected)) {
       this.record.memory.lockLanguage(detected.language);
       // eslint-disable-next-line no-console

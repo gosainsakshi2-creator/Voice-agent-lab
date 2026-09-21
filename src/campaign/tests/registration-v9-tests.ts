@@ -173,9 +173,10 @@ test("A2. v6 is STILL the default — v9 is a different event, not a newer revis
   // revision v10 (same event, two sourced FAQ answers).
   const registration = listScripts().filter((s) => s.campaignType === "registration");
   assert.equal(registration[0]?.version, "v6");
-  assert.equal(registration[1]?.version, "v11");
-  assert.equal(registration[2]?.version, "v10");
-  assert.equal(registration[3]?.version, "v9");
+  assert.equal(registration[1]?.version, "v12");
+  assert.equal(registration[2]?.version, "v11");
+  assert.equal(registration[3]?.version, "v10");
+  assert.equal(registration[4]?.version, "v9");
 });
 
 test("A3. v9 uses ONLY variables the campaign layer can supply", () => {

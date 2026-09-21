@@ -78,6 +78,21 @@ stays forbidden in the text. v11 rather than an edit of v10 because a campaign
 row (`hsioajsoidjsd`, COMPLETED) is already pinned to v10's hash.
 **For 22 Sep, select v11.**
 
+**Same day — `registration v12`** (`registration.v12.ts`, listed ahead of v11;
+`test:registration-v12` 25 checks). The business said v9-v11 asked too many
+questions and that this is the SAME campaign they ran on v5, on a new date.
+v12 is v5's two-exchange shape with this webinar's facts: first reply =
+intro + invitation + v5's single discovery question "Have you tried putting
+something online before?" (Hinglish "Aapne pehle kabhi kuch online daalne ki
+try ki hai?"), then v5's bridge "You won't need any coding or design skills
+for this." straight into the anchored gate. The business-type / website / idea
+questions are gone and the text forbids adding them. Everything else is v11's:
+identity-first opening, `[first name]`, invitation framing, 90-minute and
+WhatsApp answers (asserted character-identical to v11), [YES]/[NO]/[ALREADY]
+blocks. Note: v11 was hand-edited by the operator after it was written
+(first reply now "I am calling to invite you…"; one Hinglish branch line);
+its hash is 7e2694d3… and the v12 suite pins that. **For 22 Sep, select v12.**
+
 ---
 
 ## 2026-09-18 — BACKCHANNEL CUE, LONG-TURN COMPLETION, POST-REGISTRATION CLOSING

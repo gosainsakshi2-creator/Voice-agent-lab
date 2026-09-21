@@ -175,9 +175,10 @@ test("A2. v6 is STILL the default — v11 is a different event from v6, and a ne
   // v9, exactly as v8 sits ahead of v7.
   const registration = listScripts().filter((s) => s.campaignType === "registration");
   assert.equal(registration[0]?.version, "v6");
-  assert.equal(registration[1]?.version, "v11");
-  assert.equal(registration[2]?.version, "v10");
-  assert.equal(registration[3]?.version, "v9");
+  assert.equal(registration[1]?.version, "v12");
+  assert.equal(registration[2]?.version, "v11");
+  assert.equal(registration[3]?.version, "v10");
+  assert.equal(registration[4]?.version, "v9");
 });
 
 test("A3. v11 uses ONLY variables the campaign layer can supply", () => {
@@ -778,7 +779,7 @@ test("H3. the reminder framing is gone, in every rendering", () => {
   // "showed interest" survives in exactly one place: the sentence that forbids implying it.
   assert.equal(FLAT.split("showed interest").length - 1, 1);
   assert.ok(FLAT.includes("never say or imply that they signed up, showed interest or decided anything before this call"));
-  assert.ok(FLAT.includes("we're inviting people to our upcoming webinar"));
+  assert.ok(FLAT.includes("i am calling to invite you to our upcoming webinar"));
   assert.ok(FLAT.includes("humara ek upcoming webinar hai"));
   assert.ok(FLAT.includes("would you like to join?"));
   assert.ok(FLAT.includes("kya aap isme join karna chahenge?"));

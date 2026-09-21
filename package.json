@@ -73,6 +73,7 @@
     "test:registration-v9": "tsx src/campaign/tests/registration-v9-tests.ts",
     "test:registration-v10": "tsx src/campaign/tests/registration-v10-tests.ts",
     "test:registration-v11": "tsx src/campaign/tests/registration-v11-tests.ts",
+    "test:registration-v12": "tsx src/campaign/tests/registration-v12-tests.ts",
     "test:llm-benchmark": "tsx src/campaign/tests/llm-benchmark-harness-tests.ts",
     "test:first-turn-total": "tsx src/campaign/tests/first-turn-total-persistence-tests.ts",
     "test:stale-final-no": "tsx src/campaign/tests/stale-final-no-tests.ts",

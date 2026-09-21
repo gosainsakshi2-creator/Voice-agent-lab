@@ -47,9 +47,11 @@ export interface DispatchConfig {
   /**
    * How long the watchdog waits, after a confirmed registration's
    * confirmation has been spoken, for the person to say their closing
-   * word before ending the call anyway. See `closingResponsePending`
-   * in `call-runner.ts`. Bounds the closing exchange without touching
-   * `maxSilenceSeconds`, which still bounds every other silence.
+   * word — and then for the agent's goodbye to be delivered — before
+   * ending the call anyway. See `closingResponsePending` and
+   * `closingDelivered` in `call-runner.ts`. Bounds the closing exchange
+   * without touching `maxSilenceSeconds`, which still bounds every
+   * other silence.
    */
   readonly closingWaitSeconds: number;
   readonly claimBatchSize: number;

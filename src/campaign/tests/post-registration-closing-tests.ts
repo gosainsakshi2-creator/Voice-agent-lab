@@ -191,8 +191,27 @@ await test("A8. every non-registration ending is untouched: FINAL_NO, undecided,
   assert.equal(undecided.verdict, undefined);
   assert.equal(undecided.awaitingClosingResponse, false);
 
-  assert.deepEqual(live([]), { verdict: undefined, registrationConfirmed: false, awaitingClosingResponse: false });
-  assert.deepEqual(live([agent(GREETING)]), { verdict: undefined, registrationConfirmed: false, awaitingClosingResponse: false });
+  assert.deepEqual(live([]), { verdict: undefined, registrationConfirmed: false, awaitingClosingResponse: false, closingDelivered: false });
+  assert.deepEqual(live([agent(GREETING)]), { verdict: undefined, registrationConfirmed: false, awaitingClosingResponse: false, closingDelivered: false });
+});
+
+await test("A10. `closingDelivered`: true only when the agent's LATEST turn is a delivered sign-off", () => {
+  const base = [agent(GREETING), agent(GATE), caller("Yes, please."), agent(CONFIRMED)];
+  // The confirmation itself is not a closing — it is what the person is owed a chance to answer.
+  assert.equal(live(base).closingDelivered, false);
+  // The person spoke, the agent replied with something that is NOT a goodbye: the line must stay up.
+  // Real call 2026-09-21 15:39: "Uh, 2 minutes, 2 minutes." → "Sure, no problem, take your time." → hung up.
+  const granted = live([...base, caller("Uh, 2 minutes, 2 minutes."), agent("Sure, no problem, take your time.")]);
+  assert.equal(granted.verdict, "FINAL_YES", "the verdict is unchanged — only WHEN the hangup fires moves");
+  assert.equal(granted.awaitingClosingResponse, false, "the person has responded");
+  assert.equal(granted.closingDelivered, false, "...but the agent has not said goodbye, so the watchdog must still hold");
+  // The fixed goodbye, and an ordinary short sign-off, are closings.
+  assert.equal(live([...base, caller("Okay, bye."), agent(GOODBYE)]).closingDelivered, true);
+  assert.equal(live([...base, caller("Okay, thanks."), agent("Thanks for your time, Priya. Have a great day!")]).closingDelivered, true);
+  // A closing that asks a question is a handover, not an ending.
+  assert.equal(live([...base, caller("Okay."), agent("Take care — anything else before I go?")]).closingDelivered, false);
+  // While the person is speaking (live partial appended last), nothing is delivered.
+  assert.equal(live([...base, caller("Okay, bye."), agent(GOODBYE), caller("Bye")]).closingDelivered, false);
 });
 
 await test("A9. the hangup and the sheet still cannot disagree", () => {
@@ -866,6 +885,80 @@ try {
     });
     assert.equal(await hangupReasonOf(undecided.outcome.attemptId!), "agent_hangup:closing", "the agent's own sign-off still closes an undecided call");
     assert.equal(undecided.telemetry.armCalls, 0);
+  });
+
+  // ── The agent's goodbye must be DELIVERED before the line drops ──
+  //
+  // Real call 2026-09-21 15:39 (attempt fd6e4333): "your seat is
+  // reserved" → "Uh, 2 minutes, 2 minutes." → "Sure, no problem, take
+  // your time." → hangup on the next tick. The person had spoken, so the
+  // hold was released, and whatever the agent said next became the end
+  // of the call. The hangup now waits for the agent's closing.
+  const granted = await runScripted({
+    transcriptSoFar: [agent(GREETING), agent(GATE), caller("Yes, please.")],
+    drive: async (s) => {
+      await wait(300);
+      s.beginReply();
+      await wait(400);
+      s.finishReply(CONFIRMED);
+      await wait(TICKS_MS);
+      s.say("Uh, 2 minutes, 2 minutes.");
+      s.beginReply();
+      await wait(400);
+      s.finishReply("Sure, no problem, take your time.");
+      // The gap the person used to be cut off in: they asked for time.
+      await wait(TICKS_MS);
+      s.say("Okay, bye.");
+      s.beginReply();
+      await wait(400);
+      s.finishReply(GOODBYE);
+    },
+  });
+
+  await test("D9. the person speaks after the confirmation but the agent has NOT said goodbye: the line stays up", () => {
+    assert.deepEqual(granted.telemetry.callerTurns, ["Uh, 2 minutes, 2 minutes.", "Okay, bye."], "both caller turns happened on a live line");
+    assert.equal(granted.telemetry.armCalls, 1);
+  });
+
+  await test("D10. ...and the call ends promptly once the goodbye HAS been delivered, still as agent_hangup:final_yes", async () => {
+    assert.equal(await hangupReasonOf(granted.outcome.attemptId!), "agent_hangup:final_yes");
+    assert.ok(granted.telemetry.goodbyeCommittedAt > 0, "the goodbye was spoken");
+    assert.ok(granted.telemetry.endedAt >= granted.telemetry.goodbyeCommittedAt, "never before the goodbye's audio has drained and it was committed");
+    const afterGoodbyeMs = granted.telemetry.endedAt - granted.telemetry.goodbyeCommittedAt;
+    assert.ok(afterGoodbyeMs < CLOSING_WAIT_MS, `within a tick or two of the goodbye, not another wait later (${afterGoodbyeMs}ms)`);
+    assert.notEqual(granted.telemetry.endedInState, SessionState.SPEAKING, "never mid-goodbye");
+    const stored = await outcomesOf(granted.outcome.attemptId!);
+    assert.equal(stored.length, 1);
+    assert.equal(stored[0]!.reason, "confirmed_at_gate");
+  });
+
+  await test("D11. a person who keeps talking and never closes is hung up at the closing-wait bound after the agent's LAST reply — not before", async () => {
+    let lastReplyCommittedAt = 0;
+    const talkative = await runScripted({
+      transcriptSoFar: [agent(GREETING), agent(GATE), caller("Yes, please.")],
+      drive: async (s) => {
+        await wait(300);
+        s.beginReply();
+        await wait(400);
+        s.finishReply(CONFIRMED);
+        await wait(TICKS_MS);
+        s.say("Okay, one more thing.");
+        s.beginReply();
+        await wait(400);
+        s.finishReply("Sure, go ahead.");
+        await wait(TICKS_MS);
+        s.say("Okay, I will join from my phone then.");
+        s.beginReply();
+        await wait(400);
+        s.finishReply("That works perfectly.");
+        lastReplyCommittedAt = Date.now();
+      },
+    });
+    assert.deepEqual(talkative.telemetry.callerTurns, ["Okay, one more thing.", "Okay, I will join from my phone then."], "every caller turn happened on a live line");
+    assert.equal(await hangupReasonOf(talkative.outcome.attemptId!), "agent_hangup:final_yes", "still the registration it is");
+    const afterLastReplyMs = talkative.telemetry.endedAt - lastReplyCommittedAt;
+    assert.ok(afterLastReplyMs >= CLOSING_WAIT_MS - 100, `the bound ran from the agent's last reply (${afterLastReplyMs}ms)`);
+    assert.ok(afterLastReplyMs < WINDOW_MS, `...and not the whole silence window (${afterLastReplyMs}ms)`);
   });
 } finally {
   await query("DELETE FROM campaigns WHERE id = $1", [campaignId]).catch(() => undefined);

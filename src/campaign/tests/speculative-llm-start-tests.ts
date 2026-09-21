@@ -452,6 +452,8 @@ const BLOCK = `${BLOCK_SENTENCE_1} ${BLOCK_SENTENCE_2} ${BLOCK_SENTENCE_3}`;
 
 /** The detector's evidenced windows, restated so a drift shows up here. */
 const EVIDENCED_SHORT_MS = 150;
+/** A complete sentence of more than four words, on the fast path — see `EVIDENCED_CONFIRMATION_SENTENCE_MS`. */
+const EVIDENCED_SENTENCE_MS = 600;
 const SILENCE_WINDOW_MS = 1_100;
 
 /** Drives the call to the moment the agent is a sentence into its block. */
@@ -516,7 +518,10 @@ await test("A7 — new speech inside the window is seen as the fed segment; onTu
       { seg: segment("but I have a question.", { isFinal: false }, 2_000), afterMs: 40 },
       { seg: segment("but I have a question.", { isSpeechFinal: true }, 2_000), afterMs: 40 },
     ],
-    EVIDENCED_SHORT_MS + 300,
+    // The merged text is a complete sentence of more than four words, so
+    // its release pays the 600ms sentence window (2026-09-21, see
+    // `EVIDENCED_CONFIRMATION_SENTENCE_MS`), not the short tier.
+    EVIDENCED_SENTENCE_MS + 300,
   );
   assert.deepEqual(r.pending, ["Yes, that's right.", "Yes, that's right. but I have a question."]);
   assert.deepEqual(r.released, ["Yes, that's right. but I have a question."]);

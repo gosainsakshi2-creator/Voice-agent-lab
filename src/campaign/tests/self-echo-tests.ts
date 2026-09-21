@@ -528,7 +528,10 @@ await test("a caller reusing the reply's own vocabulary is still answered", asyn
     // "billing", "account", "help", "need", "your" all appear in the
     // reply — but never in this order.
     h.say("Yes I need help with my billing account please");
-    await sleep(600);
+    // A complete sentence of more than four words pays the 600ms
+    // sentence window on the fast path (2026-09-21, see
+    // `EVIDENCED_CONFIRMATION_SENTENCE_MS`), so wait past it.
+    await sleep(1_000);
     assert.ok(
       h.userTurns().length > userTurnsBefore,
       `a genuine answer reusing the reply's words must become a turn, got ${JSON.stringify(h.userTurns())}`,

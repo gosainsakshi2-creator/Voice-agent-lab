@@ -672,7 +672,18 @@ export async function runCall(
           // in the half-second before they could speak. The verdict, the
           // disposition, the sheet row and the hangup name are untouched;
           // only WHEN moves. See `closingResponsePending`.
-          if (live.verdict === "FINAL_YES" && live.awaitingClosingResponse) {
+          //
+          // ...AND for the agent's goodbye. Once the person HAS spoken,
+          // the call still ends only after the agent's latest turn is a
+          // delivered closing (`closingDelivered` — the fixed goodbye the
+          // pipeline speaks to a closing word, or any short sign-off).
+          // "Sure, take your time." is not one, so the person who asked
+          // for a moment keeps the line; "Thank you. Have a great day.
+          // Bye!" is, and the call ends on the tick after its audio has
+          // drained and it was committed. The SAME bound applies: a
+          // person who then says nothing for `closingWaitSeconds` is
+          // done, and the call ends as the FINAL_YES it always was.
+          if (live.verdict === "FINAL_YES" && (live.awaitingClosingResponse || !live.closingDelivered)) {
             if (
               sessionState === SessionState.LISTENING &&
               now - Math.max(lastActivityAt, heardAt) > config.closingWaitSeconds * 1000
@@ -680,9 +691,10 @@ export async function runCall(
               finalAnswer = "FINAL_YES";
               return "FINAL_ANSWER" as const;
             }
-            // Holding for the person. The AGENT_CLOSED reading below is
-            // skipped on purpose: a confirmation that happens to end on a
-            // sign-off is still the confirmation they have not answered.
+            // Holding for the person, or for the goodbye. The
+            // AGENT_CLOSED reading below is skipped on purpose: a
+            // confirmation that happens to end on a sign-off is still the
+            // confirmation they have not answered.
             continue;
           }
           finalAnswer = live.verdict;
@@ -1241,12 +1253,29 @@ export interface LiveRegistrationReading {
   readonly verdict: "FINAL_YES" | "FINAL_NO" | undefined;
   readonly registrationConfirmed: boolean;
   readonly awaitingClosingResponse: boolean;
+  /**
+   * The agent's latest committed turn IS a closing — a short sign-off
+   * ("Thank you. Have a great day. Bye!") that asks nothing, exactly as
+   * `agentClosedIn` reads it. `false` while the agent's last word was
+   * anything else: a confirmation, an answer, "sure, take your time".
+   *
+   * Read by the watchdog's FINAL_YES hold and nowhere else. A confirmed
+   * registration used to be hung up on the tick after the PERSON spoke
+   * again, whatever the agent had replied — real call 2026-09-21
+   * 15:39: "your seat is reserved" → "Uh, 2 minutes, 2 minutes." →
+   * "Sure, no problem, take your time." → hangup. The person had asked
+   * for time and the agent had granted it, and the line was dropped on
+   * the very next tick. The call should end after the agent's goodbye
+   * has been delivered, and that is what this reports.
+   */
+  readonly closingDelivered: boolean;
 }
 
 const NO_READING: LiveRegistrationReading = {
   verdict: undefined,
   registrationConfirmed: false,
   awaitingClosingResponse: false,
+  closingDelivered: false,
 };
 
 export function liveRegistrationReading(
@@ -1277,6 +1306,9 @@ export function liveRegistrationReading(
     registrationConfirmed,
     awaitingClosingResponse:
       verdict === "FINAL_YES" && closingResponsePending(stored.turns, classification),
+    // The same reading the AGENT_CLOSED verdict uses, so the two live
+    // hangup checks cannot disagree about what a delivered closing is.
+    closingDelivered: agentClosedIn(turns),
   };
 }
 

@@ -84,6 +84,14 @@ const HOLD_GRACE_MS = 1_200;
 const EVIDENCED_SHORT_MS = 150;
 const EVIDENCED_LONG_MS = 250;
 /**
+ * 2026-09-21 — a complete sentence of more than four words that is not
+ * a question now takes this on the `feed` fast path, in place of the
+ * 250/300ms tiers, so a natural pause between two sentences of one
+ * thought no longer splits the turn. See
+ * `EVIDENCED_CONFIRMATION_SENTENCE_MS` in turn-detection.ts.
+ */
+const EVIDENCED_SENTENCE_MS = 600;
+/**
  * PHASE 3 — the evidenced tier for text with NO sentence-final
  * punctuation. Deepgram's formatter routinely withholds punctuation on
  * Hinglish finals, and requiring it meant the endpoint claim was
@@ -173,9 +181,11 @@ await test(
     // then CONFIRMATION_MS * 2 (~600ms) under Phase 1: the fast path
     // armed one CONFIRMATION_MS window but left `stage` at `"silence"`,
     // so `emitTurnEnd` paid a second one on top for any turn longer
-    // than SHORT_COMPLETE_TURN_MAX_WORDS. Phase 2 collapses that into
-    // the single EVIDENCED_LONG_MS window — see turn-detection.ts.
-    within(delayMs, EVIDENCED_LONG_MS, "long complete endpointed turn");
+    // than SHORT_COMPLETE_TURN_MAX_WORDS. Phase 2 collapsed that into
+    // the single EVIDENCED_LONG_MS window; 2026-09-21 widened it to the
+    // sentence window so a natural inter-sentence pause does not split
+    // the turn — see turn-detection.ts. Still far below a silence window.
+    within(delayMs, EVIDENCED_SENTENCE_MS, "long complete endpointed turn");
     assert.ok(
       delayMs < SILENCE_WINDOW_MS,
       `must no longer pay a full silence window: measured ${delayMs}ms`,

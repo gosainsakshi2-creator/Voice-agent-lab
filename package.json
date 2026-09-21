@@ -84,6 +84,8 @@
     "test:provider-selection": "tsx src/campaign/tests/campaign-provider-selection-tests.ts",
     "test:tts-evidence": "tsx src/campaign/tests/tts-evidence-harness-tests.ts",
     "test:call-analytics": "tsx src/campaign/tests/call-analytics-tests.ts",
+    "test:script-repetition": "tsx src/campaign/tests/script-repetition-tests.ts",
+    "test:turn-aggregation": "tsx src/campaign/tests/turn-aggregation-tests.ts",
     "bench:llm": "tsx src/benchmark/llm/cli.ts",
     "bench:tts": "tsx src/benchmark/tts/cli.ts",
     "preflight:prod": "tsx src/campaign/production-readiness-cli.ts",

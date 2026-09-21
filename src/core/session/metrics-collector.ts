@@ -132,6 +132,7 @@ export interface TurnLatencyInput {
   readonly continuationGraceTrace?: TurnLatencyBreakdown["continuationGraceTrace"];
   readonly continuationGraceResets?: TurnLatencyBreakdown["continuationGraceResets"];
   readonly bargeInPhase?: TurnLatencyBreakdown["bargeInPhase"];
+  readonly bargeInTrigger?: TurnLatencyBreakdown["bargeInTrigger"];
 }
 
 /**
@@ -193,6 +194,40 @@ const BARGE_IN_PHASES: ReadonlySet<string> = new Set(["thinking", "speaking", "i
 
 /** The closed set a `continuationGraceResets` entry's `source` may hold. */
 const GRACE_RESET_SOURCES: ReadonlySet<string> = new Set(["chunk_final", "endpointed_final"]);
+
+/** The closed set `bargeInTrigger.source` may hold. See `BargeInTriggerTelemetry`. */
+const BARGE_IN_TRIGGER_SOURCES: ReadonlySet<string> = new Set(["transcript", "external", "buffered_turn", "supersession"]);
+
+/**
+ * DIAGNOSTIC ONLY — validates a `bargeInTrigger` record field by field.
+ * An unknown source drops the record; a non-finite number or a
+ * non-boolean drops that field. Nothing here is read by a decision.
+ */
+function sanitizeBargeInTrigger(
+  input: TurnLatencyBreakdown["bargeInTrigger"] | undefined,
+): TurnLatencyBreakdown["bargeInTrigger"] | undefined {
+  if (input === undefined || !BARGE_IN_TRIGGER_SOURCES.has(input.source as string)) return undefined;
+  const num = (value: unknown): number | undefined =>
+    typeof value === "number" && Number.isFinite(value) ? Math.round(value) : undefined;
+  const bool = (value: unknown): boolean | undefined => (typeof value === "boolean" ? value : undefined);
+  const words = num(input.words);
+  const confidence = typeof input.confidence === "number" && Number.isFinite(input.confidence) ? input.confidence : undefined;
+  const isFinal = bool(input.isFinal);
+  const energyAgeMs = num(input.energyAgeMs);
+  const beganBeforeReply = bool(input.beganBeforeReply);
+  const replyRemainingMs = num(input.replyRemainingMs);
+  const replyFullyQueued = bool(input.replyFullyQueued);
+  return {
+    source: input.source,
+    ...(words !== undefined ? { words } : {}),
+    ...(confidence !== undefined ? { confidence } : {}),
+    ...(isFinal !== undefined ? { isFinal } : {}),
+    ...(energyAgeMs !== undefined ? { energyAgeMs } : {}),
+    ...(beganBeforeReply !== undefined ? { beganBeforeReply } : {}),
+    ...(replyRemainingMs !== undefined ? { replyRemainingMs } : {}),
+    ...(replyFullyQueued !== undefined ? { replyFullyQueued } : {}),
+  };
+}
 
 function positiveOrUndefined(value: number | undefined): number | undefined {
   if (value === undefined || !Number.isFinite(value) || value < 0) return undefined;
@@ -329,6 +364,11 @@ export class SessionMetricsCollector {
     const bargeInPhase = BARGE_IN_PHASES.has(input.bargeInPhase as string)
       ? input.bargeInPhase
       : undefined;
+    // DIAGNOSTIC ONLY — see `BargeInTriggerTelemetry`. Copied field by
+    // field with the same validation posture as the enums above: an
+    // unknown source drops the whole record, a non-finite number or a
+    // non-boolean drops that field.
+    const bargeInTrigger = sanitizeBargeInTrigger(input.bargeInTrigger);
     const heldTextReadsUnfinished =
       typeof input.heldTextReadsUnfinished === "boolean"
         ? input.heldTextReadsUnfinished
@@ -396,6 +436,7 @@ export class SessionMetricsCollector {
       ...(continuationGraceTrace !== undefined ? { continuationGraceTrace } : {}),
       ...(continuationGraceResets !== undefined ? { continuationGraceResets } : {}),
       ...(bargeInPhase !== undefined ? { bargeInPhase } : {}),
+      ...(bargeInTrigger !== undefined ? { bargeInTrigger } : {}),
     });
 
     this.costTotals.speechToText += input.sttCostUsd;

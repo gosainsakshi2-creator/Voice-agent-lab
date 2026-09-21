@@ -37,7 +37,7 @@ import type { AudioPayload, ConversationTurn } from "../../types/provider.types"
 import type { CompletionRequest } from "../../interfaces/providers/language-model-provider.interface";
 import type { LanguageModelProvider } from "../../interfaces/providers/language-model-provider.interface";
 import type { LlmStreamEvent } from "../../types/streaming.types";
-import type { TurnOutcome } from "../../types/benchmark.types";
+import type { BargeInTriggerTelemetry, TurnOutcome } from "../../types/benchmark.types";
 import type { SpeechToTextProvider } from "../../interfaces/providers/speech-to-text-provider.interface";
 import type { TextToSpeechProvider, SynthesisTaskRequest } from "../../interfaces/providers/text-to-speech-provider.interface";
 import type { TelephonyProvider } from "../../interfaces/providers/telephony-provider.interface";
@@ -437,6 +437,29 @@ const BACKCHANNEL_MIN_REMAINING_SPEECH_MS = 4_000;
  */
 const BARE_GREETING_ONLY =
   /^(?:(?:hello|hallo|helo|hullo|hi|hii+|hey|haan ji|haanji|hanji|namaste|namaskar|हैलो|हेलो|नमस्ते|नमस्कार)[\s,.!?…।-]*)+$/iu;
+
+/**
+ * A pure phone-answer greeting and nothing else — "Hello", "Hello
+ * hello", "Hi", "Namaste".
+ *
+ * `BARE_GREETING_ONLY` above deliberately includes "haan ji", because
+ * on a call it is said as a greeting as often as an agreement. That is
+ * exactly the ambiguity this narrower table exists to avoid: it is read
+ * at ONE place, the pickup-acknowledgement drop on an identity-first
+ * script (see `pickupAckAllowance`), where the opening line IS a
+ * question and "haan ji" over its tail is the ANSWER (identity-gate
+ * D2/D3 pin that). So this carries the greeting words only — no
+ * affirmation of any kind, so nothing that could answer the question
+ * can ever be dropped by it. "Yes hello" is not matched and reaches the
+ * gate, where the "yes" confirms.
+ *
+ * Duplicated from `BARE_GREETING_ONLY` rather than derived from it for
+ * the reason `ATTENTION_FILLER` gives: the other tables are read by the
+ * backchannel, supersession and attention paths, which this must leave
+ * byte-identical.
+ */
+const PICKUP_GREETING_ONLY =
+  /^(?:(?:hello|hallo|helo|hullo|hi|hii+|hey|namaste|namaskar|हैलो|हेलो|नमस्ते|नमस्कार)[\s,.!?…।-]*)+$/iu;
 
 /**
  * ---------------- "Hello? Can you hear me?" ----------------
@@ -2063,6 +2086,14 @@ export class ConversationPipeline {
    *   - the WHOLE utterance must be a bare greeting or a bare
    *     acknowledgement. "Hello? Who is this?" carries a real question
    *     and is answered after the opening exactly as it is today.
+   *   - on an IDENTITY-FIRST script (`openingAsksIdentity`) only a pure
+   *     greeting qualifies (`PICKUP_GREETING_ONLY`): the opening line is
+   *     a question, so a bare acknowledgement heard over its tail
+   *     ("Haan.", "Yes.", "haan ji") is the ANSWER and is never dropped.
+   *     Before this narrowing the allowance was not granted at all on
+   *     such scripts, and the pickup "Hello" reached the identity gate,
+   *     read as `unclear`, and drew "Sorry — am I speaking with…?" —
+   *     24 of the 60 most recent real calls opened exactly that way.
    *
    * It changes nothing about STT, the display transcript, voicemail
    * detection, turn detection or barge-in: the segments are recognised,
@@ -2078,7 +2109,7 @@ export class ConversationPipeline {
    * Read in exactly two places, and both are about the same thing: the
    * caller's FIRST utterance is an ANSWER, not an acknowledgement.
    * `identityState` starts `outstanding` instead of `unasked`, and the
-   * pickup-acknowledgement allowance is never granted.
+   * pickup-acknowledgement allowance drops a pure greeting only.
    */
   private readonly openingAsksIdentity: boolean;
   /**
@@ -2139,6 +2170,17 @@ export class ConversationPipeline {
    * transport had already thrown away.
    */
   private cancelledHeardText = "";
+  /**
+   * DIAGNOSTIC ONLY (2026-09-21) — what tripped the barge-in that
+   * cancelled the response in flight, if one did. Written by
+   * `triggerExternalBargeIn` when it ACCEPTS, cleared where a reply
+   * cycle begins (next to `bargeIn.beginThinking()`, for the reason
+   * `BargeInController.lastBargeInPhase` is cleared there), and read
+   * once — cleared — by the main loop's `recordTurn`. See
+   * `BargeInTriggerTelemetry` for why this exists. Consulted by no
+   * decision.
+   */
+  private pendingBargeInTrigger: BargeInTriggerTelemetry | undefined;
   /**
    * Resumes spent on this call, against `MAX_STRANDED_RESUMES`. Bounds
    * the pathological case where a noisy line barges in over and over
@@ -2692,7 +2734,13 @@ export class ConversationPipeline {
         if (this.pickupAckAllowance) {
           this.pickupAckAllowance = false;
           const pickup = turn.text.trim();
-          if (BARE_GREETING_ONLY.test(pickup) || isBareAcknowledgement(pickup)) {
+          // An identity-first opening is a QUESTION, so only a pure
+          // greeting is the phone being answered; anything that could
+          // be its answer goes on to the gate. See `PICKUP_GREETING_ONLY`.
+          const isPickup = this.openingAsksIdentity
+            ? PICKUP_GREETING_ONLY.test(pickup)
+            : BARE_GREETING_ONLY.test(pickup) || isBareAcknowledgement(pickup);
+          if (isPickup) {
             // Nothing is pre-opened here in practice — the detector's
             // pending hook only fires while the main loop is awaiting a
             // turn, and this turn was released before the greeting
@@ -3030,6 +3078,9 @@ export class ConversationPipeline {
           // rather than earlier because `bargeIn.reset()` above clears
           // the abort handles but deliberately not this label.
           bargeInPhase: this.record.bargeIn.consumeBargeInPhase(),
+          // DIAGNOSTIC ONLY — same read-and-clear contract as the phase
+          // above. See `BargeInTriggerTelemetry`.
+          bargeInTrigger: this.consumeBargeInTrigger(),
         });
 
         // Last, after everything this turn owns has been committed and
@@ -4530,7 +4581,13 @@ export class ConversationPipeline {
    *   its queue anyway would leave the caller in silence with nothing
    *   left to play and no reply on the way.
    */
-  triggerExternalBargeIn(): boolean {
+  triggerExternalBargeIn(
+    // DIAGNOSTIC ONLY — which path is asking, recorded when accepted.
+    // Defaults to `external` for the transports' energy-only fallback
+    // (via `signalBargeIn`), which passes nothing. Changes no decision.
+    source: BargeInTriggerTelemetry["source"] = "external",
+    evidence: Omit<BargeInTriggerTelemetry, "source"> = {},
+  ): boolean {
     // THE OPENING LINE IS NOT INTERRUPTIBLE.
     //
     // `greetingDone` has always gated the transcript-confirmed barge-in
@@ -4595,11 +4652,21 @@ export class ConversationPipeline {
     // still a true statement about what the caller heard. Read by the
     // commit site in the main loop — see `cancelledHeardText`.
     this.cancelledHeardText = this.heardSoFarText();
+    // DIAGNOSTIC ONLY — see `pendingBargeInTrigger`. Stamped at the one
+    // instant every accepted barge-in passes through.
+    this.pendingBargeInTrigger = { source, ...evidence };
     this.record.bargeIn.triggerBargeIn();
     if (this.record.state === SessionState.SPEAKING) {
       this.host.transition(this.record, SessionState.LISTENING, "external barge-in signal");
     }
     return true;
+  }
+
+  /** DIAGNOSTIC ONLY — read-and-clear, mirroring `consumeBargeInPhase`. */
+  private consumeBargeInTrigger(): BargeInTriggerTelemetry | undefined {
+    const trigger = this.pendingBargeInTrigger;
+    this.pendingBargeInTrigger = undefined;
+    return trigger;
   }
 
   /**
@@ -4895,14 +4962,15 @@ export class ConversationPipeline {
             // is decided at turn release, on the whole utterance, in
             // the main loop; nothing here inspects the text, filters a
             // segment, or changes what is fed to the turn detector.
-            // ...unless our opening line ASKED them something. The
-            // allowance exists because "the opening line is the answer
-            // to it" — true of a greeting the caller is greeting back,
-            // and false of a question. On an identity-first script the
-            // caller's "Haan." over the tail of "Hello, am I speaking
-            // with Sakshi?" is the ANSWER, and dropping it would
-            // re-ask a question they had already answered.
-            if (!this.greetingDone && !this.openingAsksIdentity) this.pickupAckAllowance = true;
+            // On an identity-first script the opening line ASKS
+            // something, so the caller's "Haan." over its tail is the
+            // ANSWER and must not be dropped — the consumer narrows what
+            // qualifies to a pure greeting there (`PICKUP_GREETING_ONLY`)
+            // rather than withholding the allowance, because the "Hello"
+            // a caller says as they lift the phone is a pickup on every
+            // script, and read as an identity answer it is `unclear` and
+            // re-asks a question they were still hearing.
+            if (!this.greetingDone) this.pickupAckAllowance = true;
             // Prefix the finals already accumulated for this turn. A
             // Deepgram interim/final is only the tail since the last
             // final, so without this the preview snaps back to the
@@ -5143,7 +5211,32 @@ export class ConversationPipeline {
           }
 
           if (spokeOverTheAssistant) {
-            this.triggerExternalBargeIn();
+            // DIAGNOSTIC ONLY — the evidence this interruption was
+            // accepted on, so a noisy line can be told apart from a
+            // caller after the fact. Counts, ages and booleans; the
+            // words stay on this console line. See
+            // `BargeInTriggerTelemetry`. Decides nothing.
+            const text = segment.text.trim();
+            const energyAgeMs =
+              this.record.lastCallerEnergyAt === 0 ? undefined : Date.now() - this.record.lastCallerEnergyAt;
+            const beganBeforeReply =
+              segment.startedAtMs > 0 &&
+              this.sttClockOffsetMs + segment.startedAtMs <= this.speakingStartedAtStreamMs;
+            const evidence: Omit<BargeInTriggerTelemetry, "source"> = {
+              words: text.length === 0 ? 0 : text.split(/\s+/).length,
+              confidence: segment.confidence,
+              isFinal: segment.isFinal,
+              ...(energyAgeMs !== undefined ? { energyAgeMs } : {}),
+              beganBeforeReply,
+              replyRemainingMs: Math.max(0, Math.round(this.remainingSpeechMs())),
+              replyFullyQueued: this.replyFullyQueued,
+            };
+            // eslint-disable-next-line no-console
+            console.log(
+              `[TURN:${this.record.id}] barge-in ACCEPTED on transcript: "${text.slice(0, 60)}" — words=${evidence.words} confidence=${segment.confidence} isFinal=${segment.isFinal}` +
+                ` energyAgeMs=${energyAgeMs ?? "n/a"} beganBeforeReply=${beganBeforeReply} replyRemainingMs=${evidence.replyRemainingMs} replyFullyQueued=${this.replyFullyQueued}`,
+            );
+            this.triggerExternalBargeIn("transcript", evidence);
           }
 
           // ── Our own backchannel cue, back up the inbound track ─────
@@ -6035,6 +6128,9 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
     const isGreeting = userText === "";
 
     this.host.transition(this.record, SessionState.THINKING, "generating a reply");
+    // DIAGNOSTIC ONLY — cleared at the same boundary `beginThinking`
+    // clears the barge-in phase label, for the same reason.
+    this.pendingBargeInTrigger = undefined;
     const thinkingSignal = combineSignals([this.record.bargeIn.beginThinking(), loopSignal]);
     const request: CompletionRequest = { sessionId: this.record.id, history: this.buildRequestHistory(turnLanguage) };
     const llmProviderId = this.providers.llm.descriptor.id;
@@ -6332,7 +6428,7 @@ await this.drainPlayback(speakingSignal, true);
                     ` (signal=${supersession.outcome} supersederTakesFloor=${supersession.takesFloor} charsGenerated=${fullText.length})`,
                 );
                 superseded = true;
-                this.triggerExternalBargeIn();
+                this.triggerExternalBargeIn("supersession");
                 break;
               }
               if (supersession.takesFloor === false) {
@@ -6485,7 +6581,7 @@ await this.drainPlayback(speakingSignal, true);
         `[PIPELINE:${this.record.id}] reply SUPERSEDED before it was spoken — the caller has already said something newer` +
           ` (signal=${tailSupersession.outcome} supersederTakesFloor=${tailSupersession.takesFloor} charsGenerated=${fullText.length})`,
       );
-      this.triggerExternalBargeIn();
+      this.triggerExternalBargeIn("supersession");
     } else if (remainder.length > 0 && !(speakingSignal?.aborted ?? false)) {
       // PHASE B — reached, rather than superseded, when a waiting turn
       // does not take the floor. The reply is spoken by the unchanged
@@ -6754,7 +6850,7 @@ await this.drainPlayback(speakingSignal, true);
       // Accepted: the signal is now aborted, the part the caller heard
       // is frozen for the commit site, and the buffered turn is picked
       // up on the next loop iteration. Declined: keep draining.
-      if (this.triggerExternalBargeIn()) return;
+      if (this.triggerExternalBargeIn("buffered_turn")) return;
     }
   }
 

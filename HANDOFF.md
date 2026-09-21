@@ -18,6 +18,92 @@ provider, VAD or transport setting was touched by this pass.
 
 ---
 
+## 2026-09-21 — FIVE REAL-CALL CONVERSATION DEFECTS (AUDIT + MINIMAL FIXES)
+
+**Status: IMPLEMENTED, TYPECHECKED (`tsc --noEmit --incremental false`
+clean), TESTED, UNCOMMITTED, NOT DEPLOYED.** Audit first, against the 60
+most recent real transcripts in `call_outcomes` / `call_metrics` (read-only
+queries). Not touched: STT/TTS/LLM providers, VAD, endpointing config, the
+media bridges, classifier / `COMMIT_ANCHORS`, scripts, sheet, dispositions,
+retry planner, schema, recording.
+
+1. **Pickup "Hello" re-asked the identity question** (24/60 calls opened
+   "Hello" → "Sorry — Am I speaking with…?"; 50 re-asks in all). Cause: on
+   identity-first scripts (v8–v12) `pickupAckAllowance` was never granted,
+   so the hello reached `handleIdentityGate` as `unclear`. Fix in
+   `conversation-pipeline.ts`: the allowance is granted on every script;
+   on an identity-first script only a PURE greeting qualifies
+   (`PICKUP_GREETING_ONLY` — no "haan ji"/"yes", so an answer over the
+   opening's tail is never dropped; D2/D3 still pin that). A hello said
+   AFTER the opening finished is still re-asked (D10b). identity-gate 42/42
+   (D10 rewritten, D10b–D10e added).
+2. **Script repetition.** No pipeline path re-speaks script unasked beyond
+   (1) and barge-in-driven regeneration (4/5). New `test:script-repetition`
+   (7/7) pins: hello / normal / fragmented answer after a block → no replay,
+   one model request with the block on record; "Can you repeat that?" /
+   "I didn't hear you." → REPEAT branch, no model request.
+3. **Hangup after a confirmed registration** (real call fd6e4333: "Uh, 2
+   minutes" → "Sure, take your time." → hangup next tick). Cause: the
+   FINAL_YES hold released on ANY person turn. Fix in `call-runner.ts`:
+   `liveRegistrationReading` gains `closingDelivered` (= `agentClosedIn`);
+   the watchdog holds FINAL_YES while `awaitingClosingResponse ||
+   !closingDelivered`, on the SAME `closingWaitSeconds` bound. Verdict,
+   disposition, sheet untouched. post-registration-closing 31/31 (A10, D9–D11
+   added; A8 shape updated). FINAL_NO / AGENT_CLOSED paths unchanged.
+4. **Two sentences of one thought answered separately.** Cause confirmed:
+   the `feed` fast path released a complete 5–11-word sentence 250/300ms
+   after Deepgram's ~400ms endpoint; continuations landed 0.9–1.6s later
+   (supersession merged 7; the rest became barge-ins). `grace_cap_reached`
+   was 1/108 — NOT the cause. Fix in `turn-detection.ts`:
+   `EVIDENCED_CONFIRMATION_SENTENCE_MS = 600` on the `feed` fast path for a
+   complete non-question sentence of >4 words (`speechFinalConfirmationWindowMs`).
+   Short answers, questions, UtteranceEnd and inferred paths unchanged; the
+   speculative pre-open absorbs the window (speculative-llm log:
+   evidence→release 601ms, first token in hand at adoption). New
+   `test:turn-aggregation` (10/10). Pins moved: turn-completion A4/A5 (+A6),
+   turn-release "complete turn >4 words", speculative-llm A7, self-echo wait.
+5. **Noise interruptions.** 61 speaking-phase barge-ins / 108 turns, but
+   nothing stored distinguished caller vs noisy transcript vs energy-only vs
+   the pipeline's own cuts. TELEMETRY ONLY, no threshold changed:
+   `bargeInTrigger` (`BargeInTriggerTelemetry` in benchmark.types.ts —
+   source transcript/external/buffered_turn/supersession + words,
+   confidence, isFinal, energyAgeMs, beganBeforeReply, replyRemainingMs,
+   replyFullyQueued) on `turnLatencies` (raw jsonb, no migration) plus a
+   `barge-in ACCEPTED on transcript` console line. Decide thresholds from
+   the next calls' data.
+
+Regression on this tree: identity-gate 42 · script-repetition 7 ·
+post-registration-closing 31 · agent-hangup 24 · announced-question 20 ·
+phase9 22 · turn-completion 19 · turn-release 19 · end-of-speech 17 ·
+turn-aggregation 10 · speculative-llm 23 · barge-in 52 · long-monologue 62 ·
+attention 33 · buffered-turn 24 · hearing-loop 13 · self-echo 7 ·
+ack-continuity 10 · backchannel-cue 30 · confirmation-binding 127 · phase8 33 ·
+stt-clock 14 · turn-release-trace 22 · language-lock 33 · short-utterance 62 ·
+stt-observability 24 · turn-outcome 11 · turn-timing 8 · latency-boundary 22 ·
+stt-fragmentation 23 · silence-recovery 27 · continuity 42.
+**Pre-existing, not this change:** post-registration-question B6 (stale, see
+09-18); registration-v12 B1 — the operator hand-edited the v12 Hinglish
+discovery line ("…daalne ka try kra hai?") after the test pinned
+"…daalne ki try ki hai?".
+
+**Observed but deliberately left alone** (outside the five issues): a
+"Please?" / "Yes." answer to a resumed question can be read as a hearing
+check (`ATTENTION_PRESENCE_ONLY` accepts filler-only text such as
+"Please?"), and the RESUME branch leaves the episode open so the next
+answer hits `hearingFollowUpFor` (call de5cdc73); Punjabi "ਹਾਂ ਜੀ" and
+Deepgram's "Alo"/"Allô" spellings are outside the greeting/ack tables.
+
+**Files changed:** `src/core/session/conversation-pipeline.ts`,
+`src/core/session/turn-detection.ts`, `src/core/session/metrics-collector.ts`,
+`src/types/benchmark.types.ts`, `src/campaign/dispatch/call-runner.ts`,
+`src/campaign/config/dispatch.config.ts`, `package.json`; tests: new
+`script-repetition-tests.ts`, `turn-aggregation-tests.ts`; updated
+`identity-gate-tests.ts`, `post-registration-closing-tests.ts`,
+`turn-completion-tests.ts`, `turn-release-tests.ts`,
+`speculative-llm-start-tests.ts`, `self-echo-tests.ts`.
+
+---
+
 ## 2026-09-21 — REGISTRATION v9: "LAUNCH YOUR BUSINESS ONLINE IN 10 MINUTES" WEBINAR (22 SEP, 7:30 PM)
 
 **Status: IMPLEMENTED, TYPECHECKED (`tsc --noEmit --incremental false` clean),

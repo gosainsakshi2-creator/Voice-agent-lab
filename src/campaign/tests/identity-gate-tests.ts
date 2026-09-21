@@ -392,6 +392,12 @@ async function run(
      * their answer, and the pipeline must not eat it.
      */
     readonly skipPickup?: boolean;
+    /**
+     * Wait until the opening line has finished playing and the agent is
+     * LISTENING before the first turn is said. Omitted, the first turn
+     * lands WHILE the opening is still being spoken — the pickup window.
+     */
+    readonly afterOpening?: boolean;
   } = {},
 ): Promise<{ spoken: string[]; llmRequests: number; lastUserSentToLlm: string | undefined }> {
   // `identityLine: ""` means "this call has no gate"; omitted means the
@@ -411,6 +417,14 @@ async function run(
     if (opts.skipPickup !== true) {
       h.say("Hello.", { isFinal: true, isSpeechFinal: true });
       await sleep(3000);
+    }
+    if (opts.afterOpening === true) {
+      await h.waitFor(
+        "the opening line to finish",
+        () => h.replyCount() >= 1 && h.record.state === SessionState.LISTENING,
+      );
+      // Past the drain, so nothing said from here was heard over the opening.
+      await sleep(200);
     }
     for (const text of turns) {
       h.say(text, { isFinal: true, isSpeechFinal: true });
@@ -793,11 +807,43 @@ await test("D9. 'Who is this?' is UNCLEAR: no introduction, and the question is 
   assert.ok(idAsks(r.spoken) >= 1, "the gate puts the unanswered question again");
 });
 
-await test("D10. 'Hello' to the opening is unclear, and a later 'Yes.' still confirms", async () => {
+await test("D10. a 'Hello' heard WHILE the opening plays is the pickup, not an answer: no re-ask, and 'Yes.' then confirms", async () => {
+  // Real calls: 24 of the 60 most recent opened with the caller's bare
+  // "Hello" and every one drew "Sorry — Am I speaking with…?". The
+  // opening line is the answer to a pickup greeting on every script;
+  // on an identity-first script the greeting is simply not the answer
+  // to the question, so it is dropped rather than read as `unclear`.
   const r = await idFirst(["Hello", "Yes."]);
   assert.equal(r.llmRequests, 1, "one request, and only after the real answer");
   assert.equal(r.lastUserSentToLlm, "Yes.");
-  assert.ok(idAsks(r.spoken) >= 1, "the question was put again after the greeting");
+  assert.equal(idAsks(r.spoken), 0, "the pickup greeting must NOT re-ask the question the caller is still hearing");
+  assert.equal(r.spoken.filter((t) => t.startsWith("Sorry")).length, 0, "no 'Sorry —' re-ask at all");
+});
+
+await test("D10b. a 'Hello' said AFTER the opening finished is still unclear and still re-asked (scope: the pickup window only)", async () => {
+  const r = await run(["Hello", "Yes."], { openingLine: ID_FIRST_OPEN, skipPickup: true, afterOpening: true });
+  assert.equal(r.llmRequests, 1, "one request, and only after the real answer");
+  assert.equal(r.lastUserSentToLlm, "Yes.");
+  assert.ok(idAsks(r.spoken) >= 1, "a hello out of a clear sky, after the question, is not an answer — the question is put again");
+});
+
+await test("D10c. 'Hello hello' over the opening is also the pickup", async () => {
+  const r = await idFirst(["Hello hello.", "Yes."]);
+  assert.equal(idAsks(r.spoken), 0, "not re-asked");
+  assert.equal(r.llmRequests, 1);
+});
+
+await test("D10d. 'Yes, hello' over the opening carries the answer and is NOT dropped — it confirms", async () => {
+  const r = await idFirst(["Yes, hello."]);
+  assert.equal(r.llmRequests, 1, "the yes reached the gate and opened it");
+  assert.equal(idAsks(r.spoken), 0, "nothing re-asked");
+  assert.equal(pitched(r.spoken), true);
+});
+
+await test("D10e. 'Hello? Who is this?' over the opening is not a pickup: it is unclear and re-asked, as before", async () => {
+  const r = await idFirst(["Hello? Who is this?"]);
+  assert.equal(r.llmRequests, 0);
+  assert.ok(idAsks(r.spoken) >= 1, "a real question back is not a greeting");
 });
 
 await test("D11. a repeated 'Yes.' does not ask, introduce or pitch twice", async () => {

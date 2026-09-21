@@ -587,6 +587,48 @@ export interface TurnLatencyBreakdown {
    * reply. Absent when no barge-in fired. See `BargeInPhase`.
    */
   readonly bargeInPhase?: "thinking" | "speaking" | "idle";
+  /**
+   * DIAGNOSTIC ONLY (2026-09-21) — what tripped the barge-in that
+   * `bargeInPhase` records. Real calls showed 61 speaking-phase
+   * barge-ins in 108 turns, and nothing stored distinguished a caller
+   * genuinely interrupting from a noisy transcript over a quiet caller,
+   * an energy-only cut with no words at all, or the pipeline's own
+   * buffered-turn / supersession cuts. Counts, ages and booleans only —
+   * never the caller's words. Absent when no barge-in fired. Read by
+   * nothing; changes no decision.
+   */
+  readonly bargeInTrigger?: BargeInTriggerTelemetry;
+}
+
+/**
+ * Which path accepted a barge-in, and — for the transcript-confirmed
+ * path — the evidence it was accepted on. See `bargeInTrigger`.
+ *
+ *   transcript     a Deepgram segment over the assistant's audio passed
+ *                  the backchannel, corroboration and self-echo gates;
+ *   external       the transport's energy-only fallback (no transcript),
+ *                  or a test harness, via `signalBargeIn`;
+ *   buffered_turn  `drainPlayback` cut a playing reply for a turn already
+ *                  waiting behind it;
+ *   supersession   a reply was discarded before it was spoken because a
+ *                  newer turn was waiting (THINKING side).
+ */
+export interface BargeInTriggerTelemetry {
+  readonly source: "transcript" | "external" | "buffered_turn" | "supersession";
+  /** Words in the accepted segment (transcript source only). */
+  readonly words?: number;
+  /** Provider confidence of the accepted segment; `0` means not reported. */
+  readonly confidence?: number;
+  /** Whether the accepted segment was a final (vs interim). */
+  readonly isFinal?: boolean;
+  /** Age of the transport's last loud near-end energy stamp at acceptance; absent when the transport never stamped. */
+  readonly energyAgeMs?: number;
+  /** The utterance began before the reply's audio did (the caller spoke into the THINKING gap). */
+  readonly beganBeforeReply?: boolean;
+  /** Estimated reply audio still queued at acceptance. */
+  readonly replyRemainingMs?: number;
+  /** Whether every utterance of the reply had already been handed to the transport. */
+  readonly replyFullyQueued?: boolean;
 }
 
 /**

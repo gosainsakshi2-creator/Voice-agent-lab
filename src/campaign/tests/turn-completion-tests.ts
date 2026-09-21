@@ -66,6 +66,13 @@ const EVIDENCED_SHORT_MS = 150;
 const EVIDENCED_LONG_MS = 250;
 const EVIDENCED_OPEN_MS = 300;
 const EVIDENCED_LONG_TURN_MS = 600;
+/**
+ * 2026-09-21 — a complete sentence of more than four words that is not
+ * a question takes this on the `feed` fast path instead of the 250/300ms
+ * tier, so a natural pause between two sentences of one thought no
+ * longer splits the turn. See `EVIDENCED_CONFIRMATION_SENTENCE_MS`.
+ */
+const EVIDENCED_SENTENCE_MS = 600;
 const SILENCE_WINDOW_MS = 1_100;
 const CONTINUATION_GRACE_MS = 800;
 const LONG_TURN_MIN_WORDS = 12;
@@ -155,18 +162,27 @@ await test("A3. a short QUESTION keeps the short window", async () => {
   within(delayMs, EVIDENCED_SHORT_MS, "short question");
 });
 
-await test("A4. a medium complete sentence under the long-turn threshold keeps the 250ms tier", async () => {
+await test("A4. a medium complete sentence under the long-turn threshold takes the sentence window (was the 250ms tier)", async () => {
   const line = "Yes I would like to attend the session today.";
   assert.ok(line.split(/\s+/).length < LONG_TURN_MIN_WORDS);
   const { delayMs } = await releaseDelayMs([{ text: line, isSpeechFinal: true }]);
-  within(delayMs, EVIDENCED_LONG_MS, "medium complete turn");
+  within(delayMs, EVIDENCED_SENTENCE_MS, "medium complete turn");
+  assert.ok(delayMs > EVIDENCED_LONG_MS + EARLY, `must be wider than the 250ms tier: ${delayMs}ms`);
 });
 
-await test("A5. a medium UNPUNCTUATED sentence keeps the 300ms open tier", async () => {
+await test("A5. a medium UNPUNCTUATED sentence takes the sentence window too (was the 300ms open tier)", async () => {
   const line = "haan main kal join karungi zaroor";
   assert.ok(line.split(/\s+/).length < LONG_TURN_MIN_WORDS);
   const { delayMs } = await releaseDelayMs([{ text: line, isSpeechFinal: true }]);
-  within(delayMs, EVIDENCED_OPEN_MS, "medium unpunctuated turn");
+  within(delayMs, EVIDENCED_SENTENCE_MS, "medium unpunctuated turn");
+  assert.ok(delayMs > EVIDENCED_OPEN_MS + EARLY, `must be wider than the 300ms tier: ${delayMs}ms`);
+});
+
+await test("A6. a medium QUESTION keeps the short tier — a finished question is a finished thought", async () => {
+  const line = "Can you tell me what the webinar covers?";
+  assert.ok(line.split(/\s+/).length > 4);
+  const { delayMs } = await releaseDelayMs([{ text: line, isSpeechFinal: true }]);
+  within(delayMs, EVIDENCED_SHORT_MS, "medium question");
 });
 
 // ═════════════════════════════════════════════════════════════════

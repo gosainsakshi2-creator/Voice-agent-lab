@@ -210,6 +210,41 @@ const EVIDENCED_CONFIRMATION_OPEN_MS = 300;
  * Only the one path acting on ~400ms of measured silence changes.
  */
 const EVIDENCED_CONFIRMATION_LONG_TURN_MS = 600;
+/**
+ * ---------------- A FIRST SENTENCE breathes too (2026-09-21) ------
+ *
+ * The long-turn window above starts at twelve words. Below it, a
+ * complete sentence with content — "Yes, I would like to join." — was
+ * released 250ms (300ms unpunctuated) after the provider's ~400ms
+ * endpoint: ~650ms of quiet, which is SHORTER than the pause a person
+ * takes between two sentences of one thought. Real calls, 60 most
+ * recent: the caller's continuation landed 0.9-1.6s after such a
+ * fragment had been released, so the first sentence became a turn of
+ * its own and the second was either merged only by discarding a reply
+ * already generated (THINKING-phase supersession, 7 turns) or, once
+ * that reply's audio had started, answered separately as a barge-in
+ * (the "responds to 'Yes, I would like to join.' and then separately to
+ * 'Actually, can you tell me…'" defect). Live LLM+TTS first-audio is
+ * ~1.1s median, so supersession alone covers barely half the pauses.
+ *
+ * So on the `feed` fast path — the release triggered by ONE segment
+ * becoming `speech_final` — a complete sentence of more than
+ * `SHORT_COMPLETE_TURN_MAX_WORDS` that is not a question takes this
+ * window instead of the 250/300ms tier. Still a confirmation: any
+ * segment inside it cancels the release, so a caller who carries on
+ * pays nothing. The added wait on a sentence that really did finish is
+ * largely absorbed by the speculative language-model start, which
+ * opens the request when this window is ARMED (`notifyTurnPending`),
+ * not when it expires.
+ *
+ * Deliberately NOT widened: short answers ("Yes.", "Haan ji.",
+ * "Okay." — every gate answer), questions of any length (a finished
+ * question is a finished thought), the `noteEndOfSpeech` marker path
+ * (a second of quiet is already in evidence there) and the inferred
+ * path (a full silence window). Same value as the long-turn window so
+ * a turn crossing twelve words changes nothing.
+ */
+const EVIDENCED_CONFIRMATION_SENTENCE_MS = 600;
 /** A turn this long is an explanation, not an answer — see above. */
 const LONG_TURN_MIN_WORDS = 12;
 /**
@@ -992,13 +1027,11 @@ export class AdaptiveTurnDetector {
       if (this.lastFinalWasEndpoint && !this.pendingInterim && this.isReleasableThought()) {
         this.stage = "confirming";
         // PHASE 4: a LONG turn takes the wider evidenced window here and
-        // only here — see the block above `EVIDENCED_CONFIRMATION_LONG_TURN_MS`.
-        // Every other turn takes exactly the tier it took before.
-        this.rearmTimer(
-          this.isLongTurn(nowMs)
-            ? EVIDENCED_CONFIRMATION_LONG_TURN_MS
-            : this.evidencedConfirmationWindowMs(this.pendingFinalText),
-        );
+        // only here — see the block above `EVIDENCED_CONFIRMATION_LONG_TURN_MS`;
+        // 2026-09-21: so does a complete first SENTENCE with content —
+        // see `EVIDENCED_CONFIRMATION_SENTENCE_MS`. Short answers and
+        // questions take exactly the tier they took before.
+        this.rearmTimer(this.speechFinalConfirmationWindowMs(this.pendingFinalText, nowMs));
         // Observers are told only when the endpoint claim is EXPLICIT
         // (`speech_final: true` on this very final). A provider that
         // reports nothing (`isSpeechFinal` absent) takes this fast path
@@ -1584,6 +1617,25 @@ export class AdaptiveTurnDetector {
    * in-flight-speech cancellation window is kept widest exactly where
    * the corroborating signal is missing.
    */
+  /**
+   * The confirmation window for the `feed` fast path ONLY — the release
+   * that one segment becoming `speech_final` triggers. A long turn takes
+   * `EVIDENCED_CONFIRMATION_LONG_TURN_MS`; a complete sentence with
+   * content takes `EVIDENCED_CONFIRMATION_SENTENCE_MS` (see the block
+   * above it); everything else takes exactly the tier
+   * `evidencedConfirmationWindowMs` has always granted. Called only after
+   * `isReleasableThought()` has passed, so the text already reads as
+   * finished — this decides how long to wait for proof that it was.
+   */
+  private speechFinalConfirmationWindowMs(text: string, nowMs: number): number {
+    if (this.isLongTurn(nowMs)) return EVIDENCED_CONFIRMATION_LONG_TURN_MS;
+    const wordCount = text.split(/\s+/).length;
+    if (wordCount > SHORT_COMPLETE_TURN_MAX_WORDS && !QUESTION_ENDING.test(text)) {
+      return EVIDENCED_CONFIRMATION_SENTENCE_MS;
+    }
+    return this.evidencedConfirmationWindowMs(text);
+  }
+
   private evidencedConfirmationWindowMs(text: string): number {
     if (!TERMINAL_PUNCTUATION.test(text)) return EVIDENCED_CONFIRMATION_OPEN_MS;
     const wordCount = text.split(/\s+/).length;

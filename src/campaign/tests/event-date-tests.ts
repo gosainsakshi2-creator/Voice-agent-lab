@@ -252,7 +252,7 @@ test("C3. no OTHER registered script silently gained a date", () => {
   const declaring = listScripts().filter((s) => s.eventAt !== undefined).map((s) => `${s.id}/${s.version}`);
   // v9 and v10 declare 2026-09-22T19:30:00+05:30 deliberately: a
   // one-evening webinar is exactly the case the field was made for.
-  assert.deepEqual(declaring, ["registration/v6", "registration/v10", "registration/v9"]);
+  assert.deepEqual(declaring, ["registration/v6", "registration/v11", "registration/v10", "registration/v9"]);
 });
 
 // ═════════════════════════════════════════════════════════════════

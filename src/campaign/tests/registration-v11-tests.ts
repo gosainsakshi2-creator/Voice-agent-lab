@@ -1,12 +1,12 @@
 /**
- * registration-v9-tests.ts — `npm run test:registration-v9`
+ * registration-v11-tests.ts — `npm run test:registration-v11`
  *
  * THE "LAUNCH YOUR BUSINESS ONLINE IN 10 MINUTES" WEBINAR SCRIPT,
  * HELD AGAINST THE REAL READERS.
  *
  * ── What this suite proves ───────────────────────────────────────
  *
- * v9 asks more questions before the seat question than any script
+ * v11 asks more questions before the seat question than any script
  * before it — is this still on, do you run a business, what kind, is
  * there a website, is there an idea — and the whole safety argument for
  * that is that NONE of them is a gate. Section D therefore runs every
@@ -75,25 +75,27 @@ function test(name: string, fn: () => void): void {
 
 const section = (title: string) => console.log(`\n${title}`);
 
-const V9 = findScript("registration", "v9");
-assert.ok(V9, "registration v9 must be registered before this suite can run");
+const V11 = findScript("registration", "v11");
+assert.ok(V11, "registration v11 must be registered before this suite can run");
 
-const APPENDIX = V9.systemPromptAppendix;
+const APPENDIX = V11.systemPromptAppendix;
 /** Whitespace-collapsed, lowercased: the WORDS are the subject, not the wrapping. */
 const FLAT = APPENDIX.toLowerCase().replace(/\s+/gu, " ");
 
 // ── The lines this campaign actually speaks, with a real name in ──
 const NAME = "Sakshi";
 const OPENING = `Hello, am I speaking with ${NAME}?`;
+// v11 invites rather than reminds, and after the opening speaks only the
+// first name — the constants below are what the agent actually says.
 const INTRO_EN =
-  `Hi ${NAME}, I'm Ishita, calling from FlexiFunnels. Actually, you'd shown interest in our ` +
+  `Hi ${NAME}, I'm Ishita, calling from FlexiFunnels. Actually, we're inviting people to our ` +
   `upcoming webinar, "Launch Your Business Online in 10 Minutes". It's on 22nd September at 7:30 PM.`;
 const INTRO_HI =
-  `Hi ${NAME}, I'm Ishita, calling from FlexiFunnels. Actually, aapne hamare upcoming webinar, ` +
-  `"Launch Your Business Online in 10 Minutes", mein interest show kiya tha. Webinar 22nd September ko 7:30 PM pe hai.`;
-const INTEREST_EN = "I just wanted to confirm — are you still planning to join?";
-const INTEREST_HI = "Bas main confirm karna chahti thi — kya aap abhi bhi attend karne mein interested hain?";
-const INTEREST_DEV = "बस मैं confirm करना चाहती थी — क्या आप अभी भी attend करने में interested हैं?";
+  `Hi ${NAME}, I'm Ishita, calling from FlexiFunnels. Actually, humara ek upcoming webinar hai — ` +
+  `"Launch Your Business Online in 10 Minutes". Ye 22nd September ko 7:30 PM par hai.`;
+const INTEREST_EN = "Would you like to join?";
+const INTEREST_HI = "Kya aap isme join karna chahenge?";
+const INTEREST_DEV = "क्या आप इसमें join करना चाहेंगे?";
 const BUSINESS_EN = "Are you already running a business, or planning to start something?";
 const BUSINESS_HI = "Aap already koi business run kar rahe hain, ya abhi kuch start karne ka plan hai?";
 const KIND_EN = "Oh nice. What kind of business is it?";
@@ -155,22 +157,22 @@ const AFTER_EVENT = new Date("2026-09-22T19:31:00+05:30");
 // ═════════════════════════════════════════════════════════════════
 section("A. REGISTERED, SELECTABLE, AND DELIBERATELY NOT THE DEFAULT");
 
-test("A1. v9 is a registration script, approved, name-requiring, and dated", () => {
-  assert.equal(V9.id, "registration");
-  assert.equal(V9.version, "v9");
-  assert.equal(V9.campaignType, "registration");
-  assert.equal(V9.isPlaceholder, false, "the approved wording is installed");
-  assert.equal(V9.requiresName, true, "the opening line names the person");
-  assert.equal(V9.eventAt, "2026-09-22T19:30:00+05:30");
-  assert.ok(V9.label.includes("Launch Your Business Online in 10 Minutes"));
-  assert.ok(V9.label.includes("22 September"));
+test("A1. v11 is a registration script, approved, name-requiring, and dated", () => {
+  assert.equal(V11.id, "registration");
+  assert.equal(V11.version, "v11");
+  assert.equal(V11.campaignType, "registration");
+  assert.equal(V11.isPlaceholder, false, "the approved wording is installed");
+  assert.equal(V11.requiresName, true, "the opening line names the person");
+  assert.equal(V11.eventAt, "2026-09-22T19:30:00+05:30");
+  assert.ok(V11.label.includes("Launch Your Business Online in 10 Minutes"));
+  assert.ok(V11.label.includes("22 September"));
 });
 
-test("A2. v6 is STILL the default — v9 is a different event, not a newer revision", () => {
+test("A2. v6 is STILL the default — v11 is a different event from v6, and a newer revision of v10", () => {
   assert.equal(defaultScriptFor("registration").version, "v6");
   assert.equal(defaultScriptFor("reminder").version, "v2");
-  // ...but it is selectable, listed right after v6 and its own newer
-  // revision v10 (same event, two sourced FAQ answers).
+  // ...but it is selectable, listed right after v6 and ahead of v10 and
+  // v9, exactly as v8 sits ahead of v7.
   const registration = listScripts().filter((s) => s.campaignType === "registration");
   assert.equal(registration[0]?.version, "v6");
   assert.equal(registration[1]?.version, "v11");
@@ -178,28 +180,36 @@ test("A2. v6 is STILL the default — v9 is a different event, not a newer revis
   assert.equal(registration[3]?.version, "v9");
 });
 
-test("A3. v9 uses ONLY variables the campaign layer can supply", () => {
-  assert.deepEqual(scriptVariables(V9), ["agent_name", "customer_name"]);
+test("A3. v11 uses ONLY variables the campaign layer can supply", () => {
+  assert.deepEqual(scriptVariables(V11), ["agent_name", "customer_name"]);
   // The brief wrote {{first_name}}, {{phone_number}} and {{email}}; the
   // layer supplies exactly two variables and the registry refuses any
   // other at import. `customer_name` IS the imported name column, which
   // the campaign's CSVs carry as a first name.
   for (const banned of ["{{first_name}}", "{{phone_number}}", "{{email}}"]) {
-    assert.ok(!APPENDIX.includes(banned), `v9 must not ask for ${banned}`);
-    assert.ok(!V9.openingLineTemplate.includes(banned));
+    assert.ok(!APPENDIX.includes(banned), `v11 must not ask for ${banned}`);
+    assert.ok(!V11.openingLineTemplate.includes(banned));
   }
 });
 
-test("A4. v9's hash is stable and distinct from every other script's", () => {
-  const hash = hashScript(V9);
-  assert.equal(hash, hashScript(V9), "hashing is deterministic");
+test("A4. v11's hash is stable and distinct from every other script's", () => {
+  const hash = hashScript(V11);
+  assert.equal(hash, hashScript(V11), "hashing is deterministic");
   for (const other of listScripts()) {
-    if (other === V9) continue;
+    if (other === V11) continue;
     assert.notEqual(hashScript(other), hash, `${other.id}/${other.version} must not collide`);
   }
 });
 
-test("A5. the two revisions before it are byte-identical to when they shipped", () => {
+test("A5. the revisions before it are byte-identical to when they shipped", () => {
+  assert.equal(
+    hashScript(findScript("registration", "v10")!),
+    "156fe8b03462658372f3a695a56f28dc054d963e0e4c187ca030b77b340d4a8d",
+  );
+  assert.equal(
+    hashScript(findScript("registration", "v9")!),
+    "db4da125d8f6ced980032d602a61a5450355bd644e710cdfce86f66f9a8be282",
+  );
   assert.equal(
     hashScript(findScript("registration", "v8")!),
     "9ce4e6c7e18aa65227f8340f2db6435667fc22ea1e57b545916af119c3ee5b36",
@@ -218,19 +228,19 @@ test("A5. the two revisions before it are byte-identical to when they shipped", 
 section("B. THE DATE IS DECLARED, AND THE CLOCK HOLDS IT TO IT");
 
 test("B1. the declared instant parses, and matches the prose", () => {
-  assert.equal(eventDateBlocker(V9, BEFORE_EVENT), undefined);
+  assert.equal(eventDateBlocker(V11, BEFORE_EVENT), undefined);
   assert.ok(FLAT.includes("22nd september"), "the date is in the text");
   assert.ok(FLAT.includes("7:30 pm"), "the time is in the text");
-  assert.ok(V9.openingLineTemplate.trim().length > 0);
+  assert.ok(V11.openingLineTemplate.trim().length > 0);
 });
 
 test("B2. preflight validates on the morning of the 22nd", () => {
-  const result = validateCampaignScript(validationFor(V9, BEFORE_EVENT));
+  const result = validateCampaignScript(validationFor(V11, BEFORE_EVENT));
   assert.equal(result.ok, true, `unexpected blockers: ${result.blockers.join(" | ")}`);
 });
 
 test("B3. preflight REFUSES once the webinar has started", () => {
-  const result = validateCampaignScript(validationFor(V9, AFTER_EVENT));
+  const result = validateCampaignScript(validationFor(V11, AFTER_EVENT));
   assert.equal(result.ok, false, "a call after 7:30 PM invites people to an event that has begun");
   assert.ok(result.blockers.some((b) => b.toLowerCase().includes("passed") || b.toLowerCase().includes("date")));
 });
@@ -334,21 +344,26 @@ test("D2. NO to any pre-gate question does not read as a refusal at the gate", (
   }
 });
 
-test("D3. the English interest check is NOT the anchored phrasing, and the text forbids it", () => {
+test("D3. the English invitation is NOT the anchored phrasing, and the text forbids it", () => {
   // "interested in attending" / "interested to attend" / "like to attend"
-  // / "want to attend" are `COMMIT_ANCHORS`. The check must be worded
-  // around none of them, and must tell the model so.
+  // / "want to attend" are `COMMIT_ANCHORS`. The invitation must be
+  // worded around none of them, and must tell the model so.
   for (const anchored of ["interested in attending", "interested to attend", "like to attend", "want to attend"]) {
     assert.ok(!INTEREST_EN.toLowerCase().includes(anchored));
   }
-  assert.ok(FLAT.includes("are you still planning to join?"), "the safe form is in the text");
-  assert.ok(FLAT.includes("do not turn it into \"are you still interested in attending\""), "the unsafe forms are named");
+  assert.ok(FLAT.includes("would you like to join?"), "the safe form is in the text");
+  assert.ok(FLAT.includes("do not turn it into \"would you like to attend\""), "the unsafe forms are named");
   // And the anchored phrasing really would register — which is why it is forbidden.
   const { disposition } = settle([
     agent(OPENING), caller("Yes."),
-    agent(`${INTRO_EN} Are you still interested in attending?`), caller("Yes."),
+    agent(`${INTRO_EN} Would you like to attend?`), caller("Yes."),
   ]);
   assert.equal(disposition, "FINAL_YES", "this is the failure the wording exists to avoid");
+  // The likely paraphrases of the safe form stay safe too.
+  for (const para of ["Would you like to join the webinar?", "Would you like to join us for it?", "Kya aap join karna chahenge?"]) {
+    const { outcome } = settle([agent(OPENING), caller("Yes."), agent(`${INTRO_EN} ${para}`), caller("Haan ji.")]);
+    assert.notEqual(outcome.primaryReason, "confirmed_at_gate", `"${para}" must not be a gate`);
+  }
 });
 
 test("D4. a NO early, then a YES at the gate, still registers", () => {
@@ -497,14 +512,12 @@ section("F. THE BRANCHES AND THE FAQ ARE ALL THERE, AND NOTHING ELSE IS");
 
 test("F1. every approved Hinglish line is in the text, verbatim", () => {
   for (const line of [
-    "Actually, aapne hamare upcoming webinar, 'Launch Your Business Online in 10 Minutes', mein interest show kiya tha.",
-    "Webinar 22nd September ko 7:30 PM pe hai.",
-    "kya aap abhi bhi attend karne mein interested hain?",
+    "Actually, humara ek upcoming webinar hai — 'Launch Your Business Online in 10 Minutes'. Ye 22nd September ko 7:30 PM par hai. Kya aap isme join karna chahenge?",
     "Aap already koi business run kar rahe hain, ya abhi kuch start karne ka plan hai?",
     "Achha, nice. Aapka kis type ka business hai?",
     "Aur kya aapke business ki already koi website hai?",
     "Kuch specific idea hai mind mein, ya abhi explore kar rahe hain?",
-    "Okay, no problem at all. Thanks for your time, {{customer_name}}. Have a great day!",
+    "Okay, no problem at all. Thanks for your time, [first name]. Have a great day!",
   ]) {
     assert.ok(APPENDIX.replace(/\s+/gu, " ").includes(line), `missing approved line: "${line}"`);
   }
@@ -566,6 +579,9 @@ test("F6. no internal machinery is exposed to the model, and none can be spoken"
     "classifier", "commit_anchors", "anchor", "final_yes", "final_no", "sheet", "pipeline",
     "tool name", "tool call", "function", "hangup", "watchdog", "disposition", "unresolved",
     "campaign_events", "system prompt", "internal note",
+    // Provider and vendor names: none of them is the caller's business.
+    "vobiz", "plivo", "deepgram", "soniox", "sarvam", "cartesia", "smallest", "elevenlabs",
+    "openai", "gpt", "gemma", "gemini", "google", "zoom",
   ]) {
     assert.ok(!FLAT.includes(leak), `the appendix must not mention "${leak}"`);
   }
@@ -574,19 +590,27 @@ test("F6. no internal machinery is exposed to the model, and none can be spoken"
 test("F7. no invented fact, promise or figure is in the text", () => {
   for (const banned of [
     "zoom", "₹", "lakh", "worth", "recording will", "we guarantee", "is guaranteed",
-    "saurabh", "karthik", "i'll send", "i will send", "main bhej", "whatsapp pe bhej",
+    "saurabh", "karthik", "i will send", "whatsapp pe bhej",
   ]) {
     assert.ok(!FLAT.includes(banned), `the text must not carry "${banned}"`);
   }
+  // "I'll send" and "main bhej dunga" appear exactly once each — inside
+  // the sentence that forbids them. Anywhere else they would be a claim.
+  for (const quoted of ["i'll send", "main bhej"]) {
+    assert.equal(FLAT.split(quoted).length - 1, 1, `"${quoted}" may appear only where it is forbidden`);
+  }
+  assert.ok(FLAT.includes("so never say \"i'll send\" or \"main bhej dunga\""));
   // "bonus" and "replay" are allowed in exactly one place each: the list
   // of things never to invent. Anywhere else they would be a claim.
   for (const word of ["bonus", "replay"]) {
     assert.equal(FLAT.split(word).length - 1, 1, `"${word}" may appear only in the never-invent list`);
   }
-  assert.ok(FLAT.includes("a price, a bonus, a duration"));
+  assert.ok(FLAT.includes("a price, a bonus, a platform"));
   assert.ok(FLAT.includes("a replay policy or a claim about"));
   assert.ok(FLAT.includes("you do not send anything yourself"));
-  assert.ok(FLAT.includes("you do not have the exact duration"));
+  // v9's honest-unknown is GONE — the duration is now a sourced fact.
+  assert.ok(!FLAT.includes("you do not have the exact duration"));
+  assert.ok(!FLAT.includes("a duration"), "duration is no longer something to refuse to invent");
 });
 
 // ═════════════════════════════════════════════════════════════════
@@ -594,25 +618,27 @@ section("G. IT COMPOSES INTO A REAL SESSION'S PROMPT");
 
 test("G1. the context interpolates, and leaves no placeholder behind", () => {
   const context = buildCampaignContext({
-    script: V9,
-    campaignId: "cmp_v9",
+    script: V11,
+    campaignId: "cmp_v11",
     campaignType: "registration",
     provider: "smallest-ai",
     customerName: NAME,
-    expectedScriptHash: hashScript(V9),
+    expectedScriptHash: hashScript(V11),
   });
   assert.equal(context.openingLine, OPENING);
   assert.ok(!/\{\{/u.test(context.systemPromptAppendix), "no unresolved placeholder");
   assert.ok(!/\{\{/u.test(context.openingLine));
   assert.ok(context.systemPromptAppendix.includes(`You are Ishita from FlexiFunnels, calling ${NAME}`));
-  assert.ok(context.systemPromptAppendix.includes(`Hi ${NAME}, I'm Ishita, calling from FlexiFunnels.`));
-  assert.ok(context.systemPromptAppendix.includes(`Thanks for your time, ${NAME}. Have a great day!`));
+  // After the opening the lines carry the [first name] marker, never the interpolated full name.
+  assert.ok(context.systemPromptAppendix.includes("Hi [first name], I'm Ishita, calling from FlexiFunnels."));
+  assert.ok(context.systemPromptAppendix.includes("Thanks for your time, [first name]. Have a great day!"));
+  assert.ok(context.systemPromptAppendix.replace(/\s+/gu, " ").includes(`the first word of ${NAME}`));
 });
 
 test("G2. the opening IS the pipeline's identity question, so it is never asked twice", () => {
   const context = buildCampaignContext({
-    script: V9,
-    campaignId: "cmp_v9",
+    script: V11,
+    campaignId: "cmp_v11",
     campaignType: "registration",
     provider: "cartesia",
     customerName: NAME,
@@ -632,8 +658,8 @@ test("G2. the opening IS the pipeline's identity question, so it is never asked 
 
 test("G3. the gate reaches the system prompt, and the policy still follows the script", () => {
   const context = buildCampaignContext({
-    script: V9,
-    campaignId: "cmp_v9",
+    script: V11,
+    campaignId: "cmp_v11",
     campaignType: "registration",
     provider: "smallest-ai",
     customerName: NAME,
@@ -645,17 +671,17 @@ test("G3. the gate reaches the system prompt, and the policy still follows the s
   assert.ok(appendix.indexOf("--- SCRIPT ---") < appendix.indexOf("# HOW TO RUN THIS SCRIPT ON A LIVE CALL"));
 });
 
-test("G4. a campaign pinned to v9 refuses to run if the words are edited", () => {
-  const edited: CampaignScript = { ...V9, systemPromptAppendix: `${V9.systemPromptAppendix} ` };
+test("G4. a campaign pinned to v11 refuses to run if the words are edited", () => {
+  const edited: CampaignScript = { ...V11, systemPromptAppendix: `${V11.systemPromptAppendix} ` };
   assert.throws(
     () =>
       buildCampaignContext({
         script: edited,
-        campaignId: "cmp_v9",
+        campaignId: "cmp_v11",
         campaignType: "registration",
         provider: "smallest-ai",
         customerName: NAME,
-        expectedScriptHash: hashScript(V9),
+        expectedScriptHash: hashScript(V11),
       }),
     /has changed since this campaign was created/u,
   );
@@ -665,14 +691,224 @@ test("G5. a contact with no name cannot be called on this script", () => {
   assert.throws(
     () =>
       buildCampaignContext({
-        script: V9,
-        campaignId: "cmp_v9",
+        script: V11,
+        campaignId: "cmp_v11",
         campaignType: "registration",
         provider: "smallest-ai",
         customerName: "   ",
       }),
     /needs the contact's name/u,
   );
+});
+
+// ═════════════════════════════════════════════════════════════════
+section("H. WHAT CHANGED FROM v10 — INVITATION FRAMING AND FIRST NAME, AND NOTHING ELSE");
+
+const V10 = findScript("registration", "v10");
+assert.ok(V10, "registration v10 must still be registered — v11 is measured against it");
+
+/** A line-level diff of the two appendices, order-insensitive. */
+function appendixDiff(): { readonly onlyInV10: string[]; readonly onlyInV11: string[] } {
+  const lines = (text: string) => text.split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
+  const v10Lines = new Set(lines(V10!.systemPromptAppendix));
+  const v11Lines = new Set(lines(V11!.systemPromptAppendix));
+  return {
+    onlyInV10: [...v10Lines].filter((l) => !v11Lines.has(l)),
+    onlyInV11: [...v11Lines].filter((l) => !v10Lines.has(l)),
+  };
+}
+
+/**
+ * Every line allowed to differ is about one of the two changes: the
+ * name (the [first name] marker, its definition, the lines that carry
+ * it) or the framing (invite instead of remind, and the paragraph that
+ * says which forms of the invitation are safe).
+ */
+const ALLOWED_DIFF = /first name|customer_name|invit|upcoming webinar|attend karne|introduce yourself once|interested in attending|shown interest|showed interest|interest show|still planning|still want|confirm they|chahta|chahenge|hear more|would you like to|do you want to attend|registering or reserving|has been told anything|safe form|only ones you use|ask it in those words|that is one reply|approved wording|in hinglish:|signed up|question at the end|the seat itself|i don't remember|their name|picked up needs|never the full name|marker itself|a name in every sentence|worse than no name at all|anything before this call|recorded as a registration|reserve their free seat|nothing to push|selling anything|decided before|per hai|par hai|7:30 pm/iu;
+
+test("H1. every discovery question, the gate, the FAQ and the facts are byte-identical to v10", () => {
+  // The body between the first reply and the seat question — every
+  // discovery branch — is unchanged; so is everything the gate says.
+  const between = (s: CampaignScript, from: string, to: string) => {
+    const text = s.systemPromptAppendix;
+    return text.slice(text.indexOf(from), text.indexOf(to));
+  };
+  assert.equal(
+    between(V11, "[THEY ANSWER", "[YES]"),
+    between(V10!, "[THEY ANSWER", "[YES]"),
+    "the discovery branches and the seat question may not differ from v10",
+  );
+  assert.equal(
+    between(V11, "# THEN, ABOUT THEM", "If they say they have ALREADY REGISTERED"),
+    between(V10!, "# THEN, ABOUT THEM", "If they say they have ALREADY REGISTERED"),
+    "the about-them and seat-question sections may not differ from v10",
+  );
+  assert.equal(
+    between(V11, "# WHAT YOU KNOW ABOUT THIS WEBINAR", "- \"I don't remember"),
+    between(V10!, "# WHAT YOU KNOW ABOUT THIS WEBINAR", "- \"I don't remember"),
+    "the facts and the first FAQ answer may not differ from v10",
+  );
+  assert.equal(
+    between(V11, "- \"I'm not sure yet.\"", "--- SCRIPT ---"),
+    between(V10!, "- \"I'm not sure yet.\"", "--- SCRIPT ---"),
+    "every remaining FAQ answer — duration, WhatsApp included — may not differ from v10",
+  );
+  assert.equal(V11.openingLineTemplate, V10!.openingLineTemplate);
+  assert.equal(V11.eventAt, V10!.eventAt);
+  assert.equal(V11.requiresName, V10!.requiresName);
+});
+
+test("H2. the ONLY appendix lines that differ from v10 are the name and framing lines", () => {
+  const { onlyInV10, onlyInV11 } = appendixDiff();
+  for (const line of [...onlyInV10, ...onlyInV11]) {
+    assert.match(line, ALLOWED_DIFF, `an unexpected line differs from v10: "${line}"`);
+  }
+  assert.ok(onlyInV11.some((l) => l.startsWith("# THEIR NAME")), "the name rule is new");
+  assert.ok(onlyInV10.some((l) => l.includes("shown interest")), "the reminder framing is gone");
+});
+
+test("H3. the reminder framing is gone, in every rendering", () => {
+  for (const reminder of [
+    "shown interest", "interest show kiya", "still planning to join",
+    "still want to come", "abhi bhi attend karne", "still interested", "signing up",
+    "chahta tha", "chahti thi",
+  ]) {
+    assert.ok(!FLAT.includes(reminder), `reminder wording "${reminder}" must not survive`);
+  }
+  // "showed interest" survives in exactly one place: the sentence that forbids implying it.
+  assert.equal(FLAT.split("showed interest").length - 1, 1);
+  assert.ok(FLAT.includes("never say or imply that they signed up, showed interest or decided anything before this call"));
+  assert.ok(FLAT.includes("we're inviting people to our upcoming webinar"));
+  assert.ok(FLAT.includes("humara ek upcoming webinar hai"));
+  assert.ok(FLAT.includes("would you like to join?"));
+  assert.ok(FLAT.includes("kya aap isme join karna chahenge?"));
+  assert.ok(FLAT.includes("an invitation to register, not a follow-up"));
+  assert.ok(FLAT.includes("a yes to it means they want to hear more — it is not the seat question, and it registers nobody"));
+});
+
+// ═════════════════════════════════════════════════════════════════
+section("I. THE NAME — FULL NAME IN THE OPENING, FIRST NAME EVERYWHERE AFTER");
+
+const FULL_NAME = "Rahul Sharma";
+
+test("I1. {{customer_name}} survives only where the full name does the work", () => {
+  const body = APPENDIX.slice(APPENDIX.indexOf("--- SCRIPT ---"));
+  const afterConfirmation = body.slice(body.indexOf("[THEY CONFIRM IT IS THEM"));
+  assert.ok(body.startsWith("--- SCRIPT ---\n\nHello, am I speaking with {{customer_name}}?"), "the opening keeps the full name");
+  assert.ok(!afterConfirmation.includes("{{customer_name}}"), "no spoken line after the opening carries the full name");
+  // In the whole appendix: the header ("calling …"), the identity
+  // sentence, the two mentions in the name rule, the opening — five.
+  assert.equal(APPENDIX.split("{{customer_name}}").length - 1, 5);
+  assert.equal(V11.openingLineTemplate, "Hello, am I speaking with {{customer_name}}?");
+});
+
+test("I2. every spoken line after the opening carries the [first name] marker instead", () => {
+  for (const line of [
+    "Hi [first name], I'm {{agent_name}}, calling from FlexiFunnels.",
+    "Perfect, [first name] — your free seat is reserved for 22nd September at 7:30 PM.",
+    "Perfect, [first name] — aapki free seat confirm ho gayi hai",
+    "Okay, no problem at all. Thanks for your time, [first name]. Have a great day!",
+    "Thanks for your time, [first name]. Have a great day!",
+  ]) {
+    assert.ok(APPENDIX.includes(line), `missing first-name line: "${line}"`);
+  }
+  assert.ok(APPENDIX.split("[first name]").length - 1 >= 8, "the marker is used in every post-opening line, in both renderings");
+});
+
+test("I3. the rule is stated once, and defines the marker as the first word of the full name", () => {
+  assert.ok(FLAT.includes("from your first reply onward use only their first name — the first word of {{customer_name}}"));
+  assert.ok(FLAT.includes("never the full name again, in english or in hinglish"));
+  assert.ok(FLAT.includes("the marker itself is never spoken"));
+  assert.equal(FLAT.split("# their name").length - 1, 1);
+});
+
+test("I4. with a two-word name, the interpolated prompt shows the full name only where it should", () => {
+  const context = buildCampaignContext({
+    script: V11,
+    campaignId: "cmp_v11",
+    campaignType: "registration",
+    provider: "smallest-ai",
+    customerName: FULL_NAME,
+  });
+  assert.equal(context.openingLine, `Hello, am I speaking with ${FULL_NAME}?`);
+  const appendix = context.systemPromptAppendix.slice(0, context.systemPromptAppendix.indexOf("# HOW TO RUN THIS SCRIPT"));
+  assert.equal(appendix.split(FULL_NAME).length - 1, 5, "the full name appears five times: header, identity, rule (2), opening");
+  assert.ok(appendix.replace(/\s+/gu, " ").includes(`the first word of ${FULL_NAME}`));
+  assert.ok(!appendix.includes(`Perfect, ${FULL_NAME}`));
+  assert.ok(!appendix.includes(`Thanks for your time, ${FULL_NAME}`));
+  assert.ok(!appendix.includes(`Hi ${FULL_NAME}`));
+});
+
+test("I5. the readers are indifferent to which name is spoken — first name, full name, or none", () => {
+  for (const spoken of ["Rahul", FULL_NAME]) {
+    const no = [agent(`Hello, am I speaking with ${FULL_NAME}?`), caller("Yes."), agent(`${INTRO_EN} ${INTEREST_EN}`), caller("No, I'm not interested."), agent(`Okay, no problem at all. Thanks for your time, ${spoken}. Have a great day!`)];
+    assert.equal(definitiveAnswerIn(live(no), "registration"), "FINAL_NO");
+    const bye = [agent(`Hello, am I speaking with ${FULL_NAME}?`), caller("Yes."), agent(ALREADY_EN), caller("Okay."), agent(`Thanks for your time, ${spoken}. Have a great day!`)];
+    assert.equal(agentClosedIn(live(bye)), true, `"${spoken}" as a trailing vocative is still a closing`);
+    const yes = settle([agent(`Hello, am I speaking with ${FULL_NAME}?`), caller("Yes."), agent(`${INTRO_EN} ${INTEREST_EN}`), caller("Yes."), agent(BUSINESS_EN), caller("Planning to start."), agent(GATE_EN), caller("Yes."), agent(`Perfect, ${spoken} — your free seat is reserved for 22nd September at 7:30 PM. Do join a few minutes early. Hope to see you there!`)]);
+    assert.equal(yes.disposition, "FINAL_YES");
+  }
+});
+
+test("H4. DURATION: approximately 90 minutes, in both renderings, as a fact and as the answer", () => {
+  assert.ok(FLAT.includes("- how long: approximately 90 minutes."), "the fact is in the facts list");
+  assert.ok(FLAT.includes("\"how long is it?\" — approximately 90 minutes."), "the answer is the sourced one");
+  assert.ok(FLAT.includes("approximately 90 minutes ka session hai."), "the sourced Hinglish line is verbatim");
+  assert.ok(!FLAT.includes("exact duration"), "the old unknown answer is gone");
+  assert.ok(!FLAT.includes("how long it runs"), "...and duration is no longer in the do-not-know list");
+});
+
+test("H5. WHATSAPP: the sourced behaviour, in words that are true of this system", () => {
+  // Sourced: acknowledge interest; registration will be completed; details on WhatsApp.
+  assert.ok(FLAT.includes("acknowledge their interest"));
+  assert.ok(FLAT.includes("once their registration is done, the webinar details will come to them on whatsapp"));
+  assert.ok(FLAT.includes("registration complete hone ke baad webinar ki details aapko whatsapp pe mil jaayengi."));
+  // True of this system: nothing here sends anything.
+  assert.ok(FLAT.includes("you do not send anything yourself"));
+  for (const claim of ["i'll send you", "i will send", "we'll send", "we will send", "hum bhej", "whatsapp pe bhej", "within", "shortly", "right away"]) {
+    assert.ok(!FLAT.includes(claim), `the text must not claim "${claim}"`);
+  }
+  // The two quoted forbidden phrases live only inside their prohibition (see F7).
+  assert.equal(FLAT.split("main bhej").length - 1, 1);
+  // The request is not a yes, and the registration only exists after the gate.
+  assert.ok(FLAT.includes("that is a request, not a yes"));
+  assert.ok(FLAT.includes("then ask the seat question, if you have not asked it yet"));
+});
+
+test("H6. the WhatsApp answer is NOT a gate — a 'haan' to it registers nobody", () => {
+  const whatsappEn = "Sure. Once your registration is done, the webinar details will come to you on WhatsApp.";
+  const whatsappHi = "Ji, bilkul. Registration complete hone ke baad webinar ki details aapko WhatsApp pe mil jaayengi.";
+  for (const answer of [whatsappEn, whatsappHi]) {
+    for (const said of ["Okay.", "Haan, theek hai.", "Yes.", "Achha."]) {
+      const { outcome, disposition } = settle([
+        agent(OPENING), caller("Yes."),
+        agent(`${INTRO_EN} ${INTEREST_EN}`), caller("Send me the details on WhatsApp."),
+        agent(answer), caller(said),
+      ]);
+      assert.notEqual(disposition, "FINAL_YES", `"${said}" to the WhatsApp answer must not register`);
+      assert.notEqual(outcome.primaryReason, "confirmed_at_gate");
+      assert.equal(isFinalYes(outcome, disposition), false);
+    }
+  }
+});
+
+test("H7. ...and the gate asked right after it still registers, and a no still declines", () => {
+  const whatsappHi = "Ji, bilkul. Registration complete hone ke baad webinar ki details aapko WhatsApp pe mil jaayengi.";
+  const yes = settle([
+    agent(OPENING), caller("Yes."),
+    agent(`${INTRO_HI} ${INTEREST_HI}`), caller("WhatsApp pe details bhej do."),
+    agent(`${whatsappHi} ${GATE_HI}`), caller("Haan ji."),
+    agent(YES_HI),
+  ]);
+  assert.equal(yes.outcome.primaryReason, "confirmed_at_gate");
+  assert.equal(yes.disposition, "FINAL_YES");
+  const no = settle([
+    agent(OPENING), caller("Yes."),
+    agent(`${INTRO_EN} ${INTEREST_EN}`), caller("Just send me the details on WhatsApp."),
+    agent(`Sure. Once your registration is done, the webinar details will come to you on WhatsApp. ${GATE_EN}`),
+    caller("No, not right now."),
+  ]);
+  assert.notEqual(no.disposition, "FINAL_YES");
 });
 
 console.log(`\n${"═".repeat(60)}`);

@@ -62,6 +62,22 @@ byte-identical to v9 and the only differing appendix lines are those two
 answers. The interest questions are unchanged. Retry settings untouched.
 **For 22 Sep, select v10, not v9.**
 
+**Same day — `registration v11`** (`registration.v11.ts`, listed ahead of v10;
+`test:registration-v11` 50 checks). A newer revision of v10 with exactly two
+framing changes and nothing else (v11 test H1/H2 pin this against v10):
+(1) after the opening every spoken line carries the marker `[first name]`,
+defined once in a new `# THEIR NAME` section as the first word of
+`{{customer_name}}` — the full name survives only in the opening / identity
+sentences; no variable or parser was added; (2) the first reply INVITES
+("we're inviting people to our upcoming webinar… Would you like to join?" /
+"humara ek upcoming webinar hai… Kya aap isme join karna chahenge?") instead
+of reminding ("you'd shown interest… still planning to join?"). Both new
+lines and their paraphrases were probed against the real classifier: a yes is
+`affirmative_not_at_gate`; "would you like to attend" still registers and
+stays forbidden in the text. v11 rather than an edit of v10 because a campaign
+row (`hsioajsoidjsd`, COMPLETED) is already pinned to v10's hash.
+**For 22 Sep, select v11.**
+
 ---
 
 ## 2026-09-18 — BACKCHANNEL CUE, LONG-TURN COMPLETION, POST-REGISTRATION CLOSING

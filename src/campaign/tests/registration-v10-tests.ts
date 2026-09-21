@@ -173,8 +173,9 @@ test("A2. v6 is STILL the default — v10 is a different event from v6, and a ne
   // exactly as v8 sits ahead of v7.
   const registration = listScripts().filter((s) => s.campaignType === "registration");
   assert.equal(registration[0]?.version, "v6");
-  assert.equal(registration[1]?.version, "v10");
-  assert.equal(registration[2]?.version, "v9");
+  assert.equal(registration[1]?.version, "v11");
+  assert.equal(registration[2]?.version, "v10");
+  assert.equal(registration[3]?.version, "v9");
 });
 
 test("A3. v10 uses ONLY variables the campaign layer can supply", () => {

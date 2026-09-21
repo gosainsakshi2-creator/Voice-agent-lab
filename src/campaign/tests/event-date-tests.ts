@@ -250,7 +250,9 @@ test("C3. no OTHER registered script silently gained a date", () => {
   // version's campaigns start being blocked by the clock. That may be
   // wanted — but it must be a deliberate edit, visible here.
   const declaring = listScripts().filter((s) => s.eventAt !== undefined).map((s) => `${s.id}/${s.version}`);
-  assert.deepEqual(declaring, ["registration/v6"]);
+  // v9 and v10 declare 2026-09-22T19:30:00+05:30 deliberately: a
+  // one-evening webinar is exactly the case the field was made for.
+  assert.deepEqual(declaring, ["registration/v6", "registration/v10", "registration/v9"]);
 });
 
 // ═════════════════════════════════════════════════════════════════

@@ -18,6 +18,52 @@ provider, VAD or transport setting was touched by this pass.
 
 ---
 
+## 2026-09-21 — REGISTRATION v9: "LAUNCH YOUR BUSINESS ONLINE IN 10 MINUTES" WEBINAR (22 SEP, 7:30 PM)
+
+**Status: IMPLEMENTED, TYPECHECKED (`tsc --noEmit --incremental false` clean),
+TESTED (`test:registration-v9` 38/38), UNCOMMITTED. Script layer only.** Not
+touched: the classifier / `COMMIT_ANCHORS`, the registration (sheet) path,
+turn detection, barge-in, backchannel cue, providers, dispatch config, UI.
+
+- New `src/campaign/script/scripts/registration.v9.ts` — `registration v9`,
+  registered directly under v6 in `script-registry.ts`; **v6 stays the
+  default**, v9 is chosen explicitly in the campaign UI / `POST /api/campaigns`.
+  `eventAt: 2026-09-22T19:30:00+05:30` — preflight refuses to dial after the
+  webinar starts (`event-date-tests` C3 pin updated to list v6 + v9).
+- Shape: identity-first opening (same sentence as `IDENTITY_LINE_TEMPLATE`, as
+  v8) → intro + why calling + interest check in ONE reply → business question
+  (existing / starting) → one or two relevant follow-ups → the v4-v8 gate
+  "Would you like me to reserve your free seat?" / Hinglish "Toh kya main aapki
+  free seat reserve kar du?" (both anchor-matched, both settle FINAL_YES) →
+  [YES] / [NO] / [ALREADY REGISTERED]. Approved Hinglish lines carried
+  verbatim alongside English twins; the master prompt still decides language.
+- The English interest check is deliberately "are you still planning to
+  join?" — "interested in attending" IS an anchor and would register a yes one
+  exchange in (v9 test D3 pins this). Every pre-gate question tested yes AND no.
+- **Open decisions for the operator** (see the file header): already-registered
+  callers settle UNRESOLVED (redialed if `CAMPAIGN_RETRY_ON_UNRESOLVED_REGISTRATION`
+  stays `true`); the approved [NO] line is 13 words (cap 12) so soft closes rely
+  on the separate 8-word goodbye; WhatsApp / duration answers are the
+  no-invention answers because no source document was available.
+- Regression, this tree: event-date 23/23 · phase3a 26/26 · registration-v7
+  27/27 · hindi-register 16/16 · identity-gate 38/38 · phase8 33/33 ·
+  confirmation-binding 127/127 · phase9 22/22 · language-lock 33/33 ·
+  agent-hangup 24/24 · announced-question 20/20.
+
+**Same day — `registration v10`** (`registration.v10.ts`, listed ahead of v9,
+v6 still default; `test:registration-v10` 45 checks). A newer revision of v9
+with exactly two sourced FAQ answers and nothing else: "How long is it?" is
+now "approximately 90 minutes" / "Approximately 90 minutes ka session hai.",
+and "Send me the details on WhatsApp" acknowledges interest and says the
+details will COME on WhatsApp once the registration is done — never "I'll
+send" (this codebase sends nothing; delivery is FlexiFunnels' follow-up flow
+reading the registrations sheet). Test H1/H2 pin that the script body is
+byte-identical to v9 and the only differing appendix lines are those two
+answers. The interest questions are unchanged. Retry settings untouched.
+**For 22 Sep, select v10, not v9.**
+
+---
+
 ## 2026-09-18 — BACKCHANNEL CUE, LONG-TURN COMPLETION, POST-REGISTRATION CLOSING
 
 **Status: IMPLEMENTED, TYPECHECKED (`tsc --noEmit --incremental false` clean),
@@ -3243,3 +3289,37 @@ done in this pass.
 
 *Update this file at the end of every conversation. Update
 [MEMORY.md](MEMORY.md) only when something structural changes.*
+
+---
+
+## 2026-09-21 — Call analytics (read model, additive only)
+
+**What:** one cross-campaign Call Analytics screen at `/call-analytics`, backed by
+`src/campaign/analytics/` and five read-only routes under `/api/call-analytics`.
+No new table, no migration, no write path. Every figure is a projection over
+`call_attempts` + `call_outcomes` + `contacts` + `campaigns` + `sheet_sync`, which
+the call runner already writes at the end of every call. Yes / No / No Answer and
+the four duration buckets are FILTERS over that one query (`ANALYTICS_CTE` in
+`call-analytics.repo.ts`), and the CSV export takes the same filter object.
+
+**Definitions (also shown in the UI):**
+- Answered = `answered_at IS NOT NULL`. No Answer = status `NO_ANSWER`. Busy /
+  failed / cancelled = "Not connected". No `ended_at` = "Open".
+- Duration bucket only for answered calls, on raw seconds: ≤10, (10,20], (20,30], >30.
+  No Answer has no duration (repo rule) and therefore never a bucket.
+- Response: YES = `primary_reason = 'confirmed_at_gate' AND succeeded` (the sheet's
+  own test); NO = `declined` / `do_not_call`; no speech / not connected / wrong
+  number = NOT_APPLICABLE; everything else = UNCLEAR (incl. `affirmative_not_at_gate`).
+- Repeated-user identity = `contacts.normalized_phone` (809 phones are in >1
+  campaign; only 90 contacts were answered twice inside one campaign).
+- Daily %: no-answer rate ÷ all attempts; bucket % and YES/NO % ÷ answered.
+
+**Files:** `src/campaign/analytics/{call-analytics-types,call-analytics.repo,call-analytics-csv,index}.ts`,
+`src/app/api/call-analytics/{route,daily/route,progression/route,export/route,transcript/[callId]/route}.ts`,
+`src/app/call-analytics/page.tsx`, `src/components/campaign/call-analytics.tsx`,
+`src/campaign/tests/call-analytics-tests.ts` (`npm run test:call-analytics`).
+Touched existing files: `src/app/campaigns/page.tsx` (one nav link), `package.json` (one script).
+
+**Test pattern worth reusing:** the suite creates TEMP TABLES named like the real
+ones on a dedicated `pg.Client` with `SET search_path TO pg_temp`, proves the shadow
+(`count(*) FROM call_attempts` = 0), then runs the production SQL text unchanged.

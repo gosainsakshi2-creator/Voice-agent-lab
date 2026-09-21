@@ -319,6 +319,40 @@ export class SessionMetricsCollector {
     // pipeline actually classified a superseding utterance.
     const supersederTakesFloor =
       typeof input.supersederTakesFloor === "boolean" ? input.supersederTakesFloor : undefined;
+    // TURN-RELEASE TRACE — the two closed unions are validated exactly
+    // the way `endpointMarkerOutcome` and `turnOutcome` above are, so
+    // each field can only ever hold a label the detector or the
+    // barge-in controller actually produced.
+    const releaseReason = RELEASE_REASONS.has(input.releaseReason as string)
+      ? input.releaseReason
+      : undefined;
+    const bargeInPhase = BARGE_IN_PHASES.has(input.bargeInPhase as string)
+      ? input.bargeInPhase
+      : undefined;
+    const heldTextReadsUnfinished =
+      typeof input.heldTextReadsUnfinished === "boolean"
+        ? input.heldTextReadsUnfinished
+        : undefined;
+    // A count, so `positiveOrUndefined` preserving 0 is correct: "this
+    // turn spent no grace" is a real and diagnostic reading.
+    const continuationGracesAtRelease = positiveOrUndefined(input.continuationGracesAtRelease);
+    // Sanitised per element, like `interFinalGapsMs`, so one bad entry
+    // cannot poison the rest. Empty is stored as ABSENT — an ordinary
+    // turn holds nothing here, and an empty array would be a second,
+    // weaker way of saying the same thing.
+    const graceTrace = Array.isArray(input.continuationGraceTrace)
+      ? input.continuationGraceTrace.filter((g) => Number.isFinite(g) && g > 0)
+      : [];
+    const continuationGraceTrace = graceTrace.length > 0 ? graceTrace : undefined;
+    const graceResets = Array.isArray(input.continuationGraceResets)
+      ? input.continuationGraceResets.filter(
+          (r) =>
+            Number.isFinite(r?.gracesDiscarded) &&
+            r.gracesDiscarded > 0 &&
+            GRACE_RESET_SOURCES.has(r?.source as string),
+        )
+      : [];
+    const continuationGraceResets = graceResets.length > 0 ? graceResets : undefined;
 
     this.turnLatencies.push({
       turnIndex: input.turnIndex,
@@ -356,6 +390,12 @@ export class SessionMetricsCollector {
       ...(charsGenerated !== undefined ? { charsGenerated } : {}),
       ...(ttsChunkCount !== undefined ? { ttsChunkCount } : {}),
       ...(supersederTakesFloor !== undefined ? { supersederTakesFloor } : {}),
+      ...(releaseReason !== undefined ? { releaseReason } : {}),
+      ...(heldTextReadsUnfinished !== undefined ? { heldTextReadsUnfinished } : {}),
+      ...(continuationGracesAtRelease !== undefined ? { continuationGracesAtRelease } : {}),
+      ...(continuationGraceTrace !== undefined ? { continuationGraceTrace } : {}),
+      ...(continuationGraceResets !== undefined ? { continuationGraceResets } : {}),
+      ...(bargeInPhase !== undefined ? { bargeInPhase } : {}),
     });
 
     this.costTotals.speechToText += input.sttCostUsd;

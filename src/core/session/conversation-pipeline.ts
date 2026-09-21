@@ -48,7 +48,7 @@ import { currentTurnNote, languageHintFor, openingLineFor } from "./system-promp
 import { classifyIdentityAnswer } from "../../campaign/domain/identity-answer";
 import { SentenceChunker } from "./sentence-chunker";
 import { isBareAcknowledgement, readsAsUnfinishedThought } from "./turn-detection";
-import type { ContinuationHoldEvent, EndpointMarkerOutcome } from "./turn-detection";
+import type { ContinuationHoldEvent, EndpointMarkerOutcome, TurnReleaseTrace } from "./turn-detection";
 import { voicemailPhraseIn } from "./voicemail-detection";
 import { combineSignals, abortableSleep } from "./abort-utils";
 import { estimateAudioSeconds, withByteCounter } from "./audio-utils";
@@ -150,6 +150,14 @@ interface AcquiredTurn {
    * `noteEndOfSpeech`. Absent when this turn received no marker.
    */
   readonly endpointMarkerOutcome: EndpointMarkerOutcome | undefined;
+  /**
+   * TURN-RELEASE TRACE (2026-09-21) — which guard released this turn,
+   * and what the continuation-grace counter did on the way. Snapshotted
+   * from the detector at the same boundary `endpointMarkerOutcome` is.
+   * Absent for a turn the detector did not produce (batch STT, a
+   * synthesised turn). See `TurnReleaseTrace`.
+   */
+  readonly releaseTrace: TurnReleaseTrace | undefined;
 }
 
 /**
@@ -2607,6 +2615,33 @@ export class ConversationPipeline {
 
         // eslint-disable-next-line no-console
         console.log(`[STT:${sid}] Transcript received: "${turn.text.slice(0, 80)}${turn.text.length > 80 ? "..." : ""}" userSpeechMs=${turn.userSpeechMs} sttLagMs=${turn.sttLagMs ?? "n/a"}`);
+        // TURN-RELEASE TRACE (2026-09-21) — TELEMETRY ONLY. One line,
+        // beside the transcript it describes, because reading the two
+        // together is the whole point: "which guard released THIS
+        // text". Emitted only when the streaming detector produced a
+        // trace, so batch-STT turns print nothing extra.
+        //
+        // The provider id is included because `endpointMarkerOutcome`
+        // cannot be read without it — Soniox marks every word-bearing
+        // final `isSpeechFinal: false` and signals the endpoint with a
+        // separate marker, so the same label means different things on
+        // the two providers. It is a campaign-level setting, already
+        // stored on `call_attempts.stt_provider`; repeated here only so
+        // a console trace is self-contained.
+        if (turn.releaseTrace !== undefined) {
+          const t = turn.releaseTrace;
+          // eslint-disable-next-line no-console
+          console.log(
+            `[TURN-RELEASE:${sid}] stt=${this.record.providerStack.speechToText.id}` +
+              ` reason=${t.releaseReason}` +
+              ` readsUnfinished=${t.heldTextReadsUnfinished}` +
+              ` graces=${t.continuationGracesAtRelease}` +
+              ` graceTrace=[${t.continuationGraceTrace.join(",")}]` +
+              ` graceResets=[${t.continuationGraceResets.map((r) => `${r.gracesDiscarded}@${r.source}`).join(",")}]` +
+              ` marker=${turn.endpointMarkerOutcome ?? "none"}` +
+              ` finals=${turn.finalTranscriptCount}`,
+          );
+        }
 
         // ── A machine, not a person ─────────────────────────────────
         //
@@ -2978,6 +3013,23 @@ export class ConversationPipeline {
           charsGenerated: result.charsGenerated,
           ttsChunkCount: result.ttsChunkCount,
           supersederTakesFloor: result.supersederTakesFloor,
+          // TURN-RELEASE TRACE — spread so a turn with no trace (batch
+          // STT) omits all five rather than storing nulls. Counts and
+          // enums only; the transcript stays on the console line.
+          ...(turn.releaseTrace !== undefined
+            ? {
+                releaseReason: turn.releaseTrace.releaseReason,
+                heldTextReadsUnfinished: turn.releaseTrace.heldTextReadsUnfinished,
+                continuationGracesAtRelease: turn.releaseTrace.continuationGracesAtRelease,
+                continuationGraceTrace: turn.releaseTrace.continuationGraceTrace,
+                continuationGraceResets: turn.releaseTrace.continuationGraceResets,
+              }
+            : {}),
+          // Read-and-clear, so a turn with no barge-in reports absence
+          // rather than inheriting the previous turn's phase. Read HERE
+          // rather than earlier because `bargeIn.reset()` above clears
+          // the abort handles but deliberately not this label.
+          bargeInPhase: this.record.bargeIn.consumeBargeInPhase(),
         });
 
         // Last, after everything this turn owns has been committed and
@@ -5617,6 +5669,11 @@ export class ConversationPipeline {
           // no marker reports absence rather than the previous turn's
           // label. Telemetry only; the detector consults it for nothing.
           endpointMarkerOutcome: this.record.turnDetector.consumeEndpointMarkerOutcome(),
+          // TURN-RELEASE TRACE — read-and-clear at the same boundary
+          // and for the same reason as the marker outcome above: the
+          // detector snapshots it before notifying this listener, so
+          // this is the only place it describes the right turn.
+          releaseTrace: this.record.turnDetector.consumeReleaseTrace(),
         });
       });
 
@@ -5730,6 +5787,10 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
         // Batch STT delivers no end-of-speech marker, so there is no
         // `noteEndOfSpeech` branch to report.
         endpointMarkerOutcome: undefined,
+        // Batch STT bypasses the adaptive detector entirely — no
+        // silence window, no continuation grace, no release decision —
+        // so there is no trace to report rather than an empty one.
+        releaseTrace: undefined,
       };
     }
 

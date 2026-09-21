@@ -645,6 +645,19 @@ export interface TurnReleaseTrace {
    * `true` with `releaseReason: "grace_cap_reached"` is the defect the
    * audit describes: a thought the detector still judged unfinished,
    * released because it had waited long enough.
+   *
+   * THIS IS `looksIncomplete`, NOT the exported
+   * `readsAsUnfinishedThought`, and the difference is deliberate:
+   * `looksIncomplete` is the exact predicate the continuation-grace
+   * guard consults, so reporting anything else would describe a
+   * decision that was never taken. The two disagree on hold phrases
+   * and hesitation sounds, which `readsAsUnfinishedThought` filters out
+   * first — so "hold on" reports `true` here (it ends on the dangling
+   * "on") while `readsAsUnfinishedThought("hold on")` is `false`.
+   *
+   * Read it WITH `releaseReason`, never alone: a hold phrase reaches
+   * `grace_cap_reached` through the `askedForAMoment` branch, not
+   * through this one.
    */
   readonly heldTextReadsUnfinished: boolean;
   /** `continuationGraces` at the moment of release. */

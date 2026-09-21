@@ -45,6 +45,14 @@ export class BargeInController {
 
   /** Call when entering THINKING; returns the signal in-flight LLM work should honor. */
   beginThinking(): AbortSignal {
+    // TELEMETRY ONLY. Cleared where a new reply cycle BEGINS, which is
+    // the same boundary the turn detector clears its marker label at
+    // and for the same reason: `reset()` runs before the pipeline
+    // records the turn, so it cannot be the clearing point, and a
+    // barge-in that cancelled something OUTSIDE a turn — the greeting,
+    // an identity-gate line — would otherwise be consumed by the next
+    // turn and mislabel it. No decision reads this.
+    this.lastBargeInPhase = undefined;
     this.thinkingAbort = new AbortController();
     return this.thinkingAbort.signal;
   }

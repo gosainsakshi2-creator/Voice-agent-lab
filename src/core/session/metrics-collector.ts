@@ -122,6 +122,16 @@ export interface TurnLatencyInput {
   readonly ttsChunkCount?: number | undefined;
   /** Did the newer caller utterance observed at the supersession check take the floor? */
   readonly supersederTakesFloor?: boolean | undefined;
+  // TURN-RELEASE TRACE (2026-09-21) — see `TurnLatencyBreakdown` for
+  // what each one is and why it exists. Indexed access rather than a
+  // re-declared union, matching `endpointMarkerOutcome` and
+  // `turnOutcome` above, so the two files cannot drift.
+  readonly releaseReason?: TurnLatencyBreakdown["releaseReason"];
+  readonly heldTextReadsUnfinished?: boolean | undefined;
+  readonly continuationGracesAtRelease?: number | undefined;
+  readonly continuationGraceTrace?: TurnLatencyBreakdown["continuationGraceTrace"];
+  readonly continuationGraceResets?: TurnLatencyBreakdown["continuationGraceResets"];
+  readonly bargeInPhase?: TurnLatencyBreakdown["bargeInPhase"];
 }
 
 /**
@@ -168,6 +178,21 @@ const TURN_OUTCOMES: ReadonlySet<string> = new Set([
   "empty_response",
   "aborted",
 ]);
+
+/** The closed set `releaseReason` may hold. See `TurnReleaseReason`. */
+const RELEASE_REASONS: ReadonlySet<string> = new Set([
+  "forced",
+  "grace_cap_reached",
+  "chunk_grace_cap_reached",
+  "interim_cap_reached",
+  "confirmed",
+]);
+
+/** The closed set `bargeInPhase` may hold. See `BargeInPhase`. */
+const BARGE_IN_PHASES: ReadonlySet<string> = new Set(["thinking", "speaking", "idle"]);
+
+/** The closed set a `continuationGraceResets` entry's `source` may hold. */
+const GRACE_RESET_SOURCES: ReadonlySet<string> = new Set(["chunk_final", "endpointed_final"]);
 
 function positiveOrUndefined(value: number | undefined): number | undefined {
   if (value === undefined || !Number.isFinite(value) || value < 0) return undefined;

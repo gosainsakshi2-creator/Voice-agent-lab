@@ -14,9 +14,33 @@
  * for every in-flight operation to check "was I cancelled".
  */
 
+/**
+ * TELEMETRY ONLY — which phase was live when a barge-in cancelled it.
+ *
+ * `TurnOutcome` already separates the THINKING-side supersession
+ * (`superseded_buffered` / `superseded_pending`) from everything else,
+ * but it CANNOT identify a SPEAKING-side barge-in: a reply that was
+ * interrupted after its first audio chunk resolves to `"spoken"`,
+ * exactly like a reply that finished undisturbed. A 2026-09-21 audit
+ * needed to tell those two apart — "the caller was talked over" versus
+ * "the caller was answered" — and no stored field could.
+ *
+ * `"idle"` means `triggerBargeIn` fired with no phase active, which is
+ * the documented idempotent no-op.
+ */
+export type BargeInPhase = "thinking" | "speaking" | "idle";
+
 export class BargeInController {
   private speakingAbort: AbortController | null = null;
   private thinkingAbort: AbortController | null = null;
+  /**
+   * TELEMETRY ONLY — see `BargeInPhase`. Written by `triggerBargeIn`,
+   * read and cleared by `consumeBargeInPhase`, and consulted by no
+   * decision here or in the pipeline. Deliberately NOT cleared by
+   * `reset()`: the pipeline calls `reset()` before it records the turn,
+   * so clearing there would wipe the label of the turn it describes.
+   */
+  private lastBargeInPhase: BargeInPhase | undefined;
   private readonly listeners = new Set<() => void>();
 
   /** Call when entering THINKING; returns the signal in-flight LLM work should honor. */
@@ -37,9 +61,30 @@ export class BargeInController {
    * second call while nothing is active is a harmless no-op.
    */
   triggerBargeIn(): void {
+    // TELEMETRY ONLY, and recorded BEFORE the aborts so it describes
+    // the phase that was live when this fired. SPEAKING is tested
+    // first because `beginSpeaking` follows `beginThinking` within one
+    // reply, so both handles are set while audio is playing and the
+    // later phase is the one being interrupted. The FIRST trigger of a
+    // reply wins: `triggerBargeIn` is idempotent and may be called
+    // again during the unwind, by which point the phase has moved on.
+    this.lastBargeInPhase ??=
+      this.speakingAbort !== null ? "speaking" : this.thinkingAbort !== null ? "thinking" : "idle";
     this.speakingAbort?.abort();
     this.thinkingAbort?.abort();
     for (const listener of this.listeners) listener();
+  }
+
+  /**
+   * TELEMETRY ONLY — the phase the most recent barge-in interrupted,
+   * cleared on read so a turn with no barge-in reports absence rather
+   * than inheriting the previous turn's. Same snapshot-then-clear
+   * contract the turn detector uses for its own labels.
+   */
+  consumeBargeInPhase(): BargeInPhase | undefined {
+    const phase = this.lastBargeInPhase;
+    this.lastBargeInPhase = undefined;
+    return phase;
   }
 
   onBargeIn(listener: () => void): () => void {

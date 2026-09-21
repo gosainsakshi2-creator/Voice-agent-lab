@@ -868,8 +868,10 @@ function hearingFollowUpFor(language: SupportedLanguage): string {
  *     can drop a caller segment because of it, and barge-in is
  *     untouched — there is nothing to barge into.
  *   - It is deterministic. A short fixed vocabulary per language,
- *     rotated so the same word is never said twice in a row,
- *     synthesised once per call and cached. No language-model request.
+ *     chosen from the caller's own recent words by `selectBackchannelCue`
+ *     (continuation / following a point / recognition / silence), never
+ *     the same word twice running, synthesised once per call and
+ *     cached. No language-model request.
  *   - It is rare. Only for a turn that already has
  *     `BACKCHANNEL_CUE_MIN_WORDS` words (a story, not an answer), at
  *     most `BACKCHANNEL_CUE_MAX_PER_TURN` per turn, a further one only
@@ -933,22 +935,146 @@ const BACKCHANNEL_CUE_ECHO_WINDOW_MS = 2_000;
 const BACKCHANNEL_CUE_MAX_AUDIO_MS = 1_500;
 
 /**
- * The cue vocabulary, per language. Deliberately non-committal: nothing
- * here can be heard as agreement with a proposition ("yes", "correct",
- * "exactly") or as taking the floor. Every form survives `toSpokenText`
- * unchanged and is under `SELF_ECHO_MIN_WORDS`, which is why the echo
- * guard above exists.
+ * ---------------- WHICH cue, and whether any ----------------
+ *
+ * A listener's acknowledgements are not a playlist. The first version
+ * of this rotated a fixed table (`Mm-hmm → Okay → Right → Hmm`), and on
+ * a long answer that produced the same predictable sequence every
+ * time — audibly a machine. The selection below reads the LOCAL text
+ * instead: the words the caller has said since the last cue, and the
+ * last cue itself. Three conversational functions and one non-choice:
+ *
+ *   - CONTINUATION ("Mm-hmm." / "Hmm."): the default. "I'm listening,
+ *     go on." Chosen when the fresh text carries no stronger signal.
+ *   - FOLLOWING A POINT ("Right."): the fresh text has explanatory or
+ *     sequencing structure — "because", "the problem is", "first...
+ *     then", "kyunki", "matlab". The listener is tracking reasoning.
+ *   - RECOGNITION ("Yeah."): the fresh text states the caller's own
+ *     experience or opinion — "honestly", "I've been", "I feel", "it's
+ *     really hard". Used only in English: the Hindi/Hinglish
+ *     equivalents ("haan") are the same tokens that answer the gate,
+ *     and a cue must never be heard as a yes.
+ *   - SILENCE (`null`): a plain continuation right after a plain
+ *     continuation was acknowledged is left alone — a human does not
+ *     "mm-hmm" at every breath — and a content hash leaves roughly one
+ *     in four remaining plain opportunities silent so the pattern is
+ *     never predictable. A first opportunity in a turn is never made
+ *     silent, so a long answer still reliably gets one acknowledgement;
+ *     text with a stronger signal is never made silent either.
+ *
+ * Whatever is chosen is never the same word as the last cue. When two
+ * signals are present the one that occurs LAST in the fresh text wins,
+ * because it is the one the caller just said.
+ *
+ * Deterministic, table-driven, no model. Every form survives
+ * `toSpokenText` unchanged and is under `SELF_ECHO_MIN_WORDS`, which is
+ * why the echo guard above exists. Silence here changes no timing: the
+ * opportunity was declined, the next one is judged on its own text.
  */
-const BACKCHANNEL_CUES: Readonly<Record<string, readonly string[]>> = {
-  en: ["Mm-hmm.", "Okay.", "Right.", "Hmm."],
-  hi: ["हम्म।", "अच्छा।", "जी।"],
-  "hi-en": ["Hmm.", "Achha.", "Ji.", "Okay."],
-};
+export interface BackchannelCueContext {
+  readonly language: SupportedLanguage;
+  /** The caller's words since the last cue was played (or the whole held text for a first cue). */
+  readonly freshText: string;
+  /** The cue last played into this turn, or `null`. */
+  readonly lastCue: string | null;
+  /** Whether the previous opportunity in this turn was left silent. */
+  readonly previousOpportunitySilent: boolean;
+}
 
-/** The n-th cue for a language, rotating through the table so no two consecutive cues repeat. */
-export function backchannelCueFor(language: SupportedLanguage, index: number): string {
-  const cues = BACKCHANNEL_CUES[language] ?? BACKCHANNEL_CUES["en"] ?? ["Okay."];
-  return cues[((index % cues.length) + cues.length) % cues.length] ?? "Okay.";
+/** Explanatory / sequencing language: the caller is making a point the listener is following. */
+const BACKCHANNEL_POINT_MARKERS = [
+  "because", "the reason", "that's why", "thats why", "which means", "what happens is",
+  "the problem is", "the thing is", "the point is", "the issue is", "basically", "for example",
+  "first of all", "firstly", "secondly", "after that", "so that", "in order to",
+  // Hinglish (transliterated) and Devanagari. Bare "then" / "phir" /
+  // "फिर" are deliberately absent: ordinary narration uses them at every
+  // clause, and "Right" there is the generic filler this table must
+  // never produce.
+  "kyunki", "kyonki", "isliye", "is liye", "matlab", "iska matlab", "sabse pehle", "uske baad",
+  "problem yeh hai", "baat yeh hai",
+  "क्योंकि", "इसलिए", "मतलब", "सबसे पहले", "उसके बाद",
+];
+
+/** The caller stating their own experience or view: recognition rather than tracking. */
+const BACKCHANNEL_RECOGNITION_MARKERS = [
+  "honestly", "to be honest", "i think", "i feel", "i believe", "in my experience", "for me",
+  "i've been", "i have been", "i've always", "i have always", "i'm interested", "i am interested",
+  "it's really", "it is really", "really hard", "really difficult", "very difficult", "struggling",
+  "not sure", "not really sure",
+];
+
+/** Default cues per language, two so a plain continuation can alternate rather than repeat. */
+const BACKCHANNEL_CONTINUATION_CUES: Readonly<Record<string, readonly [string, string]>> = {
+  en: ["Mm-hmm.", "Hmm."],
+  hi: ["हम्म।", "अच्छा।"],
+  "hi-en": ["Hmm.", "Achha."],
+};
+const BACKCHANNEL_POINT_CUE: Readonly<Record<string, string>> = { en: "Right.", hi: "सही।", "hi-en": "Sahi." };
+/** English only — see the block above. */
+const BACKCHANNEL_RECOGNITION_CUE: Readonly<Record<string, string>> = { en: "Yeah." };
+
+/** Roughly one in four plain continuations is left silent; which ones depends on the words, not on a counter. */
+const BACKCHANNEL_SILENCE_MODULUS = 4;
+
+function lastMarkerOffset(normalised: string, markers: readonly string[]): number {
+  let latest = -1;
+  for (const marker of markers) {
+    const at = normalised.lastIndexOf(` ${marker} `);
+    if (at > latest) latest = at;
+  }
+  return latest;
+}
+
+/** A small stable string hash — deterministic across runs, so the same words always decide the same way. */
+function contentHash(text: string): number {
+  let hash = 0;
+  for (let i = 0; i < text.length; i += 1) hash = (hash * 31 + text.charCodeAt(i)) >>> 0;
+  return hash;
+}
+
+/**
+ * The one place a cue's words are chosen. Pure; exported so the
+ * invariants — never the same word twice running, silence is a real
+ * outcome, content decides — can be asserted without a call.
+ */
+export function selectBackchannelCue(context: BackchannelCueContext): string | null {
+  const continuation = BACKCHANNEL_CONTINUATION_CUES[context.language] ?? BACKCHANNEL_CONTINUATION_CUES["en"]!;
+  const pointCue = BACKCHANNEL_POINT_CUE[context.language] ?? BACKCHANNEL_POINT_CUE["en"]!;
+  const recognitionCue = BACKCHANNEL_RECOGNITION_CUE[context.language];
+  const normalised = ` ${context.freshText.toLowerCase().replace(/[^\p{L}\p{M}\p{N}'’\s]/gu, " ").replace(/\s+/g, " ").trim()} `;
+
+  const pointAt = lastMarkerOffset(normalised, BACKCHANNEL_POINT_MARKERS);
+  const recognitionAt = recognitionCue === undefined ? -1 : lastMarkerOffset(normalised, BACKCHANNEL_RECOGNITION_MARKERS);
+
+  // The most recent signal wins; a cue never repeats the last one. If
+  // the only signal present is the word just said, fall through to a
+  // plain continuation rather than say it twice.
+  const signalled: string[] = [];
+  if (recognitionAt > pointAt) {
+    signalled.push(recognitionCue!);
+    if (pointAt >= 0) signalled.push(pointCue);
+  } else if (pointAt >= 0) {
+    signalled.push(pointCue);
+    if (recognitionAt >= 0 && recognitionCue !== undefined) signalled.push(recognitionCue);
+  }
+  const chosen = signalled.find((cue) => cue !== context.lastCue);
+  if (chosen !== undefined) return chosen;
+
+  // Plain continuation. A human does not acknowledge every breath: right
+  // after a plain acknowledgement the next plain opportunity is left
+  // silent, and a content hash leaves roughly one in four of the rest
+  // silent — never the first of a turn.
+  // Never two silences running either: a caller who has already been
+  // left one breath unacknowledged gets the next one.
+  if (context.previousOpportunitySilent) {
+    const [p, s] = continuation;
+    return context.lastCue === p ? s : p;
+  }
+  const lastWasContinuation = context.lastCue !== null && continuation.includes(context.lastCue);
+  if (lastWasContinuation) return null;
+  if (context.lastCue !== null && contentHash(normalised) % BACKCHANNEL_SILENCE_MODULUS === 0) return null;
+  const [primary, secondary] = continuation;
+  return context.lastCue === primary ? secondary : primary;
 }
 
 /**
@@ -2186,8 +2312,10 @@ export class ConversationPipeline {
   private backchannelCuesThisTurn = 0;
   /** Wall clock of the last cue handed to the transport, `0` if none yet. */
   private lastBackchannelCueAtMs = 0;
-  /** Rotation index into the cue vocabulary — see `backchannelCueFor`. */
-  private backchannelCueIndex = 0;
+  /** The cue last PLAYED into the current caller turn, or `null` — see `selectBackchannelCue`. Reset per turn. */
+  private lastBackchannelCue: string | null = null;
+  /** Whether the previous cue opportunity in this turn was left silent by the selector. Reset per turn. */
+  private backchannelPreviousOpportunitySilent = false;
   /** True while a cue is being synthesised or handed over; at most one at a time. */
   private backchannelCueInFlight = false;
   /** Wall clock at which the last cue's audio was handed to the transport — the echo guard's origin. */
@@ -2474,6 +2602,8 @@ export class ConversationPipeline {
         // next one. Speech-side bookkeeping only — see `considerBackchannelCue`.
         this.backchannelCuesThisTurn = 0;
         this.backchannelWordsAtLastCue = 0;
+        this.lastBackchannelCue = null;
+        this.backchannelPreviousOpportunitySilent = false;
 
         // eslint-disable-next-line no-console
         console.log(`[STT:${sid}] Transcript received: "${turn.text.slice(0, 80)}${turn.text.length > 80 ? "..." : ""}" userSpeechMs=${turn.userSpeechMs} sttLagMs=${turn.sttLagMs ?? "n/a"}`);
@@ -3531,9 +3661,26 @@ export class ConversationPipeline {
     // being synthesised — costs the turn nothing and the next breath is
     // tried again from the now-warm cache. The one thing that must not
     // repeat is asking a failing provider: `backchannelCueDisabled`.
-    this.backchannelCueInFlight = true;
+    // WHICH cue — or none. Read from the words said since the last cue
+    // and the last cue itself; see `selectBackchannelCue`. Silence is a
+    // real outcome and costs nothing: no slot, no gap clock, no word
+    // mark, so the next breath is judged on its own text.
     const language = this.record.memory.currentLanguage;
-    const cue = backchannelCueFor(language, this.backchannelCueIndex);
+    const heldWords = event.text.trim().split(/\s+/);
+    const freshText = heldWords.slice(this.backchannelCuesThisTurn > 0 ? this.backchannelWordsAtLastCue : 0).join(" ");
+    const cue = selectBackchannelCue({
+      language,
+      freshText,
+      lastCue: this.lastBackchannelCue,
+      previousOpportunitySilent: this.backchannelPreviousOpportunitySilent,
+    });
+    if (cue === null) {
+      this.backchannelPreviousOpportunitySilent = true;
+      // eslint-disable-next-line no-console
+      console.log(`[BACKCHANNEL:${this.record.id}] opportunity left silent — plain continuation after "${this.lastBackchannelCue ?? "nothing"}"`);
+      return;
+    }
+    this.backchannelCueInFlight = true;
     void this.speakBackchannelCue(cue, language, event.text, words).finally(() => {
       this.backchannelCueInFlight = false;
     });
@@ -3607,7 +3754,8 @@ export class ConversationPipeline {
     // top of what this one acknowledged.
     this.backchannelCuesThisTurn += 1;
     this.backchannelWordsAtLastCue = heldWords;
-    this.backchannelCueIndex += 1;
+    this.lastBackchannelCue = cue;
+    this.backchannelPreviousOpportunitySilent = false;
     this.lastBackchannelCueAtMs = Date.now();
     await this.playBackchannelAudio(audio);
     this.lastBackchannelCuePlayedAtMs = Date.now();

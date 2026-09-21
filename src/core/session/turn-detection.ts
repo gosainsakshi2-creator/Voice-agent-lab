@@ -573,6 +573,88 @@ export type EndpointMarkerOutcome =
   | "not_releasable_incomplete"
   | "evidenced_confirmation";
 
+/**
+ * ---------------- Release trace (TELEMETRY ONLY) ------------------
+ *
+ * WHY THIS EXISTS. A 2026-09-21 audit of a live call could establish
+ * from the code that a turn ending on a dangling "because" is held by
+ * `looksIncomplete` and then released anyway once
+ * `MAX_CONTINUATION_GRACES` is spent — but could NOT establish from
+ * the stored telemetry which of three mechanisms produced the observed
+ * ~6.3s hold: the grace cap being reached once, the interim re-wait
+ * exhausting, or `feed` resetting `continuationGraces` on a late final
+ * and starting the whole cycle again. All three release the same turn
+ * and all three were indistinguishable after the fact.
+ *
+ * So this records WHICH GUARD LET THE TURN THROUGH, and what the grace
+ * counter did on the way. It is the exact `lastEndpointMarkerOutcome`
+ * pattern one block up — write at the decision site, snapshot-and-clear
+ * at the turn boundary — for the same reason: the decision is only
+ * knowable where it is taken, and re-deriving it later is what the
+ * audit found impossible.
+ *
+ * NOTHING HERE IS READ BY ANY DECISION. Every field is written and
+ * never consulted: no window, threshold, guard or release in this file
+ * branches on any of them, and removing the whole block would leave
+ * turn-taking byte-for-byte identical. No constant, no threshold and
+ * no condition is changed by its presence — the two `wants*Hold`
+ * locals introduced alongside it hold subexpressions that were already
+ * being evaluated, in the same order and with the same short-circuit.
+ */
+export type TurnReleaseReason =
+  /** `forceEndTurn` — an external signal decided, and every guard was skipped. */
+  | "forced"
+  /**
+   * The text still read as unfinished (or asked for a moment) and the
+   * detector still WANTED to hold it — `MAX_CONTINUATION_GRACES` is
+   * what let it go. This is the label the audit needs.
+   */
+  | "grace_cap_reached"
+  /** No endpoint claim ever arrived and `MAX_CHUNK_BOUNDARY_GRACES` is spent. */
+  | "chunk_grace_cap_reached"
+  /** An interim was still outstanding and `MAX_INTERIM_CONFIRMATIONS` is spent. */
+  | "interim_cap_reached"
+  /** Every guard passed cleanly: nothing wanted to hold this turn. */
+  | "confirmed";
+
+/** What discarded a run of continuation graces mid-turn — see `ContinuationGraceReset`. */
+export type GraceResetSource =
+  /** A word-bearing final the provider did NOT endpoint (`isSpeechFinal === false`). */
+  | "chunk_final"
+  /** A word-bearing final the provider DID endpoint, or one carrying no claim either way. */
+  | "endpointed_final";
+
+/**
+ * `feed` clears `continuationGraces` on EVERY final, so a turn can pay
+ * the cap more than once and no stored field showed it. Each reset
+ * that actually discarded a grace is recorded here with the kind of
+ * final that caused it — which is also what separates a Soniox turn
+ * (every word final carries `isSpeechFinal: false`) from a Deepgram one.
+ */
+export interface ContinuationGraceReset {
+  /** How many graces were in hand when the reset landed. Never 0 — a no-op reset is not recorded. */
+  readonly gracesDiscarded: number;
+  readonly source: GraceResetSource;
+}
+
+/** One turn's release decision. Every field is write-only — see the block above. */
+export interface TurnReleaseTrace {
+  readonly releaseReason: TurnReleaseReason;
+  /**
+   * `looksIncomplete` on the released text, evaluated AT RELEASE.
+   * `true` with `releaseReason: "grace_cap_reached"` is the defect the
+   * audit describes: a thought the detector still judged unfinished,
+   * released because it had waited long enough.
+   */
+  readonly heldTextReadsUnfinished: boolean;
+  /** `continuationGraces` at the moment of release. */
+  readonly continuationGracesAtRelease: number;
+  /** The grace ordinal armed at each hold, in order — e.g. `[1, 2]`. */
+  readonly continuationGraceTrace: readonly number[];
+  /** Every mid-turn reset that discarded at least one grace, in order. */
+  readonly continuationGraceResets: readonly ContinuationGraceReset[];
+}
+
 export class AdaptiveTurnDetector {
   private silenceTimeoutMs = DEFAULT_SILENCE_TIMEOUT_MS;
   private pendingFinalText = "";
@@ -632,6 +714,20 @@ export class AdaptiveTurnDetector {
    * in this file.
    */
   private lastEndpointMarkerOutcome: EndpointMarkerOutcome | undefined;
+  /**
+   * TELEMETRY ONLY — see `TurnReleaseTrace`. Written at the guard sites
+   * in `emitTurnEnd` and `feed`, read and cleared by
+   * `consumeReleaseTrace`, and consulted by no decision in this file.
+   *
+   * `pendingReleaseReason` records the LAST guard that wanted to hold
+   * the turn and was denied by its own cap. It stays `undefined` when
+   * no guard wanted to hold, which is what `consumeReleaseTrace`
+   * reports as `"confirmed"`.
+   */
+  private pendingReleaseReason: TurnReleaseReason | undefined;
+  private continuationGraceTrace: number[] = [];
+  private continuationGraceResets: ContinuationGraceReset[] = [];
+  private lastReleaseTrace: TurnReleaseTrace | undefined;
   private readonly listeners = new Set<(event: TurnDetectionEvent) => void>();
   /**
    * A turn that ended while nobody was subscribed. The pipeline only
@@ -796,6 +892,21 @@ export class AdaptiveTurnDetector {
       }
 
       this.lastFinalEndedAtMs = segment.endedAtMs;
+      // TELEMETRY ONLY — see `TurnReleaseTrace`. Recorded BEFORE the
+      // zeroing below, because the count being discarded is the whole
+      // point: a turn can reach `MAX_CONTINUATION_GRACES`, have the
+      // counter cleared by a late final, and reach it again, and no
+      // stored field distinguished that from a single pass. Only a
+      // reset that actually discards a grace is recorded, so an
+      // ordinary turn contributes an empty array.
+      if (this.continuationGraces > 0) {
+        this.continuationGraceResets.push({
+          gracesDiscarded: this.continuationGraces,
+          // Absent means "assume endpointed", matching how
+          // `lastFinalWasEndpoint` reads the same field two lines below.
+          source: (segment.isSpeechFinal ?? true) ? "endpointed_final" : "chunk_final",
+        });
+      }
       // The thought is still progressing, so previously-spent graces
       // shouldn't count against the words that come next.
       this.continuationGraces = 0;
@@ -1078,6 +1189,21 @@ export class AdaptiveTurnDetector {
     return outcome;
   }
 
+  /**
+   * TELEMETRY ONLY — the release decision for the turn just emitted,
+   * cleared on read so a turn that produced none reports absence rather
+   * than inheriting the previous turn's. Same snapshot-then-clear
+   * contract as `consumeEndpointMarkerOutcome`, and read from the same
+   * place: inside the pipeline's `onTurnEnd` listener.
+   *
+   * See `TurnReleaseTrace`. Nothing in this file reads what it returns.
+   */
+  consumeReleaseTrace(): TurnReleaseTrace | undefined {
+    const trace = this.lastReleaseTrace;
+    this.lastReleaseTrace = undefined;
+    return trace;
+  }
+
   /** Force an immediate end-of-turn (e.g. the caller detected hard silence via another signal). */
   forceEndTurn(): void {
     this.clearTimer();
@@ -1101,6 +1227,16 @@ export class AdaptiveTurnDetector {
     this.interimConfirmations = 0;
     this.chunkBoundaryGraces = 0;
     this.chunkBoundaryGraceArmed = false;
+    // TELEMETRY ONLY — the per-turn accumulators are cleared with the
+    // turn they belong to. `lastReleaseTrace` is deliberately NOT
+    // cleared, for exactly the reason `lastEndpointMarkerOutcome` below
+    // is not: `emitTurnEnd` snapshots into it and then calls `reset()`
+    // BEFORE notifying its listeners, so clearing here would wipe the
+    // trace of the very turn it describes. `consumeReleaseTrace` clears
+    // it on read instead.
+    this.pendingReleaseReason = undefined;
+    this.continuationGraceTrace = [];
+    this.continuationGraceResets = [];
     // `lastEndpointMarkerOutcome` is deliberately NOT cleared here.
     // `emitTurnEnd` calls `reset()` BEFORE it notifies its listeners,
     // and the pipeline reads the outcome from inside that listener — so
@@ -1229,11 +1365,19 @@ export class AdaptiveTurnDetector {
       // who has explicitly asked for a moment ("wait", "let me think")
       // gets the longer of the two windows.
       const askedForAMoment = HOLD_PHRASE_ONLY.test(text);
+      // TELEMETRY ONLY — the subexpression that was already the first
+      // conjunct below, named so the `else` can record that a hold was
+      // WANTED and denied. `||` still short-circuits in the same order,
+      // `looksIncomplete` is pure, and the second conjunct is still
+      // evaluated only when this is true: the condition is unchanged.
+      const wantsContinuationHold = askedForAMoment || looksIncomplete(text);
       if (
-        (askedForAMoment || looksIncomplete(text)) &&
+        wantsContinuationHold &&
         this.continuationGraces < MAX_CONTINUATION_GRACES
       ) {
         this.continuationGraces += 1;
+        // TELEMETRY ONLY — the grace ordinal just armed.
+        this.continuationGraceTrace.push(this.continuationGraces);
         const graceMs = askedForAMoment ? HOLD_GRACE_MS : CONTINUATION_GRACE_MS;
         this.rearmTimer(graceMs);
         // Observers are told AFTER the grace is armed, so a listener
@@ -1242,6 +1386,11 @@ export class AdaptiveTurnDetector {
         this.notifyContinuationHold(graceMs, askedForAMoment);
         return;
       }
+      // TELEMETRY ONLY — reached when the turn still read as unfinished
+      // (or asked for a moment) and only the cap let it through. This
+      // is the label the 2026-09-21 audit could not obtain after the
+      // fact; see `TurnReleaseTrace`.
+      if (wantsContinuationHold) this.pendingReleaseReason = "grace_cap_reached";
 
       // Deepgram never declared end-of-speech for the words we hold.
       // The last final it sent was a CHUNK BOUNDARY (`speech_final`
@@ -1256,8 +1405,11 @@ export class AdaptiveTurnDetector {
       // latency they have today. Bounded, so a caller whose endpointer
       // never fires (background noise, dropped socket) still gets a
       // reply one window later rather than never.
+      // TELEMETRY ONLY — same shape as `wantsContinuationHold` above:
+      // the existing first conjunct, named so its denial is recordable.
+      const wantsChunkBoundaryHold = !this.lastFinalWasEndpoint;
       if (
-        !this.lastFinalWasEndpoint &&
+        wantsChunkBoundaryHold &&
         this.chunkBoundaryGraces < MAX_CHUNK_BOUNDARY_GRACES
       ) {
         this.chunkBoundaryGraces += 1;
@@ -1269,6 +1421,9 @@ export class AdaptiveTurnDetector {
         this.chunkBoundaryGraceArmed = true;
         return;
       }
+      // TELEMETRY ONLY — no endpoint claim ever arrived for these words
+      // and the single chunk-boundary grace is spent.
+      if (wantsChunkBoundaryHold) this.pendingReleaseReason = "chunk_grace_cap_reached";
 
       // Post-speech confirmation. The silence window says the caller
       // stopped; hold the turn for one short window before releasing it
@@ -1283,14 +1438,25 @@ export class AdaptiveTurnDetector {
           this.rearmTimer(confirmationMs);
           return;
         }
-      } else if (this.pendingInterim && this.interimConfirmations < MAX_INTERIM_CONFIRMATIONS) {
-        // The confirmation window passed quietly, but Deepgram still
-        // owes a final for words it has already shown as interim — it
-        // has recognized more of this turn than we hold. Wait for it
-        // rather than sending a partial turn to the LLM.
-        this.interimConfirmations += 1;
-        this.rearmTimer(CONFIRMATION_WINDOW_MS);
-        return;
+        // TELEMETRY ONLY — the silence-window branch fell through with
+        // no window to arm, so nothing wanted to hold this turn here.
+      } else if (this.pendingInterim) {
+        // TELEMETRY ONLY — the cap test moved INSIDE so its denial is
+        // recordable. `pendingInterim && cap-not-reached` still holds
+        // and every other combination still falls through: identical.
+        if (this.interimConfirmations < MAX_INTERIM_CONFIRMATIONS) {
+          // The confirmation window passed quietly, but Deepgram still
+          // owes a final for words it has already shown as interim — it
+          // has recognized more of this turn than we hold. Wait for it
+          // rather than sending a partial turn to the LLM.
+          this.interimConfirmations += 1;
+          this.rearmTimer(CONFIRMATION_WINDOW_MS);
+          return;
+        }
+        // TELEMETRY ONLY — words are still outstanding and the re-wait
+        // cap is spent, so this turn releases holding less than the
+        // provider has already recognised.
+        this.pendingReleaseReason = "interim_cap_reached";
       }
     }
 
@@ -1298,6 +1464,21 @@ export class AdaptiveTurnDetector {
       this.turnStartedAtMs !== null && this.lastSegmentAtMs !== null
         ? this.lastSegmentAtMs - this.turnStartedAtMs
         : 0;
+
+    // TELEMETRY ONLY — snapshotted HERE, immediately before `reset()`
+    // clears the counters it reads. `heldTextReadsUnfinished` re-runs
+    // `looksIncomplete` on the released text: the tables it consults
+    // are built with flags `"iu"` and carry no `g`, so `.test()` is
+    // stateless and a second call cannot perturb the first — the same
+    // guarantee `classifyNotReleasable` already relies on. Nothing
+    // below branches on any of it.
+    this.lastReleaseTrace = {
+      releaseReason: force ? "forced" : (this.pendingReleaseReason ?? "confirmed"),
+      heldTextReadsUnfinished: looksIncomplete(text),
+      continuationGracesAtRelease: this.continuationGraces,
+      continuationGraceTrace: [...this.continuationGraceTrace],
+      continuationGraceResets: [...this.continuationGraceResets],
+    };
 
     const event: TurnDetectionEvent = { text, turnDurationMs };
     this.reset();

@@ -85,6 +85,22 @@ Fix — `turn-detection.ts` + `conversation-pipeline.ts`:
   `BACKCHANNEL_CUE_MIN_GAP_MS` floor of 3.5s derived from the cue audio bound
   (1.5s) + echo window (2s). No detector window, release, barge-in or playback
   code changed. backchannel-cue 24/24 (A2 re-pointed; G4–G11 added).
+- **2026-09-21 follow-up (which cue):** the cue word was a mechanical rotation
+  (`Mm-hmm → Okay → Right → Hmm`, index advanced per cue), so every long answer
+  drew the same audible sequence. Replaced by the pure, exported
+  `selectBackchannelCue(context)`: reads only the caller's words since the
+  last cue and the last cue itself. Continuation ("Mm-hmm."/"Hmm.", alternating)
+  is the default; explanatory/sequencing markers ("because", "the problem
+  is", "first of all", "kyunki", "matlab") select "Right."/"Sahi."/"सही।";
+  experience/opinion markers ("honestly", "I've been", "I think", "really
+  hard") select "Yeah." in English only (Hindi/Hinglish fall back to
+  continuation — "haan" is a gate token). Silence is a real outcome: a plain
+  continuation right after a plain acknowledgement is left silent, and a
+  content hash leaves ~1 in 4 remaining plain opportunities silent; a first
+  opportunity in a turn is never silent, text with a signal is never silent,
+  and no cue ever repeats the last word. Silence spends no slot, gap or word
+  mark. Trigger points, timing, per-turn cap, progress rule, gap floor,
+  transport and TTS untouched. F1/F2 rewritten, H1–H6 added.
 
 ### 2. Long turns released before the caller finished
 

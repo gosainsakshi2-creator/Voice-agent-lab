@@ -532,6 +532,61 @@ export interface TurnLatencyBreakdown {
    * (`superseded_*` + absent, and `spoken` + `true`, are unreachable.)
    */
   readonly supersederTakesFloor?: boolean;
+
+  // ── TURN-RELEASE TRACE (2026-09-21) ───────────────────────────────
+  //
+  // WHY. An audit of a live call could show from the code that a turn
+  // ending on a dangling "because" is held by `looksIncomplete` and
+  // then released once `MAX_CONTINUATION_GRACES` is spent — but could
+  // not show from the STORED telemetry which mechanism produced the
+  // observed hold, because all of them release the same turn and none
+  // was recorded. These five fields make the release decision itself
+  // queryable, so a behavioural fix can be justified by data rather
+  // than by reading the source.
+  //
+  // COUNTS, ENUMS AND ONE BOOLEAN — never text. The released
+  // transcript is deliberately NOT carried here: this record's
+  // standing rule is that no transcript, reply or prompt reaches it,
+  // and the verbatim text already appears on the existing per-turn
+  // `[STT:…] Transcript received` console line, which is where this
+  // codebase already logs caller speech. That split is intentional.
+  //
+  // Optional for the same backward-compatibility reason every batch
+  // above is: existing construction sites omit them, and omitting is
+  // identical to "not reported".
+  /**
+   * WHICH GUARD LET THE TURN THROUGH. `grace_cap_reached` paired with
+   * `heldTextReadsUnfinished: true` is the signature of a turn the
+   * detector still judged unfinished and released anyway.
+   */
+  readonly releaseReason?:
+    | "forced"
+    | "grace_cap_reached"
+    | "chunk_grace_cap_reached"
+    | "interim_cap_reached"
+    | "confirmed";
+  /** `looksIncomplete` on the released text, evaluated at release. */
+  readonly heldTextReadsUnfinished?: boolean;
+  /** `continuationGraces` in hand when the turn released. */
+  readonly continuationGracesAtRelease?: number;
+  /** The grace ordinal armed at each mid-thought hold, in order — e.g. `[1, 2]`. */
+  readonly continuationGraceTrace?: readonly number[];
+  /**
+   * Mid-turn resets that DISCARDED at least one grace. A non-empty
+   * array means this turn paid the grace cap more than once, which is
+   * indistinguishable from a single pass in every other field.
+   */
+  readonly continuationGraceResets?: readonly {
+    readonly gracesDiscarded: number;
+    readonly source: "chunk_final" | "endpointed_final";
+  }[];
+  /**
+   * Which phase a barge-in interrupted, when one fired. This is the
+   * only discriminator for a SPEAKING-side barge-in: such a turn
+   * reports `turnOutcome: "spoken"`, exactly like an undisturbed
+   * reply. Absent when no barge-in fired. See `BargeInPhase`.
+   */
+  readonly bargeInPhase?: "thinking" | "speaking" | "idle";
 }
 
 /**

@@ -30,7 +30,7 @@
 
 import assert from "node:assert/strict";
 
-const { ConversationPipeline, backchannelCueFor } = await import("../../core/session/conversation-pipeline");
+const { ConversationPipeline, selectBackchannelCue } = await import("../../core/session/conversation-pipeline");
 const { SessionRecord } = await import("../../core/session/session-record");
 const { SessionState, SupportedLanguage, CallDirection, ProviderCategory } = await import(
   "../../types/enums"
@@ -274,7 +274,7 @@ function startHarness(input: { readonly replies: readonly string[]; readonly syn
   };
 }
 
-const CUE_TEXTS = new Set(["Mm-hmm.", "Okay.", "Right.", "Hmm."]);
+const CUE_TEXTS = new Set(["Mm-hmm.", "Hmm.", "Right.", "Yeah."]);
 const isCue = (text: string) => CUE_TEXTS.has(text);
 
 /** Wait for the greeting to finish and the loop to be idle in LISTENING. */
@@ -755,27 +755,165 @@ await test("G11. barge-in is unchanged — a caller talking over the reply still
 // ═════════════════════════════════════════════════════════════════
 section("F. THE VOCABULARY");
 
-await test("F1. cues rotate and never repeat back to back", () => {
-  for (const language of [SupportedLanguage.ENGLISH, SupportedLanguage.HINDI, SupportedLanguage.HINGLISH]) {
-    const seen = Array.from({ length: 6 }, (_, i) => backchannelCueFor(language, i));
-    for (let i = 1; i < seen.length; i += 1) {
-      assert.notEqual(seen[i], seen[i - 1], `${language}: consecutive cues must differ`);
-    }
-    for (const cue of seen) {
-      assert.ok(cue.split(/\s+/).length <= 2, `${language}: a cue is one or two words: "${cue}"`);
-      assert.ok(!cue.includes("?"), "a cue never asks anything");
+const LANGS = [SupportedLanguage.ENGLISH, SupportedLanguage.HINDI, SupportedLanguage.HINGLISH] as const;
+const ctx = (
+  freshText: string,
+  lastCue: string | null = null,
+  previousOpportunitySilent = false,
+  language: (typeof LANGS)[number] = SupportedLanguage.ENGLISH,
+) => selectBackchannelCue({ language, freshText, lastCue, previousOpportunitySilent });
+
+await test("F1. every cue is one or two words, asks nothing, and is never the same word as the last cue", () => {
+  const texts = [
+    "and then I went to the shop and bought some cloth",
+    "because the tools are all different and I do not know",
+    "honestly I have been struggling with this for months",
+    "so first I tried one tool and then another one after that",
+    "mostly I sell to people in my own area and nearby",
+  ];
+  for (const language of LANGS) {
+    for (const lastCue of [null, "Mm-hmm.", "Hmm.", "Right.", "Yeah.", "Achha.", "Sahi.", "हम्म।", "सही।"]) {
+      for (const text of texts) {
+        const cue = ctx(text, lastCue, false, language);
+        if (cue === null) continue;
+        assert.ok(cue.split(/\s+/).length <= 2, `${language}: a cue is one or two words: "${cue}"`);
+        assert.ok(!cue.includes("?"), "a cue never asks anything");
+        assert.notEqual(cue, lastCue, `${language}: "${cue}" must not repeat the last cue`);
+      }
     }
   }
 });
 
-await test("F2. no cue is a committal word", () => {
-  const committal = /\b(yes|correct|exactly|sure|true|right you are|absolutely|haan|bilkul)\b/iu;
-  for (const language of [SupportedLanguage.ENGLISH, SupportedLanguage.HINDI, SupportedLanguage.HINGLISH]) {
-    for (let i = 0; i < 4; i += 1) {
-      const cue = backchannelCueFor(language, i);
-      assert.ok(!committal.test(cue), `"${cue}" can be heard as agreeing with a proposition`);
+await test("F2. no cue is a committal word, in any language", () => {
+  const committal = /\b(yes|correct|exactly|sure|true|absolutely|haan|bilkul|ji haan)\b/iu;
+  for (const language of LANGS) {
+    for (const text of ["and then", "because of that", "honestly I have been", "I think it is really hard and"]) {
+      for (const lastCue of [null, "Right.", "Hmm."]) {
+        const cue = ctx(text, lastCue, false, language);
+        if (cue !== null) assert.ok(!committal.test(cue), `${language}: "${cue}" can be heard as agreeing with a proposition`);
+      }
     }
   }
+});
+
+// ═════════════════════════════════════════════════════════════════
+section("H. WHICH CUE — CONTEXT DECIDES, NOT A COUNTER");
+
+const PLAIN = [
+  "and then I went to the market with my brother to look at",
+  "mostly I sell to the people who live near my shop and",
+  "so on most days I open the shop around ten in the morning and",
+  "we have a small place near the station where the customers come and",
+];
+const POINT = [
+  "because there are so many different tools available and",
+  "the problem is that none of them work with my accounts and",
+  "first of all I tried one of them and then another one after that and",
+  "which means I have to do everything twice every single day and",
+];
+const RECOGNITION = [
+  "honestly I have been struggling to understand how to use AI properly and",
+  "I think it is really hard to know which of these would actually help and",
+  "I am interested in the event and I have been looking for something like this and",
+  "in my experience most of these things are really difficult to set up and",
+];
+
+/** Walk a sequence of opportunities the way the pipeline does: last cue and silence carried forward. */
+function walk(segments: readonly string[]): (string | null)[] {
+  let last: string | null = null;
+  let silent = false;
+  const out: (string | null)[] = [];
+  for (const seg of segments) {
+    const cue = ctx(seg, last, silent);
+    out.push(cue);
+    if (cue === null) silent = true;
+    else {
+      last = cue;
+      silent = false;
+    }
+  }
+  return out;
+}
+
+await test("H1. there is no fixed sequence — the same opportunity index yields different cues for different words", () => {
+  // First opportunity of a turn, three different callers: three different classes.
+  assert.deepEqual([ctx(PLAIN[0]!), ctx(POINT[0]!), ctx(RECOGNITION[0]!)], ["Mm-hmm.", "Right.", "Yeah."]);
+  // The old rotation's second/third slots are not slots at all: a
+  // second opportunity after "Mm-hmm." is decided by its own words.
+  assert.equal(ctx(POINT[1]!, "Mm-hmm."), "Right.");
+  assert.equal(ctx(RECOGNITION[1]!, "Mm-hmm."), "Yeah.");
+  assert.equal(ctx(PLAIN[1]!, "Mm-hmm."), null, "a plain continuation right after a plain acknowledgement is left silent");
+  // Long utterances with different content produce different cue sequences.
+  const a = walk([PLAIN[0]!, POINT[0]!, RECOGNITION[0]!]);
+  const b = walk([RECOGNITION[1]!, PLAIN[1]!, POINT[1]!]);
+  const c = walk([PLAIN[2]!, PLAIN[3]!, PLAIN[0]!]);
+  assert.notDeepEqual(a, b);
+  assert.notDeepEqual(a, c);
+  assert.notDeepEqual(b, c);
+  assert.ok(c.includes(null), "a run of plain continuations includes silence");
+});
+
+await test("H2. ordinary continuation selects the listening cue (Mm-hmm / Hmm) on a first opportunity", () => {
+  for (const text of PLAIN) {
+    assert.ok(["Mm-hmm.", "Hmm."].includes(ctx(text) ?? ""), `"${text}" -> ${ctx(text)}`);
+  }
+  assert.ok(["Hmm.", "Achha."].includes(ctx("aur phir main dukaan par gaya aur wahan", null, false, SupportedLanguage.HINGLISH) ?? ""));
+  assert.ok(["हम्म।", "अच्छा।"].includes(ctx("और फिर मैं दुकान पर गया और वहाँ पर", null, false, SupportedLanguage.HINDI) ?? ""));
+});
+
+await test("H3. explanatory / point-making language selects 'Right', and never right after 'Right'", () => {
+  for (const text of POINT) {
+    assert.equal(ctx(text), "Right.", `"${text}"`);
+    assert.equal(ctx(text, "Mm-hmm."), "Right.");
+    assert.notEqual(ctx(text, "Right."), "Right.", "never Right twice running");
+  }
+  assert.equal(ctx("kyunki mere paas time nahi hai aur", null, false, SupportedLanguage.HINGLISH), "Sahi.");
+  assert.equal(ctx("क्योंकि मेरे पास समय नहीं है और", null, false, SupportedLanguage.HINDI), "सही।");
+});
+
+await test("H4. recognition language selects 'Yeah' conservatively — English only, never twice running, never for plain text", () => {
+  for (const text of RECOGNITION) {
+    assert.equal(ctx(text), "Yeah.", `"${text}"`);
+    assert.notEqual(ctx(text, "Yeah."), "Yeah.", "never Yeah twice running");
+  }
+  for (const text of PLAIN) assert.notEqual(ctx(text), "Yeah.", `plain text must not draw Yeah: "${text}"`);
+  // Hindi / Hinglish: the recognition class falls back to a non-committal cue.
+  for (const language of [SupportedLanguage.HINDI, SupportedLanguage.HINGLISH]) {
+    for (const text of RECOGNITION) {
+      const cue = ctx(text, null, false, language);
+      assert.ok(cue === null || !/yeah|haan|हाँ/iu.test(cue), `${language}: "${cue}"`);
+    }
+  }
+});
+
+await test("H5. silence is a real outcome, and never the first opportunity of a turn", () => {
+  // Plain after plain, no silence yet: silent.
+  assert.equal(ctx(PLAIN[0]!, "Mm-hmm."), null);
+  assert.equal(ctx(PLAIN[0]!, "Hmm."), null);
+  // Plain after plain, but the previous opportunity was already silent: speak, alternating the word.
+  assert.equal(ctx(PLAIN[0]!, "Mm-hmm.", true), "Hmm.");
+  assert.equal(ctx(PLAIN[0]!, "Hmm.", true), "Mm-hmm.");
+  // A first opportunity is never silent, whatever the words.
+  for (const text of [...PLAIN, ...POINT, ...RECOGNITION]) assert.notEqual(ctx(text), null, `first opportunity: "${text}"`);
+  // The content hash leaves some plain opportunities silent even after a non-plain cue.
+  const afterRight = PLAIN.concat([
+    "and my cousin also has a shop in the next town where they",
+    "and the customers usually come in the evening after work when",
+    "and on Sundays we keep the shop closed so that the family can",
+    "and the supplier sends the cloth every second week from Surat and",
+    "and we also keep some ready-made items for the festival season when",
+    "and my wife helps with the accounts in the evening after the",
+  ]).map((t) => ctx(t, "Right."));
+  assert.ok(afterRight.includes(null), `some plain opportunities after "Right." must be silent: ${JSON.stringify(afterRight)}`);
+  assert.ok(afterRight.some((c) => c !== null), "...and not all of them");
+});
+
+await test("H6. the same cue is never mechanically repeated at every opportunity", () => {
+  const out = walk([...PLAIN, ...PLAIN, ...PLAIN]);
+  const spoken = out.filter((c): c is string => c !== null);
+  assert.ok(spoken.length >= 2);
+  assert.ok(spoken.length < out.length, "not every opportunity was acknowledged");
+  for (let i = 1; i < spoken.length; i += 1) assert.notEqual(spoken[i], spoken[i - 1], "no word twice running");
 });
 
 console.log(

@@ -502,6 +502,25 @@ export function isBareAcknowledgement(text: string): boolean {
   return ACKNOWLEDGEMENT_ONLY.test(trimmed) || FILLER_ONLY.test(trimmed);
 }
 
+/**
+ * READ-ONLY, ADDITIVE. Does `text` read as a thought the caller has not
+ * finished — a dangling conjunction, a fragment comma, a trailing
+ * preposition — and NOT as a hesitation sound or a request for a
+ * moment? The same `looksIncomplete` judgement `emitTurnEnd` already
+ * makes, exposed so the pipeline's backchannel cue can tell a breath
+ * mid-sentence ("...for quite some time now,") from the end of an
+ * answer at the instant the provider's endpoint arrives, instead of
+ * waiting for the silence window to expire.
+ *
+ * Decides nothing here: no window, threshold or release reads it.
+ */
+export function readsAsUnfinishedThought(text: string): boolean {
+  const trimmed = text.trim();
+  if (trimmed.length === 0) return false;
+  if (FILLER_ONLY.test(trimmed) || HOLD_PHRASE_ONLY.test(trimmed)) return false;
+  return looksIncomplete(trimmed);
+}
+
 export interface TurnDetectionEvent {
   /** The accumulated final transcript text for the completed turn. */
   readonly text: string;

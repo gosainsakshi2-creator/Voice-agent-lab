@@ -47,7 +47,7 @@ import { detectLanguage, isLockGradeEvidence, type LanguageDetectionResult } fro
 import { currentTurnNote, languageHintFor, openingLineFor } from "./system-prompt";
 import { classifyIdentityAnswer } from "../../campaign/domain/identity-answer";
 import { SentenceChunker } from "./sentence-chunker";
-import { isBareAcknowledgement } from "./turn-detection";
+import { isBareAcknowledgement, readsAsUnfinishedThought } from "./turn-detection";
 import type { ContinuationHoldEvent, EndpointMarkerOutcome } from "./turn-detection";
 import { voicemailPhraseIn } from "./voicemail-detection";
 import { combineSignals, abortableSleep } from "./abort-utils";
@@ -872,8 +872,9 @@ function hearingFollowUpFor(language: SupportedLanguage): string {
  *     synthesised once per call and cached. No language-model request.
  *   - It is rare. Only for a turn that already has
  *     `BACKCHANNEL_CUE_MIN_WORDS` words (a story, not an answer), at
- *     most `BACKCHANNEL_CUE_MAX_PER_TURN` per turn, never within
- *     `BACKCHANNEL_CUE_MIN_GAP_MS` of the last one, never while the
+ *     most `BACKCHANNEL_CUE_MAX_PER_TURN` per turn, a further one only
+ *     after `BACKCHANNEL_CUE_MIN_NEW_WORDS` of fresh speech and never
+ *     within `BACKCHANNEL_CUE_MIN_GAP_MS` of the last one, never while the
  *     transport heard loud caller energy in the last few hundred ms,
  *     never during the greeting, an identity gate, an attention
  *     episode or a held script position, and only while the main loop
@@ -895,10 +896,32 @@ function hearingFollowUpFor(language: SupportedLanguage): string {
  */
 /** A turn must already be this long before a cue is even considered. */
 const BACKCHANNEL_CUE_MIN_WORDS = 8;
-/** Never more than this many cues into one caller turn. */
-const BACKCHANNEL_CUE_MAX_PER_TURN = 2;
-/** ...and never two cues closer together than this. */
-const BACKCHANNEL_CUE_MIN_GAP_MS = 6_000;
+/**
+ * Never more than this many cues into one caller turn. Three is what a
+ * genuinely long answer (60-70 words, ~20s) gets from a human listener
+ * at its natural breath points; a normal sentence never reaches the
+ * second — see `BACKCHANNEL_CUE_MIN_NEW_WORDS`.
+ */
+const BACKCHANNEL_CUE_MAX_PER_TURN = 3;
+/**
+ * A further cue needs SPEECH PROGRESS, not elapsed time: at least this
+ * many new words in the caller's held text since the last cue was
+ * played. The same floor a first cue needs, so each cue acknowledges a
+ * fresh clause and never the one already acknowledged. This, not a
+ * timer, is what spaces the cues to the caller's own rhythm.
+ */
+const BACKCHANNEL_CUE_MIN_NEW_WORDS = 8;
+/**
+ * ...and a safety floor between two cues, derived from the cue itself:
+ * the longest cue audio allowed (`BACKCHANNEL_CUE_MAX_AUDIO_MS`) must
+ * have finished playing AND its echo window
+ * (`BACKCHANNEL_CUE_ECHO_WINDOW_MS`) must have closed before the next
+ * one is even considered, so a cue's own echo can never be the pause
+ * the next cue lands in. At ordinary speech rates eight new words take
+ * about this long anyway, so the two rules agree; this one only bites
+ * on a fast talker.
+ */
+const BACKCHANNEL_CUE_MIN_GAP_MS = 3_500;
 /**
  * Loud near-end energy this recent means the caller is already
  * resuming; a cue now would land on their first word.
@@ -2169,6 +2192,10 @@ export class ConversationPipeline {
   private backchannelCueInFlight = false;
   /** Wall clock at which the last cue's audio was handed to the transport — the echo guard's origin. */
   private lastBackchannelCuePlayedAtMs = 0;
+  /** Word count of the caller's held text when the last cue was PLAYED — see `BACKCHANNEL_CUE_MIN_NEW_WORDS`. Reset with the per-turn count. */
+  private backchannelWordsAtLastCue = 0;
+  /** True once the TTS provider failed or rejected a cue on this call: no further cue is attempted, so a failing provider is asked once. */
+  private backchannelCueDisabled = false;
   /**
    * ---------------- The scripted closing after a registration -------
    * See the block above `CLOSING_ACKNOWLEDGEMENT_TOKENS`. Armed by the
@@ -2446,6 +2473,7 @@ export class ConversationPipeline {
         // The caller's turn is over, so the cue budget belongs to the
         // next one. Speech-side bookkeeping only — see `considerBackchannelCue`.
         this.backchannelCuesThisTurn = 0;
+        this.backchannelWordsAtLastCue = 0;
 
         // eslint-disable-next-line no-console
         console.log(`[STT:${sid}] Transcript received: "${turn.text.slice(0, 80)}${turn.text.length > 80 ? "..." : ""}" userSpeechMs=${turn.userSpeechMs} sttLagMs=${turn.sttLagMs ?? "n/a"}`);
@@ -3480,10 +3508,14 @@ export class ConversationPipeline {
     // "Wait" / "ek minute" is a request for time. Silence IS the answer
     // to it; an "okay" there reads as impatience.
     if (event.askedForAMoment) return;
-    if (this.backchannelCueInFlight) return;
+    if (this.backchannelCueInFlight || this.backchannelCueDisabled) return;
     if (!this.backchannelCueGatesHold()) return;
-    if (event.text.split(/\s+/).length < BACKCHANNEL_CUE_MIN_WORDS) return;
+    const words = event.text.trim().length === 0 ? 0 : event.text.trim().split(/\s+/).length;
+    if (words < BACKCHANNEL_CUE_MIN_WORDS) return;
     if (this.backchannelCuesThisTurn >= BACKCHANNEL_CUE_MAX_PER_TURN) return;
+    // Speech progress since the last cue, not time: a further cue needs
+    // a fresh clause to acknowledge — see `BACKCHANNEL_CUE_MIN_NEW_WORDS`.
+    if (this.backchannelCuesThisTurn > 0 && words - this.backchannelWordsAtLastCue < BACKCHANNEL_CUE_MIN_NEW_WORDS) return;
     const now = Date.now();
     if (this.lastBackchannelCueAtMs !== 0 && now - this.lastBackchannelCueAtMs < BACKCHANNEL_CUE_MIN_GAP_MS) return;
     // The transport heard the caller loud and near a moment ago: they
@@ -3492,15 +3524,17 @@ export class ConversationPipeline {
       return;
     }
 
-    // Counted as spent whether or not it plays, so a failing TTS
-    // provider cannot be asked again on the very next grace.
-    this.backchannelCuesThisTurn += 1;
-    this.lastBackchannelCueAtMs = now;
+    // Nothing is spent here. The per-turn slot, the word mark and the
+    // gap clock are all stamped where the audio is actually handed to
+    // the transport (`speakBackchannelCue`), so an attempt the re-check
+    // declines — the caller resumed while the first cue of the call was
+    // being synthesised — costs the turn nothing and the next breath is
+    // tried again from the now-warm cache. The one thing that must not
+    // repeat is asking a failing provider: `backchannelCueDisabled`.
     this.backchannelCueInFlight = true;
     const language = this.record.memory.currentLanguage;
     const cue = backchannelCueFor(language, this.backchannelCueIndex);
-    this.backchannelCueIndex += 1;
-    void this.speakBackchannelCue(cue, language, event.text).finally(() => {
+    void this.speakBackchannelCue(cue, language, event.text, words).finally(() => {
       this.backchannelCueInFlight = false;
     });
   }
@@ -3513,7 +3547,12 @@ export class ConversationPipeline {
    * than played into their sentence. The cache means only the first cue
    * of a call can ever be late enough for that to matter.
    */
-  private async speakBackchannelCue(cue: string, language: SupportedLanguage, heldText: string): Promise<void> {
+  private async speakBackchannelCue(
+    cue: string,
+    language: SupportedLanguage,
+    heldText: string,
+    heldWords: number,
+  ): Promise<void> {
     const sid = this.record.id;
     const key = `${language}|${cue}`;
     let audio = this.backchannelCueCache.get(key);
@@ -3526,16 +3565,18 @@ export class ConversationPipeline {
         };
         audio = await this.providers.tts.synthesize(task);
       } catch (error) {
+        this.backchannelCueDisabled = true;
         // eslint-disable-next-line no-console
         console.warn(
-          `[BACKCHANNEL:${sid}] cue "${cue}" not synthesised — ${error instanceof Error ? error.message : String(error)}; the caller simply hears the pause`,
+          `[BACKCHANNEL:${sid}] cue "${cue}" not synthesised — ${error instanceof Error ? error.message : String(error)}; no further cue on this call, the caller simply hears the pause`,
         );
         return;
       }
       const audioMs = estimateAudioSeconds(audio) * 1000;
       if (audio.data.byteLength === 0 || audioMs > BACKCHANNEL_CUE_MAX_AUDIO_MS) {
+        this.backchannelCueDisabled = true;
         // eslint-disable-next-line no-console
-        console.warn(`[BACKCHANNEL:${sid}] cue "${cue}" rejected — ${Math.round(audioMs)}ms of audio is not a cue`);
+        console.warn(`[BACKCHANNEL:${sid}] cue "${cue}" rejected — ${Math.round(audioMs)}ms of audio is not a cue; no further cue on this call`);
         return;
       }
       this.backchannelCueCache.set(key, audio);
@@ -3560,11 +3601,19 @@ export class ConversationPipeline {
       return;
     }
 
+    // Spent HERE, on audio that is actually going out — see the note in
+    // `considerBackchannelCue`. The word mark is the held text as it was
+    // when this cue was decided, so the next cue needs a fresh clause on
+    // top of what this one acknowledged.
+    this.backchannelCuesThisTurn += 1;
+    this.backchannelWordsAtLastCue = heldWords;
+    this.backchannelCueIndex += 1;
+    this.lastBackchannelCueAtMs = Date.now();
     await this.playBackchannelAudio(audio);
     this.lastBackchannelCuePlayedAtMs = Date.now();
     // eslint-disable-next-line no-console
     console.log(
-      `[BACKCHANNEL:${sid}] cue "${cue}" played into the caller's pause (${this.backchannelCuesThisTurn}/${BACKCHANNEL_CUE_MAX_PER_TURN} this turn) — held text: "${heldText.slice(0, 60)}${heldText.length > 60 ? "..." : ""}"`,
+      `[BACKCHANNEL:${sid}] cue "${cue}" played into the caller's pause (${this.backchannelCuesThisTurn}/${BACKCHANNEL_CUE_MAX_PER_TURN} this turn, ${heldWords} words held) — held text: "${heldText.slice(0, 60)}${heldText.length > 60 ? "..." : ""}"`,
     );
   }
 
@@ -4964,18 +5013,28 @@ export class ConversationPipeline {
           // moment it is consulted is added. Observation of a segment
           // already fed; changes nothing about what the detector does
           // with it.
+          //
+          // ...and the caller's BREATH mid-sentence. A final the provider
+          // DID endpoint (~400ms of silence) whose accumulated text still
+          // reads unfinished — "...for quite some time now," — is the
+          // caller drawing breath at a comma, the exact instant a human
+          // listener says "mm-hmm". The detector holds that text for
+          // the full silence window (it is not releasable), so a cue
+          // here can never precede or cause a release; a final whose
+          // text reads FINISHED is a release candidate and is
+          // deliberately not consulted — the caller is done, not
+          // continuing. `readsAsUnfinishedThought` is the detector's own
+          // judgement, read-only.
           if (
             segment.isFinal &&
-            segment.isSpeechFinal === false &&
             segment.text.trim().length > 0 &&
             this.record.state === SessionState.LISTENING
           ) {
-            this.considerBackchannelCue({
-              text: this.record.turnDetector.getPendingTurnText(),
-              graceMs: 0,
-              askedForAMoment: false,
-              turnDurationMs: 0,
-            });
+            const held = this.record.turnDetector.getPendingTurnText();
+            const stillTalking = segment.isSpeechFinal === false || readsAsUnfinishedThought(held);
+            if (stillTalking) {
+              this.considerBackchannelCue({ text: held, graceMs: 0, askedForAMoment: false, turnDurationMs: 0 });
+            }
           }
         }
       } catch {

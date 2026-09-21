@@ -307,20 +307,23 @@ await test("A1. the cue is synthesised and handed to the transport while the ses
   }
 });
 
-await test("A2. the cue lands in the pause — after the silence window, before the turn is released", async () => {
+await test("A2. the cue lands in the caller's breath — before the turn is released, never as a release", async () => {
+  // An endpointed final whose text reads unfinished IS the breath at a
+  // comma (the provider measured ~400ms of silence to endpoint it), so
+  // the cue is consulted on arrival rather than after the silence
+  // window. The detector still holds the text for the full window.
   const h = startHarness({ replies: ["Great, that sounds like a good fit."] });
   try {
     await ready(h);
     const outboundBefore = h.outbound.length;
-    const saidAt = Date.now();
     h.say(LONG_MID_THOUGHT, { isSpeechFinal: true });
     await h.waitFor("the cue to reach the transport", () => h.outbound.length > outboundBefore, CUE_WAIT_MS + 1_000);
-    const cueAt = h.outbound[outboundBefore]!.atMs - saidAt;
-    assert.ok(cueAt >= SILENCE_WINDOW_MS - 150, `a cue must never land before the caller has been quiet for the silence window: ${cueAt}ms`);
+    assert.equal(h.outbound[outboundBefore]!.state, SessionState.LISTENING);
     // No language-model request exists yet: the turn has not been released.
     assert.equal(h.requests.length, 0, "the cue precedes the release, so no request has been made yet");
+    assert.equal(h.record.turnDetector.getPendingTurnText(), LONG_MID_THOUGHT, "the detector is still holding the caller's text");
     await h.waitForReplies(2, 8_000);
-    assert.ok(h.requests.length >= 1, "...and the turn is still released and answered afterwards");
+    assert.ok(h.requests.length >= 1, "...and the turn is still released and answered afterwards, by the detector alone");
   } finally {
     await h.stop();
   }
@@ -555,6 +558,195 @@ await test("G3. short chunk-boundary finals draw no cue — the word floor still
     h.say("maybe on Sunday.", { isFinal: true, isSpeechFinal: true });
     await h.waitForReplies(2, 8_000);
     assert.ok(!h.synthesized.some(isCue), `a six-word turn must draw no cue: ${JSON.stringify(h.synthesized)}`);
+  } finally {
+    await h.stop();
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════
+section("G4-G11. A GENUINELY LONG UTTERANCE GETS SEVERAL SPARSE CUES AT ITS BREATH POINTS");
+
+/** The reported utterance, as a caller actually delivers it: breath at the commas, chunks between. */
+const LONG_UTTERANCE: ReadonlyArray<{ text: string; isSpeechFinal: boolean }> = [
+  { text: "Yes, actually I'm interested in the event because I've been working on my business for quite some time now,", isSpeechFinal: true },
+  { text: "but honestly I've been struggling to understand", isSpeechFinal: false },
+  { text: "how I can use AI properly in my daily work,", isSpeechFinal: true },
+  { text: "because there are so many different tools available", isSpeechFinal: false },
+  // Reads as a complete clause, so a real breath here would (correctly)
+  // release the turn — the caller runs straight on instead.
+  { text: "and I'm not really sure", isSpeechFinal: false },
+  { text: "which ones would actually be useful", isSpeechFinal: false },
+  { text: "for my business and", isSpeechFinal: true },
+  { text: "for the people I work with as well.", isSpeechFinal: true },
+];
+/** A realistic breath between clauses: well under the detector's release path (~3s after an unfinished endpoint). */
+const BREATH_MS = 1_300;
+const MAX_PER_TURN = 3;
+const MIN_GAP_MS = 3_500;
+
+async function driveLongUtterance(h: Harness): Promise<{ cues: OutboundChunk[]; requestsBeforeRelease: number }> {
+  const outboundBefore = h.outbound.length;
+  for (let i = 0; i < LONG_UTTERANCE.length - 1; i += 1) {
+    h.say(LONG_UTTERANCE[i]!.text, { isFinal: true, isSpeechFinal: LONG_UTTERANCE[i]!.isSpeechFinal });
+    await sleep(BREATH_MS);
+  }
+  const requestsBeforeRelease = h.requests.length;
+  h.say(LONG_UTTERANCE[LONG_UTTERANCE.length - 1]!.text, { isFinal: true, isSpeechFinal: true });
+  await h.waitForReplies(2, 10_000);
+  return { cues: h.outbound.slice(outboundBefore).filter((c) => c.state === SessionState.LISTENING), requestsBeforeRelease };
+}
+
+await test("G4. a genuinely long multi-segment utterance with breath points produces MORE THAN ONE cue", async () => {
+  const h = startHarness({ replies: ["Great, that sounds like a good fit."] });
+  try {
+    await ready(h);
+    const { cues } = await driveLongUtterance(h);
+    assert.ok(cues.length >= 2, `a ~65-word answer with breath points must draw more than one cue, saw ${cues.length}`);
+    assert.ok(cues.length <= MAX_PER_TURN, `...and never more than ${MAX_PER_TURN}, saw ${cues.length}`);
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("G5. cues stay spaced — never inside the gap floor, and each one after fresh speech", async () => {
+  const h = startHarness({ replies: ["Great, that sounds like a good fit."] });
+  try {
+    await ready(h);
+    const { cues } = await driveLongUtterance(h);
+    assert.ok(cues.length >= 2, `need at least two cues to measure spacing, saw ${cues.length}`);
+    for (let i = 1; i < cues.length; i += 1) {
+      const gap = cues[i]!.atMs - cues[i - 1]!.atMs;
+      assert.ok(gap >= MIN_GAP_MS - 150, `cue ${i + 1} landed ${gap}ms after cue ${i}; the floor is ${MIN_GAP_MS}ms`);
+    }
+    // Rotation: no two consecutive cues are the same word.
+    const spoken = h.synthesized.filter(isCue);
+    for (let i = 1; i < spoken.length; i += 1) assert.notEqual(spoken[i], spoken[i - 1], "no mm-hmm... mm-hmm... pattern");
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("G6. every cue is played while the session is still LISTENING — no SPEAKING transition, no barge-in", async () => {
+  const h = startHarness({ replies: ["Great, that sounds like a good fit."] });
+  try {
+    await ready(h);
+    const transitionsBefore = h.transitions.length;
+    const outboundBefore = h.outbound.length;
+    for (let i = 0; i < LONG_UTTERANCE.length - 1; i += 1) {
+      h.say(LONG_UTTERANCE[i]!.text, { isFinal: true, isSpeechFinal: LONG_UTTERANCE[i]!.isSpeechFinal });
+      await sleep(BREATH_MS);
+    }
+    const during = h.outbound.slice(outboundBefore);
+    assert.ok(during.length >= 2, `cues were played during the utterance, saw ${during.length}`);
+    assert.ok(during.every((c) => c.state === SessionState.LISTENING), "every cue in LISTENING");
+    assert.equal(h.transitions.length, transitionsBefore, `no state transition during the caller's utterance: ${JSON.stringify(h.transitions.slice(transitionsBefore))}`);
+    assert.ok(h.transitions.every((t) => !/barge.?in/i.test(t.reason ?? "")), "no barge-in");
+    h.say(LONG_UTTERANCE[LONG_UTTERANCE.length - 1]!.text, { isFinal: true, isSpeechFinal: true });
+    await h.waitForReplies(2, 10_000);
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("G7. no cue releases the turn — the whole utterance is ONE turn, released by the detector at the end", async () => {
+  const h = startHarness({ replies: ["Great, that sounds like a good fit."] });
+  try {
+    await ready(h);
+    const { cues, requestsBeforeRelease } = await driveLongUtterance(h);
+    assert.ok(cues.length >= 2);
+    assert.equal(requestsBeforeRelease, 0, "nothing was released while the caller was talking");
+    const userTurns = h.history().filter((t) => t.role === "user").map((t) => t.content);
+    assert.deepEqual(userTurns, [LONG_UTTERANCE.map((s) => s.text).join(" ")], "one turn, every word kept, in order");
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("G8. no language-model request is caused by a cue — exactly one request, for the turn", async () => {
+  const h = startHarness({ replies: ["Great, that sounds like a good fit."] });
+  try {
+    await ready(h);
+    const { cues } = await driveLongUtterance(h);
+    assert.ok(cues.length >= 2);
+    assert.equal(h.requests.length, 1, "one request: the caller's completed turn");
+    const assistantTurns = h.history().filter((t) => t.role === "assistant").map((t) => t.content);
+    assert.equal(assistantTurns.length, 2, "greeting + one reply — no cue in history");
+    assert.ok(assistantTurns.every((t) => !isCue(t)));
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("G9. short and medium utterances still draw nothing, or at most one where the caller is plainly continuing", async () => {
+  for (const line of ["Yes.", "Okay.", "Yeah.", "Actually yes, I am interested."]) {
+    const h = startHarness({ replies: ["Perfect."] });
+    try {
+      await ready(h);
+      h.say(line, { isSpeechFinal: true });
+      await h.waitForReplies(2, 5_000);
+      assert.equal(h.synthesized.filter(isCue).length, 0, `"${line}" must draw no cue`);
+    } finally {
+      await h.stop();
+    }
+  }
+  // A complete medium sentence, endpointed: the caller is done, so it is
+  // not even consulted.
+  const done = startHarness({ replies: ["Perfect."] });
+  try {
+    await ready(done);
+    done.say("Yes, I would like to join the session on Sunday morning please.", { isSpeechFinal: true });
+    await done.waitForReplies(2, 5_000);
+    assert.equal(done.synthesized.filter(isCue).length, 0, "a finished medium answer draws no cue");
+  } finally {
+    await done.stop();
+  }
+  // A medium sentence that pauses at a comma and continues: one cue at most.
+  const continuing = startHarness({ replies: ["Perfect."] });
+  try {
+    await ready(continuing);
+    continuing.say("Yes, I would like to join the session on Sunday,", { isSpeechFinal: true });
+    await sleep(BREATH_MS);
+    continuing.say("if it is really free.", { isSpeechFinal: true });
+    await continuing.waitForReplies(2, 8_000);
+    assert.ok(continuing.synthesized.filter(isCue).length <= 1, "a normal sentence never gets several acknowledgements");
+  } finally {
+    await continuing.stop();
+  }
+});
+
+await test("G10. echo protection still holds on the new trigger — our own 'Hmm.' after a breath-point cue is dropped", async () => {
+  const h = startHarness({ replies: ["Great, that sounds like a good fit."] });
+  try {
+    await ready(h);
+    const outboundBefore = h.outbound.length;
+    h.say(LONG_UTTERANCE[0]!.text, { isSpeechFinal: true });
+    await h.waitFor("the cue to reach the transport", () => h.outbound.length > outboundBefore, 2_000);
+    await sleep(300);
+    h.say("Hmm.", { isSpeechFinal: true });
+    await sleep(200);
+    h.say("but honestly I have been struggling with the tools.", { isSpeechFinal: true });
+    await h.waitForReplies(2, 8_000);
+    const userTurns = h.history().filter((t) => t.role === "user").map((t) => t.content);
+    assert.deepEqual(userTurns, [`${LONG_UTTERANCE[0]!.text} but honestly I have been struggling with the tools.`], `the echo must not enter the turn: ${JSON.stringify(userTurns)}`);
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("G11. barge-in is unchanged — a caller talking over the reply still interrupts it, and no cue is played in SPEAKING", async () => {
+  const longReply =
+    "That is really good to hear, and it is exactly the kind of situation this event is built for, because we walk through the tools one at a time and show where each one fits into a normal working day.";
+  const h = startHarness({ replies: [longReply, "Sure, go ahead."] });
+  try {
+    await ready(h);
+    h.say(LONG_UTTERANCE[0]!.text, { isSpeechFinal: true });
+    await h.waitFor("the reply to start playing", () => h.record.state === SessionState.SPEAKING, 8_000);
+    await sleep(400);
+    const outboundBefore = h.outbound.length;
+    h.say("Wait, I have a question about the price.", { isSpeechFinal: true });
+    await h.waitFor("the barge-in", () => h.transitions.some((t) => /barge.?in/i.test(t.reason ?? "")), 3_000);
+    assert.ok(h.outbound.slice(outboundBefore).every((c) => c.state !== SessionState.LISTENING), "no cue was played around the interruption");
+    await h.waitForReplies(3, 10_000);
   } finally {
     await h.stop();
   }

@@ -68,6 +68,23 @@ Fix — `turn-detection.ts` + `conversation-pipeline.ts`:
   unchanged. Delivery path verified: every production TTS `synthesize` returns
   PCM_16, which the bridge encodes regardless of state. backchannel-cue suite
   16/16 (G1–G3 added).
+- **2026-09-21 follow-up (timing / frequency):** a ~65-word answer drew one
+  late cue. Two causes, both in the pipeline: (a) the hook skipped ENDPOINTED
+  finals, i.e. the caller's breath at a comma — the natural cue point — while
+  the chunk boundaries it did consult arrive mid-speech and are (correctly)
+  declined by the recent-energy gate; (b) `considerBackchannelCue` spent the
+  per-turn slot and started the 6s cooldown at ATTEMPT time, so the first
+  attempt of a call (a TTS round trip, then dropped because the caller
+  resumed) burned one of two slots and 6s. Changes: the hook now also consults
+  an endpointed final whose held text `readsAsUnfinishedThought` (new read-only
+  export of the detector's own `looksIncomplete`; a finished clause is never
+  consulted); slots, the word mark and the gap clock are stamped only when
+  audio is handed to the transport, with `backchannelCueDisabled` keeping a
+  failing provider asked once; cap 2→3 per turn; a further cue needs
+  `BACKCHANNEL_CUE_MIN_NEW_WORDS` (8) of fresh speech since the last one plus a
+  `BACKCHANNEL_CUE_MIN_GAP_MS` floor of 3.5s derived from the cue audio bound
+  (1.5s) + echo window (2s). No detector window, release, barge-in or playback
+  code changed. backchannel-cue 24/24 (A2 re-pointed; G4–G11 added).
 
 ### 2. Long turns released before the caller finished
 

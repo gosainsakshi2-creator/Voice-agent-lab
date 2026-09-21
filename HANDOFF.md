@@ -37,6 +37,39 @@ retry planner, schema, recording.
    opening's tail is never dropped; D2/D3 still pin that). A hello said
    AFTER the opening finished is still re-asked (D10b). identity-gate 42/42
    (D10 rewritten, D10b–D10e added).
+   **Follow-up, same day, after commit `a29c5e0` went live:** call 09b85194
+   (13:48 UTC) still drew "Sorry —" because Deepgram (`language: "multi"`)
+   wrote the pickup "hello" as **"ഹലോ."** (Malayalam). Traced read-only:
+   the turn's lifecycle was single and correct (heard during the opening →
+   allowance set → released into `pendingEvent` → consumed ONCE by the
+   first loop iteration); only the whole-utterance greeting predicate
+   rejected the spelling, so the turn fell through to the gate. No buffer
+   replay. Across 1,024 stored calls the first caller utterance was
+   "hello" 440×, "aló" 31×, "¿aló" 12×, "ഹലോ" 7×, "allô" 4×, "hola",
+   "ಹಲೋ", "हॅलो". `PICKUP_GREETING_ONLY` now carries those renderings and
+   the same word in the other Indic scripts, admits leading "¿", and is
+   consulted on v1–v7 openings too. Still no affirmation, name or question
+   word, so "Yes, hello" / "hello Rohan" / "Hello, who is this?" reach the
+   gate. identity-gate 46/46 (D10f–D10i added: "Hi", Deepgram spellings,
+   single-lifecycle/no-replay, later hello is not a pickup). Not touched:
+   `BARE_GREETING_ONLY`, `ATTENTION_FILLER`, `HEARING_GREETINGS`, the
+   identity classifier — mid-call hello handling is byte-identical.
+   **Root cause of the wrong-script transcripts (read-only STT audit,
+   same day):** live STT is Soniox (238 attempts since 17 Sep); every
+   campaign is stored `en`; `sonioxLanguageHints(ENGLISH)` was `["en"]`,
+   so the Hindi half of the audio was unhinted and the model free-detected
+   short utterances into Malayalam / Gurmukhi / Kannada / Urdu / Gujarati
+   (54 of ~800 Soniox caller turns). **Fix (one provider, one line):**
+   `soniox.provider.ts` `sonioxLanguageHints` — ENGLISH → `["hi", "en"]`;
+   HINDI `["hi"]` and HINGLISH `["hi", "en"]` unchanged. Hints bias, not
+   restrict. soniox-stt 60/60 (H1/H3 re-pinned, H4 added: only the hint
+   differs between languages in the config frame). Campaign language, UI,
+   defaults, lock, stream lifecycle untouched. **Deepgram NOT changed:**
+   its stream has had `language: "multi"` hard-coded since `add1821`
+   (12 Aug, "modified system prompt :)") in place of the campaign tag,
+   which produced the "aló / ¿aló / allô / hola" pickups (107 turns) —
+   separate change, after the Soniox result is attributable on real
+   calls. **Real-call verification still required** for both.
 2. **Script repetition.** No pipeline path re-speaks script unasked beyond
    (1) and barge-in-driven regeneration (4/5). New `test:script-repetition`
    (7/7) pins: hello / normal / fragmented answer after a block → no replay,

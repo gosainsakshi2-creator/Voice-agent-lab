@@ -457,9 +457,25 @@ const BARE_GREETING_ONLY =
  * the reason `ATTENTION_FILLER` gives: the other tables are read by the
  * backchannel, supersession and attention paths, which this must leave
  * byte-identical.
+ *
+ * THE SPELLINGS ARE DEEPGRAM'S, NOT THE CALLER'S. The STT stream runs
+ * with `language: "multi"`, and the multilingual model writes a
+ * one-word "hello" in whatever language it guesses for it. Verified on
+ * real calls (2026-09-21, 1,024 stored calls with a caller turn): the
+ * first utterance was "hello" 440 times, and "aló" 31, "¿aló" 12,
+ * "ഹലോ" 7, "allô" 4, "aló aló" / "aló ¿aló" / "hola" 2 each, "ಹಲೋ",
+ * "हॅलो" — every one of them the caller's pickup "hello", and every one
+ * rejected by a Latin-plus-Devanagari table, so the turn fell through
+ * to the identity gate as `unclear` and drew "Sorry — am I speaking
+ * with…?" (call 09b85194: opening → "ഹലോ." → "Sorry —"). So this table
+ * carries the observed renderings plus the same word in the other Indic
+ * scripts the model emits, and the punctuation class admits the Spanish
+ * inverted marks it attaches. Still greeting words only: no affirmation,
+ * no name, no question word, so "Yes, hello", "hello Rohan" and
+ * "Hello, who is this?" all still reach the gate.
  */
 const PICKUP_GREETING_ONLY =
-  /^(?:(?:hello|hallo|helo|hullo|hi|hii+|hey|namaste|namaskar|हैलो|हेलो|नमस्ते|नमस्कार)[\s,.!?…।-]*)+$/iu;
+  /^[\s,.!?¿¡…।-]*(?:(?:hello|hallo|helo|hullo|hi|hii+|hey|namaste|namaskar|alo|aló|allo|allô|hola|हैलो|हेलो|हॅलो|नमस्ते|नमस्कार|ഹലോ|ഹെലോ|ಹಲೋ|ಹಲೊ|హలో|ஹலோ|હેલો|હલો|ਹੈਲੋ|ਹਲੋ|হ্যালো|হেলো|ہیلو)[\s,.!?¿¡…।-]*)+$/iu;
 
 /**
  * ---------------- "Hello? Can you hear me?" ----------------
@@ -2737,9 +2753,13 @@ export class ConversationPipeline {
           // An identity-first opening is a QUESTION, so only a pure
           // greeting is the phone being answered; anything that could
           // be its answer goes on to the gate. See `PICKUP_GREETING_ONLY`.
+          // Both branches accept every greeting rendering Deepgram's
+          // multilingual model is known to produce (`PICKUP_GREETING_ONLY`);
+          // a bare acknowledgement is a pickup only when the opening
+          // asked nothing.
           const isPickup = this.openingAsksIdentity
             ? PICKUP_GREETING_ONLY.test(pickup)
-            : BARE_GREETING_ONLY.test(pickup) || isBareAcknowledgement(pickup);
+            : PICKUP_GREETING_ONLY.test(pickup) || BARE_GREETING_ONLY.test(pickup) || isBareAcknowledgement(pickup);
           if (isPickup) {
             // Nothing is pre-opened here in practice — the detector's
             // pending hook only fires while the main loop is awaiting a

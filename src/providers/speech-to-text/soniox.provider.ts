@@ -88,13 +88,28 @@ export const SONIOX_END_TOKEN = "<end>";
  * the audio is the Hindi/English it actually is.
  *
  * Derived from the session's own language rather than hard-coded, so
- * an English campaign biases to English alone and a Hinglish one
- * carries both — which is what code-switching mid-sentence needs.
+ * a Hindi campaign biases to Hindi alone and a Hinglish one carries
+ * both — which is what code-switching mid-sentence needs.
+ *
+ * AN ENGLISH CAMPAIGN HINTS BOTH TOO (2026-09-21). Every campaign on
+ * this deployment is stored as `en` (the form offers English and
+ * Hindi, defaults to English, and its own help text says the language
+ * is "opening language only"), yet the calls are answered in English,
+ * Hindi and Hinglish alike. With `["en"]` the Hindi half of the audio
+ * was unhinted, and on real calls the model resolved a one-word pickup
+ * or acknowledgement to an unrelated language and script — 54 of ~800
+ * Soniox caller turns arrived as Malayalam ("ഹലോ"), Gurmukhi ("ਹਾਂ
+ * ਜੀ"), Kannada, Urdu, Gujarati, Telugu or Bengali, and every
+ * downstream vocabulary then failed on them. Hints bias rather than
+ * restrict, so English speech is still English; this only tells the
+ * model which second language this deployment actually hears. The
+ * campaign's stored language, the lock and the stream lifecycle are
+ * unchanged — the hint is sent once, at connection, exactly as before.
  */
 export function sonioxLanguageHints(language: SupportedLanguage): readonly string[] {
   switch (language) {
     case SupportedLanguage.ENGLISH:
-      return ["en"];
+      return ["hi", "en"];
     case SupportedLanguage.HINDI:
       return ["hi"];
     case SupportedLanguage.HINGLISH:

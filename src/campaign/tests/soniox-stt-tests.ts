@@ -532,7 +532,12 @@ await test("O9. the override is read ONLY at the stack-resolution point", () => 
 section("A3. Language hints — the Punjabi fix");
 
 await test("H1. hints are derived from the session language", () => {
-  assert.deepEqual(sonioxLanguageHints(SupportedLanguage.ENGLISH), ["en"]);
+  // 2026-09-21: an ENGLISH campaign hints both. Every campaign on this
+  // deployment is stored as `en` while the calls are answered in
+  // English, Hindi and Hinglish; with `["en"]` alone the model resolved
+  // short Hindi utterances to Malayalam / Gurmukhi / Kannada / Urdu
+  // scripts on real calls. Hints bias, they do not restrict.
+  assert.deepEqual(sonioxLanguageHints(SupportedLanguage.ENGLISH), ["hi", "en"]);
   assert.deepEqual(sonioxLanguageHints(SupportedLanguage.HINDI), ["hi"]);
   // Hinglish mixes both INSIDE one sentence, so hinting one biases
   // against the other half of the same utterance.
@@ -551,9 +556,10 @@ await test("H2. no hint set ever contains a language we do not speak", () => {
 });
 
 await test("H3. the config frame actually SENDS the hints", async () => {
+  const frames: Record<string, unknown>[] = [];
   for (const [lang, expected] of [
     [SupportedLanguage.HINDI, ["hi"]],
-    [SupportedLanguage.ENGLISH, ["en"]],
+    [SupportedLanguage.ENGLISH, ["hi", "en"]],
     [SupportedLanguage.HINGLISH, ["hi", "en"]],
   ] as const) {
     const sock = new MockSocket();
@@ -570,9 +576,20 @@ await test("H3. the config frame actually SENDS the hints", async () => {
     sock.emit("open");
     await sleep(10);
     assert.deepEqual(sock.config!["language_hints"], expected, `language ${lang}`);
+    frames.push(sock.config!);
     held.release();
     await done;
   }
+  // H4. The hint is the ONLY thing the session language changes about
+  // the config frame: every other option is identical across the three
+  // languages, so widening the English hint moved nothing else.
+  const withoutHints = (frame: Record<string, unknown>) => {
+    const { language_hints: _hints, ...rest } = frame;
+    return rest;
+  };
+  assert.deepEqual(withoutHints(frames[1]!), withoutHints(frames[0]!), "English frame differs from Hindi only in hints");
+  assert.deepEqual(withoutHints(frames[2]!), withoutHints(frames[0]!), "Hinglish frame differs from Hindi only in hints");
+  assert.ok("model" in frames[0]! && "audio_format" in frames[0]! && "enable_endpoint_detection" in frames[0]!, "the connection options are still sent");
 });
 
 // ═════════════════════════════════════════════════════════════════

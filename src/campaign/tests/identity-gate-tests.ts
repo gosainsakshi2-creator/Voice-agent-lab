@@ -846,6 +846,73 @@ await test("D10e. 'Hello? Who is this?' over the opening is not a pickup: it is 
   assert.ok(idAsks(r.spoken) >= 1, "a real question back is not a greeting");
 });
 
+await test("D10f. 'Hi' over the opening is the pickup too", async () => {
+  const r = await idFirst(["Hi.", "Yes."]);
+  assert.equal(idAsks(r.spoken), 0, "not re-asked");
+  assert.equal(r.llmRequests, 1);
+  assert.equal(r.lastUserSentToLlm, "Yes.");
+});
+
+await test("D10g. DEEPGRAM'S OWN SPELLINGS of the pickup hello are the pickup — the STT runs `language: multi` and writes 'hello' in whatever language it guesses", async () => {
+  // Real call 09b85194 (2026-09-21 13:48 UTC): opening → "ഹലോ." →
+  // "Sorry — Am I speaking with Sakshi Gosain?". Across 1,024 stored
+  // calls the first caller utterance was "aló" 31 times, "¿aló" 12,
+  // "ഹലോ" 7, "allô" 4, "ಹಲೋ" and "हॅलो" — every one the caller saying
+  // hello, every one rejected by a Latin-and-Devanagari table.
+  for (const rendering of ["ഹലോ.", "ഹലോ .", "Aló.", "¿Aló?", "Aló, ¿aló?", "Allô.", "ಹಲೋ.", "हॅलो.", "Hola."]) {
+    const r = await idFirst([rendering, "Yes."]);
+    assert.equal(idAsks(r.spoken), 0, `"${rendering}" over the opening must not re-ask the question`);
+    assert.equal(r.spoken.filter((t) => t.startsWith("Sorry")).length, 0, `no "Sorry —" after "${rendering}"`);
+    assert.equal(r.llmRequests, 1, `"${rendering}" then "Yes." opens the gate once`);
+    assert.equal(r.lastUserSentToLlm, "Yes.");
+  }
+});
+
+await test("D10h. the consumed pickup greeting has ONE lifecycle: it is never committed, replayed, or shown to the model", async () => {
+  const h = startHarness({ openingLine: ID_FIRST_OPEN, identityLine: ID_LINE, replies: [PITCH], replyDelayMs: 0 });
+  try {
+    h.say("Hello.", { isFinal: true, isSpeechFinal: true });
+    await h.waitFor("the opening to finish", () => h.replyCount() >= 1 && h.record.state === SessionState.LISTENING);
+    await sleep(1500);
+    assert.deepEqual(
+      h.history().filter((t) => t.role === "user").map((t) => t.content),
+      [],
+      "the pickup hello is not a committed user turn",
+    );
+    assert.equal(h.requests.length, 0, "nothing reached the model");
+    assert.equal(idAsks(h.synthesized), 0, "nothing was re-asked");
+    h.say("Yes.", { isFinal: true, isSpeechFinal: true });
+    await h.waitForReplies(2);
+    assert.deepEqual(h.history().filter((t) => t.role === "user").map((t) => t.content), ["Yes."], "the answer is the first and only committed turn");
+    assert.equal(h.requests.length, 1);
+    assert.ok(
+      !h.requests[0]!.some((t) => t.role === "user" && /hello/iu.test(t.content)),
+      "the model never sees the pickup hello — not replayed from any buffer",
+    );
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("D10i. a 'Hello' LATER in the call is not a pickup: it is committed and handled on the normal path", async () => {
+  const h = startHarness({ openingLine: ID_FIRST_OPEN, identityLine: ID_LINE, replies: [PITCH, "Yes, I'm here — shall I continue?"], replyDelayMs: 0 });
+  try {
+    await h.waitFor("the opening to finish", () => h.replyCount() >= 1 && h.record.state === SessionState.LISTENING);
+    await sleep(200);
+    h.say("Yes.", { isFinal: true, isSpeechFinal: true });
+    await h.waitForReplies(2);
+    h.say("Hello.", { isFinal: true, isSpeechFinal: true });
+    await h.waitFor("the later hello to be committed", () =>
+      h.history().some((t) => t.role === "user" && t.content === "Hello."),
+    );
+    await h.waitForReplies(3);
+    assert.equal(h.requests.length, 2, "the later hello took the ordinary path (one request for it)");
+    assert.equal(idAsks(h.synthesized), 0, "the confirmed gate never re-asks");
+  } finally {
+    await h.stop();
+  }
+});
+
 await test("D11. a repeated 'Yes.' does not ask, introduce or pitch twice", async () => {
   const r = await idFirst(["Yes.", "Yes."]);
   assert.equal(idAsks(r.spoken), 0, "the confirmed gate never asks again");

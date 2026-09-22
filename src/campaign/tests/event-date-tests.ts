@@ -255,8 +255,10 @@ test("C3. no OTHER registered script silently gained a date", () => {
   // v13 declares 2026-09-22T20:00:00+05:30 for the same reason — a
   // single-evening implementation session, dialled on the day it runs,
   // which makes the clock blocker load-bearing rather than decorative.
+  // v14 is the same session for a different audience, so it declares the
+  // same instant, and the two are asserted equal in the v14 suite.
   assert.deepEqual(declaring, [
-    "registration/v6", "registration/v13", "registration/v12",
+    "registration/v6", "registration/v13", "registration/v14", "registration/v12",
     "registration/v11", "registration/v10", "registration/v9",
   ]);
 });

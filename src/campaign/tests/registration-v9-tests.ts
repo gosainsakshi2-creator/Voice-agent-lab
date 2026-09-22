@@ -179,10 +179,13 @@ test("A2. v6 is STILL the default — v9 is a different event, not a newer revis
   // position is read by nothing but `defaultScriptFor`, which still
   // takes v6.
   assert.equal(registration[1]?.version, "v13");
-  assert.equal(registration[2]?.version, "v12");
-  assert.equal(registration[3]?.version, "v11");
-  assert.equal(registration[4]?.version, "v10");
-  assert.equal(registration[5]?.version, "v9");
+  // `registration v14` is v13's sibling — the same session for people who
+  // did NOT attend the two-day event — registered under it on 2026-09-22.
+  assert.equal(registration[2]?.version, "v14");
+  assert.equal(registration[3]?.version, "v12");
+  assert.equal(registration[4]?.version, "v11");
+  assert.equal(registration[5]?.version, "v10");
+  assert.equal(registration[6]?.version, "v9");
 });
 
 test("A3. v9 uses ONLY variables the campaign layer can supply", () => {

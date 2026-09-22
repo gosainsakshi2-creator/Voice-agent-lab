@@ -1,22 +1,27 @@
 /**
- * registration-v13-tests.ts — `npm run test:registration-v13`
+ * registration-v14-tests.ts — `npm run test:registration-v14`
  *
- * THE IMPLEMENTATION SESSION SCRIPT: ATTENDEES ONLY, v12'S SHAPE.
+ * THE SAME SESSION AS v13, THE OPPOSITE AUDIENCE: NOT ATTENDEES.
  *
- * v13 invites the people who attended the two-day AI Income Blueprint
- * event to its implementation session, tonight at 8 PM. It reuses v12's
- * two-exchange shape wholesale, so beyond the checks every script of this
- * family gets — the gate registers, nothing before it does, every
- * terminal branch ends the call, no leak, no invented fact — this suite
- * pins the three things that are NEW and could therefore go wrong:
+ * v14 is v13's sibling — same event, same gate, same shape — for people
+ * who did not attend the two-day AI Income Blueprint event. So beyond
+ * the checks every script of this family gets (the gate registers,
+ * nothing before it does, every terminal branch ends the call, no leak,
+ * no invented fact), this suite pins the FOUR things that separate it
+ * from v13, each of which is a false statement about the person or the
+ * offer if it decays:
  *
- *   - the discovery question is not v12's and had to be re-proved safe in
- *     both directions and both renderings (section C);
- *   - "you were at our two-day event" is allowed while "you'd shown
- *     interest" is still forbidden — a distinction one careless edit
- *     collapses (section E);
- *   - the session is attendees-only, so "I didn't attend" must not
- *     register anyone (section D).
+ *   - v13's attendance claim is GONE and forbidden by name (section E);
+ *   - the 2-extra-days tool-access promise is GONE, because a
+ *     non-attendee has no access to extend (section E);
+ *   - eligibility is never asserted either way — it routes to "I don't
+ *     have that detail" (section E);
+ *   - the discovery question and bridge are v12's, and its Hinglish
+ *     appears in ONE form in both the appendix and the body — the drift
+ *     that has had v12's own B1 failing (section B).
+ *
+ * v13 IS ASSERTED UNCHANGED, by hash. It is the script a real campaign
+ * runs; this file existing must not move it.
  *
  * Everything here is deterministic — the instruction and the real
  * readers. What the model says on a live call is a distribution and is
@@ -62,42 +67,39 @@ function test(name: string, fn: () => void): void {
 
 const section = (title: string) => console.log(`\n${title}`);
 
+const V14 = findScript("registration", "v14");
+assert.ok(V14, "registration v14 must be registered before this suite can run");
 const V13 = findScript("registration", "v13");
-assert.ok(V13, "registration v13 must be registered before this suite can run");
+assert.ok(V13, "registration v13 must still be registered — v14 is its sibling");
 const V12 = findScript("registration", "v12");
-assert.ok(V12, "registration v12 must still be registered — v13 keeps its shape");
+assert.ok(V12, "registration v12 must still be registered — v14 restores its framing");
 
-const APPENDIX = V13.systemPromptAppendix;
+const APPENDIX = V14.systemPromptAppendix;
 const FLAT = APPENDIX.toLowerCase().replace(/\s+/gu, " ");
 const BODY = APPENDIX.slice(APPENDIX.indexOf("--- SCRIPT ---"));
+const HEAD = APPENDIX.slice(0, APPENDIX.indexOf("--- SCRIPT ---"));
 
 // ── The lines this campaign actually speaks ──────────────────────
 const FULL_NAME = "Rahul Sharma";
 const NAME = "Rahul";
 const OPENING = `Hello, am I speaking with ${FULL_NAME}?`;
 const FIRST_EN =
-  `Hi ${NAME}, I'm Ishita from FlexiFunnels. You were at our two-day AI Income Blueprint event, and tonight ` +
-  `at 8 we're doing the implementation session — where we set your funnel up live, on your own screen. ` +
-  `Have you had a chance to start setting anything up since the event?`;
+  `Hi ${NAME}, I'm Ishita from FlexiFunnels. We're doing a free live session tonight at 8 where we set up ` +
+  `your pages, your funnel and your payments with you — live, on your own screen. ` +
+  `Have you tried putting something online before?`;
 const FIRST_HI =
-  `Hi ${NAME}, I'm Ishita from FlexiFunnels. Aap humare do din ke AI Income Blueprint event mein the — aaj ` +
-  `raat 8 baje uska implementation session hai, jisme hum aapka funnel live set up karte hain, aapki hi ` +
-  `screen pe. Event ke baad aapne kuch setup karna shuru kiya hai?`;
-const DISCOVERY_EN = "Have you had a chance to start setting anything up since the event?";
-const DISCOVERY_HI = "Event ke baad aapne kuch setup karna shuru kiya hai?";
-const DISCOVERY_DEV = "इवेंट के बाद आपने कुछ setup करना शुरू किया है?";
-const BRIDGE_EN =
-  "It's free for everyone who came to the two days, and reserving also extends your free tool access by two more days.";
-const BRIDGE_HI =
-  "Jo log do din wale event mein the, unke liye ye free hai, aur reserve karne pe free tool access do din aur badh jaata hai.";
+  `Hi ${NAME}, I'm Ishita from FlexiFunnels. Aaj raat 8 baje humara ek free live session hai, jisme hum ` +
+  `aapke pages, funnel aur payments aapke saath set up karte hain — live, aapki hi screen pe. ` +
+  `Aapne pehle kabhi kuch online daalne ki try ki hai?`;
+const DISCOVERY_EN = "Have you tried putting something online before?";
+const DISCOVERY_HI = "Aapne pehle kabhi kuch online daalne ki try ki hai?";
+const DISCOVERY_DEV = "आपने पहले कभी कुछ online डालने की try की है?";
+const BRIDGE_EN = "You won't need any coding or design skills for this.";
+const BRIDGE_HI = "Iske liye koi coding ya design skill nahi chahiye.";
 const GATE_EN = "Would you like me to reserve your free seat?";
 const GATE_HI = "Toh kya main aapki free seat reserve kar du?";
-const YES_EN =
-  `Perfect, ${NAME} — your free seat is reserved for tonight at 8 PM, and your free tool access gets the ` +
-  `two extra days. Do join a few minutes early. Hope to see you there!`;
-const YES_HI =
-  `Perfect, ${NAME} — aapki free seat confirm ho gayi hai, aaj raat 8 baje ke liye, aur tool access ke do ` +
-  `extra din bhi. Thoda pehle join kar lena. Hope to see you there!`;
+const YES_EN = `Perfect, ${NAME} — your free seat is reserved for tonight at 8 PM. Do join a few minutes early. Hope to see you there!`;
+const YES_HI = `Perfect, ${NAME} — aapki free seat confirm ho gayi hai, aaj raat 8 baje ke liye. Thoda pehle join kar lena. Hope to see you there!`;
 const NO_BLOCK = `Okay, no problem at all. Thanks for your time, ${NAME}. Have a great day!`;
 const ALREADY_EN = "Oh, that's great — then you're all set for tonight at 8 PM. Do join a few minutes early.";
 const GOODBYE = `Thanks for your time, ${NAME}. Have a great day!`;
@@ -145,32 +147,35 @@ const happyPath = (first: string, said: string, bridge: string, gate: string, ye
 // ═════════════════════════════════════════════════════════════════
 section("A. REGISTERED, SELECTABLE, NOT THE DEFAULT, AND DATED");
 
-test("A1. v13 is a registration script, approved, name-requiring, dated, and first after v6", () => {
-  assert.equal(V13.version, "v13");
-  assert.equal(V13.isPlaceholder, false);
-  assert.equal(V13.requiresName, true);
-  assert.equal(V13.eventAt, "2026-09-22T20:00:00+05:30");
-  assert.equal(defaultScriptFor("registration").version, "v6", "v13 must not become the default");
+test("A1. v14 is a registration script, approved, name-requiring, dated, and listed under v13", () => {
+  assert.equal(V14.version, "v14");
+  assert.equal(V14.isPlaceholder, false);
+  assert.equal(V14.requiresName, true);
+  assert.equal(V14.eventAt, "2026-09-22T20:00:00+05:30", "the same session as v13, so the same instant");
+  assert.equal(V14.eventAt, V13.eventAt);
+  assert.equal(defaultScriptFor("registration").version, "v6", "v14 must not become the default");
   const registration = listScripts().filter((s) => s.campaignType === "registration").map((s) => s.version);
+  // v13 stays AHEAD of v14: v13 is the script a real campaign runs.
   assert.deepEqual(registration.slice(0, 5), ["v6", "v13", "v14", "v12", "v11"]);
-  assert.deepEqual(scriptVariables(V13), ["agent_name", "customer_name"]);
+  assert.deepEqual(scriptVariables(V14), ["agent_name", "customer_name"]);
 });
 
-test("A2. v13 is a new version — every earlier one keeps its hash", () => {
+test("A2. v13 IS UNCHANGED — this file existing must not move the attendee script", () => {
+  assert.equal(hashScript(V13), "6ab781f667a11b78102da4ed1bb047facb2335f6e923af14cd1635359b0ec91f");
   assert.equal(hashScript(V12), "cdb8d78c2f3acf8b98fabaf35afd3780e1dca4f72c7e7af4278c88427c731bb9");
   for (const other of listScripts()) {
-    if (other !== V13) assert.notEqual(hashScript(other), hashScript(V13));
+    if (other !== V14) assert.notEqual(hashScript(other), hashScript(V14));
   }
 });
 
 test("A3. preflight dials through the day of the 22nd and refuses after 8 PM", () => {
-  assert.equal(validateCampaignScript(validationFor(V13, new Date("2026-09-22T10:00:00+05:30"))).ok, true);
-  assert.equal(validateCampaignScript(validationFor(V13, new Date("2026-09-22T19:45:00+05:30"))).ok, true);
-  assert.equal(validateCampaignScript(validationFor(V13, new Date("2026-09-22T20:01:00+05:30"))).ok, false);
+  assert.equal(validateCampaignScript(validationFor(V14, new Date("2026-09-22T10:00:00+05:30"))).ok, true);
+  assert.equal(validateCampaignScript(validationFor(V14, new Date("2026-09-22T19:45:00+05:30"))).ok, true);
+  assert.equal(validateCampaignScript(validationFor(V14, new Date("2026-09-22T20:01:00+05:30"))).ok, false);
 });
 
 // ═════════════════════════════════════════════════════════════════
-section("B. THE SHAPE — v12'S, AND NO LONG TURNS");
+section("B. THE SHAPE — v12'S, AND ITS HINGLISH AGREES WITH ITSELF");
 
 test("B1. the body asks exactly one question before the seat question, in each rendering", () => {
   const beforeYes = BODY.slice(0, BODY.indexOf("[YES]"));
@@ -181,25 +186,34 @@ test("B1. the body asks exactly one question before the seat question, in each r
   assert.ok(beforeYes.includes(DISCOVERY_HI));
   assert.ok(beforeYes.includes(GATE_EN));
   assert.ok(beforeYes.includes(GATE_HI));
-  // ...and the bridge runs straight into the gate, as in v5 and v12.
   assert.ok(BODY.includes(`${BRIDGE_EN} ${GATE_EN}`), "the bridge runs straight into the gate");
   assert.ok(BODY.includes(`${BRIDGE_HI} ${GATE_HI}`));
 });
 
-test("B2. no interview questions, and the text forbids adding them back", () => {
+test("B2. THE APPENDIX AND THE BODY AGREE — the drift that broke v12's own B1", () => {
+  // v12's body was hand-edited to "daalne ka try kra hai?" after its
+  // appendix and its tests had pinned "daalne ki try ki hai?", and v12's
+  // B1 has failed ever since. Here there is ONE form, in both places.
+  for (const line of [DISCOVERY_EN, DISCOVERY_HI, GATE_EN, GATE_HI, BRIDGE_EN, BRIDGE_HI]) {
+    assert.ok(BODY.includes(line), `the body must speak "${line}"`);
+    assert.ok(HEAD.replace(/\s+/gu, " ").includes(line), `the instruction must quote "${line}"`);
+  }
+  assert.ok(!FLAT.includes("daalne ka try kra hai"), "v12's hand-edited variant must not appear");
+  assert.equal(FLAT.split("daalne ki try ki hai").length - 1, 2, "once in the instruction, once in the body");
+});
+
+test("B3. no interview questions, and the text forbids adding them back", () => {
   for (const dropped of [
     "are you already running a business", "what kind of business", "already have a website",
     "specific idea in mind", "kis type ka business", "koi website hai", "kuch specific idea",
-    "which day did you", "kaunse din aaye", "did you attend day",
   ]) {
-    assert.ok(!FLAT.includes(dropped), `v13 must not ask "${dropped}"`);
+    assert.ok(!FLAT.includes(dropped), `v14 must not ask "${dropped}"`);
   }
   assert.ok(FLAT.includes("do not add questions the script does not ask"));
-  assert.ok(FLAT.includes("not which day of the event they came to"));
   assert.ok(FLAT.includes("you are inviting them, not interviewing them"));
 });
 
-test("B3. no long turns — every block is short, and the text says so", () => {
+test("B4. no long turns — every block is short, and the text says so", () => {
   assert.ok(FLAT.includes("every turn is at most three short sentences and one question"));
   assert.ok(FLAT.includes("never describe the whole session in one go"));
   const blocks = BODY.split("\n").filter(
@@ -212,25 +226,26 @@ test("B3. no long turns — every block is short, and the text says so", () => {
   }
 });
 
-test("B4. the gate, the [NO] block and the two-turn goodbye are v12's, word for word", () => {
+test("B5. the discovery question, the bridge and the branch lines are v12's, word for word", () => {
   for (const carried of [
-    GATE_EN, GATE_HI, "Okay, no problem at all.", "Do join a few minutes early.",
-    "take it as an answer, say", "Add nothing to it. Do not invent a benefit",
+    DISCOVERY_EN, BRIDGE_EN, GATE_EN, "take it as an answer, say",
+    "So you know the fiddly part", "Then this is a good place to start",
+    "Okay, no problem at all.", "Do join a few minutes early.",
   ]) {
     assert.ok(V12.systemPromptAppendix.includes(carried), `"${carried}" must come from v12`);
-    assert.ok(APPENDIX.includes(carried), `"${carried}" must be in v13`);
+    assert.ok(APPENDIX.includes(carried), `"${carried}" must be in v14`);
   }
 });
 
 // ═════════════════════════════════════════════════════════════════
-section("C. THE GATE REGISTERS, THE NEW DISCOVERY QUESTION DOES NOT");
+section("C. THE GATE REGISTERS, NOTHING BEFORE IT DOES");
 
 test("C1. a yes at the gate is confirmed_at_gate, FINAL_YES and sheet-eligible, in both renderings", () => {
   for (const [first, said, bridge, gate, yes, yesBlock] of [
-    [FIRST_EN, "Yes, I made a page already.", BRIDGE_EN, GATE_EN, "Yes please.", YES_EN],
-    [FIRST_EN, "No, not yet.", BRIDGE_EN, GATE_EN, "Sure.", YES_EN],
-    [FIRST_HI, "Nahi, abhi tak nahi.", BRIDGE_HI, GATE_HI, "Haan ji.", YES_HI],
-    [FIRST_HI, "Haan, ek page bana liya tha.", BRIDGE_HI, GATE_HI, "Bilkul, kar do.", YES_HI],
+    [FIRST_EN, "Yes, I tried once.", BRIDGE_EN, GATE_EN, "Yes please.", YES_EN],
+    [FIRST_EN, "No, never.", BRIDGE_EN, GATE_EN, "Sure.", YES_EN],
+    [FIRST_HI, "Nahi, kabhi nahi.", BRIDGE_HI, GATE_HI, "Haan ji.", YES_HI],
+    [FIRST_HI, "Haan, ek baar try kiya tha.", BRIDGE_HI, GATE_HI, "Bilkul, kar do.", YES_HI],
   ] as const) {
     const { outcome, disposition } = settle(happyPath(first, said, bridge, gate, yes, yesBlock));
     assert.equal(outcome.primaryReason, "confirmed_at_gate", `"${said}" then "${yes}" must register`);
@@ -242,7 +257,7 @@ test("C1. a yes at the gate is confirmed_at_gate, FINAL_YES and sheet-eligible, 
 test("C2. a no at the gate is not a registration", () => {
   for (const said of ["No.", "Nahi.", "No, not right now.", "Abhi nahi."]) {
     const { outcome, disposition } = settle([
-      agent(OPENING), caller("Yes."), agent(FIRST_EN), caller("A little bit."),
+      agent(OPENING), caller("Yes."), agent(FIRST_EN), caller("Yes, a bit."),
       agent(`${BRIDGE_EN} ${GATE_EN}`), caller(said),
     ]);
     assert.notEqual(disposition, "FINAL_YES");
@@ -250,38 +265,28 @@ test("C2. a no at the gate is not a registration", () => {
   }
 });
 
-test("C3. YES or NO to the new discovery question registers nobody and declines nobody", () => {
+test("C3. YES or NO to the discovery question registers nobody and declines nobody", () => {
   for (const first of [FIRST_EN, FIRST_HI, `Hi ${NAME}. ${DISCOVERY_DEV}`]) {
-    for (const said of ["Yes.", "Haan.", "Haan ji.", "Yes, I built one page.", "Bilkul.", "हाँ।"]) {
+    for (const said of ["Yes.", "Haan.", "Haan ji.", "Yes, I have a website already.", "Bilkul.", "हाँ।"]) {
       const { outcome, disposition } = settle([agent(OPENING), caller("Yes."), agent(first), caller(said)]);
       assert.notEqual(disposition, "FINAL_YES", `"${said}" to the discovery question must not register`);
       assert.notEqual(outcome.primaryReason, "confirmed_at_gate");
     }
-    for (const said of ["No.", "Nahi.", "No, nothing yet.", "Nahi, time hi nahi mila."]) {
+    for (const said of ["No.", "Nahi.", "No, nothing yet.", "Nahi, kabhi nahi."]) {
       const { outcome } = settle([agent(OPENING), caller("Yes."), agent(first), caller(said)]);
       assert.notEqual(outcome.primaryReason, "declined_at_gate", `"${said}" answers a question about THEM`);
     }
   }
 });
 
-test("C4. the bridge alone — the tool-access sentence — commits nobody", () => {
-  for (const said of ["Yes.", "Haan.", "Okay.", "Achha."]) {
-    const { outcome, disposition } = settle([
-      agent(OPENING), caller("Yes."), agent(FIRST_EN), caller("Not yet."), agent(BRIDGE_EN), caller(said),
-    ]);
-    assert.notEqual(disposition, "FINAL_YES", `"${said}" to the bridge alone must not register`);
-    assert.notEqual(outcome.primaryReason, "confirmed_at_gate");
-  }
-});
-
-test("C5. the identity answer is not a registration either", () => {
+test("C4. the identity answer is not a registration either", () => {
   for (const said of ["Yes.", "Haan ji.", "Speaking."]) {
     const { disposition } = settle([agent(OPENING), caller(said)]);
     assert.notEqual(disposition, "FINAL_YES");
   }
 });
 
-test("C6. the forbidden early forms really would register — which is why the text forbids them", () => {
+test("C5. the forbidden early forms really would register — which is why the text forbids them", () => {
   const { disposition } = settle([
     agent(OPENING), caller("Yes."), agent(`Hi ${NAME}. Would you like to attend?`), caller("Yes."),
   ]);
@@ -291,7 +296,7 @@ test("C6. the forbidden early forms really would register — which is why the t
   assert.ok(FLAT.includes("never bring it forward into the first reply"));
 });
 
-test("C7. every fixed line survives the speech formatter unchanged", () => {
+test("C6. every fixed line survives the speech formatter unchanged", () => {
   for (const line of [
     GATE_EN, GATE_HI, DISCOVERY_EN, DISCOVERY_HI, BRIDGE_EN, BRIDGE_HI,
     YES_EN, YES_HI, NO_BLOCK, ALREADY_EN, GOODBYE, OPENING,
@@ -335,7 +340,7 @@ test("D3. NOT INTERESTED ends the call as FINAL_NO — at the discovery question
   ];
   assert.equal(definitiveAnswerIn(live(hindi), "registration"), "FINAL_NO");
   const atGate = [
-    agent(OPENING), caller("Yes."), agent(FIRST_EN), caller("Not yet."),
+    agent(OPENING), caller("Yes."), agent(FIRST_EN), caller("Not really."),
     agent(`${BRIDGE_EN} ${GATE_EN}`), caller("No, not interested."), agent(NO_BLOCK),
   ];
   assert.equal(definitiveAnswerIn(live(atGate), "registration"), "FINAL_NO");
@@ -364,43 +369,94 @@ test("D5. ALREADY REGISTERED: no gate, no new registration, no refusal — settl
   assert.ok(FLAT.includes("do not ask the seat question and do not take them through a registration again"));
 });
 
-test("D6. ATTENDEES ONLY: 'I didn't attend' is never taken through a registration", () => {
-  assert.ok(FLAT.includes("i didn't attend the two days."));
-  assert.ok(
-    FLAT.includes("do not ask the seat question and do not register them"),
-    "the non-attendee branch must forbid the gate outright",
+// ═════════════════════════════════════════════════════════════════
+section("E. THE FOUR THINGS THAT SEPARATE v14 FROM v13");
+
+/**
+ * A phrase v14 must never SAY, though the text may name it once in order
+ * to forbid it.
+ *
+ * A flat `!includes` cannot tell a claim from its own prohibition — it
+ * reads "never say they came to the two days" as saying it — so each
+ * phrase is counted instead, and its sole occurrence must sit inside the
+ * sentence that bans it. Same idiom as v12's "i'll send" check, and the
+ * reason both of these read as counts rather than bans.
+ */
+const bannedExceptInProhibition = (phrase: string, prohibition: string) => {
+  assert.ok(FLAT.includes(prohibition), `the prohibition itself is missing: "${prohibition}"`);
+  assert.ok(prohibition.includes(phrase), `"${prohibition}" does not contain "${phrase}"`);
+  assert.equal(
+    FLAT.split(phrase).length - 1,
+    1,
+    `"${phrase}" must appear exactly once in v14, inside its own prohibition`,
   );
-  assert.ok(FLAT.includes("i'd rather not promise you a seat on it"));
-  // ...and coming to only part of it still counts as attending.
-  assert.ok(FLAT.includes("they attended: carry on with the script as normal"));
+};
 
-  // THE GOODBYE IS ITS OWN TURN, and the branch says so because it has
-  // to be. `agentClosedIn` caps a closing at 12 words, so the honest
-  // sentence and the sign-off run together — "…so I'd rather not promise
-  // you a seat on it. Thanks for your time, Rahul. Have a great day!" —
-  // is 28 words and reads as mid-conversation: the line then stays open
-  // until the silence watchdog ends it. Split, the same words hang up.
-  const honest = "Ah, this one is for the people who were at the two days, so I'd rather not promise you a seat on it.";
-  const together = [
-    agent(OPENING), caller("Yes."), agent(FIRST_EN), caller("I didn't attend the event actually."),
-    agent(`${honest} ${GOODBYE}`),
-  ];
-  assert.equal(agentClosedIn(live(together)), false, "one long turn is not a recognised closing");
-  assert.ok(FLAT.includes("never run the honest sentence and the goodbye together into one long turn"));
+const NO_ATTENDANCE =
+  "never say they were at our two-day event, came to the two days, or attended anything";
+const NO_BONUS =
+  "never offer extra days of tool access, a discount, a recording or a bonus of any kind";
 
-  const split = [
-    agent(OPENING), caller("Yes."), agent(FIRST_EN), caller("I didn't attend the event actually."),
-    agent(honest), caller("Oh, okay."), agent(GOODBYE),
-  ];
-  assert.equal(agentClosedIn(live(split)), true);
-  assert.notEqual(settle(split).disposition, "FINAL_YES");
-  assert.equal(isFinalYes(settle(split).outcome, settle(split).disposition), false);
+test("E1. v13's ATTENDANCE CLAIM is gone, and forbidden by name", () => {
+  // The one thing v13 was allowed to say. Here it would be an invention
+  // about the person, so it appears only in the sentence banning it.
+  for (const never of [
+    "you were at our two-day", "who came to the two days", "attended the two-day",
+    "do din wale event mein the", "aap humare do din", "this person attended",
+    "everyone who came",
+  ]) {
+    assert.ok(!FLAT.includes(never), `v14 must not say "${never}"`);
+  }
+  bannedExceptInProhibition("came to the two days", NO_ATTENDANCE);
+  // The sanity half: v13 really does make the claim this one drops.
+  assert.ok(
+    V13.systemPromptAppendix.toLowerCase().includes("you were at our two-day event"),
+    "v13 must still carry the attendance claim, or this test is asserting nothing",
+  );
+  assert.ok(FLAT.includes("this person has no history with this session"));
+});
+
+test("E2. the 2-EXTRA-DAYS PROMISE is gone — there is no access to extend", () => {
+  for (const never of [
+    "2 more days", "two more days", "two extra days", "do din aur", "do extra din",
+    "extend your free tool access", "extends your free tool access", "gets the two extra",
+  ]) {
+    assert.ok(!FLAT.includes(never), `v14 must not promise "${never}"`);
+  }
+  bannedExceptInProhibition("tool access", NO_BONUS);
+  // The sanity half: v13 really does make the promise this one drops.
+  assert.ok(
+    V13.systemPromptAppendix.includes("two more days"),
+    "v13 must still carry the tool-access promise, or this test is asserting nothing",
+  );
+  assert.ok(FLAT.includes("there is no such offer on this call"));
+});
+
+test("E3. ELIGIBILITY is never asserted, in either direction", () => {
+  assert.ok(FLAT.includes("do i need to have attended anything?"));
+  assert.ok(FLAT.includes("never tell them they are eligible, never tell them they are not, and never invent a condition"));
+  assert.ok(FLAT.includes("whether they need to have attended anything"), "it is in the do-not-guess list too");
+  // "Attendees only" is the page's term and is NOT claimed either way here.
+  for (const claimed of ["attendees only", "only for attendees", "you are eligible", "you qualify"]) {
+    assert.ok(!FLAT.includes(claimed), `v14 must not state "${claimed}"`);
+  }
+});
+
+test("E4. INVITATION FRAMING is restored from v12 — no manufactured history", () => {
+  for (const invented of [
+    "shown interest", "interest show kiya", "you asked about", "you had asked",
+    "still planning", "still want", "abhi bhi attend", "still interested", "as discussed",
+  ]) {
+    assert.ok(!FLAT.includes(invented), `"${invented}" must not survive`);
+  }
+  assert.ok(FLAT.includes("it is an invitation, not a follow-up"));
+  assert.ok(FLAT.includes("never say or imply that they signed up, showed interest or decided anything before this call"));
 });
 
 // ═════════════════════════════════════════════════════════════════
-section("E. THE NAME, THE FRAMING, THE FACTS");
+section("F. THE NAME, THE FACTS, THE FAQ, AND NO LEAK");
 
-test("E1. full name only in the opening and the identity sentences; [first name] everywhere after", () => {
+test("F1. full name only in the opening and the identity sentences; [first name] everywhere after", () => {
   const afterConfirmation = BODY.slice(BODY.indexOf("[THEY CONFIRM"));
   assert.ok(BODY.startsWith("--- SCRIPT ---\n\nHello, am I speaking with {{customer_name}}?"));
   assert.ok(!afterConfirmation.includes("{{customer_name}}"));
@@ -409,9 +465,9 @@ test("E1. full name only in the opening and the identity sentences; [first name]
   assert.ok(FLAT.includes("the first word of {{customer_name}}"));
 });
 
-test("E2. interpolated with a two-word name, the full name never follows Hi, Perfect or Thanks", () => {
+test("F2. interpolated with a two-word name, the full name never follows Hi, Perfect or Thanks", () => {
   const context = buildCampaignContext({
-    script: V13, campaignId: "cmp_v13", campaignType: "registration",
+    script: V14, campaignId: "cmp_v14", campaignType: "registration",
     provider: "smallest-ai", customerName: FULL_NAME,
   });
   assert.equal(context.openingLine, OPENING);
@@ -426,56 +482,41 @@ test("E2. interpolated with a two-word name, the full name never follows Hi, Per
   assert.ok(context.systemPromptAppendix.endsWith(CAMPAIGN_CONVERSATION_POLICY));
 });
 
-test("E3. the two days may be referred to; manufactured interest may not", () => {
-  // THE ONE THING v13 is allowed to say that v12 forbade.
-  assert.ok(FLAT.includes("you were at our two-day event"));
-  assert.ok(FLAT.includes("this person attended the two-day ai income blueprint event"));
-  for (const invented of [
-    "shown interest", "interest show kiya", "you asked about", "you had asked",
-    "still planning", "still want", "abhi bhi attend", "still interested", "as discussed",
-  ]) {
-    assert.ok(!FLAT.includes(invented), `"${invented}" must not survive`);
-  }
-  assert.ok(
-    FLAT.includes(
-      "never say or imply that they asked about this session, showed interest in it, signed up for it, or decided anything about it before this call",
-    ),
-  );
-});
-
-test("E4. every fact in the text is on the landing page, and the unstated ones route to 'I don't know'", () => {
+test("F3. the session facts are the page's, and the unstated ones route to 'I don't know'", () => {
   for (const sourced of [
-    "8 pm ist", "tuesday 22nd september", "live and online", "completely free, for the people who attended",
-    "170-plus actions inside flexi genie", "extends their free tool access by 2 more days",
-    "seats are limited", "flexi genie and the flexifunnels mcp", "live q&a",
+    "8 pm ist", "tuesday 22nd september", "live and online", "completely free",
+    "170-plus actions inside flexi genie", "seats are limited", "live q&a",
     "lead forms that capture leads and checkouts that take payments",
     "nothing moves on until theirs works too",
   ]) {
     assert.ok(FLAT.includes(sourced), `the sourced fact "${sourced}" must be in the text`);
   }
-  // The page states none of these, so the script must not either.
   assert.ok(FLAT.includes("how long the session runs, which platform it is on, who is presenting, whether there is a recording"));
   for (const unstated of ["90 minute", "60 minute", "two hour", "recording will", "replay will"]) {
     assert.ok(!FLAT.includes(unstated), `"${unstated}" is not on the page — it must not be asserted`);
   }
 });
 
-test("E5. the FAQ answers what this audience actually asks", () => {
+test("F4. the FAQ answers what a cold contact actually asks", () => {
   for (const asked of [
-    "what is this session about", "how is it different from the two days", "i don't remember this",
-    "i'm not sure yet", "is it free", "i didn't attend the two days", "what is flexi genie",
-    "what is the mcp", "do i need a laptop", "do you need my email",
-    "send me the details on whatsapp", "i'm busy", "i'm not interested",
-    "i've already registered", "how much can i make",
+    "what is this session about", "who are you", "i don't know flexifunnels",
+    "do i need to have attended anything", "i'm not sure yet", "is it free",
+    "i don't know coding", "what is flexi genie", "do i need a laptop",
+    "do you need my email", "send me the details on whatsapp", "i'm busy",
+    "i'm not interested", "i've already registered", "how much can i make",
   ]) {
     assert.ok(FLAT.includes(asked), `the FAQ must handle "${asked}"`);
   }
   assert.ok(FLAT.includes("registration complete hone ke baad session ki details aapko whatsapp pe mil jaayengi."));
   assert.equal(FLAT.split("i'll send").length - 1, 1, "only inside its own prohibition");
   assert.ok(FLAT.includes("never ask them for an email address"));
+  // v13's attendee-only FAQs are meaningless here and must be gone.
+  for (const dropped of ["how is it different from the two days", "i missed the event"]) {
+    assert.ok(!FLAT.includes(dropped), `"${dropped}" is v13's — it must not be in v14`);
+  }
 });
 
-test("E6. no internal machinery, tool or provider name, and no invented fact, is in the text", () => {
+test("F5. no internal machinery, tool or provider name, and no invented fact, is in the text", () => {
   for (const leak of [
     "classifier", "commit_anchors", "final_yes", "final_no", "pipeline", "tool call",
     "hangup", "watchdog", "disposition", "unresolved", "system prompt", "internal note",
@@ -491,18 +532,18 @@ test("E6. no internal machinery, tool or provider name, and no invented fact, is
   }
 });
 
-test("E7. a campaign pinned to v13 refuses to run if the words are edited, and a nameless contact cannot be called", () => {
-  const edited: CampaignScript = { ...V13, systemPromptAppendix: `${V13.systemPromptAppendix} ` };
+test("F6. a campaign pinned to v14 refuses to run if the words are edited, and a nameless contact cannot be called", () => {
+  const edited: CampaignScript = { ...V14, systemPromptAppendix: `${V14.systemPromptAppendix} ` };
   assert.throws(
     () => buildCampaignContext({
       script: edited, campaignId: "c", campaignType: "registration",
-      provider: "smallest-ai", customerName: NAME, expectedScriptHash: hashScript(V13),
+      provider: "smallest-ai", customerName: NAME, expectedScriptHash: hashScript(V14),
     }),
     /has changed since this campaign was created/u,
   );
   assert.throws(
     () => buildCampaignContext({
-      script: V13, campaignId: "c", campaignType: "registration",
+      script: V14, campaignId: "c", campaignType: "registration",
       provider: "smallest-ai", customerName: "  ",
     }),
     /needs the contact's name/u,

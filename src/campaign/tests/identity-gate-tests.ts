@@ -925,6 +925,44 @@ await test("D10i. a 'Hello' LATER in the call is not a pickup: it is committed a
   }
 });
 
+await test("D10k. the pickup window still holds under the SONIOX LANGUAGE RESTRICTION (hi + en)", async () => {
+  // Verification, not a new mechanism. `language_hints_strict` confines
+  // Soniox to Hindi and English, so the pickup "hello" can now only
+  // arrive in Latin or Devanagari — the Malayalam/Kannada/Gurmukhi/
+  // Bengali/Spanish renderings D10g pins become unreachable on this
+  // provider (they stay in the table for Deepgram's `multi`, which is
+  // untouched). These are the renderings that remain reachable.
+  for (const rendering of ["Hello.", "हेलो।", "हैलो।", "हॅलो.", "नमस्ते।", "Hi."]) {
+    const r = await idFirst([rendering, "Yes."]);
+    assert.equal(idAsks(r.spoken), 0, `"${rendering}" over the opening must not re-ask`);
+    assert.equal(r.spoken.filter((t) => t.startsWith("Sorry")).length, 0, `no "Sorry —" after "${rendering}"`);
+    assert.equal(r.llmRequests, 1, `"${rendering}" then "Yes." opens the gate once`);
+    assert.equal(r.lastUserSentToLlm, "Yes.");
+  }
+  // AND THE OTHER HALF: the restriction narrows the scripts, it does
+  // not widen what counts as a pickup. Anything carrying an answer, a
+  // name or a question is NOT a bare greeting and must still reach the
+  // gate — consuming it would be the swallowed-turn defect, which this
+  // fix must not introduce in either script.
+  //
+  // A consumed pickup leaves the opening as the ONLY thing ever spoken
+  // and runs no model request (that is precisely what D10/D10h pin), so
+  // "the gate saw it" is exactly "something followed the opening".
+  //
+  // NOT asserted here: WHICH language the re-ask comes back in. A bare
+  // Devanagari "यस।" moves the per-turn language and is re-asked in
+  // Hindi — a separate, already-known defect of the wrong-script
+  // transcript itself, and the thing `language_hints_strict` exists to
+  // stop producing upstream. It is not the pickup window's business.
+  for (const answer of ["यस।", "हाँ जी।", "Yes, hello.", "हेलो, कौन बोल रहा है?", "Hello Rohan."]) {
+    const r = await idFirst([answer]);
+    assert.ok(
+      r.spoken.length > 1 || r.llmRequests > 0,
+      `"${answer}" must reach the gate, never be consumed as a bare pickup greeting`,
+    );
+  }
+});
+
 await test("D11. a repeated 'Yes.' does not ask, introduce or pitch twice", async () => {
   const r = await idFirst(["Yes.", "Yes."]);
   assert.equal(idAsks(r.spoken), 0, "the confirmed gate never asks again");

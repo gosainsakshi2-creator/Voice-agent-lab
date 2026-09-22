@@ -33,6 +33,7 @@ const {
   SONIOX_DEFAULT_MAX_ENDPOINT_DELAY_MS,
   SONIOX_DEFAULT_LATENCY_ADJUSTMENT_LEVEL,
   SONIOX_DEFAULT_ENDPOINT_SENSITIVITY,
+  SONIOX_DEFAULT_LANGUAGE_HINTS_STRICT,
   sonioxLanguageHints,
 } = await import("../../providers/speech-to-text/soniox.provider");
 const { bootstrapProviderRegistry } = await import("../../providers/registry/bootstrap");
@@ -161,6 +162,7 @@ const CONFIGURED = {
   apiKey: "test-key-never-real",
   model: SONIOX_DEFAULT_MODEL,
   enableEndpointDetection: true,
+  languageHintsStrict: SONIOX_DEFAULT_LANGUAGE_HINTS_STRICT,
   maxEndpointDelayMs: SONIOX_DEFAULT_MAX_ENDPOINT_DELAY_MS,
   endpointLatencyAdjustmentLevel: SONIOX_DEFAULT_LATENCY_ADJUSTMENT_LEVEL,
   endpointSensitivity: SONIOX_DEFAULT_ENDPOINT_SENSITIVITY,
@@ -593,6 +595,98 @@ await test("H3. the config frame actually SENDS the hints", async () => {
 });
 
 // ═════════════════════════════════════════════════════════════════
+section("A4. Language RESTRICTION — the wrong-script fix");
+
+await test("H5. the config frame sends language_hints_strict, on, for every session language", async () => {
+  for (const lang of [SupportedLanguage.HINDI, SupportedLanguage.ENGLISH, SupportedLanguage.HINGLISH] as const) {
+    const sock = new MockSocket();
+    const p2 = new SonioxSpeechToTextProvider(CONFIGURED, () => sock);
+    const held = heldAudio();
+    const done = (async () => {
+      for await (const _seg of p2.transcribeStream({
+        sessionId: "strict-test" as SessionId,
+        audio: held.iterable,
+        language: lang,
+      })) void _seg;
+    })();
+    sock.emit("open");
+    await sleep(10);
+    // Hints BIAS. Only this RESTRICTS — and the bias alone is what
+    // failed: English came back as Devanagari, Gurmukhi, Bengali,
+    // Malayalam, Telugu, Urdu and Kannada under hints that never
+    // named any of them.
+    assert.equal(
+      sock.config!["language_hints_strict"],
+      true,
+      `language ${lang} must restrict, not merely bias`,
+    );
+    held.release();
+    await done;
+  }
+});
+
+await test("H6. the restricted set always contains the caller's OTHER language", () => {
+  // The whole reason two languages are restricted rather than one.
+  // English campaigns are answered in Hindi and Hinglish too, so
+  // restricting to ["en"] would transcribe a Hindi caller into Latin
+  // nonsense; restricting to ["hi"] would do the reverse. Both
+  // languages inside the restriction is what lets a mixed sentence
+  // keep each word in its own script.
+  assert.deepEqual([...sonioxLanguageHints(SupportedLanguage.ENGLISH)].sort(), ["en", "hi"]);
+  assert.deepEqual([...sonioxLanguageHints(SupportedLanguage.HINGLISH)].sort(), ["en", "hi"]);
+  // A Hindi campaign is the single-language mode the vendor calls most
+  // robust, and English is deliberately NOT added to it: that campaign
+  // is conducted in Hindi and its script is Devanagari throughout.
+  assert.deepEqual([...sonioxLanguageHints(SupportedLanguage.HINDI)], ["hi"]);
+});
+
+await test("H7. strict defaults to on and is the one documented rollback lever", async () => {
+  await withEnv({ SONIOX_API_KEY: "k", SONIOX_LANGUAGE_HINTS_STRICT: undefined }, () => {
+    assert.equal(loadSonioxEnvConfig().languageHintsStrict, true, "default must be ON");
+  });
+  await withEnv({ SONIOX_API_KEY: "k", SONIOX_LANGUAGE_HINTS_STRICT: "false" }, () => {
+    assert.equal(loadSonioxEnvConfig().languageHintsStrict, false, "operators can revert without a deploy");
+  });
+  await withEnv({ SONIOX_API_KEY: "k", SONIOX_LANGUAGE_HINTS_STRICT: "true" }, () => {
+    assert.equal(loadSonioxEnvConfig().languageHintsStrict, true);
+  });
+});
+
+await test("H8. reverting the lever sends strict=false and changes NOTHING else", async () => {
+  const frameFor = async (strict: boolean): Promise<Record<string, unknown>> => {
+    const sock = new MockSocket();
+    const p2 = new SonioxSpeechToTextProvider({ ...CONFIGURED, languageHintsStrict: strict }, () => sock);
+    const held = heldAudio();
+    const done = (async () => {
+      for await (const _seg of p2.transcribeStream({
+        sessionId: "lever-test" as SessionId,
+        audio: held.iterable,
+        language: SupportedLanguage.ENGLISH,
+      })) void _seg;
+    })();
+    sock.emit("open");
+    await sleep(10);
+    const cfg = sock.config!;
+    held.release();
+    await done;
+    return cfg;
+  };
+  const on = await frameFor(true);
+  const off = await frameFor(false);
+  assert.equal(on["language_hints_strict"], true);
+  assert.equal(off["language_hints_strict"], false);
+  const withoutStrict = (frame: Record<string, unknown>) => {
+    const { language_hints_strict: _s, ...rest } = frame;
+    return rest;
+  };
+  // Including the hints themselves: the array is NOT narrowed when
+  // strict is on, so reverting the lever restores exactly the previous
+  // bias-only connection.
+  assert.deepEqual(withoutStrict(on), withoutStrict(off), "the lever moves one field and no other");
+  assert.deepEqual(on["language_hints"], ["hi", "en"], "strict does not narrow the array");
+});
+
+// ═════════════════════════════════════════════════════════════════
 section("B3. Per-campaign STT selection");
 
 const campaignWith = (stt?: string) =>
@@ -837,6 +931,152 @@ await test("D-e2e. segments flow through the live stream in order", async () => 
     run.segments.map((s) => `${s.isEndOfSpeechMarker ? "MARK" : s.isFinal ? "FINAL" : "INTERIM"}:${s.text}`),
     ["INTERIM:yes", "FINAL:yes", "MARK:"],
   );
+});
+
+// ═════════════════════════════════════════════════════════════════
+section("D2. Script fidelity — the adapter never rewrites what Soniox said");
+
+/**
+ * WHAT THESE CAN AND CANNOT PROVE.
+ *
+ * Which SCRIPT Soniox chooses is Soniox's decision, made inside the
+ * model from the audio and the restriction; no unit test can assert it
+ * without a live socket and a real voice. What these DO pin is the
+ * other half of the requirement, and the half this repo owns: that the
+ * adapter is a pass-through. Given tokens in a script, the segment
+ * carries that script byte for byte — no normalization, no
+ * transliteration, no per-segment language flattening, and no
+ * collapsing of a code-switched sentence into one script.
+ *
+ * That matters because it is what makes the provider the only suspect
+ * when a transcript comes back in the wrong script, and what makes
+ * `language_hints_strict` the only place a fix can live.
+ */
+
+await test("S1. English tokens stay English — Latin in, Latin out, byte for byte", () => {
+  const segs = segmentsFromSonioxMessage(
+    {
+      tokens: "Hello, I would like to join the webinar."
+        .split(/(?= )/u)
+        .map((text) => ({ text, is_final: true, language: "en" })),
+    },
+    SupportedLanguage.ENGLISH,
+  );
+  assert.equal(segs.length, 1);
+  assert.equal(segs[0]!.text, "Hello, I would like to join the webinar.");
+  assert.ok(!/[ऀ-ॿ]/u.test(segs[0]!.text), "no Devanagari may appear in an English transcript");
+});
+
+await test("S2. Hindi tokens stay Hindi — Devanagari is never romanized", () => {
+  const segs = segmentsFromSonioxMessage(
+    {
+      tokens: [
+        { text: "मुझे", is_final: true, language: "hi" },
+        { text: " इस", is_final: true, language: "hi" },
+        { text: " वेबिनार", is_final: true, language: "hi" },
+        { text: " के", is_final: true, language: "hi" },
+        { text: " बारे", is_final: true, language: "hi" },
+        { text: " में", is_final: true, language: "hi" },
+        { text: " जानना", is_final: true, language: "hi" },
+        { text: " है", is_final: true, language: "hi" },
+      ],
+    },
+    SupportedLanguage.ENGLISH,
+  );
+  assert.equal(segs[0]!.text, "मुझे इस वेबिनार के बारे में जानना है");
+});
+
+await test("S3. an English word inside a Hindi sentence survives in LATIN", () => {
+  // Requirement B. Both languages are inside the restriction, so
+  // Soniox can emit each word in its own script — and the adapter must
+  // not flatten the result to either one.
+  const segs = segmentsFromSonioxMessage(
+    {
+      tokens: [
+        { text: "मुझे", is_final: true, language: "hi" },
+        { text: " इस", is_final: true, language: "hi" },
+        { text: " webinar", is_final: true, language: "en" },
+        { text: " के", is_final: true, language: "hi" },
+        { text: " बारे", is_final: true, language: "hi" },
+        { text: " में", is_final: true, language: "hi" },
+        { text: " जानना", is_final: true, language: "hi" },
+        { text: " है", is_final: true, language: "hi" },
+      ],
+    },
+    SupportedLanguage.ENGLISH,
+  );
+  assert.equal(segs.length, 1);
+  assert.equal(segs[0]!.text, "मुझे इस webinar के बारे में जानना है");
+  assert.ok(segs[0]!.text.includes("webinar"), "the English word must not be transliterated into Devanagari");
+  assert.ok(segs[0]!.text.includes("मुझे"), "the Hindi words must not be romanized either");
+});
+
+await test("S3b. \"मुझे website बनानी है\" keeps `website` in Latin", () => {
+  const segs = segmentsFromSonioxMessage(
+    {
+      tokens: [
+        { text: "मुझे", is_final: true, language: "hi" },
+        { text: " website", is_final: true, language: "en" },
+        { text: " बनानी", is_final: true, language: "hi" },
+        { text: " है", is_final: true, language: "hi" },
+      ],
+    },
+    SupportedLanguage.ENGLISH,
+  );
+  assert.equal(segs[0]!.text, "मुझे website बनानी है");
+});
+
+await test("S4. Hindi words inside an English sentence keep Devanagari", () => {
+  const segs = segmentsFromSonioxMessage(
+    {
+      tokens: [
+        { text: "I", is_final: true, language: "en" },
+        { text: " want", is_final: true, language: "en" },
+        { text: " to", is_final: true, language: "en" },
+        { text: " अपना", is_final: true, language: "hi" },
+        { text: " business", is_final: true, language: "en" },
+        { text: " start", is_final: true, language: "en" },
+        { text: " करना", is_final: true, language: "hi" },
+      ],
+    },
+    SupportedLanguage.ENGLISH,
+  );
+  assert.equal(segs[0]!.text, "I want to अपना business start करना");
+});
+
+await test("S5. romanized Hinglish is passed through unchanged too", () => {
+  // Case 3: when Soniox writes Hinglish in Latin, that is the existing
+  // behaviour and the adapter leaves it exactly alone — this fix adds
+  // no romanization and no de-romanization in either direction.
+  const segs = segmentsFromSonioxMessage(
+    {
+      tokens: [{ text: "Main webinar ke baare mein jaana chahta hoon.", is_final: true, language: "hi" }],
+    },
+    SupportedLanguage.HINGLISH,
+  );
+  assert.equal(segs[0]!.text, "Main webinar ke baare mein jaana chahta hoon.");
+});
+
+await test("S6. NO vocabulary, transliteration or translation table exists anywhere in the adapter", () => {
+  // The operator ruled these out explicitly, and they are also the
+  // wrong layer: a mapping here would mask a provider defect rather
+  // than correct it. Pinned so no later 'quick fix' can add one.
+  const source = readFileSync(
+    new URL("../../providers/speech-to-text/soniox.provider.ts", import.meta.url),
+    "utf8",
+  );
+  // Strip comments: the file DISCUSSES the wrong-script strings it
+  // exists to prevent, and must be allowed to.
+  const code = source
+    .replace(/\/\*[\s\S]*?\*\//gu, "")
+    .replace(/^[ \t]*\/\/.*$/gmu, "");
+  assert.ok(
+    !/[ऀ-ॿ]/u.test(code),
+    "no Devanagari literal may appear in adapter CODE — that would be a transliteration table",
+  );
+  for (const forbidden of ["normalize(", "transliterate", "romanize", "translation"]) {
+    assert.ok(!code.includes(forbidden), `the adapter must not ${forbidden}… the transcript`);
+  }
 });
 
 // ═════════════════════════════════════════════════════════════════

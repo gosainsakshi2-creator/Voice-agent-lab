@@ -139,7 +139,10 @@ test("A1. v12 is a registration script, approved, name-requiring, dated, and fir
   assert.equal(V12.eventAt, "2026-09-22T19:30:00+05:30");
   assert.equal(defaultScriptFor("registration").version, "v6", "v12 must not become the default");
   const registration = listScripts().filter((s) => s.campaignType === "registration").map((s) => s.version);
-  assert.deepEqual(registration.slice(0, 5), ["v6", "v12", "v11", "v10", "v9"]);
+  // `registration v13` (the implementation session) was registered under
+  // v6 on 2026-09-22 as the then-current campaign's script, exactly as
+  // v12 had been. v12 moved one place down; nothing else about it changed.
+  assert.deepEqual(registration.slice(0, 5), ["v6", "v13", "v12", "v11", "v10"]);
   assert.deepEqual(scriptVariables(V12), ["agent_name", "customer_name"]);
 });
 

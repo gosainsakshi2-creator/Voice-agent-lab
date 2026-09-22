@@ -105,6 +105,24 @@ export const SONIOX_END_TOKEN = "<end>";
  * model which second language this deployment actually hears. The
  * campaign's stored language, the lock and the stream lifecycle are
  * unchanged — the hint is sent once, at connection, exactly as before.
+ *
+ * ── THE HINT ALONE IS NOT ENOUGH: SEE `language_hints_strict` ────────
+ *
+ * Hints BIAS. That is their documented job and also their limit, and
+ * it is why widening this array did not stop the wrong-script
+ * transcripts: measured over 167 answered English calls, 20.4% had at
+ * least one Devanagari caller turn and 29.3% at least one non-Latin
+ * turn, under hints `["en"]` ALONE. The model was not mishearing the
+ * words — `"ब्रो, आय एम टेलिंग यू अगेन अँड अगेन दॅट यस, यू आर स्पीकिंग विथ साक्षी."`
+ * is phonetic Devanagari of correctly recognised English — it was
+ * writing them in a language the caller never spoke, and no value of a
+ * BIAS parameter can forbid that.
+ *
+ * `language_hints_strict` is the parameter that can, and Soniox's own
+ * documentation names this exact failure as what it is for: language
+ * restriction is for applications that need "to avoid incorrect
+ * alphabet transliteration". It is sent alongside this array — see
+ * `SonioxEnvConfig.languageHintsStrict`.
  */
 export function sonioxLanguageHints(language: SupportedLanguage): readonly string[] {
   switch (language) {
@@ -153,11 +171,63 @@ export const SONIOX_DEFAULT_MAX_ENDPOINT_DELAY_MS = 1500;
 export const SONIOX_DEFAULT_LATENCY_ADJUSTMENT_LEVEL = 2;
 export const SONIOX_DEFAULT_ENDPOINT_SENSITIVITY = 0.3;
 
+/**
+ * ── WHY STRICT IS ON BY DEFAULT ──────────────────────────────────────
+ *
+ * `language_hints` biases; `language_hints_strict` restricts. With the
+ * hints alone the multilingual model stayed free to resolve this
+ * deployment's audio to ANY of its 60+ languages, and on real calls it
+ * did exactly that — English "Yes" as `यस।`, "Hello" as `हेलो।`/`हॅलो`,
+ * and whole fluent English sentences written out in phonetic
+ * Devanagari, plus Gurmukhi, Bengali, Malayalam, Telugu, Urdu, Kannada
+ * and French renderings of the same one-word pickups. Soniox's
+ * language-restriction documentation names this as the case the
+ * parameter exists for: applications that need "to avoid incorrect
+ * alphabet transliteration".
+ *
+ * With it true and the hints `["hi", "en"]`, the model is confined to
+ * the two languages this deployment actually hears. That is what keeps
+ * English in Latin and Hindi in Devanagari, and it is also what lets a
+ * Hinglish sentence stay mixed: BOTH languages are inside the
+ * restriction, so "मुझे इस webinar के बारे में जानना है" has every word it
+ * needs available in its own script. A Hindi campaign restricts to
+ * `["hi"]` alone, which is the single-language mode the vendor calls
+ * most robust and "strongly recommended for production use".
+ *
+ * HONEST LIMITS, BOTH DOCUMENTED BY THE VENDOR:
+ *
+ *   - restriction is "best-effort, not a hard guarantee" — the model
+ *     "may still occasionally output another language in rare edge
+ *     cases";
+ *   - with MORE than one language restricted, "accuracy can degrade
+ *     when language identification becomes ambiguous, especially with
+ *     heavy accents or acoustically similar languages". Hindi and
+ *     accented Indian English are precisely such a pair, so this
+ *     narrows the hi/en confusion sharply but cannot abolish it.
+ *
+ * Restricting to `["en"]` alone WOULD abolish it, and is refused: it
+ * would transcribe a genuinely Hindi caller into Latin nonsense and
+ * break every Devanagari vocabulary downstream. Two languages is the
+ * strongest setting that still satisfies "Hindi speech → Hindi
+ * transcript".
+ *
+ * The env var is the ROLLBACK LEVER — set `SONIOX_LANGUAGE_HINTS_STRICT
+ * =false` to return to the previous bias-only behaviour without a code
+ * change. Nothing else in the adapter reads it.
+ */
+export const SONIOX_DEFAULT_LANGUAGE_HINTS_STRICT = true;
+
 export interface SonioxEnvConfig {
   /** Empty string means "not configured" — see `checkHealth`. */
   readonly apiKey: string;
   readonly model: string;
   readonly enableEndpointDetection: boolean;
+  /**
+   * Restrict recognition to `language_hints` rather than merely biasing
+   * toward them. Vendor default false; we ship true — see
+   * `SONIOX_DEFAULT_LANGUAGE_HINTS_STRICT`.
+   */
+  readonly languageHintsStrict: boolean;
   /** Documented range 500-3000ms. Vendor default 2000; we ship 1500. */
   readonly maxEndpointDelayMs: number;
   /** Documented range 0-3, higher returns endpoints sooner. Vendor default 0; we ship 2. */
@@ -193,6 +263,13 @@ export function loadSonioxEnvConfig(): SonioxEnvConfig {
     apiKey: optionalEnv("SONIOX_API_KEY", ""),
     model: optionalEnv("SONIOX_MODEL", SONIOX_DEFAULT_MODEL),
     enableEndpointDetection: optionalEnv("SONIOX_ENABLE_ENDPOINT_DETECTION", "true") === "true",
+    // Same "opt OUT by setting the string false" shape as the line
+    // above, so the one rollback lever behaves like the knob beside it.
+    languageHintsStrict:
+      optionalEnv(
+        "SONIOX_LANGUAGE_HINTS_STRICT",
+        SONIOX_DEFAULT_LANGUAGE_HINTS_STRICT ? "true" : "false",
+      ) === "true",
     maxEndpointDelayMs: rangedEnv(
       "SONIOX_MAX_ENDPOINT_DELAY_MS",
       SONIOX_DEFAULT_MAX_ENDPOINT_DELAY_MS,
@@ -538,6 +615,14 @@ export class SonioxSpeechToTextProvider implements SpeechToTextProvider {
             // free-detects and was resolving Hindi/English audio as
             // Punjabi — see `sonioxLanguageHints`.
             language_hints: sonioxLanguageHints(request.language),
+            // RESTRICTS to that array instead of merely biasing toward
+            // it. This is the parameter that keeps English in Latin and
+            // Hindi in Devanagari; the hints alone could not, because
+            // they leave all 60+ languages reachable and the model was
+            // reaching for them. See
+            // `SONIOX_DEFAULT_LANGUAGE_HINTS_STRICT` for the measured
+            // failure and the vendor's own stated limits.
+            language_hints_strict: this.config.languageHintsStrict,
             enable_endpoint_detection: this.config.enableEndpointDetection,
             // The three latency knobs, sent explicitly rather than left
             // to Soniox's conservative transcription defaults. See the

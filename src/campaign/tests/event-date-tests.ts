@@ -252,8 +252,12 @@ test("C3. no OTHER registered script silently gained a date", () => {
   const declaring = listScripts().filter((s) => s.eventAt !== undefined).map((s) => `${s.id}/${s.version}`);
   // v9 and v10 declare 2026-09-22T19:30:00+05:30 deliberately: a
   // one-evening webinar is exactly the case the field was made for.
+  // v13 declares 2026-09-22T20:00:00+05:30 for the same reason — a
+  // single-evening implementation session, dialled on the day it runs,
+  // which makes the clock blocker load-bearing rather than decorative.
   assert.deepEqual(declaring, [
-    "registration/v6", "registration/v12", "registration/v11", "registration/v10", "registration/v9",
+    "registration/v6", "registration/v13", "registration/v12",
+    "registration/v11", "registration/v10", "registration/v9",
   ]);
 });
 

@@ -122,6 +122,30 @@ export interface ConversationTurn {
   readonly role: "system" | "user" | "assistant";
   readonly content: string;
   readonly timestamp: Date;
+  /**
+   * BARGE-IN RECOVERY CONTEXT, carried past the commit boundary.
+   *
+   * Absent on every ordinary turn — a generated reply, the greeting, a
+   * fixed hearing line, anything the caller said. Present only when
+   * this assistant turn is text the pipeline re-spoke because an
+   * earlier reply was cut off:
+   *
+   *   "resume"  the pipeline continued (or re-delivered) an interrupted
+   *             reply on its own — the RESUME branch of
+   *             `handleAttentionCheck`, `resumeAfterStrandedBargeIn`,
+   *             and `recoverFromSilence`'s held-position branch. The
+   *             caller never asked for it; it is recovery, not
+   *             repetition.
+   *   "repeat"  the caller explicitly asked for the cut-off reply again
+   *             ("start from the beginning", "I couldn't hear you") —
+   *             the REPEAT branch. Intentional, and deliberately still
+   *             visible as a repeat downstream.
+   *
+   * Read by `checkScriptAdherence`, which must not report a recovery
+   * replay as the agent looping on its own script. Nothing in the
+   * pipeline, the prompt or the language model reads it.
+   */
+  readonly replayOf?: "resume" | "repeat";
 }
 
 /**

@@ -26,6 +26,12 @@
  *                        a registration call.
  *   repeatedScriptLines  it said the same approved line twice.
  *
+ * `restartedScript` and `repeatedScriptLines` skip an assistant turn
+ * marked `replayOf: "resume"` — text the pipeline re-spoke because a
+ * barge-in cut it off, which is recovery rather than the improvising
+ * this module reports. A caller-requested repeat (`"repeat"`) is not
+ * skipped. See the note at the loop.
+ *
  * What this is NOT: a second script engine. It holds no state, drives
  * no conversation and never decides an outcome. It reads the script the
  * registry already owns, and its output is a diagnostic attached to the
@@ -118,6 +124,30 @@ export function checkScriptAdherence(input: ScriptAdherenceInput): ScriptAdheren
   const greeting = agentTurns[0] ? sentencesOf(agentTurns[0].text)[0] : undefined;
 
   agentTurns.forEach((turn, turnIndex) => {
+    // ── A BARGE-IN RECOVERY REPLAY IS NOT THE AGENT LOOPING ─────────
+    //
+    // The caller talked over a reply, heard part of a sentence, and the
+    // pipeline re-spoke it — from the RESUME branch of
+    // `handleAttentionCheck`, from `resumeAfterStrandedBargeIn`, or
+    // from `recoverFromSilence`'s held-position branch. Every one of
+    // those is the caller being given back words they were cut off in
+    // the middle of, and none of them reaches the language model. The
+    // words are duplicated in the transcript precisely BECAUSE the
+    // delivery failed, which is the opposite of the failure the two
+    // signals below exist to report.
+    //
+    // `replayOf` is set at those three sites and nowhere else (see
+    // `ConversationTurn.replayOf`), so this cannot silence an ordinary
+    // turn. "repeat" — the caller explicitly asking for the reply
+    // again — is deliberately NOT excluded: that is an intentional
+    // re-delivery of a script line and stays visible here, exactly as
+    // it was before this field existed.
+    //
+    // Scoped to the two repetition signals. The off-script-question and
+    // unsupported-figure checks below read every turn exactly as they
+    // always have, because a replay cannot invent anything that was not
+    // already in the reply it is replaying.
+    const isRecoveryReplay = turn.replayOf === "resume";
     for (const sentence of sentencesOf(turn.text)) {
       const normalised = normaliseText(sentence);
       const contentWords = contentWordsOf(normalised);
@@ -129,6 +159,7 @@ export function checkScriptAdherence(input: ScriptAdherenceInput): ScriptAdheren
       // verbatim.
       if (
         turnIndex > 0 &&
+        !isRecoveryReplay &&
         greeting !== undefined &&
         contentWords.length >= 2 &&
         overlap(contentWords, contentWordsOf(normaliseText(greeting))) >= 0.8
@@ -157,7 +188,7 @@ export function checkScriptAdherence(input: ScriptAdherenceInput): ScriptAdheren
       // Only lines long enough to be a script line, and only ones that
       // are in the script: repeating "Sure." is speech, repeating the
       // pitch is a loop.
-      if (contentWords.length >= 4 && overlapWithSet(contentWords, scriptWords) >= 0.8) {
+      if (!isRecoveryReplay && contentWords.length >= 4 && overlapWithSet(contentWords, scriptWords) >= 0.8) {
         const key = contentWords.slice().sort().join(" ");
         spokenScriptLines.set(key, (spokenScriptLines.get(key) ?? 0) + 1);
       }

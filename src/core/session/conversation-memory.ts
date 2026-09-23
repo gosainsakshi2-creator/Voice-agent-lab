@@ -110,9 +110,21 @@ export class ConversationMemory {
     return turn;
   }
 
-  /** Records an assistant utterance and remembers it if it was a question, to avoid repeats. */
-  recordAssistantTurn(text: string): ConversationTurn {
-    const turn: ConversationTurn = { role: "assistant", content: text, timestamp: new Date() };
+  /**
+   * Records an assistant utterance and remembers it if it was a question, to avoid repeats.
+   *
+   * `replayOf` is passed ONLY by the barge-in recovery sites that
+   * re-speak an interrupted reply — see `ConversationTurn.replayOf`.
+   * Omitted everywhere else, which is every ordinary turn, and the
+   * recorded turn is then byte-for-byte what it has always been.
+   */
+  recordAssistantTurn(text: string, replayOf?: "resume" | "repeat"): ConversationTurn {
+    const turn: ConversationTurn = {
+      role: "assistant",
+      content: text,
+      timestamp: new Date(),
+      ...(replayOf !== undefined ? { replayOf } : {}),
+    };
     this.turns.push(turn);
     if (looksLikeQuestion(text)) {
       this.askedQuestions.add(normalizeForComparison(text));

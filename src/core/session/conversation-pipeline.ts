@@ -1280,9 +1280,13 @@ function scriptedClosingFor(language: SupportedLanguage): string {
  * normal contextual path instead, which is where a caller who still
  * cannot hear after two attempts belongs.
  *
- * RESUME and REPEAT are deliberately NOT counted and reset the counter:
- * both speak the interrupted reply itself, which is script content the
- * caller asked for and is already bounded (see `handleAttentionCheck`).
+ * RESUME and REPEAT are deliberately NOT counted, and reset the counter
+ * WHEN THEY ACTUALLY DELIVERED SOMETHING: both speak the interrupted
+ * reply itself, which is script content the caller asked for. One that
+ * was cut off before any of its audio reached the caller delivered no
+ * script content at all, so it does not reset the counter and this cap
+ * is what bounds it — see the note at the RESUME branch in
+ * `handleAttentionCheck`.
  * The counter is reset by any turn that is not answered with a fixed
  * line — i.e. by the caller contributing something meaningful — so a
  * hearing check later in the same call is answered normally again.
@@ -1986,6 +1990,37 @@ export class ConversationPipeline {
   /** Value of `inboundStreamMs` when the current SPEAKING phase began. */
   private speakingStartedAtStreamMs = 0;
   /**
+   * Value of `inboundStreamMs` at the instant the fixed opening line
+   * finished — i.e. where `greetingDone` flipped, placed on the
+   * call-long audio timeline rather than on the wall clock.
+   *
+   * THE PICKUP WINDOW IS A SPAN OF THE CALLER'S AUDIO, NOT A SPAN OF
+   * OUR PROCESS. `pickupAckAllowance` was armed from `!greetingDone`
+   * alone, which asks when the TRANSCRIPT ARRIVED; the question the
+   * allowance is actually about is when the caller SPOKE. On a real
+   * call those differ by Deepgram's delivery lag — 0.4-1.7s
+   * (`endpointing=400`, `utterance_end_ms=1000`) — while the approved
+   * identity-first opening ("Hi, am I speaking with Sakshi?") is only
+   * ~2s of audio. So a "Hello" said 0.8s after pickup, squarely over
+   * the opening, routinely LANDS after the opening has finished: the
+   * allowance was never armed, the greeting reached the identity gate,
+   * classified `unclear`, and drew `identityReAskFor` — "Sorry — Am I
+   * speaking with…?" — which is the reported defect.
+   *
+   * Compared against `segment.startedAtMs` through the SAME re-base
+   * offset `sttStreamMsOf` maintains (`sttClockOffsetMs`), exactly as
+   * `speakingStartedAtStreamMs` is compared in
+   * `interruptionCorroborated`, so an STT reconnect cannot make the
+   * test lie: a re-base moves the offset up to the live edge, which is
+   * far past this snapshot.
+   *
+   * `0` until the opening finishes, which makes the comparison inert
+   * before then (a segment with word timings has `startedAtMs > 0`, and
+   * one without is excluded outright) — so nothing reads this until it
+   * describes a real instant.
+   */
+  private greetingDoneAtStreamMs = 0;
+  /**
    * Stream position at which the most recently RELEASED user turn was
    * handed to the main loop — stamped at the top of the `onTurnEnd`
    * listener, on the same call-long timeline as
@@ -2636,6 +2671,11 @@ export class ConversationPipeline {
     // detection, barge-in, contextual replies — behaves exactly as it
     // always has. The listener itself has been running since before
     // the greeting (see above), so nothing has to be caught up here.
+    //
+    // Snapshotted BEFORE the flag is set, so the two describe the same
+    // instant and a segment arriving in between cannot be judged against
+    // a window that has not been recorded yet. See `greetingDoneAtStreamMs`.
+    this.greetingDoneAtStreamMs = this.inboundStreamMs;
     this.greetingDone = true;
 
     // The agent's own backchannel cue — see `BACKCHANNEL_CUE_MIN_WORDS`.
@@ -3211,15 +3251,19 @@ export class ConversationPipeline {
     const timer = new TurnTimer(sid, "RESUME");
     this.beginTurnTiming(timer);
     try {
-      await this.speakFixedUtterance(remainder, loopSignal, "resuming an interrupted reply");
+      // The remainder is a slice of `assistantText`, i.e. already
+      // formatted — see `speakFixedUtterance`'s `alreadyFormatted`.
+      await this.speakFixedUtterance(remainder, loopSignal, "resuming an interrupted reply", true);
     } finally {
       this.activeTimer = undefined;
       timer.summarize();
     }
     // Committed for the same reason the interrupted part was: the caller
     // heard it, so the model must be able to see it and carry on from
-    // there instead of starting the block again.
-    this.record.memory.recordAssistantTurn(remainder);
+    // there instead of starting the block again. Marked as recovery —
+    // the caller never asked for it, the pipeline spoke it because a
+    // barge-in left them mid-sentence. See `ConversationTurn.replayOf`.
+    this.record.memory.recordAssistantTurn(remainder, "resume");
     // FIX 2 — script content the caller heard: a block has been delivered.
     this.contextualReplyCommitted = true;
     this.record.bargeIn.reset();
@@ -3413,6 +3457,21 @@ export class ConversationPipeline {
     // generated for this caller. Whatever they hear of it is committed
     // as heard; whatever they cut off again is re-held as the position.
     if (wantsRestart) {
+      // ── THE EXISTING CAP, ON THIS PATH TOO ───────────────────────
+      //
+      // The same guard the RESUME branch below opens with, for the same
+      // reason. REPEAT re-speaks the whole cut-off reply from its first
+      // word, and — like RESUME — it neither consulted the cap nor
+      // advanced the counter, so a caller who cut every replay with
+      // another bare "No." was offered the whole block again per "No.",
+      // without bound (read-only audit, 2026-09-22, reproduced through
+      // the harness: four cut repeats, a fifth started, one model
+      // request). The counter, the cap and the fallback are the existing
+      // ones (`MAX_HEARING_LINES_WITHOUT_PROGRESS`, still 2;
+      // `declineExhaustedHearingCheck`, unchanged): once the lines are
+      // spent, a further restart request takes the contextual path
+      // exactly as an exhausted hearing check does.
+      if (this.hearingLineCapReached()) return this.declineExhaustedHearingCheck(trimmed);
       const full = this.heldScriptFull;
       // eslint-disable-next-line no-console
       console.log(
@@ -3423,12 +3482,33 @@ export class ConversationPipeline {
         full,
         loopSignal,
         "repeating the interrupted reply from the beginning",
+        // The caller ASKED for this one. Deliberately not "resume": an
+        // intentional re-delivery of a script line stays visible to the
+        // adherence diagnostic exactly as it was before `replayOf`
+        // existed.
+        "repeat",
       );
       // Cut off again: whatever is STILL unheard is still the position.
       this.heldScriptRemainder = spoken.unheard;
-      if (spoken.heard.length > 0) this.contextualReplyCommitted = true;
-      // Script content, not a fixed hearing line: the call advanced.
-      this.hearingLinesWithoutProgress = 0;
+      if (spoken.heard.length > 0) {
+        this.contextualReplyCommitted = true;
+        // Script content the caller HEARD, not a fixed hearing line: the
+        // call advanced. See the note at the RESUME branch below for why
+        // this is now conditional.
+        this.hearingLinesWithoutProgress = 0;
+      } else {
+        // ── A ZERO-DELIVERY REPEAT IS A LINE SPENT ─────────────────
+        //
+        // The complement of the reset above, and the half that makes
+        // the guard at the top of this branch reachable — the same
+        // accounting the RESUME branch applies to a resume the caller
+        // heard none of. Classified AFTER the utterance has been spoken
+        // and cancelled, from the delivery `speakAttentionUtterance`
+        // measured, never from an intention: a repeat the caller
+        // actually heard any of takes the branch above and resets,
+        // exactly as it always did.
+        this.hearingLinesWithoutProgress += 1;
+      }
       return true;
     }
 
@@ -3448,6 +3528,29 @@ export class ConversationPipeline {
     // Reached by a second "hello", by a confirmation ("yes", "haan")
     // and by an explicit "continue from where you stopped".
     if (this.attentionEpisodeOpen && remainder.length > 0) {
+      // ── THE EXISTING CAP, NOW ALSO ON THIS PATH ──────────────────
+      //
+      // The four sites that speak a FIXED hearing line have always
+      // asked this first; RESUME never did, because it speaks script
+      // content and a resume was, by construction, always progress —
+      // `heardSoFarText` rounded up, so any resume that started counted
+      // as delivered and the remainder was strictly shorter every round.
+      //
+      // With delivered audio measured accurately that is no longer
+      // true. A caller who interrupts before any of the resumed audio
+      // reaches them leaves the whole remainder re-held and the counter
+      // untouched (see the reset below), so without this guard the same
+      // block is replayed for as long as they keep saying "hello?" —
+      // the loop `MAX_HEARING_LINES_WITHOUT_PROGRESS` already exists to
+      // end.
+      //
+      // Nothing about the cap changes: not its value, not how it is
+      // incremented, not what declining does. A resume that DELIVERS
+      // anything still resets the counter, so a caller who is actually
+      // hearing the reply never reaches this at all — and one who has
+      // twice heard nothing is handed to the contextual path, which is
+      // where a caller the fixed lines are not reaching belongs.
+      if (this.hearingLineCapReached()) return this.declineExhaustedHearingCheck(trimmed);
       // eslint-disable-next-line no-console
       console.log(
         `[PIPELINE:${sid}] attention check answered — RESUMING from where the reply stopped: "${remainder.slice(0, 80)}${remainder.length > 80 ? "..." : ""}"`,
@@ -3457,13 +3560,61 @@ export class ConversationPipeline {
         remainder,
         loopSignal,
         "resuming after an attention check",
+        "resume",
       );
       // Cut off again: whatever is STILL unheard is still the position.
       this.heldScriptRemainder = spoken.unheard;
-      // FIX 2 — script content the caller heard: a block has been delivered.
-      if (spoken.heard.length > 0) this.contextualReplyCommitted = true;
-      // Script content, not a fixed hearing line: the call advanced.
-      this.hearingLinesWithoutProgress = 0;
+      // ── A RESUME THAT DELIVERED NOTHING IS NOT PROGRESS ───────────
+      //
+      // This reset used to be unconditional, on the premise that a
+      // replay is always script content and therefore always advances
+      // the call (see `MAX_HEARING_LINES_WITHOUT_PROGRESS`). That
+      // premise held only while `heardSoFarText` rounded UP: an
+      // utterance counted as heard the instant playback started, so a
+      // resume could not deliver nothing.
+      //
+      // With delivered audio measured accurately it can. A caller who
+      // interrupts inside the resumed sentence every time hears no more
+      // of it each round, the whole remainder is re-held, and the
+      // unconditional reset meant the cap could never be reached — the
+      // same block replayed for as long as they kept saying "hello?".
+      //
+      // So the reset now follows what was actually delivered, which is
+      // the value the line above already computed. Nothing else changes:
+      // no new counter, no new threshold, and a resume that delivers any
+      // audio at all resets the cap exactly as it always did.
+      if (spoken.heard.length > 0) {
+        // FIX 2 — script content the caller heard: a block has been delivered.
+        this.contextualReplyCommitted = true;
+        this.hearingLinesWithoutProgress = 0;
+      } else {
+        // ── AND A ZERO-DELIVERY RESUME IS A LINE SPENT ──────────────
+        //
+        // The complement of the reset above, and the half that makes
+        // the guard at the top of this branch reachable. Leaving the
+        // counter merely UNRESET was not enough: nothing else on this
+        // path advances it, so a caller whose every "hello?" lands
+        // before the resumed audio reaches them held it at whatever the
+        // one acknowledgement had set it to, the cap was never met, and
+        // the same block was offered again per "hello?" forever
+        // (measured: six interruptions, seven copies spoken, one
+        // language-model request).
+        //
+        // Counted here for exactly the reason the four fixed-line sites
+        // count themselves: the agent has just spoken and the call is
+        // no further forward. The classification is made AFTER the
+        // utterance has been spoken and cancelled, from the delivery
+        // `speakAttentionUtterance` measured — never from an intention —
+        // so a resume the caller actually heard any of takes the branch
+        // above and resets, exactly as it always did.
+        //
+        // Uses the existing counter and the existing cap
+        // (`MAX_HEARING_LINES_WITHOUT_PROGRESS`, still 2). Once it is
+        // met, the guard at the top of this branch hands the next check
+        // to `declineExhaustedHearingCheck` — the same contextual
+        // fallback a caller gets when the fixed hearing lines are spent.
+        this.hearingLinesWithoutProgress += 1;
+      }
       return true;
     }
 
@@ -3639,13 +3790,29 @@ export class ConversationPipeline {
     text: string,
     loopSignal: AbortSignal,
     transitionReason: string,
+    /**
+     * Set ONLY by the branches that re-speak an interrupted reply — the
+     * RESUME and REPEAT branches of `handleAttentionCheck` and
+     * `recoverFromSilence`'s held-position branch. Omitted for the fixed
+     * lines (the acknowledgement, the follow-up, the identity question,
+     * the silence prompts), which are not script text and are not a
+     * replay of anything. Recorded on the committed turn and read only
+     * by the adherence diagnostic — see `ConversationTurn.replayOf`.
+     */
+    replayOf?: "resume" | "repeat",
     timerLabel = "ATTENTION",
   ): Promise<{ readonly heard: string; readonly unheard: string }> {
     const responseId = this.beginAssistantResponse();
     const timer = new TurnTimer(this.record.id, timerLabel);
     this.beginTurnTiming(timer);
     try {
-      await this.speakFixedUtterance(text, loopSignal, transitionReason);
+      // `replayOf` is set at exactly the three sites that re-speak an
+      // interrupted reply, and those are exactly the texts that have
+      // already been through the formatter. Every fixed line (the
+      // acknowledgement, the follow-up, the identity question, the
+      // silence prompts, the closing) leaves it unset and is formatted
+      // here exactly as before.
+      await this.speakFixedUtterance(text, loopSignal, transitionReason, replayOf !== undefined);
     } finally {
       this.activeTimer = undefined;
       timer.summarize();
@@ -3653,7 +3820,7 @@ export class ConversationPipeline {
 
     const cancelled = this.isResponseCancelled(responseId);
     const heard = cancelled ? this.cancelledHeardText : text;
-    if (heard.length > 0) this.record.memory.recordAssistantTurn(heard);
+    if (heard.length > 0) this.record.memory.recordAssistantTurn(heard, replayOf);
     this.record.bargeIn.reset();
     return { heard, unheard: cancelled ? unspokenTail(text, heard) : "" };
   }
@@ -3719,7 +3886,7 @@ export class ConversationPipeline {
     console.log(
       `[PIPELINE:${this.record.id}] closing acknowledgement "${trimmed.slice(0, 40)}" after a confirmed registration — speaking the fixed goodbye: "${line}"`,
     );
-    await this.speakAttentionUtterance(line, loopSignal, "closing after a confirmed registration", "CLOSING");
+    await this.speakAttentionUtterance(line, loopSignal, "closing after a confirmed registration", undefined, "CLOSING");
     return true;
   }
 
@@ -4312,16 +4479,69 @@ export class ConversationPipeline {
   }
 
   /**
+   * How far the transport has actually got through this reply, in ms of
+   * its audio — the play head `heardSoFarText` reads.
+   *
+   * TWO TERMS, BOTH ALREADY MAINTAINED.
+   *
+   *   1. `Date.now() - outboundPlaybackStartedAt` — how long since the
+   *      first frame was HANDED OVER. This is what the play head used
+   *      to be, whole.
+   *   2. minus the transport's own unsent backlog
+   *      (`SessionRecord.outboundBacklogMs`). The pipeline hands audio
+   *      over faster than real time and the bridge paces it out,
+   *      holding up to its high-water mark; term 1 therefore leads the
+   *      caller's ears by exactly that queue, and a barge-in DISCARDS
+   *      it. Counting it would credit the caller with audio that was
+   *      thrown away before it was ever sent.
+   *
+   * No transport reporter (the in-process fallback, the harnesses) means
+   * no backlog, hand-off IS delivery, and this is term 1 alone — the
+   * arithmetic those paths have always had.
+   */
+  private playedSoFarMs(): number {
+    if (this.outboundPlaybackStartedAt === 0) return 0;
+    const handedOverMs = Date.now() - this.outboundPlaybackStartedAt;
+    let backlogMs = 0;
+    try {
+      backlogMs = this.record.outboundBacklogMs?.() ?? 0;
+    } catch {
+      // A transport tearing down mid-read reports nothing rather than
+      // failing a barge-in. Zero is the previous behaviour.
+      backlogMs = 0;
+    }
+    return Math.max(0, handedOverMs - (backlogMs > 0 ? backlogMs : 0));
+  }
+
+  /**
    * The part of the reply currently being spoken that the transport has
    * already PLAYED — i.e. what the caller has actually heard.
    *
    * Every utterance handed to `synthesizeAndPlay` is recorded with the
-   * playback offset it starts at (`spokenUtterances`), and playback
-   * runs in real time from `outboundPlaybackStartedAt`, so an utterance
-   * whose start offset is behind the play head has been heard. The one
-   * still playing when this is read counts as heard: the caller is
-   * listening to it, and the alternative — dropping it — is the
-   * repetition this exists to prevent.
+   * playback offsets it occupies (`spokenUtterances`), and
+   * `playedSoFarMs` is how far the transport has got, so an utterance
+   * whose END is behind the play head has been heard in full.
+   *
+   * IT ROUNDS DOWN, AND THAT IS THE FIX. This used to count an
+   * utterance as heard the moment its START was behind the head, so a
+   * barge-in 200ms into a three-second sentence committed the whole
+   * sentence and resumed from the NEXT one — the caller heard "I am
+   * calling…" and was answered with the sentence after it. A chunk here
+   * is a whole sentence, so the old rounding could skip a whole
+   * sentence, and the transport backlog above could skip several more.
+   *
+   * The reason it rounded up was real: a partially-heard sentence that
+   * is not committed is replayed, and a replay used to be
+   * indistinguishable from the agent looping on its own script. That is
+   * why this change is only half of one — the recovery paths now commit
+   * their text as `replayOf: "resume"` (see `ConversationTurn.replayOf`)
+   * and the adherence check reads it. Replaying the sentence the caller
+   * was cut off in the middle of is the correct behaviour, and it is no
+   * longer reported as repetition.
+   *
+   * An utterance that is not `complete` is never counted however far the
+   * head has run: more of its audio may still be on the way, so its
+   * extent is not yet its duration.
    *
    * Read-only over counters that already exist for `drainPlayback` and
    * `remainingSpeechMs`. Nothing here changes what is synthesized,
@@ -4329,9 +4549,14 @@ export class ConversationPipeline {
    */
   private heardSoFarText(): string {
     if (this.outboundPlaybackStartedAt === 0 || this.spokenUtterances.length === 0) return "";
-    const playedMs = Date.now() - this.outboundPlaybackStartedAt;
+    const playedMs = this.playedSoFarMs();
     return this.spokenUtterances
-      .filter((utterance) => utterance.startsAtMs < playedMs)
+      .filter(
+        (utterance) =>
+          utterance.complete &&
+          utterance.endsAtMs > utterance.startsAtMs &&
+          utterance.endsAtMs <= playedMs,
+      )
       .map((utterance) => utterance.text)
       .join(" ")
       .trim();
@@ -5020,6 +5245,60 @@ export class ConversationPipeline {
           // the raw one.
           const segmentEndedAtStreamMs = this.sttStreamMsOf(segment);
 
+          // ── The pickup greeting Deepgram delivered LATE ───────────
+          //
+          // The allowance above is armed from `!greetingDone`, which
+          // asks when the TRANSCRIPT ARRIVED. This asks the question
+          // the allowance is actually about — when the caller SPOKE —
+          // and arms it for words that began while the opening line was
+          // still playing but whose final only landed after it. That
+          // gap is Deepgram's delivery lag (0.4-1.7s) against an
+          // identity-first opening of ~2s, so it is the COMMON case,
+          // not an edge: the pickup "Hello" then reached the identity
+          // gate, read as `unclear`, and drew "Sorry — Am I speaking
+          // with…?" over a question the caller had only just heard.
+          //
+          // EVERY BOUND HERE IS THE EXISTING ONE. It arms the SAME
+          // allowance, which is still consumed by the first acquired
+          // turn whatever that turn is, and still drops it only if the
+          // WHOLE utterance passes the same `PICKUP_GREETING_ONLY`
+          // table — no vocabulary is added and no rule is relaxed. All
+          // this widens is WHICH segments count as "heard during the
+          // opening", from the arrival clock to the audio clock.
+          //
+          // SCOPED TO THE PICKUP WINDOW BY CONSTRUCTION, not by a word:
+          // `greetingDoneAtStreamMs` is a fixed, early position on a
+          // monotonic call-long timeline, so a "Hello?" spoken at any
+          // point after the opening — the attention-check case, which
+          // must stay a real turn — is strictly greater than it and is
+          // untouched.
+          //
+          // THE WHOLE UTTERANCE MUST BE INSIDE THE OPENING, which is
+          // why this reads where the words ENDED and not where they
+          // began. A hello that STRADDLES the end of the opening is
+          // left to the ordinary path: it is the caller speaking into
+          // the silence after the question as much as over it, and
+          // there is nothing to separate it from a first answer. Being
+          // wrong in that direction costs the caller hearing the
+          // question twice — annoying, not unsafe — which is the same
+          // bias `openingLineAsksIdentity` is written with, and it is
+          // what keeps a turn that must be ANSWERED (buffered-turn
+          // D1/D2/D5/D6, whose "Hello." ends just after the opening)
+          // out of the allowance entirely.
+          //
+          // Reuses `segmentEndedAtStreamMs` — already re-based for this
+          // very segment one line above — rather than re-deriving it,
+          // so the two readings cannot drift. `0` is that helper's
+          // "no word timings in this result" (see the Deepgram
+          // adapter), never a position, so it is excluded.
+          if (
+            segmentEndedAtStreamMs > 0 &&
+            segment.text.trim().length > 0 &&
+            segmentEndedAtStreamMs <= this.greetingDoneAtStreamMs
+          ) {
+            this.pickupAckAllowance = true;
+          }
+
           // METRICS ONLY — pure observation, no control flow. Records
           // when this final landed and how far behind the audio it
           // was, so `recordTurn` can report real recognition latency
@@ -5554,6 +5833,7 @@ export class ConversationPipeline {
         held,
         loopSignal,
         "resuming a held script position rather than recovering from silence",
+        "resume",
         "RESUME",
       );
       // Cut off again: whatever is STILL unheard is still the position.
@@ -5606,7 +5886,7 @@ export class ConversationPipeline {
     console.log(
       `[PIPELINE:${sid}] caller silent for ${SILENCE_RECOVERY_INTERVAL_MS}ms — recovery prompt ${this.silenceRecoveryPrompts}/${SILENCE_RECOVERY_MAX_PROMPTS}: "${line}"`,
     );
-    await this.speakAttentionUtterance(line, loopSignal, "silence recovery prompt", "RECOVERY");
+    await this.speakAttentionUtterance(line, loopSignal, "silence recovery prompt", undefined, "RECOVERY");
     if (loopSignal.aborted) return false;
     // Back to LISTENING before the window is re-armed, exactly as the
     // top of the main loop does after any other fixed utterance.
@@ -6160,12 +6440,53 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
     text: string,
     loopSignal: AbortSignal,
     transitionReason = "preparing the greeting",
+    /**
+     * ---------------- RECOVERY TEXT IS ALREADY FORMATTED -------------
+     *
+     * `true` ONLY for text that came out of a reply this pipeline
+     * already spoke: a held remainder or a whole cut-off reply. Both are
+     * slices of `assistantText`, which is `toSpokenText(...)` of the
+     * model's output — so the formatter has already run over them, and
+     * running it a second time here is not a no-op.
+     *
+     * `formatForSpeech` is anchored at the start of the text it is
+     * given. A remainder that begins mid-sentence — which is exactly
+     * what `unspokenTail` returns after a cut at a clause or forced
+     * boundary — gets its first letter capitalised: "products,
+     * checkout, courses…" becomes "Products, checkout, courses…". That
+     * rewritten form is what `spokenUtterances` then records, so
+     * `unspokenTail(text, heard)` compares "P" against "p", finds a
+     * mismatch on the first character and returns "" — the remainder is
+     * dropped with nothing said about it. The leading-filler and
+     * stacked-acknowledgement rules are anchored the same way and can
+     * edit a remainder that happens to begin with one of their forms.
+     *
+     * So the recovery paths hand their text through UNCHANGED. It is
+     * still the approved wording — it has been through the formatter
+     * once, where the formatter belongs — and it is now character-exact
+     * against the position held for it.
+     *
+     * `false` (the default) for everything else, which is every path
+     * that speaks text the formatter has NOT already seen: the opening
+     * line, the attention acknowledgement and follow-up, the identity
+     * question and its re-ask, the silence-recovery prompts and the
+     * scripted closing. All of them keep the formatting they have
+     * always had.
+     *
+     * `pronounceForSpeech` inside `synthesizeAndPlay` is untouched by
+     * this and still runs for every utterance: it rewrites the TTS
+     * REQUEST only, never the text that is stored or committed.
+     */
+    alreadyFormatted = false,
   ): Promise<void> {
     this.host.transition(this.record, SessionState.THINKING, transitionReason);
     const speakingSignal = this.enterSpeaking();
     if (speakingSignal.aborted || loopSignal.aborted) return;
 
-    const spoken = await this.synthesizeAndPlay(toSpokenText(text), speakingSignal);
+    const spoken = await this.synthesizeAndPlay(
+      alreadyFormatted ? text : toSpokenText(text),
+      speakingSignal,
+    );
     // The greeting is a startup action, not a turn, so it is correctly
     // absent from `turnLatencies` — but it still consumes real TTS
     // characters, and that cost used to be dropped on the floor.
@@ -6745,12 +7066,32 @@ await this.drainPlayback(speakingSignal, true);
   private outboundPlaybackStartedAt = 0;
   /**
    * Every utterance handed to the transport this speaking phase, with
-   * the playback offset (ms into this phase's audio) at which it
-   * starts — i.e. `outboundQueuedMs` as it stood before the utterance
-   * was queued. Read only by `heardSoFarText`, to tell the part of an
-   * interrupted reply the caller heard from the part they did not.
+   * the playback offsets (ms into this phase's audio) it occupies.
+   * Read only by `heardSoFarText`, to tell the part of an interrupted
+   * reply the caller heard from the part they did not.
+   *
+   * `startsAtMs` is `outboundQueuedMs` as it stood before the utterance
+   * was queued. `endsAtMs` is where it stood after the last audio chunk
+   * of that utterance was handed over — i.e. start + the utterance's
+   * real duration, summed from the SAME `estimateAudioSeconds` call
+   * `drainPlayback` already bills the queue with. Nothing new is
+   * measured or guessed.
+   *
+   * `complete` is "no more audio is coming for this entry". An
+   * utterance is still being synthesized chunk by chunk while it is the
+   * last one, so its `endsAtMs` is only a partial extent until then;
+   * counting it as heard on that partial extent would credit the caller
+   * with a whole sentence on a fraction of its audio, which is the
+   * defect this accounting exists to prevent. Set at the two instants
+   * that make it true and nowhere else: the next utterance starting,
+   * and `drainPlayback` (the reply being fully queued).
    */
-  private spokenUtterances: Array<{ readonly text: string; readonly startsAtMs: number }> = [];
+  private spokenUtterances: Array<{
+    readonly text: string;
+    readonly startsAtMs: number;
+    endsAtMs: number;
+    complete: boolean;
+  }> = [];
   /**
    * FIX 1 — true once EVERY utterance of the current reply has been
    * handed to the transport, i.e. from the moment `drainPlayback` is
@@ -6834,6 +7175,13 @@ await this.drainPlayback(speakingSignal, true);
     // early returns below: a reply that queued nothing is trivially
     // fully queued.
     this.replyFullyQueued = true;
+    // The second of the two proofs that an utterance is fully queued
+    // (see `spokenUtterances`): every call site reaches here only after
+    // the last utterance has been handed over, so the last entry can
+    // receive no more audio. Set BEFORE the early returns below, for
+    // the same reason the flag above is.
+    const last = this.spokenUtterances[this.spokenUtterances.length - 1];
+    if (last !== undefined) last.complete = true;
     if (this.outboundPlaybackStartedAt === 0 || this.outboundQueuedMs <= 0) return;
     if (signal.aborted) return;
 
@@ -6974,7 +7322,22 @@ await this.drainPlayback(speakingSignal, true);
     // not from whether this call returned. The original wording is
     // stored, NOT the `pronounceForSpeech` rewrite below: history, the
     // classifier and the sheet all read approved wording.
-    this.spokenUtterances.push({ text, startsAtMs: this.outboundQueuedMs });
+    //
+    // A new utterance beginning is one of the two proofs that the
+    // PREVIOUS one is fully queued (see `spokenUtterances`): the
+    // synthesize-and-play calls are awaited one after another, so no
+    // further audio can arrive for it.
+    const previous = this.spokenUtterances[this.spokenUtterances.length - 1];
+    if (previous !== undefined) previous.complete = true;
+    // `endsAtMs` starts equal to `startsAtMs` — nothing of it has been
+    // handed over yet — and is advanced by `playAudioChunk` as its audio
+    // arrives.
+    this.spokenUtterances.push({
+      text,
+      startsAtMs: this.outboundQueuedMs,
+      endsAtMs: this.outboundQueuedMs,
+      complete: false,
+    });
 
     const ttsProviderId = this.providers.tts.descriptor.id;
     const language = this.record.memory.currentLanguage;
@@ -7203,6 +7566,11 @@ await this.drainPlayback(speakingSignal, true);
         this.markTiming("audio-queued");
       }
       this.outboundQueuedMs += estimateAudioSeconds(audio) * 1000;
+      // The utterance being handed over now extends to here. Same
+      // number `outboundQueuedMs` just took, so the per-utterance
+      // extents and the phase total can never disagree.
+      const current = this.spokenUtterances[this.spokenUtterances.length - 1];
+      if (current !== undefined) current.endsAtMs = this.outboundQueuedMs;
     }
 
     if (this.record.mediaStream) {

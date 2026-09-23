@@ -475,6 +475,26 @@ export class DefaultVoiceSessionManager implements VoiceSessionManager, Pipeline
   }
 
   /**
+   * ADDITIVE, NOT PART OF `VoiceSessionManager`. The transport telling
+   * the session how to ask "how much of what I handed you have you NOT
+   * sent yet?" — see `SessionRecord.outboundBacklogMs`.
+   *
+   * Write-once-and-unsubscribe, exactly like `onOutboundAudio` above,
+   * and the reporter itself must be read-only: it is called from the
+   * pipeline's barge-in path, where the answer decides how much of a
+   * cut-off reply the caller actually heard. A session with no
+   * transport never gets one and the pipeline reads no backlog, which
+   * is the behaviour it had before this existed.
+   */
+  setOutboundBacklogReporter(sessionId: SessionId, reporter: () => number): () => void {
+    const record = this.getRecordOrThrow(sessionId);
+    record.outboundBacklogMs = reporter;
+    return () => {
+      if (record.outboundBacklogMs === reporter) record.outboundBacklogMs = undefined;
+    };
+  }
+
+  /**
    * Manually signal a barge-in for a session — used when the
    * telephony transport can detect "the caller started talking"
    * faster than STT can confirm it, or by tests exercising

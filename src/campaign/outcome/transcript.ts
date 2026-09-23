@@ -25,6 +25,18 @@ export interface TranscriptTurn {
   readonly text: string;
   /** ISO-8601. Stored as a string because that is what survives JSONB round-tripping. */
   readonly at: string | null;
+  /**
+   * Set only on an assistant turn the pipeline re-spoke after a
+   * barge-in — see `ConversationTurn.replayOf`, which this carries
+   * through unchanged. "resume" is the pipeline continuing an
+   * interrupted reply by itself; "repeat" is the caller having asked
+   * for it again.
+   *
+   * Absent on every turn recorded before this field existed, and on
+   * every ordinary turn since, so a stored transcript without it reads
+   * exactly as it always did.
+   */
+  readonly replayOf?: "resume" | "repeat";
 }
 
 export interface StoredTranscript {
@@ -57,6 +69,9 @@ export function toStoredTranscript(
     role: turn.role,
     text: String(turn.content ?? "").slice(0, MAX_CHARS_PER_TURN).trim(),
     at: toIso(turn.timestamp),
+    // Spread, so a turn without it stores no key at all and the JSONB
+    // row for an ordinary call is unchanged.
+    ...(turn.replayOf === "resume" || turn.replayOf === "repeat" ? { replayOf: turn.replayOf } : {}),
   }));
 
   return {
@@ -84,6 +99,14 @@ export function fromStoredTranscript(value: unknown): readonly TranscriptTurn[] 
     const text = (turn as { text?: unknown }).text;
     if ((role !== "user" && role !== "assistant") || typeof text !== "string") return [];
     const at = (turn as { at?: unknown }).at;
-    return [{ role, text, at: typeof at === "string" ? at : null }];
+    const replayOf = (turn as { replayOf?: unknown }).replayOf;
+    return [
+      {
+        role,
+        text,
+        at: typeof at === "string" ? at : null,
+        ...(replayOf === "resume" || replayOf === "repeat" ? { replayOf } : {}),
+      },
+    ];
   });
 }

@@ -58,6 +58,28 @@ export class SessionRecord {
    */
   readonly outboundAudioListeners = new Set<(chunk: AudioPayload) => void | Promise<void>>();
 
+  /**
+   * READ-ONLY, INSTALLED BY THE TRANSPORT: how many ms of already
+   * handed-over assistant audio are still sitting in the transport's
+   * own outbound queue, unsent.
+   *
+   * The pipeline hands audio to a bridge faster than real time and the
+   * bridge paces it out at 20ms a frame, holding up to its high-water
+   * mark (2800ms on the Plivo and Vobiz pumps). A barge-in DISCARDS
+   * that queue. So the pipeline's own "how long has playback been
+   * running" clock — which starts at the first hand-off — leads the
+   * caller's ears by exactly this much, and everything inside it was
+   * never heard.
+   *
+   * `undefined` means no transport reports a backlog — the in-process
+   * audio fallback and the test harnesses, where hand-off IS delivery
+   * — and the pipeline then reads it as `0`, i.e. exactly the
+   * arithmetic it had before. Whole frames only; the bridges compute it
+   * from their existing queue length and frame duration, so this
+   * introduces no second timing model and no new threshold.
+   */
+  outboundBacklogMs: (() => number) | undefined;
+
   /** Set while `start()`'s conversation loop is running; used to stop the loop on `end()`. */
   loopAbortController: AbortController | undefined;
   loopPromise: Promise<void> | undefined;

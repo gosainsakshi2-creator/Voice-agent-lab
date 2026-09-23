@@ -199,6 +199,7 @@ export function attachPlivoMediaBridge(
 ): void {
   let unsubscribeOutbound: (() => void) | undefined;
   let unsubscribeState: (() => void) | undefined;
+  let unsubscribeBacklog: (() => void) | undefined;
   let outboundQueue: Uint8Array[] = [];
   let pumpTimer: ReturnType<typeof setInterval> | undefined;
   let prerollTimer: ReturnType<typeof setTimeout> | undefined;
@@ -596,6 +597,26 @@ export function attachPlivoMediaBridge(
   }
 
   unsubscribeOutbound = manager.onOutboundAudio(sessionId, enqueueOutbound);
+  // READ-ONLY. How much of what the pipeline has handed over is still
+  // sitting here unsent — the queue it already maintains, in ms, from
+  // the frame duration it already pumps at. `clearOutboundPlayback`
+  // DISCARDS exactly this audio on barge-in, so it is the part of the
+  // reply the caller was never going to hear, and the pipeline must not
+  // count it as heard. Computed on demand; nothing is stored.
+  // Guarded the same way every other manager call in this file is
+  // (`noteCallerEnergy`, `sttEvidenceAgeMs`): the bridge must start
+  // and pump audio even against a session manager that does not
+  // offer this accessor. Without a reporter the pipeline simply
+  // reads no backlog, which is its behaviour on every transport
+  // that has never had one.
+  try {
+    unsubscribeBacklog = manager.setOutboundBacklogReporter?.(
+      sessionId,
+      () => outboundQueue.length * OUTBOUND_FRAME_MS,
+    );
+  } catch {
+    // Session already gone — nothing to report a backlog for.
+  }
   // eslint-disable-next-line no-console
   console.log(`[plivo-bridge:${sessionId}] outbound audio listener registered`);
 
@@ -722,6 +743,7 @@ export function attachPlivoMediaBridge(
     segmenter.flush();
     unsubscribeOutbound?.();
     unsubscribeState?.();
+    unsubscribeBacklog?.();
     if (pumpTimer) clearInterval(pumpTimer);
     if (prerollTimer) clearTimeout(prerollTimer);
     // Plivo closes this socket when the call itself ends (including

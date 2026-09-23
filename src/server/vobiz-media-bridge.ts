@@ -170,6 +170,7 @@ export function attachVobizMediaBridge(
 ): void {
   let unsubscribeOutbound: (() => void) | undefined;
   let unsubscribeState: (() => void) | undefined;
+  let unsubscribeBacklog: (() => void) | undefined;
   let outboundQueue: Uint8Array[] = [];
   let pumpTimer: ReturnType<typeof setInterval> | undefined;
   let prerollTimer: ReturnType<typeof setTimeout> | undefined;
@@ -539,6 +540,23 @@ export function attachVobizMediaBridge(
   }
 
   unsubscribeOutbound = manager.onOutboundAudio(sessionId, enqueueOutbound);
+  // READ-ONLY, identical to the Plivo bridge: how much handed-over
+  // assistant audio is still queued here and unsent. Barge-in discards
+  // it, so the pipeline must not count it as heard.
+  // Guarded the same way every other manager call in this file is
+  // (`noteCallerEnergy`, `sttEvidenceAgeMs`): the bridge must start
+  // and pump audio even against a session manager that does not
+  // offer this accessor. Without a reporter the pipeline simply
+  // reads no backlog, which is its behaviour on every transport
+  // that has never had one.
+  try {
+    unsubscribeBacklog = manager.setOutboundBacklogReporter?.(
+      sessionId,
+      () => outboundQueue.length * OUTBOUND_FRAME_MS,
+    );
+  } catch {
+    // Session already gone — nothing to report a backlog for.
+  }
   // eslint-disable-next-line no-console
   console.log(`[vobiz-bridge:${sessionId}] outbound audio listener registered`);
 
@@ -717,6 +735,7 @@ export function attachVobizMediaBridge(
     segmenter.flush();
     unsubscribeOutbound?.();
     unsubscribeState?.();
+    unsubscribeBacklog?.();
     if (pumpTimer) clearInterval(pumpTimer);
     if (prerollTimer) clearTimeout(prerollTimer);
     // Vobiz closes the WebSocket when the call ends — make sure

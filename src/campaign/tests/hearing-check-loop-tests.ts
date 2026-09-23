@@ -634,6 +634,75 @@ await test("B3 — a RESUME is progress and does not consume the cap", async () 
   }
 });
 
+await test("B4 — a REPEAT the caller hears none of spends a line, so repeated zero-progress repeats end at the existing cap", async () => {
+  // C1 (read-only audit, 2026-09-22). The REPEAT branch neither counted
+  // against the cap nor consulted it, so a caller who cut every replay
+  // with another bare "No." was offered the whole block again per "No.",
+  // without bound — measured through this harness before the fix: four
+  // cut repeats, a fifth started, one model request. RESUME already
+  // counts a zero-delivery resume; this pins the same accounting on
+  // REPEAT, and only that:
+  //
+  //   - the FIRST repeat is still spoken (existing intended behaviour);
+  //   - a repeat the caller hears none of spends one of the existing
+  //     `MAX_HEARING_LINES_WITHOUT_PROGRESS` lines;
+  //   - once they are spent, the next restart request takes the
+  //     contextual path — the existing `declineExhaustedHearingCheck`
+  //     fallback — and the block is not replayed again;
+  //   - nothing reaches the model before the cap is met.
+  //
+  // Waits on state and on what was SYNTHESIZED, never on the committed
+  // reply count: a cut inside the block's first sentence commits nothing
+  // (delivered audio rounds down), which is exactly the "heard none of
+  // it" case this test is about.
+  const h = startHarness({ openingLine: OPENING, replies: [LONG_BLOCK, REPLY_2, REPLY_3] });
+  try {
+    await upToMidBlock(h);
+
+    h.say("Hello? Hello?");
+    await h.waitFor(
+      "the acknowledgement to drain",
+      () => spokenCount(h, ACK) === 1 && h.record.state === SessionState.LISTENING,
+    );
+    assert.equal(hearingLinesSpoken(h), 1, "one fixed line so far");
+
+    // "No." to "can you hear me okay?" means "I could not": the cut-off
+    // reply is REPEATED from its first word. The first one is spoken.
+    h.say("No.");
+    await h.waitFor(
+      "the first repeat to start",
+      () => spokenCount(h, LONG_BLOCK) === 1 && h.record.state === SessionState.SPEAKING,
+    );
+    assert.equal(h.requests.length, 1, "the repeat is not a model request");
+
+    // Cut inside its first sentence, so none of it counts as heard.
+    await sleep(700);
+    h.say("No.");
+    await h.waitFor("the repeat to be cut", () => h.record.state !== SessionState.SPEAKING);
+
+    // That "No." is itself a restart request. Before the fix it drew a
+    // second full repeat, and every one after it another. The
+    // zero-delivery repeat has now spent the second line, so the cap is
+    // met and this one takes the contextual path.
+    await h.waitFor("the contextual fallback", () => h.requests.length === 2, 5000);
+    assert.equal(
+      spokenCount(h, LONG_BLOCK),
+      1,
+      `the block was repeated exactly once, spoken=${JSON.stringify(h.synthesized)}`,
+    );
+    assert.equal(hearingLinesSpoken(h), 1, "no further fixed hearing line was spoken");
+    await h.waitFor("the fallback reply to drain", () => h.record.state === SessionState.LISTENING);
+
+    // The episode is closed by the decline, so another "No." is an
+    // ordinary turn — still no replay.
+    h.say("No.");
+    await h.waitFor("a further contextual turn", () => h.requests.length === 3, 5000);
+    assert.equal(spokenCount(h, LONG_BLOCK), 1, "the block is still not replayed");
+  } finally {
+    await h.stop();
+  }
+});
+
 // ═════════════════════════════════════════════════════════════════
 section("SECTION C — self-echo: what the guard suppresses, what the cap bounds");
 // ═════════════════════════════════════════════════════════════════

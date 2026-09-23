@@ -166,26 +166,30 @@ test("A1. v9 is a registration script, approved, name-requiring, and dated", () 
   assert.ok(V9.label.includes("22 September"));
 });
 
-test("A2. v6 is STILL the default — v9 is a different event, not a newer revision", () => {
-  assert.equal(defaultScriptFor("registration").version, "v6");
+test("A2. v9 is STILL not the default — it is a different event, not a newer revision", () => {
+  // The default is the workshop script: v6 when v9 shipped, and since
+  // `registration v15` — v6's event and facts in the later conversation
+  // shape — v15, which sits directly above v6.
+  assert.equal(defaultScriptFor("registration").version, "v15");
   assert.equal(defaultScriptFor("reminder").version, "v2");
-  // ...but it is selectable, listed right after v6 and its own newer
-  // revision v10 (same event, two sourced FAQ answers).
+  // ...but it is selectable, listed after the workshop scripts and its
+  // own newer revision v10 (same event, two sourced FAQ answers).
   const registration = listScripts().filter((s) => s.campaignType === "registration");
-  assert.equal(registration[0]?.version, "v6");
+  assert.equal(registration[0]?.version, "v15");
+  assert.equal(registration[1]?.version, "v6");
   // `registration v13` — the implementation session — was registered
   // under v6 on 2026-09-22 as the then-current campaign's script, just
   // as v12 had been. Every version below it shifted one place down;
-  // position is read by nothing but `defaultScriptFor`, which still
-  // takes v6.
-  assert.equal(registration[1]?.version, "v13");
+  // position is read by nothing but `defaultScriptFor`, which takes the
+  // first entry.
+  assert.equal(registration[2]?.version, "v13");
   // `registration v14` is v13's sibling — the same session for people who
   // did NOT attend the two-day event — registered under it on 2026-09-22.
-  assert.equal(registration[2]?.version, "v14");
-  assert.equal(registration[3]?.version, "v12");
-  assert.equal(registration[4]?.version, "v11");
-  assert.equal(registration[5]?.version, "v10");
-  assert.equal(registration[6]?.version, "v9");
+  assert.equal(registration[3]?.version, "v14");
+  assert.equal(registration[4]?.version, "v12");
+  assert.equal(registration[5]?.version, "v11");
+  assert.equal(registration[6]?.version, "v10");
+  assert.equal(registration[7]?.version, "v9");
 });
 
 test("A3. v9 uses ONLY variables the campaign layer can supply", () => {

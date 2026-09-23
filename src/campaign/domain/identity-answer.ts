@@ -119,6 +119,21 @@ const CONFIRMATIONS = [
 const QUESTIONS_BACK = [
   "kaun", "kaun bol", "kaun hai", "kisse baat", "kis se baat", "kaun sa",
   "who is this", "whos this", "who is speaking", "who are you", "what is this",
+  // ── THE SPLIT SPELLING OF THE ENTRY ABOVE ───────────────────────
+  //
+  // `normaliseText` reduces every non-letter to a space, so "Who's
+  // this?" reaches this table as " who s this " — which matches
+  // neither "who is this" nor "whos this", the two spellings already
+  // here. The question therefore answered nothing and fell through to
+  // `CONFIRMATIONS`, where "right" is an entry, so "Right, who's
+  // this?" CONFIRMED the caller's identity and the pitch was spoken to
+  // somebody who had just asked who was calling (read-only audit
+  // 2026-09-22, M10; reproduced through the harness).
+  //
+  // A spelling of a phrase already in this table, not new vocabulary —
+  // the same repair `SELF_IDENTIFICATIONS` below carries for "that s
+  // me", and the whole of the safety case for it.
+  "who s this",
   "kya chahiye", "kyun", "kis liye", "kaise",
   "कौन", "कौन बोल", "किससे", "क्या चाहिए", "क्यों",
 ];
@@ -130,6 +145,52 @@ const DENIALS = [
   "nahi", "nahin", "galat number", "galat", "koi aur", "wo nahi", "main nahi",
   "नहीं", "गलत नंबर", "गलत", "कोई और",
 ];
+
+/**
+ * Phrases that CONTAIN a denial token but are not a denial.
+ *
+ * "Yes, no problem." is a yes. "Haan, koi problem nahi" is a yes. Both
+ * carry "no" / "nahi", `DENIALS` is whole-word containment, and a
+ * denial wins outright — so both settled `denied`, and the right person
+ * was told we had the wrong number and the call was closed on them
+ * (read-only audit 2026-09-22, H3; reproduced through the harness for
+ * "Yes, no problem." and "Yes no problem bol rahi hoon.").
+ *
+ * THE DEVICE IS NOT NEW AND NEITHER IS THE LIST. `classifier.ts` has
+ * carried `NEGATION_EXCEPTIONS` for exactly this, for exactly these
+ * words, since the day a "no problem" could end a call that was going
+ * well; this is that table, verbatim, applied the same way — the phrase
+ * is REMOVED from the text before the denials are matched, so it cannot
+ * mask itself and cannot be matched twice. Nothing is added to it here:
+ * inventing identity-specific vocabulary is how two tables that should
+ * agree start to drift.
+ *
+ * WHAT STILL DENIES. Everything that denies today. A bare "No.", a
+ * bare "Nahi.", "No, this isn't Sakshi.", "wrong number", "she is not
+ * here", "No, I'm busy." — none of them contains one of these phrases,
+ * so none of them is touched. Only the positive constructions are, and
+ * only the ones the outcome classifier already treats this way.
+ */
+const DENIAL_EXCEPTIONS = [
+  "no problem", "no issue", "no issues", "no doubt", "no worries",
+  "koi baat nahi", "koi dikkat nahi", "koi problem nahi",
+];
+
+/**
+ * The text with those phrases taken out, so a denial token inside one
+ * of them cannot be read as a denial.
+ *
+ * Operates on the output of `normaliseText`, which is already padded
+ * with a space at each end, so a phrase at the very start or the very
+ * end is removed exactly as one in the middle is.
+ */
+function withoutDenialExceptions(normalised: string): string {
+  let text = normalised;
+  for (const exception of DENIAL_EXCEPTIONS) {
+    text = text.split(` ${exception} `).join(" ");
+  }
+  return text;
+}
 
 /** Whole-word containment, on the same normalisation the classifier uses. */
 function contains(haystack: string, needles: readonly string[]): boolean {
@@ -168,8 +229,11 @@ export function classifyIdentityAnswer(
   //    "bol raha", which is also how somebody says "I am speaking".
   if (contains(normalised, QUESTIONS_BACK)) return "unclear";
 
-  // 2. A denial wins outright, whatever else is in the turn.
-  if (contains(normalised, DENIALS)) return "denied";
+  // 2. A denial wins outright, whatever else is in the turn — but a
+  //    "no" inside "no problem" is not one of them. See
+  //    `DENIAL_EXCEPTIONS`; only this test reads the reduced text, so
+  //    every table below still sees the turn as the caller said it.
+  if (contains(withoutDenialExceptions(normalised), DENIALS)) return "denied";
 
   // 3. Did they IDENTIFY THEMSELVES? Their own name back, or a phrase
   //    that says so in words. This is checked before the hearing

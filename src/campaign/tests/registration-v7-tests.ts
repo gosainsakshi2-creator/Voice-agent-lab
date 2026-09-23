@@ -149,13 +149,14 @@ test("A1. v7 is registered as a registration script, approved and name-requiring
   assert.ok(V7.openingLineTemplate.trim().length > 0, "the opening line is spoken verbatim");
 });
 
-test("A2. v6 is STILL the default — v7 is a different event, not a newer revision", () => {
-  // The whole reason v7 sits below v6 in the registry. A campaign
-  // created without naming a script must keep running the workshop
-  // invite it has always run.
+test("A2. v7 is STILL not the default — it is a different event, not a newer revision", () => {
+  // The whole reason v7 sits below the workshop script in the registry.
+  // A campaign created without naming a script must keep running the
+  // workshop invite it has always run — v6 until v15, and since then
+  // v15, which is v6's event and facts in the later conversation shape.
   assert.equal(
     defaultScriptFor("registration").version,
-    "v6",
+    "v15",
     "publishing v7 must not change what an unspecified campaign dials",
   );
   assert.equal(defaultScriptFor("reminder").version, "v2", "the reminder default is untouched too");

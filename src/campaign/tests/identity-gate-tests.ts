@@ -562,6 +562,55 @@ await test("A6d. the ambiguous \"No, I'm busy.\" is deliberately UNCHANGED", () 
   assert.equal(classifyIdentityAnswer("No, I'm busy.", "Sakshi"), "denied");
 });
 
+await test('A7. a positive construction that CONTAINS "no" is not a denial', () => {
+  // `DENIALS` is whole-word containment and a denial wins outright, so
+  // "Yes, no problem." — an unmistakable yes — settled `denied`, and
+  // the right person was told we had the wrong number. The device is
+  // the one `classifier.ts` has carried for the same words since a "no
+  // problem" could end a call that was going well.
+  for (const said of [
+    "Yes, no problem.",
+    "Yes no problem bol rahi hoon.",
+    "Haan, koi problem nahi.",
+    "No worries, speaking.",
+  ]) {
+    assert.notEqual(classifyIdentityAnswer(said, "Sakshi"), "denied", `"${said}" must not be a denial`);
+  }
+});
+
+await test("A7b. ...and every genuine denial still denies", () => {
+  // The other side of A7, on the exact forms the table exists for. Not
+  // one of them contains an exception phrase, so not one of them moves.
+  for (const said of [
+    "No.",
+    "Nahi.",
+    "Wrong number.",
+    "No, this isn't Sakshi.",
+    "She is not here.",
+    "गलत नंबर.",
+    // Pinned by A6d as a deliberate decision; it must stay one.
+    "No, I'm busy.",
+  ]) {
+    assert.equal(classifyIdentityAnswer(said, "Sakshi"), "denied", `"${said}"`);
+  }
+});
+
+await test('A8. "Right, who\'s this?" is a question back, not a confirmation', () => {
+  // `normaliseText` turns "who's" into "who s", which matched neither
+  // spelling in `QUESTIONS_BACK` — so the turn fell through to
+  // `CONFIRMATIONS`, where "right" is an entry, and a caller asking who
+  // was calling CONFIRMED their own identity.
+  for (const said of ["Right, who's this?", "Who's this?", "Sorry, who's this?"]) {
+    assert.equal(classifyIdentityAnswer(said, "Sakshi"), "unclear", `"${said}"`);
+  }
+  // The spellings that already worked, asserted alongside so the three
+  // forms cannot diverge again.
+  assert.equal(classifyIdentityAnswer("Who is this?", "Sakshi"), "unclear");
+  assert.equal(classifyIdentityAnswer("Whos this?", "Sakshi"), "unclear");
+  // ...and a bare "Right." is still the confirmation A6 pins.
+  assert.equal(classifyIdentityAnswer("That's right.", "Sakshi"), "confirmed");
+});
+
 await test("A5. one turn that answers BOTH questions confirms identity", () => {
   // "Yes, I can hear you, this is Sakshi" carries a hearing answer and
   // an identity answer. Reading only the first would re-ask a question
@@ -636,6 +685,37 @@ await test("B7. THE REPORTED CALL — hearing recovery does not open the gate", 
   const pitchAt = r.spoken.findIndex((t) => t.includes("free live workshop"));
   const lastAskAt = r.spoken.map((t) => t.includes("Am I speaking with Sakshi")).lastIndexOf(true);
   assert.ok(pitchAt > lastAskAt, "the pitch must come after the last identity question");
+});
+
+await test('B7b. a BARE "Yes" to the hearing line is a hearing answer too — it must not open the gate', async () => {
+  // B7 above pins the explicit form ("Yes, I can hear you"), which
+  // `identity-answer.ts` can see for itself. This is the form it
+  // cannot: four letters that answer "can you hear me okay?" and "am I
+  // speaking with Sakshi?" identically, told apart only by which
+  // question was actually asked — which the pipeline knows and the
+  // classifier does not.
+  const r = await run(["Hello", "Hello", "Yes", "Yes, this is Sakshi"]);
+  assert.equal(r.llmRequests, 1, "exactly one request in the whole call");
+  assert.equal(
+    r.lastUserSentToLlm,
+    "Yes, this is Sakshi",
+    "and it carried the identity confirmation, not the hearing one",
+  );
+  assert.ok(idAsks(r.spoken) >= 2, "the unanswered identity question was put again");
+  const pitchAt = r.spoken.findIndex((t) => t.includes("free live workshop"));
+  const lastAskAt = r.spoken.map((t) => t.includes("Am I speaking with Sakshi")).lastIndexOf(true);
+  assert.ok(pitchAt > lastAskAt, "the pitch must come after the last identity question");
+});
+
+await test('B7c. the same bare "Yes" OUTSIDE a hearing episode still confirms', async () => {
+  // The narrowness of B7b, from the other side: nothing about bare
+  // affirmations changed. A "Yes" to the identity question, asked and
+  // answered with no hearing line in between, confirms exactly as it
+  // always has.
+  const r = await run(["Hello", "Yes"]);
+  assert.equal(r.llmRequests, 1, "the confirmation reached the model");
+  assert.equal(r.lastUserSentToLlm, "Yes");
+  assert.equal(pitched(r.spoken), true, "and the pitch followed it");
 });
 
 await test("B8. repeated interruption does not lose the identity state", async () => {
@@ -1040,7 +1120,7 @@ await test("E3. v8 keeps v7's commitment gate, discovery question and event fact
   }
 });
 
-await test("E4. v7 is untouched, and v6 is still the default", async () => {
+await test("E4. v7 is untouched, and v8 is still not the default", async () => {
   const { findScript, defaultScriptFor } = await import("../script/script-registry");
   const v7 = findScript("registration", "v7")!;
   assert.equal(
@@ -1048,7 +1128,9 @@ await test("E4. v7 is untouched, and v6 is still the default", async () => {
     "Hello, this is {{agent_name}} from Team FlexiFunnels.",
     "v7's opening must stay exactly as approved — campaigns are pinned to its hash",
   );
-  assert.equal(defaultScriptFor("registration").version, "v6", "v8 must not become the default");
+  // The default is the workshop script — v6 when v8 shipped, v15 since.
+  // What must never happen is v8 becoming it.
+  assert.equal(defaultScriptFor("registration").version, "v15", "v8 must not become the default");
 });
 
 await test("E5. answering v8's opening does not register anybody", async () => {

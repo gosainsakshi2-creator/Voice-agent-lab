@@ -703,6 +703,103 @@ await test("B4 — a REPEAT the caller hears none of spends a line, so repeated 
   }
 });
 
+await test('B5 — a REPEAT delivered IN FULL releases the reply, so a second bare "No." is an answer and not another replay', async () => {
+  // THE C1 DEFECT, in the shape the zero-delivery cap cannot reach. The
+  // caller lets the repeat play to its last word — so it is progress,
+  // the counter resets, and the cap will never bite — and then answers
+  // the question the block ended on with "No." Nothing cleared the
+  // cut-off reply from the record, so that answer re-read as a restart
+  // request and played the whole block again, once per "No.", for as
+  // long as the caller kept saying it.
+  const h = startHarness({ openingLine: OPENING, replies: [BLOCK, REPLY_2, REPLY_3] });
+  try {
+    await upToMidBlock(h);
+    h.say("Hello? Hello?");
+    await h.waitFor(
+      "the acknowledgement",
+      () => spokenCount(h, ACK) === 1 && h.record.state === SessionState.LISTENING,
+    );
+    const requestsBefore = h.requests.length;
+
+    // THE LEGITIMATE REPEAT, which must still work exactly as it does.
+    h.say("No.");
+    await h.waitFor("the block to be repeated", () => spokenCount(h, BLOCK) === 2);
+    await h.waitFor("the repeat to drain", () => h.record.state === SessionState.LISTENING, 25_000);
+    assert.equal(h.requests.length, requestsBefore, "the repeat costs no language-model request");
+
+    // It reached its last word, so nothing is owed and no cut-off reply
+    // is on record. This "No." is the answer to the question the block
+    // ended on and belongs to the model.
+    h.say("No.");
+    await h.waitFor("the contextual path", () => h.requests.length === requestsBefore + 1, 25_000);
+    assert.equal(
+      spokenCount(h, BLOCK),
+      2,
+      `the block is never played a third time, spoken=${JSON.stringify(h.synthesized)}`,
+    );
+    assert.equal(hearingLinesSpoken(h), 1, "and no further fixed hearing line was spoken");
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("B6 — an episode with NOTHING to replay still answers its confirmation with the one follow-up", async () => {
+  // THE BEHAVIOUR B5 AND B7 MUST NOT TAKE AWAY, and the reason the
+  // episode is closed on a completed REPLAY rather than on what the
+  // caller said. Here the block finished on its own, so the episode
+  // speaks nothing but fixed lines: the acknowledgement, then the
+  // follow-up that hands the floor back. `test:language-lock` E1/E2
+  // pin the same exchange in the locked language, and A2/A4/D4 above
+  // pin its bound.
+  const h = startHarness({ openingLine: OPENING, replies: [BLOCK, REPLY_2, REPLY_3] });
+  try {
+    await blockDelivered(h);
+    const requestsBefore = h.requests.length;
+
+    h.say("Hello? Hello?");
+    await h.waitFor("the acknowledgement", () => spokenCount(h, ACK) === 1);
+    await h.waitFor("it to drain", () => h.record.state === SessionState.LISTENING);
+
+    h.say("Yes.");
+    await h.waitFor("the follow-up", () => spokenCount(h, FOLLOW_UP) === 1, 25_000);
+    assert.equal(h.requests.length, requestsBefore, "and neither line costs a language-model request");
+    assert.equal(spokenCount(h, BLOCK), 1, "the block is not re-spoken by either of them");
+  } finally {
+    await h.stop();
+  }
+});
+
+await test('B7 — ...but a bare "Yes." after that resume is an ANSWER, not one more hearing confirmation', async () => {
+  // THE H1 DEFECT. The resumed block ends on the script\'s own question,
+  // so the "Yes." that follows it is the answer to THAT — the one the
+  // outcome classifier reads at the anchor. With the episode still
+  // open it was consumed as a hearing confirmation instead and drew
+  // "Did you catch what I was saying?", leaving the person\'s yes
+  // unanswered by anything the script owns.
+  const h = startHarness({ openingLine: OPENING, replies: [BLOCK, REPLY_2, REPLY_3] });
+  try {
+    await upToMidBlock(h);
+    h.say("Hello? Hello?");
+    await h.waitFor(
+      "the acknowledgement",
+      () => spokenCount(h, ACK) === 1 && h.record.state === SessionState.LISTENING,
+    );
+    const requestsBefore = h.requests.length;
+
+    h.say("Yes.");
+    await h.waitFor("the tail to be resumed", () => spokenCount(h, BLOCK) === 2);
+    await h.waitFor("the resume to drain", () => h.record.state === SessionState.LISTENING, 25_000);
+    assert.equal(h.requests.length, requestsBefore, "premise: the resume itself reached no model");
+
+    h.say("Yes.");
+    await h.waitFor("the contextual path", () => h.requests.length === requestsBefore + 1, 25_000);
+    assert.equal(spokenCount(h, FOLLOW_UP), 0, `no follow-up, spoken=${JSON.stringify(h.synthesized)}`);
+    assert.equal(spokenCount(h, BLOCK), 2, "and the block is not spoken again");
+  } finally {
+    await h.stop();
+  }
+});
+
 // ═════════════════════════════════════════════════════════════════
 section("SECTION C — self-echo: what the guard suppresses, what the cap bounds");
 // ═════════════════════════════════════════════════════════════════

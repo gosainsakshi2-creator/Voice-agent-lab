@@ -138,9 +138,14 @@ test("A3. v5 declares no event date, so nothing about its validation changed", (
 // ═════════════════════════════════════════════════════════════════
 section("B. v6 IS v5 WITH THE DATE CORRECTED, AND NOTHING ELSE");
 
-test("B1. v6 is registered and is the default registration script", () => {
+test("B1. v6 is registered, and the default is the workshop script", () => {
+  // v6 WAS the default until `registration v15` — the same workshop,
+  // the same date and the same facts, in the conversation shape v8-v14
+  // converged on — took its place. v6 stays registered for the
+  // campaigns pinned to its hash, which is what this section is about.
   assert.ok(V6, "v6 must be registered");
-  assert.equal(defaultScriptFor("registration").version, "v6");
+  assert.equal(defaultScriptFor("registration").version, "v15");
+  assert.equal(defaultScriptFor("registration").eventAt, V6.eventAt, "the same workshop instant");
   assert.equal(V6.campaignType, "registration");
   assert.equal(V6.isPlaceholder, false, "a placeholder script must never be the default");
   assert.equal(V6.requiresName, true, "the identity check and the greeting both need the name");
@@ -257,9 +262,11 @@ test("C3. no OTHER registered script silently gained a date", () => {
   // which makes the clock blocker load-bearing rather than decorative.
   // v14 is the same session for a different audience, so it declares the
   // same instant, and the two are asserted equal in the v14 suite.
+  // v15 is v6's workshop in the later conversation shape, so it declares
+  // v6's instant — asserted equal in B1 above and in the v15 suite.
   assert.deepEqual(declaring, [
-    "registration/v6", "registration/v13", "registration/v14", "registration/v12",
-    "registration/v11", "registration/v10", "registration/v9",
+    "registration/v15", "registration/v6", "registration/v13", "registration/v14",
+    "registration/v12", "registration/v11", "registration/v10", "registration/v9",
   ]);
 });
 

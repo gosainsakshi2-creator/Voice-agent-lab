@@ -137,13 +137,15 @@ test("A1. v12 is a registration script, approved, name-requiring, dated, and fir
   assert.equal(V12.isPlaceholder, false);
   assert.equal(V12.requiresName, true);
   assert.equal(V12.eventAt, "2026-09-22T19:30:00+05:30");
-  assert.equal(defaultScriptFor("registration").version, "v6", "v12 must not become the default");
+  assert.equal(defaultScriptFor("registration").version, "v15", "v12 must not become the default");
   const registration = listScripts().filter((s) => s.campaignType === "registration").map((s) => s.version);
   // `registration v13` (the implementation session) and its sibling `v14`
   // (the same session for people who did NOT attend the two-day event)
   // were registered under v6 on 2026-09-22, exactly as v12 had been.
-  // v12 moved two places down; nothing else about it changed.
-  assert.deepEqual(registration.slice(0, 5), ["v6", "v13", "v14", "v12", "v11"]);
+  // v12 moved two places down; nothing else about it changed. `v15` —
+  // v6's workshop in the later conversation shape — then took the first
+  // place, and everything below it moved down one more.
+  assert.deepEqual(registration.slice(0, 6), ["v15", "v6", "v13", "v14", "v12", "v11"]);
   assert.deepEqual(scriptVariables(V12), ["agent_name", "customer_name"]);
 });
 

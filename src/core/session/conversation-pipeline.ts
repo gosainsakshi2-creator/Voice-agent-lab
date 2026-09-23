@@ -2339,6 +2339,41 @@ export class ConversationPipeline {
    */
   private hearingEpisodeBeforeBlock = false;
   /**
+   * THIS TURN answered the hearing question and nothing else.
+   *
+   * Set by the one branch of `handleAttentionCheck` that consumes a
+   * bare hearing confirmation before any block has been delivered, and
+   * read by `handleIdentityGate` on the same turn — the only two places
+   * either may be. Cleared at the top of `handleAttentionCheck`, which
+   * runs on every released turn before the gate, so it describes this
+   * turn and no other. The same per-turn shape as
+   * `lastTurnWasBareGreeting` above.
+   *
+   * WHY THE GATE CANNOT WORK THIS OUT FOR ITSELF. "Yes." is a complete
+   * answer to "Hey, can you hear me okay?" and a complete answer to "Am
+   * I speaking with Sakshi?", and no reading of those four letters can
+   * separate them — only knowing which question was asked can, and the
+   * pipeline is the only thing that knows. `identity-answer.ts` already
+   * excludes the hearing answers it CAN see ("yes, I can hear you", via
+   * `HEARING_ANSWERS`); this is the same exclusion for the ones it
+   * cannot, carried rather than guessed.
+   *
+   * THE DEFECT IT CLOSES. A repeated "hello" over an identity-first
+   * opening draws the fixed acknowledgement; the caller says "Yes.";
+   * that turn fell through to the gate, matched `CONFIRMATIONS`, and
+   * confirmed identity — so the pitch was spoken to somebody who had
+   * only ever said they could hear us, which is the exact confusion
+   * `identity-answer.ts` was written to end (read-only audit
+   * 2026-09-22, H2; reproduced through the harness). It now reads
+   * `unclear`, which costs one re-ask of the question they have not
+   * answered — the module's own stated trade against a wrong
+   * assumption. Nothing else changes: an explicit identity answer, a
+   * name, "speaking", "bol rahi hoon" and every turn that carries both
+   * answers at once are unaffected, because none of them is a bare
+   * hearing confirmation and none of them reaches this branch.
+   */
+  private turnAnsweredHearingCheckOnly = false;
+  /**
    * How many FIXED hearing lines — the acknowledgement, the follow-up —
    * have been spoken in a row without anything else happening in
    * between. See `MAX_HEARING_LINES_WITHOUT_PROGRESS` for why this is
@@ -3353,7 +3388,18 @@ export class ConversationPipeline {
     }
 
     // ── Asked, and this turn is the answer ───────────────────────
-    const verdict = classifyIdentityAnswer(userText, this.record.request.campaign?.customer.name);
+    //
+    // ...unless it is the answer to the OTHER question we asked. A bare
+    // "Yes." said straight after "Hey, can you hear me okay?" answers
+    // that, and `classifyIdentityAnswer` cannot see the difference
+    // because there is no difference in the words — so the pipeline,
+    // which does know, says so. Treated as `unclear`, which is what the
+    // hearing answers the classifier CAN see already settle as, and
+    // what costs one re-ask rather than a wrong assumption. See
+    // `turnAnsweredHearingCheckOnly`.
+    const verdict = this.turnAnsweredHearingCheckOnly
+      ? "unclear"
+      : classifyIdentityAnswer(userText, this.record.request.campaign?.customer.name);
     // eslint-disable-next-line no-console
     console.log(
       `[PIPELINE:${sid}] identity gate — "${userText.trim().slice(0, 40)}" reads as ${verdict.toUpperCase()}`,
@@ -3417,6 +3463,11 @@ export class ConversationPipeline {
     // forget it and the flag describes every committed turn.
     const previousTurnWasBareGreeting = this.lastTurnWasBareGreeting;
     this.lastTurnWasBareGreeting = isBareGreetingTurn(trimmed);
+    // Cleared for the same reason and in the same place: this method
+    // runs on every released turn, before the identity gate that reads
+    // it, so the flag can only ever describe the turn in hand. See
+    // `turnAnsweredHearingCheckOnly`.
+    this.turnAnsweredHearingCheckOnly = false;
     // Only ever read inside an open episode: this is the caller
     // confirming the line after OUR acknowledgement, not a bare "yes"
     // in open conversation, which is never seen by this method.
@@ -3488,27 +3539,10 @@ export class ConversationPipeline {
         // existed.
         "repeat",
       );
-      // Cut off again: whatever is STILL unheard is still the position.
-      this.heldScriptRemainder = spoken.unheard;
-      if (spoken.heard.length > 0) {
-        this.contextualReplyCommitted = true;
-        // Script content the caller HEARD, not a fixed hearing line: the
-        // call advanced. See the note at the RESUME branch below for why
-        // this is now conditional.
-        this.hearingLinesWithoutProgress = 0;
-      } else {
-        // ── A ZERO-DELIVERY REPEAT IS A LINE SPENT ─────────────────
-        //
-        // The complement of the reset above, and the half that makes
-        // the guard at the top of this branch reachable — the same
-        // accounting the RESUME branch applies to a resume the caller
-        // heard none of. Classified AFTER the utterance has been spoken
-        // and cancelled, from the delivery `speakAttentionUtterance`
-        // measured, never from an intention: a repeat the caller
-        // actually heard any of takes the branch above and resets,
-        // exactly as it always did.
-        this.hearingLinesWithoutProgress += 1;
-      }
+      // What was delivered decides the position and the cap, on this
+      // path and the RESUME path below, from the one place that reads
+      // them — see `concludeReplay`.
+      this.concludeReplay(spoken);
       return true;
     }
 
@@ -3562,8 +3596,14 @@ export class ConversationPipeline {
         "resuming after an attention check",
         "resume",
       );
-      // Cut off again: whatever is STILL unheard is still the position.
-      this.heldScriptRemainder = spoken.unheard;
+      // ── WHAT WAS DELIVERED DECIDES, ON BOTH REPLAY PATHS ──────────
+      //
+      // The position, the cap and the release of a reply that has now
+      // been heard in full are settled in one place for RESUME and
+      // REPEAT alike — see `concludeReplay`. The reasoning the two
+      // branches used to carry separately is recorded there; what
+      // follows is why the zero-delivery half of it exists at all.
+      //
       // ── A RESUME THAT DELIVERED NOTHING IS NOT PROGRESS ───────────
       //
       // This reset used to be unconditional, on the premise that a
@@ -3583,38 +3623,26 @@ export class ConversationPipeline {
       // the value the line above already computed. Nothing else changes:
       // no new counter, no new threshold, and a resume that delivers any
       // audio at all resets the cap exactly as it always did.
-      if (spoken.heard.length > 0) {
-        // FIX 2 — script content the caller heard: a block has been delivered.
-        this.contextualReplyCommitted = true;
-        this.hearingLinesWithoutProgress = 0;
-      } else {
-        // ── AND A ZERO-DELIVERY RESUME IS A LINE SPENT ──────────────
-        //
-        // The complement of the reset above, and the half that makes
-        // the guard at the top of this branch reachable. Leaving the
-        // counter merely UNRESET was not enough: nothing else on this
-        // path advances it, so a caller whose every "hello?" lands
-        // before the resumed audio reaches them held it at whatever the
-        // one acknowledgement had set it to, the cap was never met, and
-        // the same block was offered again per "hello?" forever
-        // (measured: six interruptions, seven copies spoken, one
-        // language-model request).
-        //
-        // Counted here for exactly the reason the four fixed-line sites
-        // count themselves: the agent has just spoken and the call is
-        // no further forward. The classification is made AFTER the
-        // utterance has been spoken and cancelled, from the delivery
-        // `speakAttentionUtterance` measured — never from an intention —
-        // so a resume the caller actually heard any of takes the branch
-        // above and resets, exactly as it always did.
-        //
-        // Uses the existing counter and the existing cap
-        // (`MAX_HEARING_LINES_WITHOUT_PROGRESS`, still 2). Once it is
-        // met, the guard at the top of this branch hands the next check
-        // to `declineExhaustedHearingCheck` — the same contextual
-        // fallback a caller gets when the fixed hearing lines are spent.
-        this.hearingLinesWithoutProgress += 1;
-      }
+      // ── AND A ZERO-DELIVERY RESUME IS A LINE SPENT ────────────────
+      //
+      // The complement of the reset, and the half that makes the guard
+      // at the top of this branch reachable. Leaving the counter merely
+      // UNRESET was not enough: nothing else on this path advances it,
+      // so a caller whose every "hello?" lands before the resumed audio
+      // reaches them held it at whatever the one acknowledgement had
+      // set it to, the cap was never met, and the same block was
+      // offered again per "hello?" forever (measured: six
+      // interruptions, seven copies spoken, one language-model
+      // request).
+      //
+      // Counted for exactly the reason the four fixed-line sites count
+      // themselves: the agent has just spoken and the call is no
+      // further forward. Uses the existing counter and the existing cap
+      // (`MAX_HEARING_LINES_WITHOUT_PROGRESS`, still 2). Once it is
+      // met, the guard at the top of this branch hands the next check
+      // to `declineExhaustedHearingCheck` — the same contextual
+      // fallback a caller gets when the fixed hearing lines are spent.
+      this.concludeReplay(spoken);
       return true;
     }
 
@@ -3712,14 +3740,31 @@ export class ConversationPipeline {
       this.hearingEpisodeBeforeBlock = false;
       // They answered the question rather than asking it again.
       this.hearingLinesWithoutProgress = 0;
+      // ── AND IT IS THE HEARING QUESTION THEY ANSWERED ──────────────
+      //
+      // Reached only by `confirmsHearing` — a whole utterance made of
+      // nothing but "yes" / "haan" / "ji" / "theek hai"
+      // (`HEARING_CONFIRMATION_ONLY`), said straight after our own "can
+      // you hear me okay?". The turn now goes on to the identity gate,
+      // which must not read it as the answer to a different question it
+      // happens to fit. See `turnAnsweredHearingCheckOnly`.
+      this.turnAnsweredHearingCheckOnly = true;
       return false;
     }
-    // Opened after a block — by this branch, or by the remainder path
-    // whose remainder has since been resumed in full. One follow-up,
-    // once, that hands the floor back without restating a word of the
-    // script; the episode closes so a further "hello" starts over with
-    // the acknowledgement rather than looping here. The acknowledgement
-    // itself is still spoken exactly once per episode.
+    // Opened after a block, by the acknowledgement above, with nothing
+    // held to resume. One follow-up, once, that hands the floor back
+    // without restating a word of the script; the episode closes so a
+    // further "hello" starts over with the acknowledgement rather than
+    // looping here. The acknowledgement itself is still spoken exactly
+    // once per episode.
+    //
+    // A REPLAY THAT COMPLETED NEVER ARRIVES HERE. `concludeReplay`
+    // closes the episode when the interrupted reply has been delivered
+    // in full, so the caller's next turn is a turn in the conversation
+    // rather than an answer to us — see the note there. This line is
+    // reached only by an episode that has spoken nothing but fixed
+    // lines, which is the exchange it was written for and which
+    // `test:language-lock` E2 pins.
     if (this.hearingLineCapReached()) return this.declineExhaustedHearingCheck(trimmed);
     this.attentionEpisodeOpen = false;
     this.hearingLinesWithoutProgress += 1;
@@ -3757,6 +3802,98 @@ export class ConversationPipeline {
    * than alternating between the model and a canned line, which is the
    * same loop one period longer.
    */
+  /**
+   * A replay of the interrupted reply — RESUME or REPEAT — has just
+   * finished. Settle the held position and the cap from WHAT WAS
+   * ACTUALLY DELIVERED, which is the only thing either branch may be
+   * judged on.
+   *
+   * Three outcomes, and they are three different states of the call:
+   *
+   *   NOTHING DELIVERED (`heard` empty). The caller cut the replay
+   *     before any of its audio reached them, so the agent has spoken
+   *     and the call is no further forward: one hearing line is spent,
+   *     exactly as the four fixed-line sites spend one. The position is
+   *     kept — the whole reply is still owed — and the guard at the top
+   *     of each replay branch ends the loop once the existing cap
+   *     (`MAX_HEARING_LINES_WITHOUT_PROGRESS`, still 2) is met.
+   *
+   *   PART DELIVERED. Script content reached the caller, so the call
+   *     advanced and the counter resets exactly as it always did. What
+   *     is still unheard stays held, and `heldScriptFull` stays with
+   *     it: a caller who now asks to start again is still owed the
+   *     whole reply.
+   *
+   *   DELIVERED IN FULL, NOTHING UNHEARD. The recovery is over, and so
+   *     is the episode. The reply this episode existed to rescue has
+   *     been heard end to end: there is no position left to hold, no
+   *     cut-off reply left to repeat, and nothing left to ask the
+   *     caller about. The last thing they heard was SCRIPT CONTENT,
+   *     ending on the script's own question, so whatever they say next
+   *     is a turn in the conversation and belongs to the contextual
+   *     path.
+   *
+   * THE LAST CASE IS BOTH DEFECTS. Nothing on either replay path
+   * cleared `heldScriptFull` or closed the episode, so a reply already
+   * re-delivered in full stayed "a cut-off reply on record" inside a
+   * still-open hearing episode. Two things followed, and this settles
+   * both:
+   *
+   *   C1 — a later bare "No." re-read as a restart request and played
+   *     the whole block again, once per "No.", bounded only by the 180s
+   *     call cap or the caller hanging up (reproduced: three "No."s,
+   *     three full replays, three commits, one language-model
+   *     request). It is now an ordinary turn, which is what an answer
+   *     to the question the block ended on should always have been.
+   *
+   *   H1 — a later bare "Yes." was consumed as one more hearing
+   *     confirmation and drew "Did you catch what I was saying?"
+   *     instead of the confirmation the script owes them, so the yes
+   *     the outcome classifier reads at the anchor arrived a turn late
+   *     or not at all. It now reaches the model on the turn it was
+   *     said.
+   *
+   * WHAT THIS DOES NOT TOUCH. An episode that spoke nothing but FIXED
+   * lines never comes through here, so the acknowledgement-then-
+   * follow-up exchange is exactly as it was: "Hey, can you hear me
+   * okay?" -> "Yes." -> "I just want to make sure you can hear me. Did
+   * you catch what I was saying?", in the locked language, with no
+   * language-model request (`test:language-lock` E1/E2,
+   * `test:hearing-loop` A2/A4/D4). Closing is keyed on a replay having
+   * been delivered, not on what the caller said.
+   *
+   * No new counter, no new threshold and no new state. The counter, the
+   * cap, the two held-position fields and the two episode flags are the
+   * existing ones, and delivery is read from what
+   * `speakAttentionUtterance` measured after the utterance was spoken
+   * and cancelled — never from an intention, so a replay the caller
+   * heard any of is progress however it was asked for.
+   */
+  private concludeReplay(spoken: { readonly heard: string; readonly unheard: string }): void {
+    // Cut off again: whatever is STILL unheard is still the position.
+    this.heldScriptRemainder = spoken.unheard;
+
+    if (spoken.heard.length === 0) {
+      this.hearingLinesWithoutProgress += 1;
+      return;
+    }
+
+    // Script content the caller HEARD, not a fixed hearing line: the
+    // call advanced.
+    this.contextualReplyCommitted = true;
+    this.hearingLinesWithoutProgress = 0;
+
+    // Still owed the rest of it, so the reply stays on record for a
+    // later resume or restart, inside the episode that is recovering it.
+    if (spoken.unheard.length > 0) return;
+
+    // Delivered whole: nothing is held, nothing is on record, and the
+    // recovery episode is over.
+    this.heldScriptFull = "";
+    this.attentionEpisodeOpen = false;
+    this.hearingEpisodeBeforeBlock = false;
+  }
+
   private declineExhaustedHearingCheck(trimmed: string): boolean {
     // eslint-disable-next-line no-console
     console.warn(
@@ -6479,6 +6616,18 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
      */
     alreadyFormatted = false,
   ): Promise<void> {
+    // ── ...AND THE SAME ON THE WAY IN ──────────────────────────────
+    //
+    // The fixed-line path's first act is a transition of its own, and
+    // ENDING has no edge to THINKING either. Every caller reaches here
+    // after an await — the previous fixed line draining, a held
+    // position being settled, the silence window expiring — so the same
+    // teardown race applies, and it is refused on the same existing
+    // signal (see `enterSpeaking`). Two lines further down this method
+    // already returns without speaking when the loop is aborted; this
+    // is that same decision, taken before the transition rather than
+    // after it, so nothing new is skipped and nothing new is spoken.
+    if (this.record.loopAbortController?.signal.aborted === true) return;
     this.host.transition(this.record, SessionState.THINKING, transitionReason);
     const speakingSignal = this.enterSpeaking();
     if (speakingSignal.aborted || loopSignal.aborted) return;
@@ -7039,6 +7188,38 @@ await this.drainPlayback(speakingSignal, true);
   }
 
   private enterSpeaking(): AbortSignal {
+    // ── A SESSION THAT IS ENDING NEVER SPEAKS AGAIN ────────────────
+    //
+    // Every call site reaches this after an await — the model's stream,
+    // the synthesis of an earlier sentence — and the session can have
+    // been ended while that await was outstanding. The state table has
+    // no ENDING -> SPEAKING edge, so `transition` THREW: the main loop
+    // caught it as a fatal turn error, `markError` filed it, the
+    // session observer reported "errored", and `call-runner.ts`
+    // finalized the attempt TEMPORARY — which the retry planner then
+    // REDIALS. A person who hung up mid-reply was called back because
+    // of a teardown race (read-only audit 2026-09-22, H5; reproduced
+    // through the harness).
+    //
+    // The signal is the existing one and needs no new state:
+    // `VoiceSessionManagerImpl.end()` aborts the loop controller BEFORE
+    // it transitions to ENDING, and the pipeline's own `host.end`
+    // (voicemail, the identity give-up, the silence give-up) goes
+    // through that same method. So an aborted controller is "this
+    // session is ending", already true by the time the transition would
+    // be attempted.
+    //
+    // Nothing is swallowed. An invalid transition from any other state
+    // still throws and is still reported exactly as it is today; this
+    // declines only the one transition that teardown makes meaningless.
+    // The returned signal is aborted, which is precisely what every
+    // caller already tests before synthesizing anything, so the reply
+    // stops here on the path it already has.
+    if (this.record.loopAbortController?.signal.aborted === true) {
+      const ended = new AbortController();
+      ended.abort();
+      return ended.signal;
+    }
     if (this.record.state !== SessionState.SPEAKING) {
       this.host.transition(this.record, SessionState.SPEAKING, "speaking the reply");
     }

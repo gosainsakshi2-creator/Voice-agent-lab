@@ -902,13 +902,14 @@ const V5 = findScript("registration", "v5")!;
 const V5_MIDDLE = "Have you tried putting something online before?";
 const V5_GATE = "Would you like me to reserve your free seat?";
 
-await test("I1. v5 is registered, still shipping in v6, and carries both questions verbatim", () => {
-  // v6 (§4.5 F2) is now the default: it is v5 with the event date
-  // corrected and nothing else. This section is about the PITCH SHAPE
-  // v5 introduced, so it keeps reading v5 — and asserts that the shape
-  // survived into the version that actually ships, which is the thing
-  // that would matter if a later version quietly dropped it.
-  assert.equal(defaultScriptFor("registration").version, "v6");
+await test("I1. v5 is registered, still shipping in v15, and carries both questions verbatim", () => {
+  // `registration v15` is now the default: v6's workshop — which was v5
+  // with the event date corrected — in the conversation shape v8-v14
+  // converged on. This section is about the PITCH SHAPE v5 introduced,
+  // so it keeps reading v5 — and asserts that the shape survived into
+  // the version that actually ships, which is the thing that would
+  // matter if a later version quietly dropped it.
+  assert.equal(defaultScriptFor("registration").version, "v15");
   const shipping = defaultScriptFor("registration");
   assert.ok(shipping.systemPromptAppendix.includes(V5_MIDDLE), "the shipping script keeps the middle question");
   assert.ok(shipping.systemPromptAppendix.includes(V5_GATE), "...and the gate, unchanged");

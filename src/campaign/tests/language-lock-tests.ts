@@ -1124,14 +1124,18 @@ await test("G2 — English campaign: a Devanagari bare acknowledgement keeps the
   }
 });
 
-await test("G2b — BOUNDARY: 'यस।' is in no acknowledgement table, so it takes the floor and still follows the detection (documented, not widened)", async () => {
+await test("G2b — 'यस।' (English 'yes' written in Devanagari) is a bare acknowledgement and keeps the active language ENGLISH", async () => {
+  // Was pinned the other way ("in no acknowledgement table"). Real call
+  // 9636aa69 (2026-09-24) showed the cost: the English caller's "Yes"
+  // moved the call to Hindi and the identity re-ask came back
+  // "माफ़ कीजिए — …". "यस" / "येस" are now acknowledgement tokens.
   const h = startHarness({ openingLine: OPENING, replies: REPLIES, configuredLanguage: EN });
   try {
     await greetingDone(h);
     await h.settle(NEUTRAL_ONLY);
     await h.settle(HI_SCRIPT_YES);
     assert.equal(h.lock(), undefined, "one word is below the lock floor");
-    assert.equal(h.language(), HI, "the rule is deliberately no wider than the existing tables");
+    assert.equal(h.language(), EN, "a Devanagari 'yes' must not move an English call to Hindi");
   } finally {
     await h.stop();
   }

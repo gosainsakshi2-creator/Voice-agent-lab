@@ -135,6 +135,10 @@ const CONFIRMATIONS = [
   "bol raha hoon", "bol rahi hoon", "bol raha hu", "bol rahi hu",
   "bol raha", "bol rahi", "main hi hoon", "main hi hu", "wahi hoon",
   "हाँ", "हां", "जी", "जी हाँ", "बिल्कुल", "बोल रही हूँ", "बोल रहा हूँ", "मैं ही हूँ",
+  // English "yes" as Soniox writes it in Devanagari. Real call 9636aa69
+  // (2026-09-24): "यस।" twice read `unclear`, drew two re-asks, and the
+  // caller had to repeat themselves in Hindi before the gate opened.
+  "यस", "येस", "यप",
 ];
 
 /**
@@ -186,7 +190,7 @@ const QUESTIONS_BACK = [
 const AFFIRMATIONS_BESIDE_A_QUESTION = [
   "yes", "yeah", "yep", "yup", "haan", "haan ji", "haanji", "hanji", "ji haan",
   "that is me", "that s me", "this is me", "you are speaking with me", "you re speaking with me",
-  "हाँ", "हां", "जी हाँ",
+  "हाँ", "हां", "जी हाँ", "यस", "येस",
 ];
 
 /** An unmistakable "no, that is not me". */

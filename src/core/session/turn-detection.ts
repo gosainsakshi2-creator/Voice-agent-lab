@@ -508,6 +508,11 @@ const ACKNOWLEDGEMENT_TOKENS = [
   // Devanagari
   "हाँ", "हां", "जी", "जी हाँ", "ठीक", "ठीक है", "अच्छा", "सही",
   "बिल्कुल", "समझ गया", "समझ गई",
+  // English "yes" as Soniox writes it in Devanagari ("यस।"). Without it
+  // a bare yes took the floor as HINDI and moved an English call's
+  // per-turn language — the re-ask came back "माफ़ कीजिए — …" (real
+  // call 9636aa69, 2026-09-24). Same word as "yes" above.
+  "यस", "येस",
 ];
 
 /**

@@ -103,6 +103,9 @@ const AFFIRMATIONS = [
   // "haa" above already covers the elongated form.
   "haanji", "hanji", "han",
   "हाँ", "हां", "जी", "जी हाँ", "बिल्कुल", "ज़रूर", "जरूर", "ठीक है", "पक्का",
+  // English "yes" in Devanagari, as Soniox writes it. A spelling of
+  // "yes" above: without it a "यस" at the gate settled `unclear`.
+  "यस", "येस",
 ];
 
 const NEGATIONS = [

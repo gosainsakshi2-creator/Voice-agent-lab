@@ -39,6 +39,11 @@
  */
 
 import { SupportedLanguage } from "../types/enums";
+import {
+  applySpokenNames,
+  fullNameSubstitution,
+  type SpokenNameSubstitution,
+} from "./name-pronunciation";
 
 /**
  * Hindi/Hinglish cardinals, romanized to match how the rest of the
@@ -451,38 +456,49 @@ function pronounceGrouped(digits: string, lex: Lexicon): string {
  * — and each one of those would be a guess spoken aloud with total
  * confidence. Adding a name here is a decision somebody makes once.
  *
- * ONLY ON A HINDI/HINGLISH UTTERANCE, and that bound is the safety
- * case. Devanagari already reaches all four TTS vendors on every Hindi
- * call — `hindiOpeningLine()` in `system-prompt.ts` is Devanagari and
- * is spoken through this same path — so this adds no new class of input
- * to any provider. An ENGLISH call is a different matter: `language`
- * there is sent to the vendor as an explicit tag (Cartesia `en`, Sarvam
- * `en-IN`, ElevenLabs `languageCode: "en"`, which its own adapter notes
- * is "honored by models that support explicit language enforcement"),
- * and Devanagari under a forced English tag is UNVERIFIED on all four.
- * Nobody has run it, so it is not done: an English call keeps the
- * canonical spelling and today's behaviour exactly.
+ * IN EVERY LANGUAGE, INCLUDING ENGLISH — changed deliberately on
+ * 2026-09-24, at the operator's direction, after a live call in which
+ * the agent said the name correctly when asked to say it in Hindi and
+ * got it wrong when asked to say it in English. A name is not a
+ * register: it is the same sound whatever the sentence around it is
+ * doing, and Devanagari is the spelling that gets an engine to produce
+ * that sound.
  *
- * That argument got STRONGER, not weaker, when the ElevenLabs adapter
- * started sending `languageCode: "hi"` for HINGLISH as well as HINDI.
- * A Hinglish utterance is now tagged Hindi at every one of the three
- * vendors that take a tag — Cartesia `hi`, Sarvam `hi-IN`, ElevenLabs
- * `hi` — so the Devanagari this substitutes is spoken under a Hindi
- * tag rather than under a guess. The English bound above is unchanged
- * and is still the thing nobody has measured.
+ * This is safe on a Hindi or Hinglish call by demonstration, not by
+ * argument: Devanagari already reaches all four vendors there —
+ * `hindiOpeningLine()` in `system-prompt.ts` is Devanagari and is
+ * spoken through this same path — and since the ElevenLabs adapter
+ * started sending `languageCode: "hi"` for HINGLISH too, every vendor
+ * that takes a tag gets a Hindi one (Cartesia `hi`, Sarvam `hi-IN`,
+ * ElevenLabs `hi`).
  *
- * Extending this to English calls is a measurement, not an edit — the
- * TTS evidence harness (`npm run bench:tts`) is what would settle it.
+ * ON AN ENGLISH CALL IT IS UNVERIFIED, and that is stated rather than
+ * buried. `language` goes to the vendor as an explicit `en` / `en-IN`
+ * tag, and Devanagari under a forced English tag has been measured on
+ * none of the four. The expectation is that it is read on Hindi
+ * phonology — which is the whole intent — but the expectation is not
+ * evidence. `npm run bench:tts` settles it, and the corpus already
+ * carries the name items to settle it with. If a vendor mangles or
+ * drops it, scoping back is one condition in `pronounceForSpeech`.
  *
  * IDEMPOTENT BY CONSTRUCTION: each pattern matches only the Latin
  * spelling, so a second pass over already-Devanagari output finds
  * nothing. Asserted in the pronunciation tests.
  */
-const VERIFIED_NAME_PRONUNCIATIONS: ReadonlyArray<readonly [RegExp, string]> = [
-  // FlexiFunnels co-founder and CEO. Named in the registration v7
-  // script; an English TTS voice reads "Saurabh" as "Sore-ab".
-  [/\bSaurabh\s+Bhatnagar\b/giu, "सौरभ भटनागर"],
-];
+const SCRIPT_NAME_PRONUNCIATIONS: readonly SpokenNameSubstitution[] = [
+  // FlexiFunnels co-founder and CEO. Named in the registration scripts,
+  // so he is spoken on calls whose CONTACT is somebody else entirely —
+  // which is why he is here, in a fixed list, rather than reached
+  // through the per-call contact name below.
+  //
+  // FULL NAME ONLY, and that is not an oversight. The scripts also say
+  // "Saurabh Sir" in their FAQ copy, and rewriting a bare given name
+  // wherever it appears claims more than this list knows — it would
+  // fire on any other Saurabh too. A CONTACT called Saurabh still gets
+  // his name spoken properly; that comes through `names`, from the
+  // contact field, which is bounded to one person per call.
+  fullNameSubstitution("Saurabh Bhatnagar"),
+].filter((entry): entry is SpokenNameSubstitution => entry !== undefined);
 
 /**
  * Rewrites numeric notation in `text` into the words the given
@@ -490,28 +506,68 @@ const VERIFIED_NAME_PRONUNCIATIONS: ReadonlyArray<readonly [RegExp, string]> = [
  * how a value is read aloud. Safe on a full reply or on a single
  * streamed sentence chunk.
  */
-export function pronounceForSpeech(text: string, language: SupportedLanguage): string {
+/**
+ * @param names THIS CALL'S contact-name substitutions, from
+ *   `spokenNameSubstitutions(customer.name)`. Built once per session
+ *   and passed in rather than looked up here, so nothing in the hot
+ *   path touches a table, a model or a network. Omitted for a session
+ *   with no contact — every other rule behaves identically.
+ */
+export function pronounceForSpeech(
+  text: string,
+  language: SupportedLanguage,
+  names: readonly SpokenNameSubstitution[] = [],
+): string {
   if (text.trim().length === 0) return text;
 
-  // The call's language decides the register, EXCEPT where the
-  // utterance itself is clearly English — see the long note above
-  // `isClearlyEnglishUtterance`. One-directional: `language` is read,
-  // never rewritten, and an English call is unaffected by this clause.
+  // A NUMBER'S register follows the sentence around it. "The webinar
+  // starts at 7:30 PM" must not become "saadhe saat baje shaam ko"
+  // because the call is Hindi — that is the bug `isClearlyEnglishUtterance`
+  // was written for, and the numeric rules below are the only thing
+  // that reads this flag.
   const hindi = language !== SupportedLanguage.ENGLISH && !isClearlyEnglishUtterance(text);
   const lex = hindi ? HINDI_LEXICON : ENGLISH_LEXICON;
 
   let spoken = text.replace(DOTTED_MERIDIEM, (_match, ap: string) => `${ap.toUpperCase()}M`);
 
-  // Verified proper names, spoken form only, and only where Devanagari
-  // is already the norm for this utterance. Reuses the same `hindi`
-  // flag as the numeric rules rather than testing `language` directly:
-  // an English sentence spoken on a Hindi call is exactly the
-  // mixed-script case no vendor has been measured on.
-  if (hindi) {
-    for (const [pattern, spokenName] of VERIFIED_NAME_PRONUNCIATIONS) {
-      spoken = spoken.replace(pattern, spokenName);
-    }
-  }
+  // ── VERIFIED PROPER NAMES — UNCONDITIONAL, IN EVERY LANGUAGE ────
+  //
+  // A NAME IS NOT A REGISTER, WHICH IS WHY THIS IS NOT GATED AT ALL.
+  // A number is read differently depending on the language around it,
+  // so the numeric rules above ask about the sentence. A person's name
+  // is the same sound in every sentence on every call: सौरभ भटनागर is
+  // how "Saurabh Bhatnagar" is said, and an English sentence around it
+  // does not make it a different name. Devanagari is simply the
+  // spelling that gets an engine to produce that sound.
+  //
+  // This was gated twice before, and each gate cost real coverage:
+  //   - on the UTTERANCE reading as Hindi, which lost the campaign's
+  //     own opening line, "Hello, am I speaking with {{customer_name}}?"
+  //     — the ONE line that speaks a full name, and clearly English;
+  //   - then on the CALL being Hindi or Hinglish, which lost every
+  //     English call, where the mispronunciation was confirmed by ear.
+  //
+  // WHAT IS KNOWINGLY UNVERIFIED, recorded rather than hidden: on an
+  // English call the vendor is sent `languageCode: "en"` (ElevenLabs)
+  // or `en` / `en-IN` (Cartesia, Sarvam), and Devanagari under a forced
+  // English tag has not been measured on any of the four. It is
+  // expected to be read on Hindi phonology, which is the entire point,
+  // but nobody has heard it. `npm run bench:tts` is what settles it,
+  // and the corpus carries the name items to settle it with. If a
+  // vendor turns out to mangle or drop it, the fix is to scope this
+  // back to `language !== ENGLISH` — one condition, right here.
+  //
+  // The canonical spelling is untouched everywhere else: history, the
+  // classifier, the sheet and the contact record all keep it, because
+  // this runs on the string handed to `synthesize` and nothing else.
+  //
+  // Two sources, and they are deliberately separate. `names` is THIS
+  // CALL'S CONTACT — built once per session from `customer.name`, so
+  // only that one person's name can be rewritten and no table entry can
+  // fire inside an unrelated word. The fixed list is for people the
+  // SCRIPTS name, who are spoken on calls to somebody else.
+  spoken = applySpokenNames(spoken, names);
+  spoken = applySpokenNames(spoken, SCRIPT_NAME_PRONUNCIATIONS);
 
   // A part-of-day the sentence already stated is kept verbatim and the
   // reading is built without one, so neither it nor the unit word nor

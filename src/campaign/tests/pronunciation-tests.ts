@@ -496,8 +496,13 @@ test("E9 — a slash rate does not disturb the numeric register decision", () =>
 //
 // The canonical spelling is what history, the classifier, the sheet and
 // every contact record hold; only the string handed to `synthesize` is
-// rewritten, and only where Devanagari is already the norm for the
-// utterance. See `VERIFIED_NAME_PRONUNCIATIONS`.
+// rewritten — and it is rewritten IN EVERY LANGUAGE, because a person's
+// name is the same sound whatever the sentence around it is doing.
+// F3c is the other half and must not be collapsed into this one: the
+// NUMERIC rules are still gated on the sentence's register, because a
+// number genuinely is read differently in each. See
+// `VERIFIED_NAME_PRONUNCIATIONS` for what is verified here and what is
+// not.
 console.log("\nSECTION F — verified proper names");
 
 const HOST = "Saurabh Bhatnagar";
@@ -508,19 +513,67 @@ test("F1 — a Hindi utterance speaks the verified name in Devanagari", () => {
   speaks(`${HOST} जी होस्ट कर रहे हैं।`, HINGLISH, `${HOST_SPOKEN} जी होस्ट कर रहे हैं।`);
 });
 
-test("F2 — an ENGLISH call is untouched: canonical spelling reaches TTS", () => {
-  // Devanagari under an explicit `en` language tag is unverified on
-  // Cartesia, Sarvam and ElevenLabs. Until it is measured, an English
-  // call keeps exactly today's behaviour.
+test("F2 — an ENGLISH call speaks the verified name in Devanagari too", () => {
+  // CHANGED DELIBERATELY, 2026-09-24, at the operator's direction.
+  // This used to assert the opposite: that an English call kept the
+  // canonical spelling, because Devanagari under an explicit `en` tag
+  // is unverified on Cartesia, Sarvam and ElevenLabs.
+  //
+  // It is STILL unverified — that has not changed and is recorded in
+  // `speech-pronunciation.ts`. What changed is the decision: a live
+  // call showed the agent saying the name correctly when asked for it
+  // in Hindi and wrongly when asked for it in English, so the name is
+  // now normalised on every call regardless of language. `npm run
+  // bench:tts` is what would show a vendor mangling it; if one does,
+  // scoping back is one condition in `pronounceForSpeech` and this
+  // test goes back to asserting the line unchanged.
   const line = `The event is hosted by ${HOST}, co-founder and CEO.`;
-  speaks(line, EN, line);
+  speaks(line, EN, `The event is hosted by ${HOST_SPOKEN}, co-founder and CEO.`);
 });
 
-test("F3 — a clearly-English utterance on a Hindi call is also untouched", () => {
-  // Same unverified mixed-script case, reached through the utterance
-  // override rather than the call language.
+test("F3 — a Hindi call speaks the name in Devanagari even inside an English sentence", () => {
+  // CHANGED DELIBERATELY, 2026-09-24. This test used to assert the
+  // opposite — that an English-reading utterance on a Hindi call kept
+  // the canonical spelling — because the name rule reused the numeric
+  // rules' `isClearlyEnglishUtterance` gate.
+  //
+  // A NUMBER's register follows the sentence around it; A NAME'S DOES
+  // NOT. "Saurabh Bhatnagar" is सौरभ भटनागर on a Hindi call whatever
+  // the surrounding words are, and confirmed by ear on a live call:
+  // asked to say the name in Hindi the agent says it correctly, asked
+  // in English it says it wrong.
+  //
+  // What that old gate actually cost was the ONE line that speaks a
+  // full name — the campaign opening, "Hello, am I speaking with
+  // {{customer_name}}?", which reads as clearly English and so was
+  // never normalised on any call. F3b pins that line specifically.
   const line = `The event is hosted by ${HOST}, co-founder and CEO.`;
-  speaks(line, HI, line);
+  speaks(line, HI, `The event is hosted by ${HOST_SPOKEN}, co-founder and CEO.`);
+  speaks(line, HINGLISH, `The event is hosted by ${HOST_SPOKEN}, co-founder and CEO.`);
+});
+
+test("F3b — the campaign's own opening line normalises the name it reads out", () => {
+  // The line the pipeline speaks verbatim, and the only place the FULL
+  // name is said. Every later mention is a first name inside model
+  // prose. If this one is not covered, the rest barely matters.
+  const opening = `Hello, am I speaking with ${HOST}?`;
+  const normalised = `Hello, am I speaking with ${HOST_SPOKEN}?`;
+  // In EVERY language — the language of the call does not change how a
+  // person's name is said. An English campaign dials this line too.
+  speaks(opening, HINGLISH, normalised);
+  speaks(opening, HI, normalised);
+  speaks(opening, EN, normalised);
+  // The pipeline-owned identity line has the same shape and the same
+  // job, so it must behave the same way.
+  speaks(`Am I speaking with ${HOST}?`, EN, `Am I speaking with ${HOST_SPOKEN}?`);
+});
+
+test("F3c — the NUMERIC register still follows the sentence, not the call", () => {
+  // The other half of the split, asserted here so the two gates cannot
+  // be collapsed back into one by someone reading F3 alone. An English
+  // sentence on a Hindi call must not pick up Hindi number words.
+  speaks("The webinar starts at 7:30 PM today.", HI, "The webinar starts at seven thirty PM today.");
+  speaks("सेशन 7:30 PM पर है।", HI, "सेशन saadhe saat baje shaam ko पर है।");
 });
 
 test("F4 — the mapping is idempotent", () => {

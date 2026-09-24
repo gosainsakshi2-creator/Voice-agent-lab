@@ -56,6 +56,10 @@ import { estimateLlmCost, estimateSttCost, estimateTtsCost, estimateTokenCount }
 import { withGracefulRetry, RecoverableTurnError, toSessionErrorInfo } from "./error-recovery";
 import { formatForSpeech } from "../../utils/speech-formatter";
 import { pronounceForSpeech } from "../../utils/speech-pronunciation";
+import {
+  spokenNameSubstitutions,
+  type SpokenNameSubstitution,
+} from "../../utils/name-pronunciation";
 
 export interface ResolvedProviderStack {
   readonly telephony: TelephonyProvider;
@@ -2493,6 +2497,19 @@ export class ConversationPipeline {
    * barge-in, the language model, memory, metrics or playback
    * accounting.
    */
+  /**
+   * How THIS call's contact name is spoken, resolved ONCE here rather
+   * than per utterance.
+   *
+   * The Devanagari itself was resolved offline and committed to
+   * `name-pronunciations.generated.ts`; this is a couple of `Map.get`
+   * calls at construction and then a regex replace per utterance, so
+   * nothing about name pronunciation costs the call any latency. A
+   * contact whose name is not in that table produces an empty list and
+   * is spoken exactly as before.
+   */
+  private readonly spokenNames: readonly SpokenNameSubstitution[];
+
   /** Synthesised cue audio, keyed by `language|text`, so each cue costs one TTS request per call. */
   private readonly backchannelCueCache = new Map<string, AudioPayload>();
   /** Cues played into the caller turn currently being held. Reset when a turn is acquired. */
@@ -2601,6 +2618,10 @@ export class ConversationPipeline {
     // ANSWER, not to ask again. See `openingLineAsksIdentity`. For every
     // script whose opening does not ask it — v1 through v7 — this is
     // false and the state is `unasked`, exactly as before.
+    // Resolved here, once, from the one field that holds it. A field
+    // initializer cannot do this: it would run before `record` exists.
+    this.spokenNames = spokenNameSubstitutions(record.request.campaign?.customer.name);
+
     const identityLine = record.campaignIdentityLine?.trim() ?? "";
     this.openingAsksIdentity =
       identityLine.length > 0 &&
@@ -7729,7 +7750,7 @@ await this.drainPlayback(speakingSignal, true);
       // Cartesia, Smallest AI, Sarvam and ElevenLabs while leaving the
       // transcript, the classifier and the sheet reading the original
       // approved wording.
-      request: { text: pronounceForSpeech(text, language), language },
+      request: { text: pronounceForSpeech(text, language, this.spokenNames), language },
     };
     const startedAt = Date.now();
 

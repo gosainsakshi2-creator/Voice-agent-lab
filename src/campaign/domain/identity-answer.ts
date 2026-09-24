@@ -167,6 +167,28 @@ const QUESTIONS_BACK = [
   "कौन", "कौन बोल", "किससे", "क्या चाहिए", "क्यों",
 ];
 
+/**
+ * A yes that still stands when the same turn asks who is calling.
+ *
+ * Real call 124b3316 (2026-09-24): "Yeah, you're speaking with me. Who
+ * is this?" read as `unclear` because `QUESTIONS_BACK` vetoed the whole
+ * turn, three such answers spent `MAX_IDENTITY_REASKS`, and the call was
+ * closed on the right person. "Yes, who is this?" answers the question
+ * AND asks one back; the gate confirms and the first reply introduces
+ * the agent, which is the answer to theirs.
+ *
+ * Deliberately NOT the whole of `CONFIRMATIONS` / `SELF_IDENTIFICATIONS`:
+ * "right", "sure", "ji" are filler in "Right, who's this?" (A8), and
+ * "speaking" / "bol raha" occur inside the questions themselves ("who
+ * is speaking", "kaun bol raha hai"). Only an explicit yes, or a phrase
+ * that cannot be part of the question, is read here.
+ */
+const AFFIRMATIONS_BESIDE_A_QUESTION = [
+  "yes", "yeah", "yep", "yup", "haan", "haan ji", "haanji", "hanji", "ji haan",
+  "that is me", "that s me", "this is me", "you are speaking with me", "you re speaking with me",
+  "हाँ", "हां", "जी हाँ",
+];
+
 /** An unmistakable "no, that is not me". */
 const DENIALS = [
   "no", "nope", "not me", "wrong number", "wrong person", "you have the wrong",
@@ -228,6 +250,14 @@ function contains(haystack: string, needles: readonly string[]): boolean {
 }
 
 /**
+ * Did the caller ask who is calling? Read by the gate only, to put the
+ * agent's own name in front of the re-ask (`identityReAskFor`).
+ */
+export function asksWhoIsCalling(text: string): boolean {
+  return contains(normaliseText(text ?? ""), QUESTIONS_BACK);
+}
+
+/**
  * Read one caller turn as an answer to "am I speaking with <name>?".
  *
  * `customerName` is optional and used only as an extra confirmation
@@ -256,7 +286,18 @@ export function classifyIdentityAnswer(
   // 1. A question put back to us is never an answer — and it is read
   //    first because "kaun bol raha hai?" (who is speaking?) contains
   //    "bol raha", which is also how somebody says "I am speaking".
-  if (contains(normalised, QUESTIONS_BACK)) return "unclear";
+  //    ...unless the same turn also says yes, and says no "no": see
+  //    `AFFIRMATIONS_BESIDE_A_QUESTION`.
+  if (contains(normalised, QUESTIONS_BACK)) {
+    const deniesToo = contains(withoutDenialExceptions(normalised), DENIALS);
+    const name = normaliseText(customerName ?? "").trim();
+    const firstName = name.split(" ")[0] ?? "";
+    const saysYes =
+      contains(normalised, AFFIRMATIONS_BESIDE_A_QUESTION) ||
+      (name.length > 1 && contains(normalised, [name])) ||
+      (firstName.length > 2 && contains(normalised, [firstName]));
+    return !deniesToo && saysYes ? "confirmed" : "unclear";
+  }
 
   // 2. A denial wins outright, whatever else is in the turn — but a
   //    "no" inside "no problem" is not one of them. See
@@ -272,6 +313,9 @@ export function classifyIdentityAnswer(
   //    of it would re-ask a question they have just answered.
   const name = normaliseText(customerName ?? "").trim();
   if (name.length > 1 && contains(normalised, [name])) return "confirmed";
+  // The first name alone: "I am Shivangi" for "Shivangi Silswal".
+  const firstName = name.split(" ")[0] ?? "";
+  if (firstName.length > 2 && contains(normalised, [firstName])) return "confirmed";
   if (contains(normalised, SELF_IDENTIFICATIONS)) return "confirmed";
 
   // 4. Otherwise "yes, I can hear you" answers the wrong question. It

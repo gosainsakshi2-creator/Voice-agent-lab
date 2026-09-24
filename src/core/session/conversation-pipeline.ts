@@ -45,7 +45,7 @@ import type { TelephonyProvider } from "../../interfaces/providers/telephony-pro
 import type { SessionRecord } from "./session-record";
 import { detectLanguage, isLockGradeEvidence, type LanguageDetectionResult } from "./language-detector";
 import { currentTurnNote, languageHintFor, openingLineFor } from "./system-prompt";
-import { classifyIdentityAnswer } from "../../campaign/domain/identity-answer";
+import { asksWhoIsCalling, classifyIdentityAnswer } from "../../campaign/domain/identity-answer";
 import { SentenceChunker } from "./sentence-chunker";
 import { isBareAcknowledgement, readsAsUnfinishedThought } from "./turn-detection";
 import type { ContinuationHoldEvent, EndpointMarkerOutcome, TurnReleaseTrace } from "./turn-detection";
@@ -1632,7 +1632,21 @@ const LANGUAGE_LOCK_MIN_WORDS = SELF_ECHO_MIN_WORDS;
  * lead-in, then the same question — which is what a person does when
  * their question got lost.
  */
-function identityReAskFor(language: SupportedLanguage, line: string): string {
+function identityReAskFor(language: SupportedLanguage, line: string, introduceAs?: string): string {
+  // The caller asked who is calling ("Who is this?", "Kaun bol raha
+  // hai?"). Repeating our question without answering theirs is what
+  // made call 124b3316 ask it three times and get closed. Say who we
+  // are first — gender-neutral in every language — then ask again.
+  if (introduceAs !== undefined && introduceAs.length > 0) {
+    switch (language) {
+      case "hi":
+        return `मेरा नाम ${introduceAs} है, Team FlexiFunnels से. ${line}`;
+      case "hi-en":
+        return `Mera naam ${introduceAs} hai, Team FlexiFunnels se. ${line}`;
+      default:
+        return `This is ${introduceAs} from Team FlexiFunnels. ${line}`;
+    }
+  }
   switch (language) {
     case "hi":
       return `माफ़ कीजिए — ${line}`;
@@ -3526,7 +3540,11 @@ export class ConversationPipeline {
     console.log(`[PIPELINE:${sid}] identity gate — no clear answer; asking again (${this.identityReAsks}/${MAX_IDENTITY_REASKS})`);
     this.abandonSpeculation("the identity question is re-asked without the language model");
     await this.speakAttentionUtterance(
-      identityReAskFor(this.record.memory.currentLanguage, line),
+      identityReAskFor(
+        this.record.memory.currentLanguage,
+        line,
+        asksWhoIsCalling(userText) ? this.record.request.campaign?.agent.name.trim() : undefined,
+      ),
       loopSignal,
       "returning to the unanswered identity question",
     );

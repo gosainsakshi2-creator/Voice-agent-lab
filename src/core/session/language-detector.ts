@@ -284,7 +284,22 @@ export function detectLanguage(
   const hasDevanagari = DEVANAGARI_RANGE.test(trimmed);
   const hasLatin = LATIN_LETTERS.test(trimmed);
 
-  if (hasDevanagari) {
+  // A stray Devanagari word inside an English sentence is English, the
+  // same rule the Latin path below applies to a stray romanized Hindi
+  // word. Real call dc8942cf (2026-09-24): Soniox wrote "No, currently
+  // तो I haven't tried anything…" — 1 Devanagari word in ~90 — and the
+  // mixed-script branch LOCKED the English call to Hinglish. Below
+  // `HINGLISH_MARKER_RATIO` Devanagari share the turn falls through to
+  // the Latin analysis, which ignores the Devanagari words and still
+  // catches romanized Hindi.
+  const devanagariShare = (() => {
+    const scriptWords = trimmed.split(/\s+/).filter((word) => /[\p{L}]/u.test(word));
+    const devanagariWords = scriptWords.filter((word) => DEVANAGARI_RANGE.test(word)).length;
+    return scriptWords.length > 0 ? devanagariWords / scriptWords.length : 0;
+  })();
+  const strayDevanagari = hasDevanagari && hasLatin && devanagariShare < HINGLISH_MARKER_RATIO;
+
+  if (hasDevanagari && !strayDevanagari) {
     if (!hasLatin) {
       return {
         language: SupportedLanguage.HINDI,

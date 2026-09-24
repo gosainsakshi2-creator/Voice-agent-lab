@@ -154,7 +154,10 @@ test("A1. v13 is a registration script, approved, name-requiring, dated, and fir
   const registration = listScripts().filter((s) => s.campaignType === "registration").map((s) => s.version);
   // `registration v15` — v6's workshop in the later conversation shape —
   // took the first place, so v13 sits one lower than when it shipped.
-  assert.deepEqual(registration.slice(0, 6), ["v15", "v6", "v13", "v14", "v12", "v11"]);
+  // `registration v16` — v15's call with its Hinglish written in
+  // Devanagari — sits directly under v15 since 2026-09-24, registered
+  // but deliberately not the default, so everything below moved once more.
+  assert.deepEqual(registration.slice(0, 6), ["v15", "v16", "v6", "v13", "v14", "v12"]);
   assert.deepEqual(scriptVariables(V13), ["agent_name", "customer_name"]);
 });
 

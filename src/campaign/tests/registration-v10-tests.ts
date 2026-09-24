@@ -176,20 +176,26 @@ test("A2. v10 is STILL not the default — a different event from v6, and a newe
   // ahead of v9, exactly as v8 sits ahead of v7.
   const registration = listScripts().filter((s) => s.campaignType === "registration");
   assert.equal(registration[0]?.version, "v15");
-  assert.equal(registration[1]?.version, "v6");
+  // `registration v16` — v15's call with its Hinglish written in
+  // Devanagari — was registered directly under v15 on 2026-09-24 and is
+  // deliberately NOT the default, so every version below it shifted one
+  // place down again. Position is read by nothing but `defaultScriptFor`,
+  // which takes the first entry.
+  assert.equal(registration[1]?.version, "v16");
+  assert.equal(registration[2]?.version, "v6");
   // `registration v13` — the implementation session — was registered
   // under v6 on 2026-09-22 as the then-current campaign's script, just
   // as v12 had been. Every version below it shifted one place down;
   // position is read by nothing but `defaultScriptFor`, which takes the
   // first entry.
-  assert.equal(registration[2]?.version, "v13");
+  assert.equal(registration[3]?.version, "v13");
   // `registration v14` is v13's sibling — the same session for people who
   // did NOT attend the two-day event — registered under it on 2026-09-22.
-  assert.equal(registration[3]?.version, "v14");
-  assert.equal(registration[4]?.version, "v12");
-  assert.equal(registration[5]?.version, "v11");
-  assert.equal(registration[6]?.version, "v10");
-  assert.equal(registration[7]?.version, "v9");
+  assert.equal(registration[4]?.version, "v14");
+  assert.equal(registration[5]?.version, "v12");
+  assert.equal(registration[6]?.version, "v11");
+  assert.equal(registration[7]?.version, "v10");
+  assert.equal(registration[8]?.version, "v9");
 });
 
 test("A3. v10 uses ONLY variables the campaign layer can supply", () => {

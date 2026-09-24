@@ -524,6 +524,41 @@ const COMMIT_ANCHORS: Readonly<Record<string, readonly string[]>> = {
     // the three reminder anchors above.
     "interested to attend", "interested in attending",
     "like to attend", "want to attend",
+    // ── THE CODE-MIXED MIDDLE ────────────────────────────────────
+    //
+    // Added for registration v16, which writes its Hinglish with the
+    // Hindi words in Devanagari and the English terms in Latin —
+    // "तो क्या मैं आपकी free seat reserve कर दूँ?" — because a
+    // romanized Hindi sentence is read by a non-Indic TTS voice with
+    // English pronunciation rules.
+    //
+    // That script's own gate line is already matched by "seat reserve"
+    // above, since it keeps those two words in Latin deliberately. The
+    // problem is everything ELSE the model says: it writes the prose,
+    // not the script file, and it will not hold one fixed spelling of
+    // every noun for a whole call. Measured against `classifyOutcome`
+    // before these were added, each of these settled
+    // `affirmative_not_at_gate` — a person who said yes, recorded as
+    // merely interested, with no sheet row, no FINAL_YES, no hangup
+    // and no error anywhere:
+    //
+    //   "...आपकी free सीट reserve कर दूँ?"
+    //   "...आपकी free seat रिज़र्व कर दूँ?"
+    //   "...आपकी free seat पक्की कर दूँ?"
+    //   "...आपकी मुफ़्त सीट आरक्षित कर दूँ?"
+    //
+    // Both this table and `GATE_ACTIONS` already carried pure-Latin and
+    // pure-Devanagari entries. Neither carried the mix, which is the
+    // only thing a Hinglish call actually produces.
+    //
+    // Every one is VERB-BOUND and none of them appears anywhere else in
+    // an approved script — v16's [YES] block says "seat Sunday, 4th
+    // October ... के लिए reserve हो गयी है", where the two words are not
+    // adjacent, so it does not match. That bound is what keeps this
+    // from registering somebody at a line that is not the gate.
+    "सीट reserve", "seat रिज़र्व", "सीट रिज़र्व", "सीट आरक्षित", "seat आरक्षित",
+    "सीट पक्की", "seat पक्की", "सीट book", "seat बुक", "सीट बुक",
+    "रजिस्टर कर", "आपको register",
   ],
   reminder: [
     "will you attend", "are you attending", "will you join", "are you joining",
@@ -603,6 +638,15 @@ const GATE_ACTIONS = [
   "register kar du", "register kar doon", "register kar dun",
   "registration kar du", "booking kar du",
   "आपको रजिस्टर", "नाम लिख", "नाम दर्ज", "सीट रिज़र्व", "सीट बुक", "जगह बुक",
+  // The code-mixed middle, for the same reason and with the same
+  // verb-bound rule as the block added to `COMMIT_ANCHORS` above:
+  // registration v16 speaks Hindi in Devanagari and keeps the English
+  // terms in Latin, so a noun and its verb routinely land in different
+  // scripts. A pure-Latin table and a pure-Devanagari table between
+  // them match neither "सीट reserve" nor "seat रिज़र्व".
+  "सीट reserve", "seat रिज़र्व", "सीट आरक्षित", "seat आरक्षित",
+  "सीट पक्की", "seat पक्की", "सीट book", "seat बुक",
+  "आपको register", "रजिस्टर कर",
 ];
 
 /**

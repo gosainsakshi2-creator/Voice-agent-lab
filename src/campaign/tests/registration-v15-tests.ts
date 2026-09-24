@@ -161,9 +161,11 @@ test("A1. v15 is a registration script, approved, name-requiring, dated, and lis
   assert.equal(defaultScriptFor("registration").version, "v15", "v15 IS the default");
   assert.equal(defaultScriptFor("reminder").version, "v2", "the reminder default is untouched");
   const registration = listScripts().filter((s) => s.campaignType === "registration").map((s) => s.version);
-  // v6 sits directly under it: the same workshop, kept for the campaigns
-  // pinned to its hash.
-  assert.deepEqual(registration.slice(0, 6), ["v15", "v6", "v13", "v14", "v12", "v11"]);
+  // v16 sits directly under it — v15's successor, the same call with
+  // its Hinglish written in Devanagari, registered but deliberately NOT
+  // the default until somebody has heard it. v6 follows: the same
+  // workshop, kept for the campaigns pinned to its hash.
+  assert.deepEqual(registration.slice(0, 6), ["v15", "v16", "v6", "v13", "v14", "v12"]);
   assert.deepEqual(scriptVariables(V15), ["agent_name", "customer_name"]);
 });
 

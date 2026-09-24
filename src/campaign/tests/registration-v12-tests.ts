@@ -145,7 +145,10 @@ test("A1. v12 is a registration script, approved, name-requiring, dated, and fir
   // v12 moved two places down; nothing else about it changed. `v15` —
   // v6's workshop in the later conversation shape — then took the first
   // place, and everything below it moved down one more.
-  assert.deepEqual(registration.slice(0, 6), ["v15", "v6", "v13", "v14", "v12", "v11"]);
+  // `registration v16` — v15's call with its Hinglish written in
+  // Devanagari — sits directly under v15 since 2026-09-24, registered
+  // but deliberately not the default, so everything below moved once more.
+  assert.deepEqual(registration.slice(0, 6), ["v15", "v16", "v6", "v13", "v14", "v12"]);
   assert.deepEqual(scriptVariables(V12), ["agent_name", "customer_name"]);
 });
 

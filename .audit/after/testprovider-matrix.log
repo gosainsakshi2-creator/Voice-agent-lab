@@ -1,0 +1,206 @@
+
+A. THE ALLOCATION RULES, IN ALL THREE DIMENSIONS
+  [PASS] A1. all four TTS providers are campaign providers, ElevenLabs included
+  [PASS] A2. the LLM and telephony dimensions hold exactly their two providers
+  [PASS] A3. the existing 3-provider TTS split still validates unchanged
+  [PASS] A4. the 4-provider 25/25/25/25 split validates and apportions exactly
+  [PASS] A5. a single provider at 100% is valid, and takes every contact
+  [PASS] A6. zero-share providers are legal, never assigned, and never picked
+  [PASS] A7. an all-zero split is refused in every dimension
+  [PASS] A8. a split that does not total 100 is refused in every dimension
+  [PASS] A9. a negative share, and an unknown id, are refused
+
+B. PER-CALL SELECTION: REPRODUCIBLE, PROPORTIONAL, NEVER A FALLBACK
+  [PASS] B1. 100% of one model always returns that model, for any key
+  [PASS] B2. a model at 0% is NEVER selected — 0% means never
+  [PASS] B3. the same key always resolves to the same provider — a retry keeps its stack
+  [PASS] B4. a 50/50 split converges on 50/50 across a campaign
+  [PASS] B5. a 75/25 telephony split converges on 75/25
+  [PASS] B6. selection never invents a provider outside the allocation
+
+C. EXISTING CAMPAIGNS ARE NOT SILENTLY CHANGED
+  [PASS] C1. the legacy LLM allocation is 100% GPT-5.1 — what the old literal did
+  [PASS] C2. a campaign with no stored LLM allocation runs every call on GPT-5.1
+  [PASS] C3. a campaign with no stored telephony allocation dials its column's carrier
+  [PASS] C4. an existing 3-provider TTS allocation is left exactly as stored
+
+D. THE SELECTION BOUNDARY RESOLVES ONE CALL'S STACK
+  [PASS] D1. the resolved stack uses canonical provider ids only
+  [PASS] D2. a Gemma-only campaign resolves every call to Gemma
+  [PASS] D3. a Plivo-only campaign resolves every call to Plivo
+  [PASS] D4. the two dimensions are INDEPENDENT — a stack can mix any pair
+  [PASS] D5. an invalid stored allocation raises rather than falling back to a default
+
+E. PLIVO: EVERY CALL CARRIES ITS OWN SESSION ID
+  [PASS] E1. the session id is appended to a plain answer URL
+  [PASS] E2. an answer URL that already has a query string keeps it
+  [PASS] E3. the session id is URL-encoded
+  [PASS] E4. concurrent calls each get their OWN url — no shared slot
+
+F. PLIVO: THE HANGUP USES THE IDENTIFIER PLIVO EXPECTS
+[Plivo] endCall: hanging up call_uuid=call-uuid-live
+  [PASS] F1. an ANSWERED call is hung up by CallUUID via hangup (DELETE /Call/)
+[Plivo] startCall:
+  sessionId=s2
+  from="+918031452733" (raw="+918031452733")
+  to="+919876543210" (raw="9876543210")
+  answerUrl="https://example.com/api/voice/plivo/answer"
+[Plivo] calls.create OK in 0ms
+[Plivo] endCall: cancelling unanswered request_uuid=req-uuid-1
+  [PASS] F2. an UNANSWERED call is cancelled by requestUuid via cancel (DELETE /Request/)
+[Plivo] startCall:
+  sessionId=s3
+  from="+918031452733" (raw="+918031452733")
+  to="+919876543210" (raw="9876543210")
+  answerUrl="https://example.com/api/voice/plivo/answer"
+[Plivo] calls.create OK in 0ms
+[Plivo] endCall: hanging up call_uuid=call-uuid-s3
+  [PASS] F3. once re-keyed, the same session hangs up rather than cancels
+[Plivo] startCall:
+  sessionId=sess_e2e
+  from="+918031452733" (raw="+918031452733")
+  to="+919876543210" (raw="9876543210")
+  answerUrl="https://example.com/api/voice/plivo/answer"
+[Plivo] calls.create OK in 0ms
+  [PASS] F4. startCall sends a per-call answer URL carrying the session id
+
+G. PLIVO BRIDGE: CallUUID RE-KEY AND THE STT-HEALTH BARGE-IN GATE
+[plivo-bridge:sess_g1] outbound audio listener registered
+[plivo-bridge:sess_g1] bridge attached, socket.readyState=1
+[plivo-bridge:sess_g1] "start" event received -> streamId=stream-g1 callId=call-uuid-g1, confirming call answered
+  [PASS] G1. start.callId is stored on the session BEFORE the call is confirmed answered
+[plivo-bridge:sess_g2] outbound audio listener registered
+[plivo-bridge:sess_g2] bridge attached, socket.readyState=1
+[plivo-bridge:sess_g2] "start" event received -> streamId=stream-g2 callId=none, confirming call answered
+  [PASS] G2. a start event with no callId still confirms the call and stores nothing
+[plivo-bridge:sess_energy] outbound audio listener registered
+[plivo-bridge:sess_energy] bridge attached, socket.readyState=1
+[plivo-bridge:sess_energy] "start" event received -> streamId=stream-e callId=call-uuid-e, confirming call answered
+[plivo-bridge:sess_energy] energy-only barge-in SUPPRESSED: 700ms of loud near-end energy with no transcript, but STT delivered a segment 2000ms ago — not the caller (queue=10 frames)
+  [PASS] G3. with STT ALIVE, loud energy and no transcript does NOT barge in
+[plivo-bridge:sess_energy] outbound audio listener registered
+[plivo-bridge:sess_energy] bridge attached, socket.readyState=1
+[plivo-bridge:sess_energy] "start" event received -> streamId=stream-e callId=call-uuid-e, confirming call answered
+[plivo-bridge:sess_energy] BARGE-IN: 700ms of sustained near-end speech over assistant audio, with no transcript (queue=10 frames)
+[plivo-bridge:sess_energy] clearOutboundPlayback: dropped 10 queued frames, sending clearAudio (streamId=stream-e)
+[plivo-bridge:sess_energy] BARGE-IN: 720ms of sustained near-end speech over assistant audio, with no transcript (queue=0 frames)
+[plivo-bridge:sess_energy] clearOutboundPlayback: dropped 0 queued frames, sending clearAudio (streamId=stream-e)
+[plivo-bridge:sess_energy] BARGE-IN: 740ms of sustained near-end speech over assistant audio, with no transcript (queue=0 frames)
+[plivo-bridge:sess_energy] clearOutboundPlayback: dropped 0 queued frames, sending clearAudio (streamId=stream-e)
+[plivo-bridge:sess_energy] BARGE-IN: 760ms of sustained near-end speech over assistant audio, with no transcript (queue=0 frames)
+[plivo-bridge:sess_energy] clearOutboundPlayback: dropped 0 queued frames, sending clearAudio (streamId=stream-e)
+[plivo-bridge:sess_energy] BARGE-IN: 780ms of sustained near-end speech over assistant audio, with no transcript (queue=0 frames)
+[plivo-bridge:sess_energy] clearOutboundPlayback: dropped 0 queued frames, sending clearAudio (streamId=stream-e)
+[plivo-bridge:sess_energy] BARGE-IN: 800ms of sustained near-end speech over assistant audio, with no transcript (queue=0 frames)
+[plivo-bridge:sess_energy] clearOutboundPlayback: dropped 0 queued frames, sending clearAudio (streamId=stream-e)
+[plivo-bridge:sess_energy] BARGE-IN: 820ms of sustained near-end speech over assistant audio, with no transcript (queue=0 frames)
+[plivo-bridge:sess_energy] clearOutboundPlayback: dropped 0 queued frames, sending clearAudio (streamId=stream-e)
+[plivo-bridge:sess_energy] BARGE-IN: 840ms of sustained near-end speech over assistant audio, with no transcript (queue=0 frames)
+[plivo-bridge:sess_energy] clearOutboundPlayback: dropped 0 queued frames, sending clearAudio (streamId=stream-e)
+[plivo-bridge:sess_energy] BARGE-IN: 860ms of sustained near-end speech over assistant audio, with no transcript (queue=0 frames)
+[plivo-bridge:sess_energy] clearOutboundPlayback: dropped 0 queued frames, sending clearAudio (streamId=stream-e)
+[plivo-bridge:sess_energy] BARGE-IN: 880ms of sustained near-end speech over assistant audio, with no transcript (queue=0 frames)
+[plivo-bridge:sess_energy] clearOutboundPlayback: dropped 0 queued frames, sending clearAudio (streamId=stream-e)
+[plivo-bridge:sess_energy] BARGE-IN: 900ms of sustained near-end speech over assistant audio, with no transcript (queue=0 frames)
+[plivo-bridge:sess_energy] clearOutboundPlayback: dropped 0 queued frames, sending clearAudio (streamId=stream-e)
+[plivo-bridge:sess_energy] BARGE-IN: 920ms of sustained near-end speech over assistant audio, with no transcript (queue=0 frames)
+[plivo-bridge:sess_energy] clearOutboundPlayback: dropped 0 queued frames, sending clearAudio (streamId=stream-e)
+[plivo-bridge:sess_energy] BARGE-IN: 940ms of sustained near-end speech over assistant audio, with no transcript (queue=0 frames)
+[plivo-bridge:sess_energy] clearOutboundPlayback: dropped 0 queued frames, sending clearAudio (streamId=stream-e)
+[plivo-bridge:sess_energy] BARGE-IN: 960ms of sustained near-end speech over assistant audio, with no transcript (queue=0 frames)
+[plivo-bridge:sess_energy] clearOutboundPlayback: dropped 0 queued frames, sending clearAudio (streamId=stream-e)
+[plivo-bridge:sess_energy] BARGE-IN: 980ms of sustained near-end speech over assistant audio, with no transcript (queue=0 frames)
+[plivo-bridge:sess_energy] clearOutboundPlayback: dropped 0 queued frames, sending clearAudio (streamId=stream-e)
+[plivo-bridge:sess_energy] BARGE-IN: 1000ms of sustained near-end speech over assistant audio, with no transcript (queue=0 frames)
+[plivo-bridge:sess_energy] clearOutboundPlayback: dropped 0 queued frames, sending clearAudio (streamId=stream-e)
+[plivo-bridge:sess_energy] BARGE-IN: 1020ms of sustained near-end speech over assistant audio, with no transcript (queue=0 frames)
+[plivo-bridge:sess_energy] clearOutboundPlayback: dropped 0 queued frames, sending clearAudio (streamId=stream-e)
+[plivo-bridge:sess_energy] BARGE-IN: 1040ms of sustained near-end speech over assistant audio, with no transcript (queue=0 frames)
+[plivo-bridge:sess_energy] clearOutboundPlayback: dropped 0 queued frames, sending clearAudio (streamId=stream-e)
+[plivo-bridge:sess_energy] BARGE-IN: 1060ms of sustained near-end speech over assistant audio, with no transcript (queue=0 frames)
+[plivo-bridge:sess_energy] clearOutboundPlayback: dropped 0 queued frames, sending clearAudio (streamId=stream-e)
+[plivo-bridge:sess_energy] BARGE-IN: 1080ms of sustained near-end speech over assistant audio, with no transcript (queue=0 frames)
+[plivo-bridge:sess_energy] clearOutboundPlayback: dropped 0 queued frames, sending clearAudio (streamId=stream-e)
+[plivo-bridge:sess_energy] BARGE-IN: 1100ms of sustained near-end speech over assistant audio, with no transcript (queue=0 frames)
+[plivo-bridge:sess_energy] clearOutboundPlayback: dropped 0 queued frames, sending clearAudio (streamId=stream-e)
+[plivo-bridge:sess_energy] BARGE-IN: 1120ms of sustained near-end speech over assistant audio, with no transcript (queue=0 frames)
+[plivo-bridge:sess_energy] clearOutboundPlayback: dropped 0 queued frames, sending clearAudio (streamId=stream-e)
+[plivo-bridge:sess_energy] BARGE-IN: 1140ms of sustained near-end speech over assistant audio, with no transcript (queue=0 frames)
+[plivo-bridge:sess_energy] clearOutboundPlayback: dropped 0 queued frames, sending clearAudio (streamId=stream-e)
+[plivo-bridge:sess_energy] BARGE-IN: 1160ms of sustained near-end speech over assistant audio, with no transcript (queue=0 frames)
+[plivo-bridge:sess_energy] clearOutboundPlayback: dropped 0 queued frames, sending clearAudio (streamId=stream-e)
+[plivo-bridge:sess_energy] BARGE-IN: 1180ms of sustained near-end speech over assistant audio, with no transcript (queue=0 frames)
+[plivo-bridge:sess_energy] clearOutboundPlayback: dropped 0 queued frames, sending clearAudio (streamId=stream-e)
+[plivo-bridge:sess_energy] BARGE-IN: 1200ms of sustained near-end speech over assistant audio, with no transcript (queue=0 frames)
+[plivo-bridge:sess_energy] clearOutboundPlayback: dropped 0 queued frames, sending clearAudio (streamId=stream-e)
+  [PASS] G4. with STT STALE, the energy-only fallback still barges in
+[plivo-bridge:sess_energy] outbound audio listener registered
+[plivo-bridge:sess_energy] bridge attached, socket.readyState=1
+[plivo-bridge:sess_energy] "start" event received -> streamId=stream-e callId=call-uuid-e, confirming call answered
+[plivo-bridge:sess_energy] BARGE-IN: 700ms of sustained near-end speech over assistant audio, with no transcript (queue=10 frames)
+[plivo-bridge:sess_energy] clearOutboundPlayback: dropped 10 queued frames, sending clearAudio (streamId=stream-e)
+[plivo-bridge:sess_energy] BARGE-IN: 720ms of sustained near-end speech over assistant audio, with no transcript (queue=0 frames)
+[plivo-bridge:sess_energy] clearOutboundPlayback: dropped 0 queued frames, sending clearAudio (streamId=stream-e)
+[plivo-bridge:sess_energy] BARGE-IN: 740ms of sustained near-end speech over assistant audio, with no transcript (queue=0 frames)
+[plivo-bridge:sess_energy] clearOutboundPlayback: dropped 0 queued frames, sending clearAudio (streamId=stream-e)
+[plivo-bridge:sess_energy] BARGE-IN: 760ms of sustained near-end speech over assistant audio, with no transcript (queue=0 frames)
+[plivo-bridge:sess_energy] clearOutboundPlayback: dropped 0 queued frames, sending clearAudio (streamId=stream-e)
+[plivo-bridge:sess_energy] BARGE-IN: 780ms of sustained near-end speech over assistant audio, with no transcript (queue=0 frames)
+[plivo-bridge:sess_energy] clearOutboundPlayback: dropped 0 queued frames, sending clearAudio (streamId=stream-e)
+[plivo-bridge:sess_energy] BARGE-IN: 800ms of sustained near-end speech over assistant audio, with no transcript (queue=0 frames)
+[plivo-bridge:sess_energy] clearOutboundPlayback: dropped 0 queued frames, sending clearAudio (streamId=stream-e)
+[plivo-bridge:sess_energy] BARGE-IN: 820ms of sustained near-end speech over assistant audio, with no transcript (queue=0 frames)
+[plivo-bridge:sess_energy] clearOutboundPlayback: dropped 0 queued frames, sending clearAudio (streamId=stream-e)
+[plivo-bridge:sess_energy] BARGE-IN: 840ms of sustained near-end speech over assistant audio, with no transcript (queue=0 frames)
+[plivo-bridge:sess_energy] clearOutboundPlayback: dropped 0 queued frames, sending clearAudio (streamId=stream-e)
+[plivo-bridge:sess_energy] BARGE-IN: 860ms of sustained near-end speech over assistant audio, with no transcript (queue=0 frames)
+[plivo-bridge:sess_energy] clearOutboundPlayback: dropped 0 queued frames, sending clearAudio (streamId=stream-e)
+[plivo-bridge:sess_energy] BARGE-IN: 880ms of sustained near-end speech over assistant audio, with no transcript (queue=0 frames)
+[plivo-bridge:sess_energy] clearOutboundPlayback: dropped 0 queued frames, sending clearAudio (streamId=stream-e)
+[plivo-bridge:sess_energy] BARGE-IN: 900ms of sustained near-end speech over assistant audio, with no transcript (queue=0 frames)
+[plivo-bridge:sess_energy] clearOutboundPlayback: dropped 0 queued frames, sending clearAudio (streamId=stream-e)
+[plivo-bridge:sess_energy] BARGE-IN: 920ms of sustained near-end speech over assistant audio, with no transcript (queue=0 frames)
+[plivo-bridge:sess_energy] clearOutboundPlayback: dropped 0 queued frames, sending clearAudio (streamId=stream-e)
+[plivo-bridge:sess_energy] BARGE-IN: 940ms of sustained near-end speech over assistant audio, with no transcript (queue=0 frames)
+[plivo-bridge:sess_energy] clearOutboundPlayback: dropped 0 queued frames, sending clearAudio (streamId=stream-e)
+[plivo-bridge:sess_energy] BARGE-IN: 960ms of sustained near-end speech over assistant audio, with no transcript (queue=0 frames)
+[plivo-bridge:sess_energy] clearOutboundPlayback: dropped 0 queued frames, sending clearAudio (streamId=stream-e)
+[plivo-bridge:sess_energy] BARGE-IN: 980ms of sustained near-end speech over assistant audio, with no transcript (queue=0 frames)
+[plivo-bridge:sess_energy] clearOutboundPlayback: dropped 0 queued frames, sending clearAudio (streamId=stream-e)
+[plivo-bridge:sess_energy] BARGE-IN: 1000ms of sustained near-end speech over assistant audio, with no transcript (queue=0 frames)
+[plivo-bridge:sess_energy] clearOutboundPlayback: dropped 0 queued frames, sending clearAudio (streamId=stream-e)
+[plivo-bridge:sess_energy] BARGE-IN: 1020ms of sustained near-end speech over assistant audio, with no transcript (queue=0 frames)
+[plivo-bridge:sess_energy] clearOutboundPlayback: dropped 0 queued frames, sending clearAudio (streamId=stream-e)
+[plivo-bridge:sess_energy] BARGE-IN: 1040ms of sustained near-end speech over assistant audio, with no transcript (queue=0 frames)
+[plivo-bridge:sess_energy] clearOutboundPlayback: dropped 0 queued frames, sending clearAudio (streamId=stream-e)
+[plivo-bridge:sess_energy] BARGE-IN: 1060ms of sustained near-end speech over assistant audio, with no transcript (queue=0 frames)
+[plivo-bridge:sess_energy] clearOutboundPlayback: dropped 0 queued frames, sending clearAudio (streamId=stream-e)
+[plivo-bridge:sess_energy] BARGE-IN: 1080ms of sustained near-end speech over assistant audio, with no transcript (queue=0 frames)
+[plivo-bridge:sess_energy] clearOutboundPlayback: dropped 0 queued frames, sending clearAudio (streamId=stream-e)
+[plivo-bridge:sess_energy] BARGE-IN: 1100ms of sustained near-end speech over assistant audio, with no transcript (queue=0 frames)
+[plivo-bridge:sess_energy] clearOutboundPlayback: dropped 0 queued frames, sending clearAudio (streamId=stream-e)
+[plivo-bridge:sess_energy] BARGE-IN: 1120ms of sustained near-end speech over assistant audio, with no transcript (queue=0 frames)
+[plivo-bridge:sess_energy] clearOutboundPlayback: dropped 0 queued frames, sending clearAudio (streamId=stream-e)
+[plivo-bridge:sess_energy] BARGE-IN: 1140ms of sustained near-end speech over assistant audio, with no transcript (queue=0 frames)
+[plivo-bridge:sess_energy] clearOutboundPlayback: dropped 0 queued frames, sending clearAudio (streamId=stream-e)
+[plivo-bridge:sess_energy] BARGE-IN: 1160ms of sustained near-end speech over assistant audio, with no transcript (queue=0 frames)
+[plivo-bridge:sess_energy] clearOutboundPlayback: dropped 0 queued frames, sending clearAudio (streamId=stream-e)
+[plivo-bridge:sess_energy] BARGE-IN: 1180ms of sustained near-end speech over assistant audio, with no transcript (queue=0 frames)
+[plivo-bridge:sess_energy] clearOutboundPlayback: dropped 0 queued frames, sending clearAudio (streamId=stream-e)
+[plivo-bridge:sess_energy] BARGE-IN: 1200ms of sustained near-end speech over assistant audio, with no transcript (queue=0 frames)
+[plivo-bridge:sess_energy] clearOutboundPlayback: dropped 0 queued frames, sending clearAudio (streamId=stream-e)
+  [PASS] G5. with NO STT evidence at all, the previous behaviour is kept
+
+================================================
+37/37 checks passed
+No telephony, TTS, STT, LLM or database request was made. No call was placed.
+C:\Users\admin\Downloads\voice-agent-lab_1\voice-agent-lab\src\server\plivo-media-bridge.ts:534
+        manager.noteOutboundFrameSent(sessionId);
+                ^
+
+TypeError: manager.noteOutboundFrameSent is not a function
+    at Timeout._onTimeout (C:\Users\admin\Downloads\voice-agent-lab_1\voice-agent-lab\src\server\plivo-media-bridge.ts:534:17)
+    at listOnTimeout (node:internal/timers:605:17)
+    at process.processTimers (node:internal/timers:541:7)
+
+Node.js v24.18.1

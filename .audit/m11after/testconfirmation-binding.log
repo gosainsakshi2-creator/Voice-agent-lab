@@ -1,0 +1,149 @@
+
+A. A REFUSAL THAT ANSWERS A DIFFERENT QUESTION KEEPS THE REGISTRATION
+  [PASS] A. "No." answering "Have you attended one of our workshops before?" is not a retraction
+  [PASS] A. "Nahi, WhatsApp theek hai." answering "Shall I also send it to your email?" is not a retraction
+  [PASS] A. "No, I do not want that." answering "Should I send you a newsletter as well?" is not a retraction
+  [PASS] A. "No need, WhatsApp is fine." answering "Should I send a reminder SMS as well?" is not a retraction
+  [PASS] A. "That is not for me." answering "Should I send you a newsletter as well?" is not a retraction
+  [PASS] A. "Nahi, mujhe email nahi chahiye." answering "Shall I also send it to your email?" is not a retraction
+  [PASS] A. "Uski zaroorat nahi." answering "Should I send a reminder SMS as well?" is not a retraction
+
+B. A DECISIVE NEGATION VOLUNTEERED AFTER A STATEMENT DOES RETRACT
+  [PASS] B. "Actually no." takes the registration back
+  [PASS] B. "No, do not reserve it." takes the registration back
+  [PASS] B. "No, I changed my mind." takes the registration back
+  [PASS] B. "No, remove my registration please." takes the registration back
+  [PASS] B. "No, forget it." takes the registration back
+  [PASS] B. "I changed my mind. Please do not reserve it." takes the registration back
+  [PASS] B. "I don't want to join anymore." takes the registration back
+  [PASS] B. "I do not want to join anymore." takes the registration back
+  [PASS] B. "Actually nahi, cancel kar dijiye." takes the registration back
+  [PASS] B. "Ab nahi karna hai." takes the registration back
+  [PASS] B. "Main nahi aaunga." takes the registration back
+  [PASS] B. "Mujhe nahi karna." takes the registration back
+
+B2. THE WITHDRAWAL THAT NAMES NO ACTION (§4.5 F1c)
+  [PASS] B2. "Actually I can't make it." takes the registration back
+  [PASS] B2. "Actually I cannot make it." takes the registration back
+  [PASS] B2. "I can't make it." takes the registration back
+  [PASS] B2. "Sorry, I won't make it." takes the registration back
+  [PASS] B2. "I will not make it." takes the registration back
+  [PASS] B2. "Actually I won't be able to attend." takes the registration back
+  [PASS] B2. "Actually I will not be able to attend." takes the registration back
+  [PASS] B2. "I'm not going to be able to attend." takes the registration back
+  [PASS] B2. "I am not able to attend." takes the registration back
+  [PASS] B2. "I'm not able to attend." takes the registration back
+  [PASS] B2. "I'm not going to make it." takes the registration back
+  [PASS] B2. ...and the same words answering a DIFFERENT question do NOT
+  [PASS] B2. ...and a call that never reached the gate is unchanged
+  [PASS] B2. a QUESTION containing a withdrawal phrase retracts nothing
+
+C. THE RETRACTIONS THAT ALWAYS WORKED STILL WORK
+  [PASS] C. "Actually no, cancel it, I am not interested." is still FINAL_NO
+  [PASS] C. "Sorry, I am not interested after all." is still FINAL_NO
+  [PASS] C. "Actually, cancel it." is still FINAL_NO
+
+D. A NO AT THE GATE ITSELF
+  [PASS] D. "No." at the commitment question is a refusal
+  [PASS] D. "Nahi." at the commitment question is a refusal
+
+E. AN ACKNOWLEDGEMENT CLOSES THE EXCHANGE IT ENDS
+  [PASS] E. a cancellation after the agent acknowledged is bound to nothing earlier
+  [PASS] E. "Got it." is a response boundary the walk may not cross
+  [PASS] E. "Okay." is a response boundary the walk may not cross
+  [PASS] E. "Okay, understood." is a response boundary the walk may not cross
+  [PASS] E. "Sure." is a response boundary the walk may not cross
+  [PASS] E. "Alright." is a response boundary the walk may not cross
+  [PASS] E. an agent that asks and then acknowledges NOTHING is still asking
+  [PASS] E. an acknowledgement before the GATE is still stepped over
+  [PASS] E. an acknowledgement spoken AFTER the refusal changes nothing
+
+G. A COURTESY SIGN-OFF DECIDES NOTHING IN EITHER DIRECTION
+  [PASS] G. a refusal survives the sign-off "Okay, thanks."
+  [PASS] G. a refusal survives the sign-off "Alright, thanks."
+  [PASS] G. a refusal survives the sign-off "Okay, that's all."
+  [PASS] G. a refusal survives the sign-off "Theek hai, dhanyavaad."
+  [PASS] G. a refusal survives a sign-off even when the agent asked on the way out
+  [PASS] G. a registration survives the sign-off "No thanks, that's all."
+  [PASS] G. a registration survives the sign-off "No thanks, I'm good."
+  [PASS] G. a registration survives the sign-off "No, that's all."
+  [PASS] G. a registration survives the sign-off "No, I'm good."
+  [PASS] G. a registration survives the sign-off "No need, that's all."
+  [PASS] G. a registration survives the sign-off "Nahi, bas itna hi."
+  [PASS] G. a registration survives the sign-off "No thanks."
+  [PASS] G. "Thanks, but I changed my mind." is a cancellation, not a sign-off
+  [PASS] G. "No thanks, cancel it." is a cancellation, not a sign-off
+  [PASS] G. "Thanks, but I'm not interested." is a cancellation, not a sign-off
+  [PASS] G. "Okay thanks, but don't reserve it." is a cancellation, not a sign-off
+  [PASS] G. "No thanks, not for me." is a cancellation, not a sign-off
+  [PASS] G. "Please cancel my registration." is a cancellation, not a sign-off
+  [PASS] G. "Nahi shukriya, mujhe nahi karna." is a cancellation, not a sign-off
+  [PASS] G. at the gate itself, courtesy still decides — in both directions
+  [PASS] G. a call that never reached the gate keeps its refusal
+  [PASS] G. compliance and routing signals are never silenced by courtesy
+  [PASS] G. a retraction followed by a sign-off still closes as NO
+
+H. THE GATE IS RECOGNISED WHEN THE AGENT PARAPHRASES IT
+  [PASS] H. "Would you like me to put you down for it?" + yes is a registration
+  [PASS] H. "Would you like me to put you down for it?" + no is a refusal
+  [PASS] H. "Should I go ahead and reserve this for you?" + yes is a registration
+  [PASS] H. "Should I go ahead and reserve this for you?" + no is a refusal
+  [PASS] H. "Can I get you registered for this?" + yes is a registration
+  [PASS] H. "Can I get you registered for this?" + no is a refusal
+  [PASS] H. "Would you like me to book your place?" + yes is a registration
+  [PASS] H. "Would you like me to book your place?" + no is a refusal
+  [PASS] H. "Would you like me to reserve your spot?" + yes is a registration
+  [PASS] H. "Would you like me to reserve your spot?" + no is a refusal
+  [PASS] H. "Shall I go ahead and book your place?" + yes is a registration
+  [PASS] H. "Shall I go ahead and book your place?" + no is a refusal
+  [PASS] H. "Can I sign you up for it?" + yes is a registration
+  [PASS] H. "Can I sign you up for it?" + no is a refusal
+  [PASS] H. "Do you want me to save your seat?" + yes is a registration
+  [PASS] H. "Do you want me to save your seat?" + no is a refusal
+  [PASS] H. "Can I confirm your spot for tomorrow?" + yes is a registration
+  [PASS] H. "Can I confirm your spot for tomorrow?" + no is a refusal
+  [PASS] H. "Kya main aapki seat reserve kar du?" + yes is a registration
+  [PASS] H. "Kya main aapki seat reserve kar du?" + no is a refusal
+  [PASS] H. "Main aapka naam likh du?" + yes is a registration
+  [PASS] H. "Main aapka naam likh du?" + no is a refusal
+  [PASS] H. "Aapko register kar du?" + yes is a registration
+  [PASS] H. "Aapko register kar du?" + no is a refusal
+  [PASS] H. "Kya main aapki jagah book kar du?" + yes is a registration
+  [PASS] H. "Kya main aapki jagah book kar du?" + no is a refusal
+  [PASS] H. "Can I tell you in 20 seconds why I think you should attend?" is an ordinary question, not a gate
+  [PASS] H. "Have you attended one of our workshops before?" is an ordinary question, not a gate
+  [PASS] H. "Shall I also send it to your email?" is an ordinary question, not a gate
+  [PASS] H. "Shall I send the link on WhatsApp?" is an ordinary question, not a gate
+  [PASS] H. "Should I send a reminder SMS as well?" is an ordinary question, not a gate
+  [PASS] H. "The registration is completely free. Is that okay?" is an ordinary question, not a gate
+  [PASS] H. "No problem. Anything else I can do for you?" is an ordinary question, not a gate
+  [PASS] H. "Can I tell you about the registration process?" is an ordinary question, not a gate
+  [PASS] H. "Should I explain how to book a seat?" is an ordinary question, not a gate
+  [PASS] H. "Do you want me to send the booking link?" is an ordinary question, not a gate
+  [PASS] H. "Should I register your complaint?" is an ordinary question, not a gate
+  [PASS] H. "Should I register your interest for later?" is an ordinary question, not a gate
+  [PASS] H. "Did you register for the last one?" is an ordinary question, not a gate
+  [PASS] H. "Would you like to join our newsletter?" is an ordinary question, not a gate
+  [PASS] H. "Can I take your name please?" is an ordinary question, not a gate
+  [PASS] H. "Can I confirm your email address?" is an ordinary question, not a gate
+  [PASS] H. "Should I check your registration status?" is an ordinary question, not a gate
+  [PASS] H. "Do you want me to send your seat confirmation?" is an ordinary question, not a gate
+  [PASS] H. "Kya main aapko details bhej du?" is an ordinary question, not a gate
+  [PASS] H. "Kya main aapka naam sahi bol raha hoon?" is an ordinary question, not a gate
+  [PASS] H. "Kya main aapki seat number bata du?" is an ordinary question, not a gate
+  [PASS] H. "Kya main aapka registration status check kar du?" is an ordinary question, not a gate
+  [PASS] H. an agent STATEMENT naming the action is never the gate
+  [PASS] H. a bare yes with no gate anywhere registers nobody
+  [PASS] H. the confirmation binding works the same behind a paraphrased gate
+  [PASS] H. opt-out still outranks a paraphrased gate
+
+F. AND THE GATE ITSELF IS UNTOUCHED
+  [PASS] F. a plain registration is still a registration
+  [PASS] F. a yes a beat late, across an assistant filler, still binds to the gate
+  [PASS] F. a no BEFORE the gate does not pre-empt the yes after it
+  [PASS] F. a courtesy yes to a non-anchor question is still not a registration
+  [PASS] F. a callback and a question are still neither a yes nor a no
+
+ALL PASSED — 127 passed, 0 failed
+
+No telephony, TTS, STT, LLM or database request was made. No call was placed.

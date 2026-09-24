@@ -1,0 +1,4 @@
+B1 — a single "Hello?" mid-block gets one short acknowledgement, with NO language-model request
+B2 — the acknowledgement is SHORT
+B4 — a repeated hello NEVER re-speaks the campaign opening
+C1 — "Yes, I can hear you." resumes the block, without a language-model request

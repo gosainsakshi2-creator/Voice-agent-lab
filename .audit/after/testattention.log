@@ -1,0 +1,2516 @@
+
+SECTION A — the vocabulary boundary (the whole safety case)
+  [PASS] A1 — a bare presence check IS an attention check
+  [PASS] A2 — a greeting with CONTENT attached is NOT an attention check
+  [PASS] A3 — a bare backchannel is NOT an attention check
+  [PASS] A4 — empty and whitespace are not attention checks
+
+SECTION B — ONE short acknowledgement, once per episode
+[PIPELINE:attention-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:attention-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:attention-test] GREETING greeting-text-ready +0ms
+[TIMING:attention-test] GREETING tts-request +5ms
+[TIMING:attention-test] GREETING tts-first-chunk +7ms
+[TIMING:attention-test] GREETING audio-queued +8ms
+[PLAYBACK:attention-test] draining 2331ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=1ms)
+[TIMING:attention-test] GREETING SUMMARY total=2341ms greeting-text-ready=0ms tts-request=5ms tts-first-chunk=7ms audio-queued=8ms
+[PIPELINE:attention-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:attention-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:attention-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=3ms historyLength=3
+[TIMING:attention-test] TURN END turn-release=1790156150573 text="Yes, tell me." sttMs=0
+[STT:attention-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:attention-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:attention-test] TURN#0 turn-detected +1ms
+[TIMING:attention-test] TURN#0 stt-to-release=168ms (sttLag=n/ams)
+[LLM:attention-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:attention-test] TURN#0 llm-request +5ms
+[SPECULATE:attention-test] ADOPTED pre-opened request — llm-request is 168ms after the provider stream was opened (first token already in hand, 151ms ago) evidence-to-llm-open=3ms
+[TIMING:attention-test] TURN#0 llm-first-token +6ms
+[TIMING:attention-test] TURN#0 first-sentence-ready +7ms
+[TIMING:attention-test] TURN#0 tts-request +7ms
+[TIMING:attention-test] TURN#0 tts-first-chunk +7ms
+[TIMING:attention-test] TURN#0 audio-queued +7ms
+[PLAYBACK:attention-test] draining 12013ms of queued audio before leaving SPEAKING (queued=11864ms elapsed=1ms)
+[TURN:attention-test] barge-in ACCEPTED on transcript: "Hello?" — words=1 confidence=0.95 isFinal=true energyAgeMs=n/a beganBeforeReply=false replyRemainingMs=10961 replyFullyQueued=true
+[TIMING:attention-test] TURN#0 SUMMARY total=911ms turn-detected=1ms llm-request=5ms llm-first-token=6ms first-sentence-ready=7ms tts-request=7ms tts-first-chunk=7ms audio-queued=7ms
+[TIMING:attention-test] TURN#0
+speech-end=2026-09-23T09:35:50.406Z
+endpoint-evidence=2026-09-23T09:35:50.407Z (speech_final)
+turn-release=2026-09-23T09:35:50.573Z
+llm-request=2026-09-23T09:35:50.578Z
+llm-first-token=2026-09-23T09:35:50.579Z
+first-sentence-ready=2026-09-23T09:35:50.580Z
+tts-request=2026-09-23T09:35:50.580Z
+tts-first-audio=2026-09-23T09:35:50.580Z
+audio-queued=2026-09-23T09:35:50.580Z
+[TIMING:attention-test] TURN#0 DELTAS
+endpoint-to-release=166ms
+release-to-llm-request=5ms
+llm-to-first-token=1ms
+first-token-to-sentence=1ms
+sentence-to-tts=0ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=174ms
+[PIPELINE:attention-test] Turn complete: assistant="Actually, I am calling you with a very interesting invitation. We have created F..." llmMs=17 ttsMs=0
+[RESPONSE-LEN:attention-test] TURN#0 userChars=13 assistantChars=263 estTokens=66 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=3 audioQueuedMs=11864 briefRequested=false
+[PIPELINE:attention-test] Response #1 CANCELLED by barge-in — heard="" discarded="Actually, I am calling you with a very interesting invitation. We have created F..."
+[TIMING:attention-test] TURN END turn-release=1790156151639 text="Hello?" sttMs=0
+[STT:attention-test] Transcript received: "Hello?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:attention-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:attention-test] TURN#1 turn-detected +0ms
+[TIMING:attention-test] TURN#1 stt-to-release=156ms (sttLag=n/ams)
+[PIPELINE:attention-test] attention check — acknowledging once: "Hey, can you hear me okay?"
+[TIMING:attention-test] ATTENTION tts-request +0ms
+[TIMING:attention-test] ATTENTION tts-first-chunk +0ms
+[TIMING:attention-test] ATTENTION audio-queued +0ms
+[PLAYBACK:attention-test] draining 1332ms of queued audio before leaving SPEAKING (queued=1182ms elapsed=0ms)
+[TIMING:attention-test] ATTENTION SUMMARY total=1334ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:attention-test] TURN#1 SUMMARY total=1337ms turn-detected=0ms
+[TIMING:attention-test] TURN#1
+speech-end=2026-09-23T09:35:51.483Z
+endpoint-evidence=2026-09-23T09:35:51.484Z (speech_final)
+turn-release=2026-09-23T09:35:51.639Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:attention-test] TURN#1 DELTAS
+endpoint-to-release=155ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[PIPELINE:attention-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:attention-test] run() exiting — state=LISTENING aborted=true
+  [FAIL] B1 — a single "Hello?" mid-block gets one short acknowledgement, with NO language-model request
+         timed out after 15000ms waiting for 3 replies (have 2, state=LISTENING)
+[PIPELINE:attention-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:attention-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:attention-test] GREETING greeting-text-ready +0ms
+[TIMING:attention-test] GREETING tts-request +1ms
+[TIMING:attention-test] GREETING tts-first-chunk +2ms
+[TIMING:attention-test] GREETING audio-queued +2ms
+[PLAYBACK:attention-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:attention-test] GREETING SUMMARY total=2347ms greeting-text-ready=0ms tts-request=1ms tts-first-chunk=2ms audio-queued=2ms
+[PIPELINE:attention-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:attention-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:attention-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=2ms historyLength=3
+[TIMING:attention-test] TURN END turn-release=1790156169018 text="Yes, tell me." sttMs=0
+[STT:attention-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:attention-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:attention-test] TURN#0 turn-detected +0ms
+[TIMING:attention-test] TURN#0 stt-to-release=151ms (sttLag=n/ams)
+[LLM:attention-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:attention-test] TURN#0 llm-request +1ms
+[SPECULATE:attention-test] ADOPTED pre-opened request — llm-request is 150ms after the provider stream was opened (first token already in hand, 136ms ago) evidence-to-llm-open=2ms
+[TIMING:attention-test] TURN#0 llm-first-token +2ms
+[TIMING:attention-test] TURN#0 first-sentence-ready +2ms
+[TIMING:attention-test] TURN#0 tts-request +3ms
+[TIMING:attention-test] TURN#0 tts-first-chunk +3ms
+[TIMING:attention-test] TURN#0 audio-queued +3ms
+[PLAYBACK:attention-test] draining 12013ms of queued audio before leaving SPEAKING (queued=11864ms elapsed=1ms)
+[TURN:attention-test] barge-in ACCEPTED on transcript: "Hello?" — words=1 confidence=0.95 isFinal=true energyAgeMs=n/a beganBeforeReply=false replyRemainingMs=10932 replyFullyQueued=true
+[TIMING:attention-test] TURN#0 SUMMARY total=935ms turn-detected=0ms llm-request=1ms llm-first-token=2ms first-sentence-ready=2ms tts-request=3ms tts-first-chunk=3ms audio-queued=3ms
+[TIMING:attention-test] TURN#0
+speech-end=2026-09-23T09:36:08.867Z
+endpoint-evidence=2026-09-23T09:36:08.867Z (speech_final)
+turn-release=2026-09-23T09:36:09.018Z
+llm-request=2026-09-23T09:36:09.019Z
+llm-first-token=2026-09-23T09:36:09.020Z
+first-sentence-ready=2026-09-23T09:36:09.020Z
+tts-request=2026-09-23T09:36:09.021Z
+tts-first-audio=2026-09-23T09:36:09.021Z
+audio-queued=2026-09-23T09:36:09.021Z
+[TIMING:attention-test] TURN#0 DELTAS
+endpoint-to-release=151ms
+release-to-llm-request=1ms
+llm-to-first-token=1ms
+first-token-to-sentence=0ms
+sentence-to-tts=1ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=154ms
+[PIPELINE:attention-test] Turn complete: assistant="Actually, I am calling you with a very interesting invitation. We have created F..." llmMs=14 ttsMs=0
+[RESPONSE-LEN:attention-test] TURN#0 userChars=13 assistantChars=263 estTokens=66 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=3 audioQueuedMs=11864 briefRequested=false
+[PIPELINE:attention-test] Response #1 CANCELLED by barge-in — heard="" discarded="Actually, I am calling you with a very interesting invitation. We have created F..."
+[TIMING:attention-test] TURN END turn-release=1790156170116 text="Hello?" sttMs=0
+[STT:attention-test] Transcript received: "Hello?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:attention-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:attention-test] TURN#1 turn-detected +1ms
+[TIMING:attention-test] TURN#1 stt-to-release=165ms (sttLag=n/ams)
+[PIPELINE:attention-test] attention check — acknowledging once: "Hey, can you hear me okay?"
+[TIMING:attention-test] ATTENTION tts-request +0ms
+[TIMING:attention-test] ATTENTION tts-first-chunk +0ms
+[TIMING:attention-test] ATTENTION audio-queued +0ms
+[PLAYBACK:attention-test] draining 1332ms of queued audio before leaving SPEAKING (queued=1182ms elapsed=0ms)
+[TIMING:attention-test] ATTENTION SUMMARY total=1337ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:attention-test] TURN#1 SUMMARY total=1342ms turn-detected=1ms
+[TIMING:attention-test] TURN#1
+speech-end=2026-09-23T09:36:09.952Z
+endpoint-evidence=2026-09-23T09:36:09.953Z (speech_final)
+turn-release=2026-09-23T09:36:10.116Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:attention-test] TURN#1 DELTAS
+endpoint-to-release=163ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[PIPELINE:attention-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:attention-test] run() exiting — state=LISTENING aborted=true
+  [FAIL] B2 — the acknowledgement is SHORT
+         timed out after 15000ms waiting for 3 replies (have 2, state=LISTENING)
+[PIPELINE:attention-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:attention-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:attention-test] GREETING greeting-text-ready +0ms
+[TIMING:attention-test] GREETING tts-request +1ms
+[TIMING:attention-test] GREETING tts-first-chunk +1ms
+[TIMING:attention-test] GREETING audio-queued +1ms
+[PLAYBACK:attention-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:attention-test] GREETING SUMMARY total=2347ms greeting-text-ready=0ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:attention-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:attention-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:attention-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:attention-test] TURN END turn-release=1790156187491 text="Yes, tell me." sttMs=0
+[STT:attention-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:attention-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:attention-test] TURN#0 turn-detected +0ms
+[TIMING:attention-test] TURN#0 stt-to-release=160ms (sttLag=n/ams)
+[LLM:attention-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:attention-test] TURN#0 llm-request +1ms
+[SPECULATE:attention-test] ADOPTED pre-opened request — llm-request is 161ms after the provider stream was opened (first token already in hand, 145ms ago) evidence-to-llm-open=0ms
+[TIMING:attention-test] TURN#0 llm-first-token +1ms
+[TIMING:attention-test] TURN#0 first-sentence-ready +1ms
+[TIMING:attention-test] TURN#0 tts-request +1ms
+[TIMING:attention-test] TURN#0 tts-first-chunk +1ms
+[TIMING:attention-test] TURN#0 audio-queued +1ms
+[PLAYBACK:attention-test] draining 12013ms of queued audio before leaving SPEAKING (queued=11864ms elapsed=1ms)
+[TURN:attention-test] barge-in ACCEPTED on transcript: "Hello?" — words=1 confidence=0.95 isFinal=true energyAgeMs=n/a beganBeforeReply=false replyRemainingMs=10953 replyFullyQueued=true
+[TIMING:attention-test] TURN#0 SUMMARY total=913ms turn-detected=0ms llm-request=1ms llm-first-token=1ms first-sentence-ready=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:attention-test] TURN#0
+speech-end=2026-09-23T09:36:27.331Z
+endpoint-evidence=2026-09-23T09:36:27.331Z (speech_final)
+turn-release=2026-09-23T09:36:27.491Z
+llm-request=2026-09-23T09:36:27.492Z
+llm-first-token=2026-09-23T09:36:27.492Z
+first-sentence-ready=2026-09-23T09:36:27.492Z
+tts-request=2026-09-23T09:36:27.492Z
+tts-first-audio=2026-09-23T09:36:27.492Z
+audio-queued=2026-09-23T09:36:27.492Z
+[TIMING:attention-test] TURN#0 DELTAS
+endpoint-to-release=160ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=0ms
+sentence-to-tts=0ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=161ms
+[PIPELINE:attention-test] Turn complete: assistant="Actually, I am calling you with a very interesting invitation. We have created F..." llmMs=16 ttsMs=0
+[RESPONSE-LEN:attention-test] TURN#0 userChars=13 assistantChars=263 estTokens=66 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=3 audioQueuedMs=11864 briefRequested=false
+[PIPELINE:attention-test] Response #1 CANCELLED by barge-in — heard="" discarded="Actually, I am calling you with a very interesting invitation. We have created F..."
+[TIMING:attention-test] TURN END turn-release=1790156188567 text="Hello?" sttMs=0
+[STT:attention-test] Transcript received: "Hello?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:attention-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:attention-test] TURN#1 turn-detected +1ms
+[TIMING:attention-test] TURN#1 stt-to-release=165ms (sttLag=n/ams)
+[PIPELINE:attention-test] attention check — acknowledging once: "Hey, can you hear me okay?"
+[TIMING:attention-test] ATTENTION tts-request +0ms
+[TIMING:attention-test] ATTENTION tts-first-chunk +0ms
+[TIMING:attention-test] ATTENTION audio-queued +0ms
+[PLAYBACK:attention-test] draining 1332ms of queued audio before leaving SPEAKING (queued=1182ms elapsed=0ms)
+[TIMING:attention-test] ATTENTION SUMMARY total=1339ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:attention-test] TURN#1 SUMMARY total=1341ms turn-detected=1ms
+[TIMING:attention-test] TURN#1
+speech-end=2026-09-23T09:36:28.403Z
+endpoint-evidence=2026-09-23T09:36:28.404Z (speech_final)
+turn-release=2026-09-23T09:36:28.567Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:attention-test] TURN#1 DELTAS
+endpoint-to-release=163ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[TIMING:attention-test] TURN END turn-release=1790156190063 text="Hello?" sttMs=0
+[STT:attention-test] Transcript received: "Hello?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:attention-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:attention-test] TURN#1 turn-detected +0ms
+[TIMING:attention-test] TURN#1 stt-to-release=155ms (sttLag=n/ams)
+[PIPELINE:attention-test] attention check answered — RESUMING from where the reply stopped: "Actually, I am calling you with a very interesting invitation. We have created F..."
+[TIMING:attention-test] ATTENTION tts-request +0ms
+[TIMING:attention-test] ATTENTION tts-first-chunk +0ms
+[TIMING:attention-test] ATTENTION audio-queued +0ms
+[PLAYBACK:attention-test] draining 12104ms of queued audio before leaving SPEAKING (queued=11955ms elapsed=1ms)
+[TURN:attention-test] barge-in ACCEPTED on transcript: "Hello?" — words=1 confidence=0.95 isFinal=true energyAgeMs=n/a beganBeforeReply=false replyRemainingMs=10606 replyFullyQueued=true
+[TIMING:attention-test] ATTENTION SUMMARY total=1349ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:attention-test] TURN#1 SUMMARY total=1351ms turn-detected=0ms
+[TIMING:attention-test] TURN#1
+speech-end=2026-09-23T09:36:29.908Z
+endpoint-evidence=2026-09-23T09:36:29.908Z (speech_final)
+turn-release=2026-09-23T09:36:30.063Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:attention-test] TURN#1 DELTAS
+endpoint-to-release=155ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[TIMING:attention-test] TURN END turn-release=1790156191578 text="Hello?" sttMs=0
+[STT:attention-test] Transcript received: "Hello?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:attention-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:attention-test] TURN#1 turn-detected +1ms
+[TIMING:attention-test] TURN#1 stt-to-release=165ms (sttLag=n/ams)
+[PIPELINE:attention-test] 2 hearing lines already spoken with nothing in between — "Hello?" takes the contextual path instead of another
+[LLM:attention-test] Sending to fake-llm: historyLength=7 roles=[system,assistant,user,user,assistant,user,user] streaming=true
+[TIMING:attention-test] TURN#1 llm-request +6ms
+[TIMING:attention-test] TURN#1 llm-first-token +18ms
+[TIMING:attention-test] TURN#1 tts-request +18ms
+[TIMING:attention-test] TURN#1 tts-first-chunk +19ms
+[TIMING:attention-test] TURN#1 audio-queued +19ms
+[PLAYBACK:attention-test] draining 241ms of queued audio before leaving SPEAKING (queued=91ms elapsed=0ms)
+[TIMING:attention-test] TURN#1 SUMMARY total=261ms turn-detected=1ms llm-request=6ms llm-first-token=18ms tts-request=18ms tts-first-chunk=19ms audio-queued=19ms
+[TIMING:attention-test] TURN#1
+speech-end=2026-09-23T09:36:31.414Z
+endpoint-evidence=2026-09-23T09:36:31.414Z (speech_final)
+turn-release=2026-09-23T09:36:31.578Z
+llm-request=2026-09-23T09:36:31.584Z
+llm-first-token=2026-09-23T09:36:31.596Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T09:36:31.596Z
+tts-first-audio=2026-09-23T09:36:31.597Z
+audio-queued=2026-09-23T09:36:31.597Z
+[TIMING:attention-test] TURN#1 DELTAS
+endpoint-to-release=164ms
+release-to-llm-request=6ms
+llm-to-first-token=12ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=1ms
+first-audio-to-queue=0ms
+speech-end-to-audio=183ms
+[PIPELINE:attention-test] Turn complete: assistant="R2" llmMs=12 ttsMs=1
+[RESPONSE-LEN:attention-test] TURN#1 userChars=6 assistantChars=2 estTokens=1 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=91 briefRequested=false
+[PIPELINE:attention-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:attention-test] run() exiting — state=LISTENING aborted=true
+  [PASS] B3 — "Hello? Hello? Hello?" produces exactly ONE acknowledgement
+[PIPELINE:attention-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:attention-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:attention-test] GREETING greeting-text-ready +0ms
+[TIMING:attention-test] GREETING tts-request +0ms
+[TIMING:attention-test] GREETING tts-first-chunk +0ms
+[TIMING:attention-test] GREETING audio-queued +0ms
+[PLAYBACK:attention-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:attention-test] GREETING SUMMARY total=2341ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:attention-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:attention-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:attention-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:attention-test] TURN END turn-release=1790156196427 text="Yes, tell me." sttMs=0
+[STT:attention-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:attention-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:attention-test] TURN#0 turn-detected +1ms
+[TIMING:attention-test] TURN#0 stt-to-release=151ms (sttLag=n/ams)
+[LLM:attention-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:attention-test] TURN#0 llm-request +1ms
+[SPECULATE:attention-test] ADOPTED pre-opened request — llm-request is 151ms after the provider stream was opened (first token already in hand, 136ms ago) evidence-to-llm-open=0ms
+[TIMING:attention-test] TURN#0 llm-first-token +1ms
+[TIMING:attention-test] TURN#0 first-sentence-ready +1ms
+[TIMING:attention-test] TURN#0 tts-request +1ms
+[TIMING:attention-test] TURN#0 tts-first-chunk +1ms
+[TIMING:attention-test] TURN#0 audio-queued +1ms
+[PLAYBACK:attention-test] draining 12013ms of queued audio before leaving SPEAKING (queued=11864ms elapsed=1ms)
+[TURN:attention-test] barge-in ACCEPTED on transcript: "Hello?" — words=1 confidence=0.95 isFinal=true energyAgeMs=n/a beganBeforeReply=false replyRemainingMs=10926 replyFullyQueued=true
+[TIMING:attention-test] TURN#0 SUMMARY total=940ms turn-detected=1ms llm-request=1ms llm-first-token=1ms first-sentence-ready=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:attention-test] TURN#0
+speech-end=2026-09-23T09:36:36.277Z
+endpoint-evidence=2026-09-23T09:36:36.277Z (speech_final)
+turn-release=2026-09-23T09:36:36.427Z
+llm-request=2026-09-23T09:36:36.428Z
+llm-first-token=2026-09-23T09:36:36.428Z
+first-sentence-ready=2026-09-23T09:36:36.428Z
+tts-request=2026-09-23T09:36:36.428Z
+tts-first-audio=2026-09-23T09:36:36.428Z
+audio-queued=2026-09-23T09:36:36.428Z
+[TIMING:attention-test] TURN#0 DELTAS
+endpoint-to-release=150ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=0ms
+sentence-to-tts=0ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=151ms
+[PIPELINE:attention-test] Turn complete: assistant="Actually, I am calling you with a very interesting invitation. We have created F..." llmMs=15 ttsMs=0
+[RESPONSE-LEN:attention-test] TURN#0 userChars=13 assistantChars=263 estTokens=66 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=3 audioQueuedMs=11864 briefRequested=false
+[PIPELINE:attention-test] Response #1 CANCELLED by barge-in — heard="" discarded="Actually, I am calling you with a very interesting invitation. We have created F..."
+[TIMING:attention-test] TURN END turn-release=1790156197528 text="Hello?" sttMs=0
+[STT:attention-test] Transcript received: "Hello?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:attention-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:attention-test] TURN#1 turn-detected +0ms
+[TIMING:attention-test] TURN#1 stt-to-release=162ms (sttLag=n/ams)
+[PIPELINE:attention-test] attention check — acknowledging once: "Hey, can you hear me okay?"
+[TIMING:attention-test] ATTENTION tts-request +0ms
+[TIMING:attention-test] ATTENTION tts-first-chunk +0ms
+[TIMING:attention-test] ATTENTION audio-queued +0ms
+[PLAYBACK:attention-test] draining 1332ms of queued audio before leaving SPEAKING (queued=1182ms elapsed=0ms)
+[TIMING:attention-test] ATTENTION SUMMARY total=1337ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:attention-test] TURN#1 SUMMARY total=1337ms turn-detected=0ms
+[TIMING:attention-test] TURN#1
+speech-end=2026-09-23T09:36:37.366Z
+endpoint-evidence=2026-09-23T09:36:37.367Z (speech_final)
+turn-release=2026-09-23T09:36:37.528Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:attention-test] TURN#1 DELTAS
+endpoint-to-release=161ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[TIMING:attention-test] TURN END turn-release=1790156199028 text="Hello?" sttMs=0
+[STT:attention-test] Transcript received: "Hello?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:attention-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:attention-test] TURN#1 turn-detected +1ms
+[TIMING:attention-test] TURN#1 stt-to-release=161ms (sttLag=n/ams)
+[PIPELINE:attention-test] attention check answered — RESUMING from where the reply stopped: "Actually, I am calling you with a very interesting invitation. We have created F..."
+[TIMING:attention-test] ATTENTION tts-request +0ms
+[TIMING:attention-test] ATTENTION tts-first-chunk +0ms
+[TIMING:attention-test] ATTENTION audio-queued +0ms
+[PLAYBACK:attention-test] draining 12104ms of queued audio before leaving SPEAKING (queued=11955ms elapsed=1ms)
+[TURN:attention-test] barge-in ACCEPTED on transcript: "Hello?" — words=1 confidence=0.95 isFinal=true energyAgeMs=n/a beganBeforeReply=false replyRemainingMs=10609 replyFullyQueued=true
+[TIMING:attention-test] ATTENTION SUMMARY total=1346ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:attention-test] TURN#1 SUMMARY total=1347ms turn-detected=1ms
+[TIMING:attention-test] TURN#1
+speech-end=2026-09-23T09:36:38.868Z
+endpoint-evidence=2026-09-23T09:36:38.868Z (speech_final)
+turn-release=2026-09-23T09:36:39.028Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:attention-test] TURN#1 DELTAS
+endpoint-to-release=160ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[TIMING:attention-test] TURN END turn-release=1790156200527 text="Hello?" sttMs=0
+[STT:attention-test] Transcript received: "Hello?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:attention-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:attention-test] TURN#1 turn-detected +1ms
+[TIMING:attention-test] TURN#1 stt-to-release=153ms (sttLag=n/ams)
+[PIPELINE:attention-test] 2 hearing lines already spoken with nothing in between — "Hello?" takes the contextual path instead of another
+[LLM:attention-test] Sending to fake-llm: historyLength=7 roles=[system,assistant,user,user,assistant,user,user] streaming=true
+[TIMING:attention-test] TURN#1 llm-request +1ms
+[TIMING:attention-test] TURN#1 llm-first-token +16ms
+[TIMING:attention-test] TURN#1 tts-request +16ms
+[TIMING:attention-test] TURN#1 tts-first-chunk +17ms
+[TIMING:attention-test] TURN#1 audio-queued +17ms
+[PLAYBACK:attention-test] draining 241ms of queued audio before leaving SPEAKING (queued=91ms elapsed=0ms)
+[TIMING:attention-test] TURN#1 SUMMARY total=267ms turn-detected=1ms llm-request=1ms llm-first-token=16ms tts-request=16ms tts-first-chunk=17ms audio-queued=17ms
+[TIMING:attention-test] TURN#1
+speech-end=2026-09-23T09:36:40.375Z
+endpoint-evidence=2026-09-23T09:36:40.375Z (speech_final)
+turn-release=2026-09-23T09:36:40.527Z
+llm-request=2026-09-23T09:36:40.528Z
+llm-first-token=2026-09-23T09:36:40.543Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T09:36:40.543Z
+tts-first-audio=2026-09-23T09:36:40.544Z
+audio-queued=2026-09-23T09:36:40.544Z
+[TIMING:attention-test] TURN#1 DELTAS
+endpoint-to-release=152ms
+release-to-llm-request=1ms
+llm-to-first-token=15ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=1ms
+first-audio-to-queue=0ms
+speech-end-to-audio=169ms
+[PIPELINE:attention-test] Turn complete: assistant="R2" llmMs=15 ttsMs=0
+[RESPONSE-LEN:attention-test] TURN#1 userChars=6 assistantChars=2 estTokens=1 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=91 briefRequested=false
+[PIPELINE:attention-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:attention-test] run() exiting — state=LISTENING aborted=true
+  [FAIL] B4 — a repeated hello NEVER re-speaks the campaign opening
+         the block's first sentence must be spoken exactly once, got 2
+         
+         2 !== 1
+         
+
+SECTION C — resume from the EXACT point the reply stopped
+[PIPELINE:attention-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:attention-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:attention-test] GREETING greeting-text-ready +0ms
+[TIMING:attention-test] GREETING tts-request +0ms
+[TIMING:attention-test] GREETING tts-first-chunk +1ms
+[TIMING:attention-test] GREETING audio-queued +1ms
+[PLAYBACK:attention-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:attention-test] GREETING SUMMARY total=2338ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:attention-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:attention-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:attention-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:attention-test] TURN END turn-release=1790156205408 text="Yes, tell me." sttMs=0
+[STT:attention-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:attention-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:attention-test] TURN#0 turn-detected +0ms
+[TIMING:attention-test] TURN#0 stt-to-release=154ms (sttLag=n/ams)
+[LLM:attention-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:attention-test] TURN#0 llm-request +1ms
+[SPECULATE:attention-test] ADOPTED pre-opened request — llm-request is 155ms after the provider stream was opened (first token already in hand, 134ms ago) evidence-to-llm-open=0ms
+[TIMING:attention-test] TURN#0 llm-first-token +1ms
+[TIMING:attention-test] TURN#0 first-sentence-ready +1ms
+[TIMING:attention-test] TURN#0 tts-request +1ms
+[TIMING:attention-test] TURN#0 tts-first-chunk +2ms
+[TIMING:attention-test] TURN#0 audio-queued +2ms
+[PLAYBACK:attention-test] draining 12014ms of queued audio before leaving SPEAKING (queued=11864ms elapsed=0ms)
+[TURN:attention-test] barge-in ACCEPTED on transcript: "Hello?" — words=1 confidence=0.95 isFinal=true energyAgeMs=n/a beganBeforeReply=false replyRemainingMs=10916 replyFullyQueued=true
+[TIMING:attention-test] TURN#0 SUMMARY total=950ms turn-detected=0ms llm-request=1ms llm-first-token=1ms first-sentence-ready=1ms tts-request=1ms tts-first-chunk=2ms audio-queued=2ms
+[TIMING:attention-test] TURN#0
+speech-end=2026-09-23T09:36:45.254Z
+endpoint-evidence=2026-09-23T09:36:45.254Z (speech_final)
+turn-release=2026-09-23T09:36:45.408Z
+llm-request=2026-09-23T09:36:45.409Z
+llm-first-token=2026-09-23T09:36:45.409Z
+first-sentence-ready=2026-09-23T09:36:45.409Z
+tts-request=2026-09-23T09:36:45.409Z
+tts-first-audio=2026-09-23T09:36:45.410Z
+audio-queued=2026-09-23T09:36:45.410Z
+[TIMING:attention-test] TURN#0 DELTAS
+endpoint-to-release=154ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=0ms
+sentence-to-tts=0ms
+tts-to-first-audio=1ms
+first-audio-to-queue=0ms
+speech-end-to-audio=156ms
+[PIPELINE:attention-test] Turn complete: assistant="Actually, I am calling you with a very interesting invitation. We have created F..." llmMs=21 ttsMs=1
+[RESPONSE-LEN:attention-test] TURN#0 userChars=13 assistantChars=263 estTokens=66 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=3 audioQueuedMs=11864 briefRequested=false
+[PIPELINE:attention-test] Response #1 CANCELLED by barge-in — heard="" discarded="Actually, I am calling you with a very interesting invitation. We have created F..."
+[TIMING:attention-test] TURN END turn-release=1790156206510 text="Hello?" sttMs=0
+[STT:attention-test] Transcript received: "Hello?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:attention-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:attention-test] TURN#1 turn-detected +0ms
+[TIMING:attention-test] TURN#1 stt-to-release=152ms (sttLag=n/ams)
+[PIPELINE:attention-test] attention check — acknowledging once: "Hey, can you hear me okay?"
+[TIMING:attention-test] ATTENTION tts-request +0ms
+[TIMING:attention-test] ATTENTION tts-first-chunk +0ms
+[TIMING:attention-test] ATTENTION audio-queued +0ms
+[PLAYBACK:attention-test] draining 1332ms of queued audio before leaving SPEAKING (queued=1182ms elapsed=0ms)
+[TIMING:attention-test] ATTENTION SUMMARY total=1344ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:attention-test] TURN#1 SUMMARY total=1345ms turn-detected=0ms
+[TIMING:attention-test] TURN#1
+speech-end=2026-09-23T09:36:46.358Z
+endpoint-evidence=2026-09-23T09:36:46.358Z (speech_final)
+turn-release=2026-09-23T09:36:46.510Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:attention-test] TURN#1 DELTAS
+endpoint-to-release=152ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[PIPELINE:attention-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:attention-test] run() exiting — state=LISTENING aborted=true
+  [FAIL] C1 — "Yes, I can hear you." resumes the block, without a language-model request
+         timed out after 15000ms waiting for 3 replies (have 2, state=LISTENING)
+[PIPELINE:attention-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:attention-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:attention-test] GREETING greeting-text-ready +0ms
+[TIMING:attention-test] GREETING tts-request +0ms
+[TIMING:attention-test] GREETING tts-first-chunk +0ms
+[TIMING:attention-test] GREETING audio-queued +0ms
+[PLAYBACK:attention-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:attention-test] GREETING SUMMARY total=2331ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:attention-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:attention-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:attention-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=1ms historyLength=3
+[TIMING:attention-test] TURN END turn-release=1790156223890 text="Yes, tell me." sttMs=0
+[STT:attention-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:attention-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:attention-test] TURN#0 turn-detected +1ms
+[TIMING:attention-test] TURN#0 stt-to-release=158ms (sttLag=n/ams)
+[LLM:attention-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:attention-test] TURN#0 llm-request +1ms
+[SPECULATE:attention-test] ADOPTED pre-opened request — llm-request is 157ms after the provider stream was opened (first token already in hand, 142ms ago) evidence-to-llm-open=1ms
+[TIMING:attention-test] TURN#0 llm-first-token +1ms
+[TIMING:attention-test] TURN#0 first-sentence-ready +1ms
+[TIMING:attention-test] TURN#0 tts-request +1ms
+[TIMING:attention-test] TURN#0 tts-first-chunk +1ms
+[TIMING:attention-test] TURN#0 audio-queued +1ms
+[PLAYBACK:attention-test] draining 12014ms of queued audio before leaving SPEAKING (queued=11864ms elapsed=0ms)
+[TURN:attention-test] barge-in ACCEPTED on transcript: "Hello?" — words=1 confidence=0.95 isFinal=true energyAgeMs=n/a beganBeforeReply=false replyRemainingMs=10917 replyFullyQueued=true
+[TIMING:attention-test] TURN#0 SUMMARY total=948ms turn-detected=1ms llm-request=1ms llm-first-token=1ms first-sentence-ready=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:attention-test] TURN#0
+speech-end=2026-09-23T09:37:03.733Z
+endpoint-evidence=2026-09-23T09:37:03.733Z (speech_final)
+turn-release=2026-09-23T09:37:03.890Z
+llm-request=2026-09-23T09:37:03.891Z
+llm-first-token=2026-09-23T09:37:03.891Z
+first-sentence-ready=2026-09-23T09:37:03.891Z
+tts-request=2026-09-23T09:37:03.891Z
+tts-first-audio=2026-09-23T09:37:03.891Z
+audio-queued=2026-09-23T09:37:03.891Z
+[TIMING:attention-test] TURN#0 DELTAS
+endpoint-to-release=157ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=0ms
+sentence-to-tts=0ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=158ms
+[PIPELINE:attention-test] Turn complete: assistant="Actually, I am calling you with a very interesting invitation. We have created F..." llmMs=15 ttsMs=0
+[RESPONSE-LEN:attention-test] TURN#0 userChars=13 assistantChars=263 estTokens=66 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=3 audioQueuedMs=11864 briefRequested=false
+[PIPELINE:attention-test] Response #1 CANCELLED by barge-in — heard="" discarded="Actually, I am calling you with a very interesting invitation. We have created F..."
+[TIMING:attention-test] TURN END turn-release=1790156224995 text="Hello?" sttMs=0
+[STT:attention-test] Transcript received: "Hello?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:attention-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:attention-test] TURN#1 turn-detected +1ms
+[TIMING:attention-test] TURN#1 stt-to-release=158ms (sttLag=n/ams)
+[PIPELINE:attention-test] attention check — acknowledging once: "Hey, can you hear me okay?"
+[TIMING:attention-test] ATTENTION tts-request +0ms
+[TIMING:attention-test] ATTENTION tts-first-chunk +0ms
+[TIMING:attention-test] ATTENTION audio-queued +0ms
+[PLAYBACK:attention-test] draining 1332ms of queued audio before leaving SPEAKING (queued=1182ms elapsed=0ms)
+[TIMING:attention-test] ATTENTION SUMMARY total=1342ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:attention-test] TURN#1 SUMMARY total=1343ms turn-detected=1ms
+[TIMING:attention-test] TURN#1
+speech-end=2026-09-23T09:37:04.838Z
+endpoint-evidence=2026-09-23T09:37:04.838Z (speech_final)
+turn-release=2026-09-23T09:37:04.995Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:attention-test] TURN#1 DELTAS
+endpoint-to-release=157ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[PIPELINE:attention-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:attention-test] run() exiting — state=LISTENING aborted=true
+  [FAIL] C2 — a bare "Haan" after the acknowledgement resumes too
+         timed out after 15000ms waiting for 3 replies (have 2, state=LISTENING)
+[PIPELINE:attention-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:attention-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:attention-test] GREETING greeting-text-ready +0ms
+[TIMING:attention-test] GREETING tts-request +1ms
+[TIMING:attention-test] GREETING tts-first-chunk +1ms
+[TIMING:attention-test] GREETING audio-queued +1ms
+[PLAYBACK:attention-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:attention-test] GREETING SUMMARY total=2343ms greeting-text-ready=0ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:attention-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:attention-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:attention-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:attention-test] TURN END turn-release=1790156242384 text="Yes, tell me." sttMs=0
+[STT:attention-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:attention-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:attention-test] TURN#0 turn-detected +1ms
+[TIMING:attention-test] TURN#0 stt-to-release=151ms (sttLag=n/ams)
+[LLM:attention-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:attention-test] TURN#0 llm-request +1ms
+[SPECULATE:attention-test] ADOPTED pre-opened request — llm-request is 151ms after the provider stream was opened (first token already in hand, 139ms ago) evidence-to-llm-open=0ms
+[TIMING:attention-test] TURN#0 llm-first-token +1ms
+[TIMING:attention-test] TURN#0 first-sentence-ready +1ms
+[TIMING:attention-test] TURN#0 tts-request +1ms
+[TIMING:attention-test] TURN#0 tts-first-chunk +2ms
+[TIMING:attention-test] TURN#0 audio-queued +2ms
+[PLAYBACK:attention-test] draining 12014ms of queued audio before leaving SPEAKING (queued=11864ms elapsed=0ms)
+[TURN:attention-test] barge-in ACCEPTED on transcript: "Hello?" — words=1 confidence=0.95 isFinal=true energyAgeMs=n/a beganBeforeReply=false replyRemainingMs=10945 replyFullyQueued=true
+[TIMING:attention-test] TURN#0 SUMMARY total=921ms turn-detected=1ms llm-request=1ms llm-first-token=1ms first-sentence-ready=1ms tts-request=1ms tts-first-chunk=2ms audio-queued=2ms
+[TIMING:attention-test] TURN#0
+speech-end=2026-09-23T09:37:22.234Z
+endpoint-evidence=2026-09-23T09:37:22.234Z (speech_final)
+turn-release=2026-09-23T09:37:22.384Z
+llm-request=2026-09-23T09:37:22.385Z
+llm-first-token=2026-09-23T09:37:22.385Z
+first-sentence-ready=2026-09-23T09:37:22.385Z
+tts-request=2026-09-23T09:37:22.385Z
+tts-first-audio=2026-09-23T09:37:22.386Z
+audio-queued=2026-09-23T09:37:22.386Z
+[TIMING:attention-test] TURN#0 DELTAS
+endpoint-to-release=150ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=0ms
+sentence-to-tts=0ms
+tts-to-first-audio=1ms
+first-audio-to-queue=0ms
+speech-end-to-audio=152ms
+[PIPELINE:attention-test] Turn complete: assistant="Actually, I am calling you with a very interesting invitation. We have created F..." llmMs=12 ttsMs=1
+[RESPONSE-LEN:attention-test] TURN#0 userChars=13 assistantChars=263 estTokens=66 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=3 audioQueuedMs=11864 briefRequested=false
+[PIPELINE:attention-test] Response #1 CANCELLED by barge-in — heard="" discarded="Actually, I am calling you with a very interesting invitation. We have created F..."
+[TIMING:attention-test] TURN END turn-release=1790156243456 text="Hello?" sttMs=0
+[STT:attention-test] Transcript received: "Hello?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:attention-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:attention-test] TURN#1 turn-detected +0ms
+[TIMING:attention-test] TURN#1 stt-to-release=151ms (sttLag=n/ams)
+[PIPELINE:attention-test] attention check — acknowledging once: "Hey, can you hear me okay?"
+[TIMING:attention-test] ATTENTION tts-request +0ms
+[TIMING:attention-test] ATTENTION tts-first-chunk +0ms
+[TIMING:attention-test] ATTENTION audio-queued +0ms
+[PLAYBACK:attention-test] draining 1332ms of queued audio before leaving SPEAKING (queued=1182ms elapsed=0ms)
+[TIMING:attention-test] ATTENTION SUMMARY total=1334ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:attention-test] TURN#1 SUMMARY total=1335ms turn-detected=0ms
+[TIMING:attention-test] TURN#1
+speech-end=2026-09-23T09:37:23.305Z
+endpoint-evidence=2026-09-23T09:37:23.305Z (speech_final)
+turn-release=2026-09-23T09:37:23.456Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:attention-test] TURN#1 DELTAS
+endpoint-to-release=151ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[PIPELINE:attention-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:attention-test] run() exiting — state=LISTENING aborted=true
+  [FAIL] C3 — a SECOND hello resumes rather than acknowledging again
+         timed out after 15000ms waiting for 3 replies (have 2, state=LISTENING)
+[PIPELINE:attention-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:attention-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:attention-test] GREETING greeting-text-ready +0ms
+[TIMING:attention-test] GREETING tts-request +1ms
+[TIMING:attention-test] GREETING tts-first-chunk +1ms
+[TIMING:attention-test] GREETING audio-queued +1ms
+[PLAYBACK:attention-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:attention-test] GREETING SUMMARY total=2345ms greeting-text-ready=0ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:attention-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:attention-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:attention-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:attention-test] TURN END turn-release=1790156260843 text="Yes, tell me." sttMs=0
+[STT:attention-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:attention-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:attention-test] TURN#0 turn-detected +1ms
+[TIMING:attention-test] TURN#0 stt-to-release=165ms (sttLag=n/ams)
+[LLM:attention-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:attention-test] TURN#0 llm-request +1ms
+[SPECULATE:attention-test] ADOPTED pre-opened request — llm-request is 165ms after the provider stream was opened (first token already in hand, 152ms ago) evidence-to-llm-open=0ms
+[TIMING:attention-test] TURN#0 llm-first-token +1ms
+[TIMING:attention-test] TURN#0 first-sentence-ready +1ms
+[TIMING:attention-test] TURN#0 tts-request +1ms
+[TIMING:attention-test] TURN#0 tts-first-chunk +1ms
+[TIMING:attention-test] TURN#0 audio-queued +1ms
+[PLAYBACK:attention-test] draining 12013ms of queued audio before leaving SPEAKING (queued=11864ms elapsed=1ms)
+[TURN:attention-test] barge-in ACCEPTED on transcript: "Hello?" — words=1 confidence=0.95 isFinal=true energyAgeMs=n/a beganBeforeReply=false replyRemainingMs=10944 replyFullyQueued=true
+[TIMING:attention-test] TURN#0 SUMMARY total=922ms turn-detected=1ms llm-request=1ms llm-first-token=1ms first-sentence-ready=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:attention-test] TURN#0
+speech-end=2026-09-23T09:37:40.679Z
+endpoint-evidence=2026-09-23T09:37:40.679Z (speech_final)
+turn-release=2026-09-23T09:37:40.843Z
+llm-request=2026-09-23T09:37:40.844Z
+llm-first-token=2026-09-23T09:37:40.844Z
+first-sentence-ready=2026-09-23T09:37:40.844Z
+tts-request=2026-09-23T09:37:40.844Z
+tts-first-audio=2026-09-23T09:37:40.844Z
+audio-queued=2026-09-23T09:37:40.844Z
+[TIMING:attention-test] TURN#0 DELTAS
+endpoint-to-release=164ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=0ms
+sentence-to-tts=0ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=165ms
+[PIPELINE:attention-test] Turn complete: assistant="Actually, I am calling you with a very interesting invitation. We have created F..." llmMs=13 ttsMs=0
+[RESPONSE-LEN:attention-test] TURN#0 userChars=13 assistantChars=263 estTokens=66 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=3 audioQueuedMs=11864 briefRequested=false
+[PIPELINE:attention-test] Response #1 CANCELLED by barge-in — heard="" discarded="Actually, I am calling you with a very interesting invitation. We have created F..."
+[TIMING:attention-test] TURN END turn-release=1790156261924 text="Hello?" sttMs=0
+[STT:attention-test] Transcript received: "Hello?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:attention-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:attention-test] TURN#1 turn-detected +1ms
+[TIMING:attention-test] TURN#1 stt-to-release=161ms (sttLag=n/ams)
+[PIPELINE:attention-test] attention check — acknowledging once: "Hey, can you hear me okay?"
+[TIMING:attention-test] ATTENTION tts-request +0ms
+[TIMING:attention-test] ATTENTION tts-first-chunk +0ms
+[TIMING:attention-test] ATTENTION audio-queued +0ms
+[PLAYBACK:attention-test] draining 1332ms of queued audio before leaving SPEAKING (queued=1182ms elapsed=0ms)
+[TIMING:attention-test] ATTENTION SUMMARY total=1336ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:attention-test] TURN#1 SUMMARY total=1337ms turn-detected=1ms
+[TIMING:attention-test] TURN#1
+speech-end=2026-09-23T09:37:41.764Z
+endpoint-evidence=2026-09-23T09:37:41.765Z (speech_final)
+turn-release=2026-09-23T09:37:41.924Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:attention-test] TURN#1 DELTAS
+endpoint-to-release=159ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[PIPELINE:attention-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:attention-test] run() exiting — state=LISTENING aborted=true
+  [FAIL] C4 — the resumed text is in the history the model is next shown
+         timed out after 15000ms waiting for 3 replies (have 2, state=LISTENING)
+
+SECTION D — a greeting with a real question is NOT an attention check
+[PIPELINE:attention-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:attention-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:attention-test] GREETING greeting-text-ready +0ms
+[TIMING:attention-test] GREETING tts-request +0ms
+[TIMING:attention-test] GREETING tts-first-chunk +0ms
+[TIMING:attention-test] GREETING audio-queued +0ms
+[PLAYBACK:attention-test] draining 2331ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=1ms)
+[TIMING:attention-test] GREETING SUMMARY total=2333ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:attention-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:attention-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:attention-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=1ms historyLength=3
+[TIMING:attention-test] TURN END turn-release=1790156279293 text="Yes, tell me." sttMs=0
+[STT:attention-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:attention-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:attention-test] TURN#0 turn-detected +1ms
+[TIMING:attention-test] TURN#0 stt-to-release=160ms (sttLag=n/ams)
+[LLM:attention-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:attention-test] TURN#0 llm-request +1ms
+[SPECULATE:attention-test] ADOPTED pre-opened request — llm-request is 159ms after the provider stream was opened (first token already in hand, 133ms ago) evidence-to-llm-open=1ms
+[TIMING:attention-test] TURN#0 llm-first-token +2ms
+[TIMING:attention-test] TURN#0 first-sentence-ready +2ms
+[TIMING:attention-test] TURN#0 tts-request +2ms
+[TIMING:attention-test] TURN#0 tts-first-chunk +2ms
+[TIMING:attention-test] TURN#0 audio-queued +2ms
+[PLAYBACK:attention-test] draining 12013ms of queued audio before leaving SPEAKING (queued=11864ms elapsed=1ms)
+[TURN:attention-test] barge-in ACCEPTED on transcript: "Hello? What is this about?" — words=5 confidence=0.95 isFinal=true energyAgeMs=n/a beganBeforeReply=false replyRemainingMs=10951 replyFullyQueued=true
+[TIMING:attention-test] TURN#0 SUMMARY total=916ms turn-detected=1ms llm-request=1ms llm-first-token=2ms first-sentence-ready=2ms tts-request=2ms tts-first-chunk=2ms audio-queued=2ms
+[TIMING:attention-test] TURN#0
+speech-end=2026-09-23T09:37:59.134Z
+endpoint-evidence=2026-09-23T09:37:59.134Z (speech_final)
+turn-release=2026-09-23T09:37:59.293Z
+llm-request=2026-09-23T09:37:59.294Z
+llm-first-token=2026-09-23T09:37:59.295Z
+first-sentence-ready=2026-09-23T09:37:59.295Z
+tts-request=2026-09-23T09:37:59.295Z
+tts-first-audio=2026-09-23T09:37:59.295Z
+audio-queued=2026-09-23T09:37:59.295Z
+[TIMING:attention-test] TURN#0 DELTAS
+endpoint-to-release=159ms
+release-to-llm-request=1ms
+llm-to-first-token=1ms
+first-token-to-sentence=0ms
+sentence-to-tts=0ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=161ms
+[PIPELINE:attention-test] Turn complete: assistant="Actually, I am calling you with a very interesting invitation. We have created F..." llmMs=26 ttsMs=0
+[RESPONSE-LEN:attention-test] TURN#0 userChars=13 assistantChars=263 estTokens=66 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=3 audioQueuedMs=11864 briefRequested=false
+[PIPELINE:attention-test] Response #1 CANCELLED by barge-in — heard="" discarded="Actually, I am calling you with a very interesting invitation. We have created F..."
+[TIMING:attention-test] TURN END turn-release=1790156280376 text="Hello? What is this about?" sttMs=0
+[STT:attention-test] Transcript received: "Hello? What is this about?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:attention-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:attention-test] TURN#1 turn-detected +0ms
+[TIMING:attention-test] TURN#1 stt-to-release=168ms (sttLag=n/ams)
+[LLM:attention-test] Sending to fake-llm: historyLength=4 roles=[system,assistant,user,user] streaming=true
+[TIMING:attention-test] TURN#1 llm-request +1ms
+[TIMING:attention-test] TURN#1 llm-first-token +16ms
+[TIMING:attention-test] TURN#1 tts-request +16ms
+[TIMING:attention-test] TURN#1 tts-first-chunk +17ms
+[TIMING:attention-test] TURN#1 audio-queued +17ms
+[PLAYBACK:attention-test] draining 3650ms of queued audio before leaving SPEAKING (queued=3500ms elapsed=0ms)
+[TIMING:attention-test] TURN#1 SUMMARY total=3669ms turn-detected=0ms llm-request=1ms llm-first-token=16ms tts-request=16ms tts-first-chunk=17ms audio-queued=17ms
+[TIMING:attention-test] TURN#1
+speech-end=2026-09-23T09:38:00.208Z
+endpoint-evidence=2026-09-23T09:38:00.209Z (speech_final)
+turn-release=2026-09-23T09:38:00.376Z
+llm-request=2026-09-23T09:38:00.377Z
+llm-first-token=2026-09-23T09:38:00.392Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T09:38:00.392Z
+tts-first-audio=2026-09-23T09:38:00.393Z
+audio-queued=2026-09-23T09:38:00.393Z
+[TIMING:attention-test] TURN#1 DELTAS
+endpoint-to-release=167ms
+release-to-llm-request=1ms
+llm-to-first-token=15ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=1ms
+first-audio-to-queue=0ms
+speech-end-to-audio=185ms
+[PIPELINE:attention-test] Turn complete: assistant="It is about a free live session where you can see Flexi Genie build a funnel." llmMs=15 ttsMs=0
+[RESPONSE-LEN:attention-test] TURN#1 userChars=26 assistantChars=77 estTokens=20 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=3500 briefRequested=false
+[PIPELINE:attention-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:attention-test] run() exiting — state=LISTENING aborted=true
+  [FAIL] D1 — "Hello? What is this about?" is answered contextually, not acknowledged
+         timed out after 15000ms waiting for 3 replies (have 2, state=LISTENING)
+[PIPELINE:attention-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:attention-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:attention-test] GREETING greeting-text-ready +0ms
+[TIMING:attention-test] GREETING tts-request +1ms
+[TIMING:attention-test] GREETING tts-first-chunk +1ms
+[TIMING:attention-test] GREETING audio-queued +1ms
+[PLAYBACK:attention-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:attention-test] GREETING SUMMARY total=2335ms greeting-text-ready=0ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:attention-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:attention-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:attention-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:attention-test] TURN END turn-release=1790156297770 text="Yes, tell me." sttMs=0
+[STT:attention-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:attention-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:attention-test] TURN#0 turn-detected +1ms
+[TIMING:attention-test] TURN#0 stt-to-release=181ms (sttLag=n/ams)
+[LLM:attention-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:attention-test] TURN#0 llm-request +1ms
+[SPECULATE:attention-test] ADOPTED pre-opened request — llm-request is 181ms after the provider stream was opened (first token already in hand, 166ms ago) evidence-to-llm-open=0ms
+[TIMING:attention-test] TURN#0 llm-first-token +1ms
+[TIMING:attention-test] TURN#0 first-sentence-ready +1ms
+[TIMING:attention-test] TURN#0 tts-request +1ms
+[TIMING:attention-test] TURN#0 tts-first-chunk +1ms
+[TIMING:attention-test] TURN#0 audio-queued +1ms
+[PLAYBACK:attention-test] draining 12013ms of queued audio before leaving SPEAKING (queued=11864ms elapsed=1ms)
+[TURN:attention-test] barge-in ACCEPTED on transcript: "Hello? What is this about?" — words=5 confidence=0.95 isFinal=true energyAgeMs=n/a beganBeforeReply=false replyRemainingMs=10959 replyFullyQueued=true
+[TIMING:attention-test] TURN#0 SUMMARY total=906ms turn-detected=1ms llm-request=1ms llm-first-token=1ms first-sentence-ready=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:attention-test] TURN#0
+speech-end=2026-09-23T09:38:17.590Z
+endpoint-evidence=2026-09-23T09:38:17.590Z (speech_final)
+turn-release=2026-09-23T09:38:17.770Z
+llm-request=2026-09-23T09:38:17.771Z
+llm-first-token=2026-09-23T09:38:17.771Z
+first-sentence-ready=2026-09-23T09:38:17.771Z
+tts-request=2026-09-23T09:38:17.771Z
+tts-first-audio=2026-09-23T09:38:17.771Z
+audio-queued=2026-09-23T09:38:17.771Z
+[TIMING:attention-test] TURN#0 DELTAS
+endpoint-to-release=180ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=0ms
+sentence-to-tts=0ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=181ms
+[PIPELINE:attention-test] Turn complete: assistant="Actually, I am calling you with a very interesting invitation. We have created F..." llmMs=15 ttsMs=0
+[RESPONSE-LEN:attention-test] TURN#0 userChars=13 assistantChars=263 estTokens=66 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=3 audioQueuedMs=11864 briefRequested=false
+[PIPELINE:attention-test] Response #1 CANCELLED by barge-in — heard="" discarded="Actually, I am calling you with a very interesting invitation. We have created F..."
+[TIMING:attention-test] TURN END turn-release=1790156298841 text="Hello? What is this about?" sttMs=0
+[STT:attention-test] Transcript received: "Hello? What is this about?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:attention-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:attention-test] TURN#1 turn-detected +0ms
+[TIMING:attention-test] TURN#1 stt-to-release=165ms (sttLag=n/ams)
+[LLM:attention-test] Sending to fake-llm: historyLength=4 roles=[system,assistant,user,user] streaming=true
+[TIMING:attention-test] TURN#1 llm-request +1ms
+[TIMING:attention-test] TURN#1 llm-first-token +25ms
+[TIMING:attention-test] TURN#1 tts-request +25ms
+[TIMING:attention-test] TURN#1 tts-first-chunk +25ms
+[TIMING:attention-test] TURN#1 audio-queued +25ms
+[PLAYBACK:attention-test] draining 1377ms of queued audio before leaving SPEAKING (queued=1227ms elapsed=0ms)
+[TIMING:attention-test] TURN#1 SUMMARY total=1413ms turn-detected=0ms llm-request=1ms llm-first-token=25ms tts-request=25ms tts-first-chunk=25ms audio-queued=25ms
+[TIMING:attention-test] TURN#1
+speech-end=2026-09-23T09:38:18.676Z
+endpoint-evidence=2026-09-23T09:38:18.676Z (speech_final)
+turn-release=2026-09-23T09:38:18.841Z
+llm-request=2026-09-23T09:38:18.842Z
+llm-first-token=2026-09-23T09:38:18.866Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T09:38:18.866Z
+tts-first-audio=2026-09-23T09:38:18.866Z
+audio-queued=2026-09-23T09:38:18.866Z
+[TIMING:attention-test] TURN#1 DELTAS
+endpoint-to-release=165ms
+release-to-llm-request=1ms
+llm-to-first-token=24ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=190ms
+[PIPELINE:attention-test] Turn complete: assistant="It is about a live session." llmMs=23 ttsMs=0
+[RESPONSE-LEN:attention-test] TURN#1 userChars=26 assistantChars=27 estTokens=7 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1227 briefRequested=false
+[PIPELINE:attention-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:attention-test] run() exiting — state=LISTENING aborted=true
+  [FAIL] D2 — a real question RELEASES the held script position
+         timed out after 15000ms waiting for 3 replies (have 2, state=LISTENING)
+
+SECTION E — a background voice never enters the flow (UNCHANGED)
+[PIPELINE:attention-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:attention-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:attention-test] GREETING greeting-text-ready +0ms
+[TIMING:attention-test] GREETING tts-request +0ms
+[TIMING:attention-test] GREETING tts-first-chunk +0ms
+[TIMING:attention-test] GREETING audio-queued +0ms
+[PLAYBACK:attention-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:attention-test] GREETING SUMMARY total=2342ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:attention-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:attention-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:attention-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=1ms historyLength=3
+[TIMING:attention-test] TURN END turn-release=1790156316216 text="Yes, tell me." sttMs=0
+[STT:attention-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:attention-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:attention-test] TURN#0 turn-detected +0ms
+[TIMING:attention-test] TURN#0 stt-to-release=165ms (sttLag=n/ams)
+[LLM:attention-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:attention-test] TURN#0 llm-request +0ms
+[SPECULATE:attention-test] ADOPTED pre-opened request — llm-request is 164ms after the provider stream was opened (first token already in hand, 148ms ago) evidence-to-llm-open=1ms
+[TIMING:attention-test] TURN#0 llm-first-token +0ms
+[TIMING:attention-test] TURN#0 first-sentence-ready +0ms
+[TIMING:attention-test] TURN#0 tts-request +1ms
+[TIMING:attention-test] TURN#0 tts-first-chunk +1ms
+[TIMING:attention-test] TURN#0 audio-queued +1ms
+[PLAYBACK:attention-test] draining 12014ms of queued audio before leaving SPEAKING (queued=11864ms elapsed=0ms)
+[TURN:attention-test] uncorroborated speech ignored (not the caller interrupting): "hello" — confidence=0.2 loudSpeechAgeMs=n/a
+[TIMING:attention-test] TURN#0 SUMMARY total=3950ms turn-detected=0ms llm-request=0ms llm-first-token=0ms first-sentence-ready=0ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:attention-test] TURN#0
+speech-end=2026-09-23T09:38:36.051Z
+endpoint-evidence=2026-09-23T09:38:36.051Z (speech_final)
+turn-release=2026-09-23T09:38:36.216Z
+llm-request=2026-09-23T09:38:36.216Z
+llm-first-token=2026-09-23T09:38:36.216Z
+first-sentence-ready=2026-09-23T09:38:36.216Z
+tts-request=2026-09-23T09:38:36.217Z
+tts-first-audio=2026-09-23T09:38:36.217Z
+audio-queued=2026-09-23T09:38:36.217Z
+[TIMING:attention-test] TURN#0 DELTAS
+endpoint-to-release=165ms
+release-to-llm-request=0ms
+llm-to-first-token=0ms
+first-token-to-sentence=0ms
+sentence-to-tts=1ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=166ms
+[PIPELINE:attention-test] Turn complete: assistant="Actually, I am calling you with a very interesting invitation. We have created F..." llmMs=16 ttsMs=0
+[RESPONSE-LEN:attention-test] TURN#0 userChars=13 assistantChars=263 estTokens=66 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=3 audioQueuedMs=11864 briefRequested=false
+[PIPELINE:attention-test] run() exiting — state=SPEAKING aborted=true
+  [PASS] E1 — an uncorroborated background hello produces no attention response and no turn
+[PIPELINE:attention-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:attention-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:attention-test] GREETING greeting-text-ready +0ms
+[TIMING:attention-test] GREETING tts-request +0ms
+[TIMING:attention-test] GREETING tts-first-chunk +0ms
+[TIMING:attention-test] GREETING audio-queued +0ms
+[PLAYBACK:attention-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:attention-test] GREETING SUMMARY total=2332ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:attention-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:attention-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:attention-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:attention-test] TURN END turn-release=1790156322683 text="Yes, tell me." sttMs=0
+[STT:attention-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:attention-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:attention-test] TURN#0 turn-detected +0ms
+[TIMING:attention-test] TURN#0 stt-to-release=153ms (sttLag=n/ams)
+[LLM:attention-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:attention-test] TURN#0 llm-request +1ms
+[SPECULATE:attention-test] ADOPTED pre-opened request — llm-request is 153ms after the provider stream was opened (first token already in hand, 138ms ago) evidence-to-llm-open=0ms
+[TIMING:attention-test] TURN#0 llm-first-token +1ms
+[TIMING:attention-test] TURN#0 first-sentence-ready +1ms
+[TIMING:attention-test] TURN#0 tts-request +1ms
+[TIMING:attention-test] TURN#0 tts-first-chunk +1ms
+[TIMING:attention-test] TURN#0 audio-queued +1ms
+[PLAYBACK:attention-test] draining 12013ms of queued audio before leaving SPEAKING (queued=11864ms elapsed=1ms)
+[TURN:attention-test] uncorroborated speech ignored (not the caller interrupting): "hello" — confidence=0.2 loudSpeechAgeMs=n/a
+[TIMING:attention-test] TURN#0 SUMMARY total=12015ms turn-detected=0ms llm-request=1ms llm-first-token=1ms first-sentence-ready=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:attention-test] TURN#0
+speech-end=2026-09-23T09:38:42.531Z
+endpoint-evidence=2026-09-23T09:38:42.531Z (speech_final)
+turn-release=2026-09-23T09:38:42.683Z
+llm-request=2026-09-23T09:38:42.684Z
+llm-first-token=2026-09-23T09:38:42.684Z
+first-sentence-ready=2026-09-23T09:38:42.684Z
+tts-request=2026-09-23T09:38:42.684Z
+tts-first-audio=2026-09-23T09:38:42.684Z
+audio-queued=2026-09-23T09:38:42.684Z
+[TIMING:attention-test] TURN#0 DELTAS
+endpoint-to-release=152ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=0ms
+sentence-to-tts=0ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=153ms
+[PIPELINE:attention-test] Turn complete: assistant="Actually, I am calling you with a very interesting invitation. We have created F..." llmMs=15 ttsMs=0
+[RESPONSE-LEN:attention-test] TURN#0 userChars=13 assistantChars=263 estTokens=66 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=3 audioQueuedMs=11864 briefRequested=false
+[PIPELINE:attention-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:attention-test] run() exiting — state=LISTENING aborted=true
+  [PASS] E2 — the assistant finishes its block through a background hello
+
+SECTION F — backchannel, unchanged
+[PIPELINE:attention-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:attention-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:attention-test] GREETING greeting-text-ready +0ms
+[TIMING:attention-test] GREETING tts-request +0ms
+[TIMING:attention-test] GREETING tts-first-chunk +1ms
+[TIMING:attention-test] GREETING audio-queued +1ms
+[PLAYBACK:attention-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:attention-test] GREETING SUMMARY total=2332ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:attention-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:attention-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:attention-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:attention-test] TURN END turn-release=1790156337245 text="Yes, tell me." sttMs=0
+[STT:attention-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:attention-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:attention-test] TURN#0 turn-detected +1ms
+[TIMING:attention-test] TURN#0 stt-to-release=151ms (sttLag=n/ams)
+[LLM:attention-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:attention-test] TURN#0 llm-request +1ms
+[SPECULATE:attention-test] ADOPTED pre-opened request — llm-request is 151ms after the provider stream was opened (first token already in hand, 133ms ago) evidence-to-llm-open=0ms
+[TIMING:attention-test] TURN#0 llm-first-token +1ms
+[TIMING:attention-test] TURN#0 first-sentence-ready +1ms
+[TIMING:attention-test] TURN#0 tts-request +1ms
+[TIMING:attention-test] TURN#0 tts-first-chunk +1ms
+[TIMING:attention-test] TURN#0 audio-queued +1ms
+[PLAYBACK:attention-test] draining 12013ms of queued audio before leaving SPEAKING (queued=11864ms elapsed=1ms)
+[TURN:attention-test] backchannel ignored (not a barge-in): "okay" — 10917ms of reply still to play
+[TIMING:attention-test] TURN#0 SUMMARY total=12024ms turn-detected=1ms llm-request=1ms llm-first-token=1ms first-sentence-ready=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:attention-test] TURN#0
+speech-end=2026-09-23T09:38:57.095Z
+endpoint-evidence=2026-09-23T09:38:57.095Z (speech_final)
+turn-release=2026-09-23T09:38:57.245Z
+llm-request=2026-09-23T09:38:57.246Z
+llm-first-token=2026-09-23T09:38:57.246Z
+first-sentence-ready=2026-09-23T09:38:57.246Z
+tts-request=2026-09-23T09:38:57.246Z
+tts-first-audio=2026-09-23T09:38:57.246Z
+audio-queued=2026-09-23T09:38:57.246Z
+[TIMING:attention-test] TURN#0 DELTAS
+endpoint-to-release=150ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=0ms
+sentence-to-tts=0ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=151ms
+[PIPELINE:attention-test] Turn complete: assistant="Actually, I am calling you with a very interesting invitation. We have created F..." llmMs=18 ttsMs=0
+[RESPONSE-LEN:attention-test] TURN#0 userChars=13 assistantChars=263 estTokens=66 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=3 audioQueuedMs=11864 briefRequested=false
+[PIPELINE:attention-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:attention-test] run() exiting — state=LISTENING aborted=true
+  [PASS] F1 — "okay" over a long reply is still absorbed: no turn, no acknowledgement
+
+SECTION G — a meaningful interruption, unchanged
+[PIPELINE:attention-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:attention-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:attention-test] GREETING greeting-text-ready +0ms
+[TIMING:attention-test] GREETING tts-request +0ms
+[TIMING:attention-test] GREETING tts-first-chunk +0ms
+[TIMING:attention-test] GREETING audio-queued +0ms
+[PLAYBACK:attention-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:attention-test] GREETING SUMMARY total=2340ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:attention-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:attention-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:attention-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:attention-test] TURN END turn-release=1790156351789 text="Yes, tell me." sttMs=0
+[STT:attention-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:attention-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:attention-test] TURN#0 turn-detected +1ms
+[TIMING:attention-test] TURN#0 stt-to-release=165ms (sttLag=n/ams)
+[LLM:attention-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:attention-test] TURN#0 llm-request +1ms
+[SPECULATE:attention-test] ADOPTED pre-opened request — llm-request is 164ms after the provider stream was opened (first token already in hand, 146ms ago) evidence-to-llm-open=0ms
+[TIMING:attention-test] TURN#0 llm-first-token +1ms
+[TIMING:attention-test] TURN#0 first-sentence-ready +1ms
+[TIMING:attention-test] TURN#0 tts-request +1ms
+[TIMING:attention-test] TURN#0 tts-first-chunk +1ms
+[TIMING:attention-test] TURN#0 audio-queued +1ms
+[PLAYBACK:attention-test] draining 12013ms of queued audio before leaving SPEAKING (queued=11864ms elapsed=1ms)
+[TURN:attention-test] barge-in ACCEPTED on transcript: "Wait, who are you?" — words=4 confidence=0.95 isFinal=true energyAgeMs=n/a beganBeforeReply=false replyRemainingMs=10939 replyFullyQueued=true
+[TIMING:attention-test] TURN#0 SUMMARY total=926ms turn-detected=1ms llm-request=1ms llm-first-token=1ms first-sentence-ready=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:attention-test] TURN#0
+speech-end=2026-09-23T09:39:11.625Z
+endpoint-evidence=2026-09-23T09:39:11.626Z (speech_final)
+turn-release=2026-09-23T09:39:11.789Z
+llm-request=2026-09-23T09:39:11.790Z
+llm-first-token=2026-09-23T09:39:11.790Z
+first-sentence-ready=2026-09-23T09:39:11.790Z
+tts-request=2026-09-23T09:39:11.790Z
+tts-first-audio=2026-09-23T09:39:11.790Z
+audio-queued=2026-09-23T09:39:11.790Z
+[TIMING:attention-test] TURN#0 DELTAS
+endpoint-to-release=163ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=0ms
+sentence-to-tts=0ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=165ms
+[PIPELINE:attention-test] Turn complete: assistant="Actually, I am calling you with a very interesting invitation. We have created F..." llmMs=18 ttsMs=0
+[RESPONSE-LEN:attention-test] TURN#0 userChars=13 assistantChars=263 estTokens=66 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=3 audioQueuedMs=11864 briefRequested=false
+[PIPELINE:attention-test] Response #1 CANCELLED by barge-in — heard="" discarded="Actually, I am calling you with a very interesting invitation. We have created F..."
+[TIMING:attention-test] TURN END turn-release=1790156352875 text="Wait, who are you?" sttMs=0
+[STT:attention-test] Transcript received: "Wait, who are you?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:attention-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:attention-test] TURN#1 turn-detected +0ms
+[TIMING:attention-test] TURN#1 stt-to-release=160ms (sttLag=n/ams)
+[LLM:attention-test] Sending to fake-llm: historyLength=4 roles=[system,assistant,user,user] streaming=true
+[TIMING:attention-test] TURN#1 llm-request +0ms
+[TIMING:attention-test] TURN#1 llm-first-token +17ms
+[TIMING:attention-test] TURN#1 tts-request +17ms
+[TIMING:attention-test] TURN#1 tts-first-chunk +17ms
+[TIMING:attention-test] TURN#1 audio-queued +17ms
+[PLAYBACK:attention-test] draining 2059ms of queued audio before leaving SPEAKING (queued=1909ms elapsed=0ms)
+[TIMING:attention-test] TURN#1 SUMMARY total=2085ms turn-detected=0ms llm-request=0ms llm-first-token=17ms tts-request=17ms tts-first-chunk=17ms audio-queued=17ms
+[TIMING:attention-test] TURN#1
+speech-end=2026-09-23T09:39:12.715Z
+endpoint-evidence=2026-09-23T09:39:12.715Z (speech_final)
+turn-release=2026-09-23T09:39:12.875Z
+llm-request=2026-09-23T09:39:12.875Z
+llm-first-token=2026-09-23T09:39:12.892Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T09:39:12.892Z
+tts-first-audio=2026-09-23T09:39:12.892Z
+audio-queued=2026-09-23T09:39:12.892Z
+[TIMING:attention-test] TURN#1 DELTAS
+endpoint-to-release=160ms
+release-to-llm-request=0ms
+llm-to-first-token=17ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=177ms
+[PIPELINE:attention-test] Turn complete: assistant="I'm Rohan, calling from Team FlexiFunnels." llmMs=17 ttsMs=0
+[RESPONSE-LEN:attention-test] TURN#1 userChars=18 assistantChars=42 estTokens=11 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1909 briefRequested=false
+[PIPELINE:attention-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:attention-test] run() exiting — state=LISTENING aborted=true
+  [FAIL] G1 — a real interruption still barges in and is answered by the model
+         timed out after 15000ms waiting for 3 replies (have 2, state=LISTENING)
+[PIPELINE:attention-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:attention-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:attention-test] GREETING greeting-text-ready +0ms
+[TIMING:attention-test] GREETING tts-request +0ms
+[TIMING:attention-test] GREETING tts-first-chunk +0ms
+[TIMING:attention-test] GREETING audio-queued +0ms
+[PLAYBACK:attention-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:attention-test] GREETING SUMMARY total=2333ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:attention-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:attention-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:attention-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:attention-test] TURN END turn-release=1790156370255 text="Yes, tell me." sttMs=0
+[STT:attention-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:attention-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:attention-test] TURN#0 turn-detected +0ms
+[TIMING:attention-test] TURN#0 stt-to-release=150ms (sttLag=n/ams)
+[LLM:attention-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:attention-test] TURN#0 llm-request +0ms
+[SPECULATE:attention-test] ADOPTED pre-opened request — llm-request is 150ms after the provider stream was opened (first token already in hand, 133ms ago) evidence-to-llm-open=0ms
+[TIMING:attention-test] TURN#0 llm-first-token +0ms
+[TIMING:attention-test] TURN#0 first-sentence-ready +1ms
+[TIMING:attention-test] TURN#0 tts-request +1ms
+[TIMING:attention-test] TURN#0 tts-first-chunk +1ms
+[TIMING:attention-test] TURN#0 audio-queued +1ms
+[PLAYBACK:attention-test] draining 12014ms of queued audio before leaving SPEAKING (queued=11864ms elapsed=0ms)
+[TURN:attention-test] barge-in ACCEPTED on transcript: "Wait, who are you?" — words=4 confidence=0.95 isFinal=true energyAgeMs=n/a beganBeforeReply=false replyRemainingMs=10947 replyFullyQueued=true
+[TIMING:attention-test] TURN#0 SUMMARY total=919ms turn-detected=0ms llm-request=0ms llm-first-token=0ms first-sentence-ready=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:attention-test] TURN#0
+speech-end=2026-09-23T09:39:30.105Z
+endpoint-evidence=2026-09-23T09:39:30.105Z (speech_final)
+turn-release=2026-09-23T09:39:30.255Z
+llm-request=2026-09-23T09:39:30.255Z
+llm-first-token=2026-09-23T09:39:30.255Z
+first-sentence-ready=2026-09-23T09:39:30.256Z
+tts-request=2026-09-23T09:39:30.256Z
+tts-first-audio=2026-09-23T09:39:30.256Z
+audio-queued=2026-09-23T09:39:30.256Z
+[TIMING:attention-test] TURN#0 DELTAS
+endpoint-to-release=150ms
+release-to-llm-request=0ms
+llm-to-first-token=0ms
+first-token-to-sentence=1ms
+sentence-to-tts=0ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=151ms
+[PIPELINE:attention-test] Turn complete: assistant="Actually, I am calling you with a very interesting invitation. We have created F..." llmMs=17 ttsMs=0
+[RESPONSE-LEN:attention-test] TURN#0 userChars=13 assistantChars=263 estTokens=66 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=3 audioQueuedMs=11864 briefRequested=false
+[PIPELINE:attention-test] Response #1 CANCELLED by barge-in — heard="" discarded="Actually, I am calling you with a very interesting invitation. We have created F..."
+[TIMING:attention-test] TURN END turn-release=1790156371334 text="Wait, who are you?" sttMs=0
+[STT:attention-test] Transcript received: "Wait, who are you?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:attention-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:attention-test] TURN#1 turn-detected +0ms
+[TIMING:attention-test] TURN#1 stt-to-release=161ms (sttLag=n/ams)
+[LLM:attention-test] Sending to fake-llm: historyLength=4 roles=[system,assistant,user,user] streaming=true
+[TIMING:attention-test] TURN#1 llm-request +1ms
+[TIMING:attention-test] TURN#1 llm-first-token +16ms
+[TIMING:attention-test] TURN#1 tts-request +16ms
+[TIMING:attention-test] TURN#1 tts-first-chunk +17ms
+[TIMING:attention-test] TURN#1 audio-queued +17ms
+[PLAYBACK:attention-test] draining 468ms of queued audio before leaving SPEAKING (queued=318ms elapsed=0ms)
+[TIMING:attention-test] TURN#1 SUMMARY total=488ms turn-detected=0ms llm-request=1ms llm-first-token=16ms tts-request=16ms tts-first-chunk=17ms audio-queued=17ms
+[TIMING:attention-test] TURN#1
+speech-end=2026-09-23T09:39:31.173Z
+endpoint-evidence=2026-09-23T09:39:31.173Z (speech_final)
+turn-release=2026-09-23T09:39:31.334Z
+llm-request=2026-09-23T09:39:31.335Z
+llm-first-token=2026-09-23T09:39:31.350Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T09:39:31.350Z
+tts-first-audio=2026-09-23T09:39:31.351Z
+audio-queued=2026-09-23T09:39:31.351Z
+[TIMING:attention-test] TURN#1 DELTAS
+endpoint-to-release=161ms
+release-to-llm-request=1ms
+llm-to-first-token=15ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=1ms
+first-audio-to-queue=0ms
+speech-end-to-audio=178ms
+[PIPELINE:attention-test] Turn complete: assistant="Answer." llmMs=15 ttsMs=1
+[RESPONSE-LEN:attention-test] TURN#1 userChars=18 assistantChars=7 estTokens=2 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=318 briefRequested=false
+[PIPELINE:attention-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:attention-test] run() exiting — state=LISTENING aborted=true
+  [FAIL] G2 — only the part of the block the caller HEARD is committed (unchanged)
+         timed out after 15000ms waiting for 3 replies (have 2, state=LISTENING)
+
+SECTION H — already-heard text is never spoken twice
+[PIPELINE:attention-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:attention-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:attention-test] GREETING greeting-text-ready +0ms
+[TIMING:attention-test] GREETING tts-request +0ms
+[TIMING:attention-test] GREETING tts-first-chunk +0ms
+[TIMING:attention-test] GREETING audio-queued +0ms
+[PLAYBACK:attention-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:attention-test] GREETING SUMMARY total=2332ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:attention-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:attention-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:attention-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:attention-test] TURN END turn-release=1790156388699 text="Yes, tell me." sttMs=0
+[STT:attention-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:attention-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:attention-test] TURN#0 turn-detected +0ms
+[TIMING:attention-test] TURN#0 stt-to-release=150ms (sttLag=n/ams)
+[LLM:attention-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:attention-test] TURN#0 llm-request +0ms
+[SPECULATE:attention-test] ADOPTED pre-opened request — llm-request is 150ms after the provider stream was opened (first token already in hand, 134ms ago) evidence-to-llm-open=0ms
+[TIMING:attention-test] TURN#0 llm-first-token +0ms
+[TIMING:attention-test] TURN#0 first-sentence-ready +1ms
+[TIMING:attention-test] TURN#0 tts-request +1ms
+[TIMING:attention-test] TURN#0 tts-first-chunk +1ms
+[TIMING:attention-test] TURN#0 audio-queued +1ms
+[PLAYBACK:attention-test] draining 12014ms of queued audio before leaving SPEAKING (queued=11864ms elapsed=0ms)
+[TURN:attention-test] barge-in ACCEPTED on transcript: "Hello?" — words=1 confidence=0.95 isFinal=true energyAgeMs=n/a beganBeforeReply=false replyRemainingMs=10948 replyFullyQueued=true
+[TIMING:attention-test] TURN#0 SUMMARY total=918ms turn-detected=0ms llm-request=0ms llm-first-token=0ms first-sentence-ready=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:attention-test] TURN#0
+speech-end=2026-09-23T09:39:48.549Z
+endpoint-evidence=2026-09-23T09:39:48.549Z (speech_final)
+turn-release=2026-09-23T09:39:48.699Z
+llm-request=2026-09-23T09:39:48.699Z
+llm-first-token=2026-09-23T09:39:48.699Z
+first-sentence-ready=2026-09-23T09:39:48.700Z
+tts-request=2026-09-23T09:39:48.700Z
+tts-first-audio=2026-09-23T09:39:48.700Z
+audio-queued=2026-09-23T09:39:48.700Z
+[TIMING:attention-test] TURN#0 DELTAS
+endpoint-to-release=150ms
+release-to-llm-request=0ms
+llm-to-first-token=0ms
+first-token-to-sentence=1ms
+sentence-to-tts=0ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=151ms
+[PIPELINE:attention-test] Turn complete: assistant="Actually, I am calling you with a very interesting invitation. We have created F..." llmMs=16 ttsMs=0
+[RESPONSE-LEN:attention-test] TURN#0 userChars=13 assistantChars=263 estTokens=66 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=3 audioQueuedMs=11864 briefRequested=false
+[PIPELINE:attention-test] Response #1 CANCELLED by barge-in — heard="" discarded="Actually, I am calling you with a very interesting invitation. We have created F..."
+[TIMING:attention-test] TURN END turn-release=1790156389774 text="Hello?" sttMs=0
+[STT:attention-test] Transcript received: "Hello?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:attention-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:attention-test] TURN#1 turn-detected +0ms
+[TIMING:attention-test] TURN#1 stt-to-release=158ms (sttLag=n/ams)
+[PIPELINE:attention-test] attention check — acknowledging once: "Hey, can you hear me okay?"
+[TIMING:attention-test] ATTENTION tts-request +0ms
+[TIMING:attention-test] ATTENTION tts-first-chunk +0ms
+[TIMING:attention-test] ATTENTION audio-queued +0ms
+[PLAYBACK:attention-test] draining 1332ms of queued audio before leaving SPEAKING (queued=1182ms elapsed=0ms)
+[TIMING:attention-test] ATTENTION SUMMARY total=1343ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:attention-test] TURN#1 SUMMARY total=1344ms turn-detected=0ms
+[TIMING:attention-test] TURN#1
+speech-end=2026-09-23T09:39:49.616Z
+endpoint-evidence=2026-09-23T09:39:49.617Z (speech_final)
+turn-release=2026-09-23T09:39:49.774Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:attention-test] TURN#1 DELTAS
+endpoint-to-release=157ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[PIPELINE:attention-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:attention-test] run() exiting — state=LISTENING aborted=true
+  [FAIL] H1 — no sentence the caller has heard is ever synthesized a second time
+         timed out after 15000ms waiting for 3 replies (have 2, state=LISTENING)
+[PIPELINE:attention-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:attention-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:attention-test] GREETING greeting-text-ready +0ms
+[TIMING:attention-test] GREETING tts-request +0ms
+[TIMING:attention-test] GREETING tts-first-chunk +0ms
+[TIMING:attention-test] GREETING audio-queued +0ms
+[PLAYBACK:attention-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:attention-test] GREETING SUMMARY total=2345ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:attention-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:attention-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:attention-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:attention-test] TURN END turn-release=1790156407129 text="Yes, tell me." sttMs=0
+[STT:attention-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:attention-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:attention-test] TURN#0 turn-detected +0ms
+[TIMING:attention-test] TURN#0 stt-to-release=165ms (sttLag=n/ams)
+[LLM:attention-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:attention-test] TURN#0 llm-request +1ms
+[SPECULATE:attention-test] ADOPTED pre-opened request — llm-request is 166ms after the provider stream was opened (first token already in hand, 150ms ago) evidence-to-llm-open=0ms
+[TIMING:attention-test] TURN#0 llm-first-token +1ms
+[TIMING:attention-test] TURN#0 first-sentence-ready +1ms
+[TIMING:attention-test] TURN#0 tts-request +1ms
+[TIMING:attention-test] TURN#0 tts-first-chunk +1ms
+[TIMING:attention-test] TURN#0 audio-queued +2ms
+[PLAYBACK:attention-test] draining 12013ms of queued audio before leaving SPEAKING (queued=11864ms elapsed=1ms)
+[TURN:attention-test] barge-in ACCEPTED on transcript: "Hello?" — words=1 confidence=0.95 isFinal=true energyAgeMs=n/a beganBeforeReply=false replyRemainingMs=10951 replyFullyQueued=true
+[TIMING:attention-test] TURN#0 SUMMARY total=915ms turn-detected=0ms llm-request=1ms llm-first-token=1ms first-sentence-ready=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=2ms
+[TIMING:attention-test] TURN#0
+speech-end=2026-09-23T09:40:06.964Z
+endpoint-evidence=2026-09-23T09:40:06.964Z (speech_final)
+turn-release=2026-09-23T09:40:07.129Z
+llm-request=2026-09-23T09:40:07.130Z
+llm-first-token=2026-09-23T09:40:07.130Z
+first-sentence-ready=2026-09-23T09:40:07.130Z
+tts-request=2026-09-23T09:40:07.130Z
+tts-first-audio=2026-09-23T09:40:07.130Z
+audio-queued=2026-09-23T09:40:07.131Z
+[TIMING:attention-test] TURN#0 DELTAS
+endpoint-to-release=165ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=0ms
+sentence-to-tts=0ms
+tts-to-first-audio=0ms
+first-audio-to-queue=1ms
+speech-end-to-audio=167ms
+[PIPELINE:attention-test] Turn complete: assistant="Actually, I am calling you with a very interesting invitation. We have created F..." llmMs=16 ttsMs=0
+[RESPONSE-LEN:attention-test] TURN#0 userChars=13 assistantChars=263 estTokens=66 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=3 audioQueuedMs=11864 briefRequested=false
+[PIPELINE:attention-test] Response #1 CANCELLED by barge-in — heard="" discarded="Actually, I am calling you with a very interesting invitation. We have created F..."
+[TIMING:attention-test] TURN END turn-release=1790156408196 text="Hello?" sttMs=0
+[STT:attention-test] Transcript received: "Hello?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:attention-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:attention-test] TURN#1 turn-detected +0ms
+[TIMING:attention-test] TURN#1 stt-to-release=153ms (sttLag=n/ams)
+[PIPELINE:attention-test] attention check — acknowledging once: "Hey, can you hear me okay?"
+[TIMING:attention-test] ATTENTION tts-request +0ms
+[TIMING:attention-test] ATTENTION tts-first-chunk +0ms
+[TIMING:attention-test] ATTENTION audio-queued +0ms
+[PLAYBACK:attention-test] draining 1332ms of queued audio before leaving SPEAKING (queued=1182ms elapsed=0ms)
+[TIMING:attention-test] ATTENTION SUMMARY total=1337ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:attention-test] TURN#1 SUMMARY total=1338ms turn-detected=0ms
+[TIMING:attention-test] TURN#1
+speech-end=2026-09-23T09:40:08.043Z
+endpoint-evidence=2026-09-23T09:40:08.043Z (speech_final)
+turn-release=2026-09-23T09:40:08.196Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:attention-test] TURN#1 DELTAS
+endpoint-to-release=153ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[PIPELINE:attention-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:attention-test] run() exiting — state=LISTENING aborted=true
+  [FAIL] H2 — the resume is a strict suffix of the interrupted reply
+         timed out after 15000ms waiting for 3 replies (have 2, state=LISTENING)
+
+SECTION I — normal conversation continues afterwards
+[PIPELINE:attention-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:attention-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:attention-test] GREETING greeting-text-ready +0ms
+[TIMING:attention-test] GREETING tts-request +0ms
+[TIMING:attention-test] GREETING tts-first-chunk +0ms
+[TIMING:attention-test] GREETING audio-queued +0ms
+[PLAYBACK:attention-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:attention-test] GREETING SUMMARY total=2336ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:attention-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:attention-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:attention-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:attention-test] TURN END turn-release=1790156425554 text="Yes, tell me." sttMs=0
+[STT:attention-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:attention-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:attention-test] TURN#0 turn-detected +0ms
+[TIMING:attention-test] TURN#0 stt-to-release=156ms (sttLag=n/ams)
+[LLM:attention-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:attention-test] TURN#0 llm-request +1ms
+[SPECULATE:attention-test] ADOPTED pre-opened request — llm-request is 157ms after the provider stream was opened (first token already in hand, 145ms ago) evidence-to-llm-open=0ms
+[TIMING:attention-test] TURN#0 llm-first-token +1ms
+[TIMING:attention-test] TURN#0 first-sentence-ready +1ms
+[TIMING:attention-test] TURN#0 tts-request +1ms
+[TIMING:attention-test] TURN#0 tts-first-chunk +1ms
+[TIMING:attention-test] TURN#0 audio-queued +1ms
+[PLAYBACK:attention-test] draining 12014ms of queued audio before leaving SPEAKING (queued=11864ms elapsed=0ms)
+[TURN:attention-test] barge-in ACCEPTED on transcript: "Hello?" — words=1 confidence=0.95 isFinal=true energyAgeMs=n/a beganBeforeReply=false replyRemainingMs=10930 replyFullyQueued=true
+[TIMING:attention-test] TURN#0 SUMMARY total=936ms turn-detected=0ms llm-request=1ms llm-first-token=1ms first-sentence-ready=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:attention-test] TURN#0
+speech-end=2026-09-23T09:40:25.398Z
+endpoint-evidence=2026-09-23T09:40:25.398Z (speech_final)
+turn-release=2026-09-23T09:40:25.554Z
+llm-request=2026-09-23T09:40:25.555Z
+llm-first-token=2026-09-23T09:40:25.555Z
+first-sentence-ready=2026-09-23T09:40:25.555Z
+tts-request=2026-09-23T09:40:25.555Z
+tts-first-audio=2026-09-23T09:40:25.555Z
+audio-queued=2026-09-23T09:40:25.555Z
+[TIMING:attention-test] TURN#0 DELTAS
+endpoint-to-release=156ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=0ms
+sentence-to-tts=0ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=157ms
+[PIPELINE:attention-test] Turn complete: assistant="Actually, I am calling you with a very interesting invitation. We have created F..." llmMs=12 ttsMs=0
+[RESPONSE-LEN:attention-test] TURN#0 userChars=13 assistantChars=263 estTokens=66 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=3 audioQueuedMs=11864 briefRequested=false
+[PIPELINE:attention-test] Response #1 CANCELLED by barge-in — heard="" discarded="Actually, I am calling you with a very interesting invitation. We have created F..."
+[TIMING:attention-test] TURN END turn-release=1790156426643 text="Hello?" sttMs=0
+[STT:attention-test] Transcript received: "Hello?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:attention-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:attention-test] TURN#1 turn-detected +0ms
+[TIMING:attention-test] TURN#1 stt-to-release=154ms (sttLag=n/ams)
+[PIPELINE:attention-test] attention check — acknowledging once: "Hey, can you hear me okay?"
+[TIMING:attention-test] ATTENTION tts-request +0ms
+[TIMING:attention-test] ATTENTION tts-first-chunk +0ms
+[TIMING:attention-test] ATTENTION audio-queued +0ms
+[PLAYBACK:attention-test] draining 1332ms of queued audio before leaving SPEAKING (queued=1182ms elapsed=0ms)
+[TIMING:attention-test] ATTENTION SUMMARY total=1350ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:attention-test] TURN#1 SUMMARY total=1350ms turn-detected=0ms
+[TIMING:attention-test] TURN#1
+speech-end=2026-09-23T09:40:26.489Z
+endpoint-evidence=2026-09-23T09:40:26.490Z (speech_final)
+turn-release=2026-09-23T09:40:26.643Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:attention-test] TURN#1 DELTAS
+endpoint-to-release=153ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[PIPELINE:attention-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:attention-test] run() exiting — state=LISTENING aborted=true
+  [FAIL] I1 — the call carries on normally after an attention-check episode
+         timed out after 15000ms waiting for 3 replies (have 2, state=LISTENING)
+[PIPELINE:attention-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:attention-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:attention-test] GREETING greeting-text-ready +0ms
+[TIMING:attention-test] GREETING tts-request +0ms
+[TIMING:attention-test] GREETING tts-first-chunk +0ms
+[TIMING:attention-test] GREETING audio-queued +0ms
+[PLAYBACK:attention-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:attention-test] GREETING SUMMARY total=2332ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:attention-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:attention-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:attention-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:attention-test] TURN END turn-release=1790156444015 text="Yes, tell me." sttMs=0
+[STT:attention-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:attention-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:attention-test] TURN#0 turn-detected +0ms
+[TIMING:attention-test] TURN#0 stt-to-release=168ms (sttLag=n/ams)
+[LLM:attention-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:attention-test] TURN#0 llm-request +1ms
+[SPECULATE:attention-test] ADOPTED pre-opened request — llm-request is 169ms after the provider stream was opened (first token already in hand, 159ms ago) evidence-to-llm-open=0ms
+[TIMING:attention-test] TURN#0 llm-first-token +1ms
+[TIMING:attention-test] TURN#0 tts-request +1ms
+[TIMING:attention-test] TURN#0 tts-first-chunk +1ms
+[TIMING:attention-test] TURN#0 audio-queued +1ms
+[PLAYBACK:attention-test] draining 696ms of queued audio before leaving SPEAKING (queued=546ms elapsed=0ms)
+[TIMING:attention-test] TURN#0 SUMMARY total=707ms turn-detected=0ms llm-request=1ms llm-first-token=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:attention-test] TURN#0
+speech-end=2026-09-23T09:40:43.847Z
+endpoint-evidence=2026-09-23T09:40:43.847Z (speech_final)
+turn-release=2026-09-23T09:40:44.015Z
+llm-request=2026-09-23T09:40:44.016Z
+llm-first-token=2026-09-23T09:40:44.016Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T09:40:44.016Z
+tts-first-audio=2026-09-23T09:40:44.016Z
+audio-queued=2026-09-23T09:40:44.016Z
+[TIMING:attention-test] TURN#0 DELTAS
+endpoint-to-release=168ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=169ms
+[PIPELINE:attention-test] Turn complete: assistant="Short reply." llmMs=10 ttsMs=0
+[RESPONSE-LEN:attention-test] TURN#0 userChars=13 assistantChars=12 estTokens=3 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=546 briefRequested=false
+[TIMING:attention-test] TURN END turn-release=1790156444889 text="Hello? Hello?" sttMs=0
+[STT:attention-test] Transcript received: "Hello? Hello?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:attention-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:attention-test] TURN#1 turn-detected +0ms
+[TIMING:attention-test] TURN#1 stt-to-release=151ms (sttLag=n/ams)
+[PIPELINE:attention-test] hearing check with nothing to resume (after a block) — acknowledging once: "Hey, can you hear me okay?"
+[TIMING:attention-test] ATTENTION tts-request +0ms
+[TIMING:attention-test] ATTENTION tts-first-chunk +0ms
+[TIMING:attention-test] ATTENTION audio-queued +0ms
+[PLAYBACK:attention-test] draining 1332ms of queued audio before leaving SPEAKING (queued=1182ms elapsed=0ms)
+[TIMING:attention-test] ATTENTION SUMMARY total=1344ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:attention-test] TURN#1 SUMMARY total=1345ms turn-detected=0ms
+[TIMING:attention-test] TURN#1
+speech-end=2026-09-23T09:40:44.738Z
+endpoint-evidence=2026-09-23T09:40:44.738Z (speech_final)
+turn-release=2026-09-23T09:40:44.889Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:attention-test] TURN#1 DELTAS
+endpoint-to-release=151ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[TIMING:attention-test] TURN END turn-release=1790156446501 text="Yes, I can hear you. What is this about?" sttMs=0
+[STT:attention-test] Transcript received: "Yes, I can hear you. What is this about?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:attention-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:attention-test] TURN#1 turn-detected +0ms
+[TIMING:attention-test] TURN#1 stt-to-release=251ms (sttLag=n/ams)
+[LLM:attention-test] Sending to fake-llm: historyLength=7 roles=[system,assistant,user,assistant,user,assistant,user] streaming=true
+[TIMING:attention-test] TURN#1 llm-request +0ms
+[TIMING:attention-test] TURN#1 llm-first-token +20ms
+[TIMING:attention-test] TURN#1 tts-request +21ms
+[TIMING:attention-test] TURN#1 tts-first-chunk +21ms
+[TIMING:attention-test] TURN#1 audio-queued +21ms
+[PLAYBACK:attention-test] draining 786ms of queued audio before leaving SPEAKING (queued=636ms elapsed=0ms)
+[TIMING:attention-test] TURN#1 SUMMARY total=820ms turn-detected=0ms llm-request=0ms llm-first-token=20ms tts-request=21ms tts-first-chunk=21ms audio-queued=21ms
+[TIMING:attention-test] TURN#1
+speech-end=2026-09-23T09:40:46.250Z
+endpoint-evidence=2026-09-23T09:40:46.251Z (speech_final)
+turn-release=2026-09-23T09:40:46.501Z
+llm-request=2026-09-23T09:40:46.501Z
+llm-first-token=2026-09-23T09:40:46.521Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T09:40:46.522Z
+tts-first-audio=2026-09-23T09:40:46.522Z
+audio-queued=2026-09-23T09:40:46.522Z
+[TIMING:attention-test] TURN#1 DELTAS
+endpoint-to-release=250ms
+release-to-llm-request=0ms
+llm-to-first-token=20ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=272ms
+[PIPELINE:attention-test] Turn complete: assistant="Yes, I'm here." llmMs=20 ttsMs=0
+[RESPONSE-LEN:attention-test] TURN#1 userChars=40 assistantChars=14 estTokens=4 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=636 briefRequested=false
+[PIPELINE:attention-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:attention-test] run() exiting — state=LISTENING aborted=true
+  [PASS] I2 — an attention check with nothing to resume, after a block, is acknowledged without the model (FIX 2)
+
+SECTION J — a hearing check OVER a playing block: stop, ask, listen; then resume / restart / repeat
+[PIPELINE:attention-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:attention-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:attention-test] GREETING greeting-text-ready +0ms
+[TIMING:attention-test] GREETING tts-request +0ms
+[TIMING:attention-test] GREETING tts-first-chunk +0ms
+[TIMING:attention-test] GREETING audio-queued +0ms
+[PLAYBACK:attention-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:attention-test] GREETING SUMMARY total=2339ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:attention-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:attention-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:attention-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=1ms historyLength=3
+[TIMING:attention-test] TURN END turn-release=1790156449872 text="Yes, tell me." sttMs=0
+[STT:attention-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:attention-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:attention-test] TURN#0 turn-detected +0ms
+[TIMING:attention-test] TURN#0 stt-to-release=151ms (sttLag=n/ams)
+[LLM:attention-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:attention-test] TURN#0 llm-request +0ms
+[SPECULATE:attention-test] ADOPTED pre-opened request — llm-request is 150ms after the provider stream was opened (first token already in hand, 135ms ago) evidence-to-llm-open=1ms
+[TIMING:attention-test] TURN#0 llm-first-token +0ms
+[TIMING:attention-test] TURN#0 first-sentence-ready +0ms
+[TIMING:attention-test] TURN#0 tts-request +0ms
+[TIMING:attention-test] TURN#0 tts-first-chunk +0ms
+[TIMING:attention-test] TURN#0 audio-queued +0ms
+[PLAYBACK:attention-test] draining 12013ms of queued audio before leaving SPEAKING (queued=11864ms elapsed=1ms)
+[TURN:attention-test] barge-in ACCEPTED on transcript: "Hello? Hello?" — words=2 confidence=0.95 isFinal=true energyAgeMs=n/a beganBeforeReply=false replyRemainingMs=10933 replyFullyQueued=true
+[TIMING:attention-test] TURN#0 SUMMARY total=931ms turn-detected=0ms llm-request=0ms llm-first-token=0ms first-sentence-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:attention-test] TURN#0
+speech-end=2026-09-23T09:40:49.721Z
+endpoint-evidence=2026-09-23T09:40:49.721Z (speech_final)
+turn-release=2026-09-23T09:40:49.872Z
+llm-request=2026-09-23T09:40:49.872Z
+llm-first-token=2026-09-23T09:40:49.872Z
+first-sentence-ready=2026-09-23T09:40:49.872Z
+tts-request=2026-09-23T09:40:49.872Z
+tts-first-audio=2026-09-23T09:40:49.872Z
+audio-queued=2026-09-23T09:40:49.872Z
+[TIMING:attention-test] TURN#0 DELTAS
+endpoint-to-release=151ms
+release-to-llm-request=0ms
+llm-to-first-token=0ms
+first-token-to-sentence=0ms
+sentence-to-tts=0ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=151ms
+[PIPELINE:attention-test] Turn complete: assistant="Actually, I am calling you with a very interesting invitation. We have created F..." llmMs=15 ttsMs=0
+[RESPONSE-LEN:attention-test] TURN#0 userChars=13 assistantChars=263 estTokens=66 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=3 audioQueuedMs=11864 briefRequested=false
+[PIPELINE:attention-test] Response #1 CANCELLED by barge-in — heard="" discarded="Actually, I am calling you with a very interesting invitation. We have created F..."
+[TIMING:attention-test] TURN END turn-release=1790156450967 text="Hello? Hello?" sttMs=0
+[STT:attention-test] Transcript received: "Hello? Hello?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:attention-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:attention-test] TURN#1 turn-detected +0ms
+[TIMING:attention-test] TURN#1 stt-to-release=164ms (sttLag=n/ams)
+[PIPELINE:attention-test] attention check — acknowledging once: "Hey, can you hear me okay?"
+[TIMING:attention-test] ATTENTION tts-request +0ms
+[TIMING:attention-test] ATTENTION tts-first-chunk +0ms
+[TIMING:attention-test] ATTENTION audio-queued +0ms
+[PLAYBACK:attention-test] draining 1332ms of queued audio before leaving SPEAKING (queued=1182ms elapsed=0ms)
+[TIMING:attention-test] ATTENTION SUMMARY total=1336ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:attention-test] TURN#1 SUMMARY total=1337ms turn-detected=0ms
+[TIMING:attention-test] TURN#1
+speech-end=2026-09-23T09:40:50.803Z
+endpoint-evidence=2026-09-23T09:40:50.803Z (speech_final)
+turn-release=2026-09-23T09:40:50.967Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:attention-test] TURN#1 DELTAS
+endpoint-to-release=164ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[PIPELINE:attention-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:attention-test] run() exiting — state=LISTENING aborted=true
+  [FAIL] J1 — "Hello? Hello?" over a playing block STOPS it at once, asks the fixed question, and listens
+         timed out after 15000ms waiting for 3 replies (have 2, state=LISTENING)
+[PIPELINE:attention-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:attention-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:attention-test] GREETING greeting-text-ready +0ms
+[TIMING:attention-test] GREETING tts-request +1ms
+[TIMING:attention-test] GREETING tts-first-chunk +1ms
+[TIMING:attention-test] GREETING audio-queued +1ms
+[PLAYBACK:attention-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:attention-test] GREETING SUMMARY total=2344ms greeting-text-ready=0ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:attention-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:attention-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:attention-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:attention-test] TURN END turn-release=1790156468500 text="Yes, tell me." sttMs=0
+[STT:attention-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:attention-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:attention-test] TURN#0 turn-detected +0ms
+[TIMING:attention-test] TURN#0 stt-to-release=153ms (sttLag=n/ams)
+[LLM:attention-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:attention-test] TURN#0 llm-request +0ms
+[SPECULATE:attention-test] ADOPTED pre-opened request — llm-request is 153ms after the provider stream was opened (first token already in hand, 138ms ago) evidence-to-llm-open=0ms
+[TIMING:attention-test] TURN#0 llm-first-token +0ms
+[TIMING:attention-test] TURN#0 first-sentence-ready +0ms
+[TIMING:attention-test] TURN#0 tts-request +0ms
+[TIMING:attention-test] TURN#0 tts-first-chunk +1ms
+[TIMING:attention-test] TURN#0 audio-queued +1ms
+[PLAYBACK:attention-test] draining 12014ms of queued audio before leaving SPEAKING (queued=11864ms elapsed=0ms)
+[TURN:attention-test] barge-in ACCEPTED on transcript: "Hello? Hello? Can you hear me?" — words=6 confidence=0.95 isFinal=true energyAgeMs=n/a beganBeforeReply=false replyRemainingMs=10925 replyFullyQueued=true
+[TIMING:attention-test] TURN#0 SUMMARY total=940ms turn-detected=0ms llm-request=0ms llm-first-token=0ms first-sentence-ready=0ms tts-request=0ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:attention-test] TURN#0
+speech-end=2026-09-23T09:41:08.347Z
+endpoint-evidence=2026-09-23T09:41:08.347Z (speech_final)
+turn-release=2026-09-23T09:41:08.500Z
+llm-request=2026-09-23T09:41:08.500Z
+llm-first-token=2026-09-23T09:41:08.500Z
+first-sentence-ready=2026-09-23T09:41:08.500Z
+tts-request=2026-09-23T09:41:08.500Z
+tts-first-audio=2026-09-23T09:41:08.501Z
+audio-queued=2026-09-23T09:41:08.501Z
+[TIMING:attention-test] TURN#0 DELTAS
+endpoint-to-release=153ms
+release-to-llm-request=0ms
+llm-to-first-token=0ms
+first-token-to-sentence=0ms
+sentence-to-tts=0ms
+tts-to-first-audio=1ms
+first-audio-to-queue=0ms
+speech-end-to-audio=154ms
+[PIPELINE:attention-test] Turn complete: assistant="Actually, I am calling you with a very interesting invitation. We have created F..." llmMs=15 ttsMs=0
+[RESPONSE-LEN:attention-test] TURN#0 userChars=13 assistantChars=263 estTokens=66 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=3 audioQueuedMs=11864 briefRequested=false
+[PIPELINE:attention-test] Response #1 CANCELLED by barge-in — heard="" discarded="Actually, I am calling you with a very interesting invitation. We have created F..."
+[TIMING:attention-test] TURN END turn-release=1790156469598 text="Hello? Hello? Can you hear me?" sttMs=0
+[STT:attention-test] Transcript received: "Hello? Hello? Can you hear me?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:attention-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:attention-test] TURN#1 turn-detected +1ms
+[TIMING:attention-test] TURN#1 stt-to-release=159ms (sttLag=n/ams)
+[PIPELINE:attention-test] attention check — acknowledging once: "Hey, can you hear me okay?"
+[TIMING:attention-test] ATTENTION tts-request +0ms
+[TIMING:attention-test] ATTENTION tts-first-chunk +0ms
+[TIMING:attention-test] ATTENTION audio-queued +0ms
+[PLAYBACK:attention-test] draining 1332ms of queued audio before leaving SPEAKING (queued=1182ms elapsed=0ms)
+[TIMING:attention-test] ATTENTION SUMMARY total=1332ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:attention-test] TURN#1 SUMMARY total=1333ms turn-detected=1ms
+[TIMING:attention-test] TURN#1
+speech-end=2026-09-23T09:41:09.440Z
+endpoint-evidence=2026-09-23T09:41:09.440Z (speech_final)
+turn-release=2026-09-23T09:41:09.598Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:attention-test] TURN#1 DELTAS
+endpoint-to-release=158ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[PIPELINE:attention-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:attention-test] run() exiting — state=LISTENING aborted=true
+  [FAIL] J2 — "Hello? Hello? Can you hear me?" over the block: cut, asked once, no generation
+         timed out after 15000ms waiting for 3 replies (have 2, state=LISTENING)
+[PIPELINE:attention-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:attention-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:attention-test] GREETING greeting-text-ready +0ms
+[TIMING:attention-test] GREETING tts-request +0ms
+[TIMING:attention-test] GREETING tts-first-chunk +0ms
+[TIMING:attention-test] GREETING audio-queued +0ms
+[PLAYBACK:attention-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:attention-test] GREETING SUMMARY total=2342ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:attention-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:attention-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:attention-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=1ms historyLength=3
+[TIMING:attention-test] TURN END turn-release=1790156486977 text="Yes, tell me." sttMs=0
+[STT:attention-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:attention-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:attention-test] TURN#0 turn-detected +0ms
+[TIMING:attention-test] TURN#0 stt-to-release=162ms (sttLag=n/ams)
+[LLM:attention-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:attention-test] TURN#0 llm-request +0ms
+[SPECULATE:attention-test] ADOPTED pre-opened request — llm-request is 161ms after the provider stream was opened (first token already in hand, 148ms ago) evidence-to-llm-open=1ms
+[TIMING:attention-test] TURN#0 llm-first-token +0ms
+[TIMING:attention-test] TURN#0 first-sentence-ready +0ms
+[TIMING:attention-test] TURN#0 tts-request +0ms
+[TIMING:attention-test] TURN#0 tts-first-chunk +0ms
+[TIMING:attention-test] TURN#0 audio-queued +0ms
+[PLAYBACK:attention-test] draining 12014ms of queued audio before leaving SPEAKING (queued=11864ms elapsed=0ms)
+[TURN:attention-test] barge-in ACCEPTED on transcript: "Hello" — words=1 confidence=0.95 isFinal=true energyAgeMs=n/a beganBeforeReply=false replyRemainingMs=10929 replyFullyQueued=true
+[TIMING:attention-test] TURN#0 SUMMARY total=936ms turn-detected=0ms llm-request=0ms llm-first-token=0ms first-sentence-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:attention-test] TURN#0
+speech-end=2026-09-23T09:41:26.815Z
+endpoint-evidence=2026-09-23T09:41:26.815Z (speech_final)
+turn-release=2026-09-23T09:41:26.977Z
+llm-request=2026-09-23T09:41:26.977Z
+llm-first-token=2026-09-23T09:41:26.977Z
+first-sentence-ready=2026-09-23T09:41:26.977Z
+tts-request=2026-09-23T09:41:26.977Z
+tts-first-audio=2026-09-23T09:41:26.977Z
+audio-queued=2026-09-23T09:41:26.977Z
+[TIMING:attention-test] TURN#0 DELTAS
+endpoint-to-release=162ms
+release-to-llm-request=0ms
+llm-to-first-token=0ms
+first-token-to-sentence=0ms
+sentence-to-tts=0ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=162ms
+[PIPELINE:attention-test] Turn complete: assistant="Actually, I am calling you with a very interesting invitation. We have created F..." llmMs=13 ttsMs=0
+[RESPONSE-LEN:attention-test] TURN#0 userChars=13 assistantChars=263 estTokens=66 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=3 audioQueuedMs=11864 briefRequested=false
+[PIPELINE:attention-test] Response #1 CANCELLED by barge-in — heard="" discarded="Actually, I am calling you with a very interesting invitation. We have created F..."
+[TIMING:attention-test] TURN END turn-release=1790156488212 text="Hello" sttMs=0
+[STT:attention-test] Transcript received: "Hello" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:attention-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:attention-test] TURN#1 turn-detected +1ms
+[TIMING:attention-test] TURN#1 stt-to-release=301ms (sttLag=n/ams)
+[PIPELINE:attention-test] attention check — acknowledging once: "Hey, can you hear me okay?"
+[TIMING:attention-test] ATTENTION tts-request +0ms
+[TIMING:attention-test] ATTENTION tts-first-chunk +0ms
+[TIMING:attention-test] ATTENTION audio-queued +0ms
+[PLAYBACK:attention-test] draining 1331ms of queued audio before leaving SPEAKING (queued=1182ms elapsed=1ms)
+[TIMING:attention-test] ATTENTION SUMMARY total=1332ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:attention-test] TURN#1 SUMMARY total=1333ms turn-detected=1ms
+[TIMING:attention-test] TURN#1
+speech-end=2026-09-23T09:41:27.912Z
+endpoint-evidence=2026-09-23T09:41:27.913Z (speech_final)
+turn-release=2026-09-23T09:41:28.212Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:attention-test] TURN#1 DELTAS
+endpoint-to-release=299ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[PIPELINE:attention-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:attention-test] run() exiting — state=LISTENING aborted=true
+  [FAIL] J3 — a single "Hello" over the block keeps the EXISTING decision: it already interrupts and is asked about once
+         timed out after 15000ms waiting for 3 replies (have 2, state=LISTENING)
+[PIPELINE:attention-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:attention-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:attention-test] GREETING greeting-text-ready +0ms
+[TIMING:attention-test] GREETING tts-request +0ms
+[TIMING:attention-test] GREETING tts-first-chunk +0ms
+[TIMING:attention-test] GREETING audio-queued +0ms
+[PLAYBACK:attention-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:attention-test] GREETING SUMMARY total=2332ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:attention-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:attention-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:attention-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:attention-test] TURN END turn-release=1790156505424 text="Yes, tell me." sttMs=0
+[STT:attention-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:attention-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:attention-test] TURN#0 turn-detected +1ms
+[TIMING:attention-test] TURN#0 stt-to-release=152ms (sttLag=n/ams)
+[LLM:attention-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:attention-test] TURN#0 llm-request +1ms
+[SPECULATE:attention-test] ADOPTED pre-opened request — llm-request is 152ms after the provider stream was opened (first token already in hand, 134ms ago) evidence-to-llm-open=0ms
+[TIMING:attention-test] TURN#0 llm-first-token +1ms
+[TIMING:attention-test] TURN#0 first-sentence-ready +1ms
+[TIMING:attention-test] TURN#0 tts-request +1ms
+[TIMING:attention-test] TURN#0 tts-first-chunk +1ms
+[TIMING:attention-test] TURN#0 audio-queued +1ms
+[PLAYBACK:attention-test] draining 12013ms of queued audio before leaving SPEAKING (queued=11864ms elapsed=1ms)
+[TURN:attention-test] barge-in ACCEPTED on transcript: "Hello? Hello?" — words=2 confidence=0.95 isFinal=true energyAgeMs=n/a beganBeforeReply=false replyRemainingMs=10948 replyFullyQueued=true
+[TIMING:attention-test] TURN#0 SUMMARY total=917ms turn-detected=1ms llm-request=1ms llm-first-token=1ms first-sentence-ready=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:attention-test] TURN#0
+speech-end=2026-09-23T09:41:45.273Z
+endpoint-evidence=2026-09-23T09:41:45.273Z (speech_final)
+turn-release=2026-09-23T09:41:45.424Z
+llm-request=2026-09-23T09:41:45.425Z
+llm-first-token=2026-09-23T09:41:45.425Z
+first-sentence-ready=2026-09-23T09:41:45.425Z
+tts-request=2026-09-23T09:41:45.425Z
+tts-first-audio=2026-09-23T09:41:45.425Z
+audio-queued=2026-09-23T09:41:45.425Z
+[TIMING:attention-test] TURN#0 DELTAS
+endpoint-to-release=151ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=0ms
+sentence-to-tts=0ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=152ms
+[PIPELINE:attention-test] Turn complete: assistant="Actually, I am calling you with a very interesting invitation. We have created F..." llmMs=18 ttsMs=0
+[RESPONSE-LEN:attention-test] TURN#0 userChars=13 assistantChars=263 estTokens=66 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=3 audioQueuedMs=11864 briefRequested=false
+[PIPELINE:attention-test] Response #1 CANCELLED by barge-in — heard="" discarded="Actually, I am calling you with a very interesting invitation. We have created F..."
+[TIMING:attention-test] TURN END turn-release=1790156506508 text="Hello? Hello?" sttMs=0
+[STT:attention-test] Transcript received: "Hello? Hello?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:attention-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:attention-test] TURN#1 turn-detected +0ms
+[TIMING:attention-test] TURN#1 stt-to-release=167ms (sttLag=n/ams)
+[PIPELINE:attention-test] attention check — acknowledging once: "Hey, can you hear me okay?"
+[TIMING:attention-test] ATTENTION tts-request +0ms
+[TIMING:attention-test] ATTENTION tts-first-chunk +0ms
+[TIMING:attention-test] ATTENTION audio-queued +0ms
+[PLAYBACK:attention-test] draining 1332ms of queued audio before leaving SPEAKING (queued=1182ms elapsed=0ms)
+[TIMING:attention-test] ATTENTION SUMMARY total=1333ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:attention-test] TURN#1 SUMMARY total=1333ms turn-detected=0ms
+[TIMING:attention-test] TURN#1
+speech-end=2026-09-23T09:41:46.341Z
+endpoint-evidence=2026-09-23T09:41:46.341Z (speech_final)
+turn-release=2026-09-23T09:41:46.508Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:attention-test] TURN#1 DELTAS
+endpoint-to-release=167ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[PIPELINE:attention-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:attention-test] run() exiting — state=LISTENING aborted=true
+  [FAIL] J4 — "Yes." after the question RESUMES the block from where it stopped, without the model
+         timed out after 15000ms waiting for 3 replies (have 2, state=LISTENING)
+[PIPELINE:attention-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:attention-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:attention-test] GREETING greeting-text-ready +0ms
+[TIMING:attention-test] GREETING tts-request +0ms
+[TIMING:attention-test] GREETING tts-first-chunk +0ms
+[TIMING:attention-test] GREETING audio-queued +0ms
+[PLAYBACK:attention-test] draining 2331ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=1ms)
+[TIMING:attention-test] GREETING SUMMARY total=2341ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:attention-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:attention-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:attention-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:attention-test] TURN END turn-release=1790156523903 text="Yes, tell me." sttMs=0
+[STT:attention-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:attention-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:attention-test] TURN#0 turn-detected +1ms
+[TIMING:attention-test] TURN#0 stt-to-release=153ms (sttLag=n/ams)
+[LLM:attention-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:attention-test] TURN#0 llm-request +1ms
+[SPECULATE:attention-test] ADOPTED pre-opened request — llm-request is 153ms after the provider stream was opened (first token already in hand, 137ms ago) evidence-to-llm-open=0ms
+[TIMING:attention-test] TURN#0 llm-first-token +1ms
+[TIMING:attention-test] TURN#0 first-sentence-ready +1ms
+[TIMING:attention-test] TURN#0 tts-request +1ms
+[TIMING:attention-test] TURN#0 tts-first-chunk +1ms
+[TIMING:attention-test] TURN#0 audio-queued +1ms
+[PLAYBACK:attention-test] draining 12014ms of queued audio before leaving SPEAKING (queued=11864ms elapsed=0ms)
+[TURN:attention-test] barge-in ACCEPTED on transcript: "Hello? Hello?" — words=2 confidence=0.95 isFinal=true energyAgeMs=n/a beganBeforeReply=false replyRemainingMs=10715 replyFullyQueued=true
+[TIMING:attention-test] TURN#0 SUMMARY total=1153ms turn-detected=1ms llm-request=1ms llm-first-token=1ms first-sentence-ready=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:attention-test] TURN#0
+speech-end=2026-09-23T09:42:03.751Z
+endpoint-evidence=2026-09-23T09:42:03.751Z (speech_final)
+turn-release=2026-09-23T09:42:03.903Z
+llm-request=2026-09-23T09:42:03.904Z
+llm-first-token=2026-09-23T09:42:03.904Z
+first-sentence-ready=2026-09-23T09:42:03.904Z
+tts-request=2026-09-23T09:42:03.904Z
+tts-first-audio=2026-09-23T09:42:03.904Z
+audio-queued=2026-09-23T09:42:03.904Z
+[TIMING:attention-test] TURN#0 DELTAS
+endpoint-to-release=152ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=0ms
+sentence-to-tts=0ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=153ms
+[PIPELINE:attention-test] Turn complete: assistant="Actually, I am calling you with a very interesting invitation. We have created F..." llmMs=16 ttsMs=0
+[RESPONSE-LEN:attention-test] TURN#0 userChars=13 assistantChars=263 estTokens=66 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=3 audioQueuedMs=11864 briefRequested=false
+[PIPELINE:attention-test] Response #1 CANCELLED by barge-in — heard="" discarded="Actually, I am calling you with a very interesting invitation. We have created F..."
+[TIMING:attention-test] TURN END turn-release=1790156525212 text="Hello? Hello?" sttMs=0
+[STT:attention-test] Transcript received: "Hello? Hello?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:attention-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:attention-test] TURN#1 turn-detected +0ms
+[TIMING:attention-test] TURN#1 stt-to-release=159ms (sttLag=n/ams)
+[PIPELINE:attention-test] attention check — acknowledging once: "Hey, can you hear me okay?"
+[TIMING:attention-test] ATTENTION tts-request +0ms
+[TIMING:attention-test] ATTENTION tts-first-chunk +0ms
+[TIMING:attention-test] ATTENTION audio-queued +0ms
+[PLAYBACK:attention-test] draining 1332ms of queued audio before leaving SPEAKING (queued=1182ms elapsed=0ms)
+[TIMING:attention-test] ATTENTION SUMMARY total=1341ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:attention-test] TURN#1 SUMMARY total=1341ms turn-detected=0ms
+[TIMING:attention-test] TURN#1
+speech-end=2026-09-23T09:42:05.053Z
+endpoint-evidence=2026-09-23T09:42:05.056Z (speech_final)
+turn-release=2026-09-23T09:42:05.212Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:attention-test] TURN#1 DELTAS
+endpoint-to-release=156ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[PIPELINE:attention-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:attention-test] run() exiting — state=LISTENING aborted=true
+  [FAIL] J5 — "Yes, continue from where you stopped." RESUMES from the stopping point, not from the top
+         timed out after 15000ms waiting for 3 replies (have 2, state=LISTENING)
+[PIPELINE:attention-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:attention-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:attention-test] GREETING greeting-text-ready +0ms
+[TIMING:attention-test] GREETING tts-request +0ms
+[TIMING:attention-test] GREETING tts-first-chunk +0ms
+[TIMING:attention-test] GREETING audio-queued +0ms
+[PLAYBACK:attention-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:attention-test] GREETING SUMMARY total=2332ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:attention-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:attention-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:attention-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:attention-test] TURN END turn-release=1790156542597 text="Yes, tell me." sttMs=0
+[STT:attention-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:attention-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:attention-test] TURN#0 turn-detected +0ms
+[TIMING:attention-test] TURN#0 stt-to-release=165ms (sttLag=n/ams)
+[LLM:attention-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:attention-test] TURN#0 llm-request +0ms
+[SPECULATE:attention-test] ADOPTED pre-opened request — llm-request is 165ms after the provider stream was opened (first token already in hand, 151ms ago) evidence-to-llm-open=0ms
+[TIMING:attention-test] TURN#0 llm-first-token +0ms
+[TIMING:attention-test] TURN#0 first-sentence-ready +0ms
+[TIMING:attention-test] TURN#0 tts-request +0ms
+[TIMING:attention-test] TURN#0 tts-first-chunk +0ms
+[TIMING:attention-test] TURN#0 audio-queued +0ms
+[PLAYBACK:attention-test] draining 12013ms of queued audio before leaving SPEAKING (queued=11864ms elapsed=1ms)
+[TURN:attention-test] barge-in ACCEPTED on transcript: "Hello? Hello?" — words=2 confidence=0.95 isFinal=true energyAgeMs=n/a beganBeforeReply=false replyRemainingMs=10963 replyFullyQueued=true
+[TIMING:attention-test] TURN#0 SUMMARY total=902ms turn-detected=0ms llm-request=0ms llm-first-token=0ms first-sentence-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:attention-test] TURN#0
+speech-end=2026-09-23T09:42:22.432Z
+endpoint-evidence=2026-09-23T09:42:22.432Z (speech_final)
+turn-release=2026-09-23T09:42:22.597Z
+llm-request=2026-09-23T09:42:22.597Z
+llm-first-token=2026-09-23T09:42:22.597Z
+first-sentence-ready=2026-09-23T09:42:22.597Z
+tts-request=2026-09-23T09:42:22.597Z
+tts-first-audio=2026-09-23T09:42:22.597Z
+audio-queued=2026-09-23T09:42:22.597Z
+[TIMING:attention-test] TURN#0 DELTAS
+endpoint-to-release=165ms
+release-to-llm-request=0ms
+llm-to-first-token=0ms
+first-token-to-sentence=0ms
+sentence-to-tts=0ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=165ms
+[PIPELINE:attention-test] Turn complete: assistant="Actually, I am calling you with a very interesting invitation. We have created F..." llmMs=14 ttsMs=0
+[RESPONSE-LEN:attention-test] TURN#0 userChars=13 assistantChars=263 estTokens=66 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=3 audioQueuedMs=11864 briefRequested=false
+[PIPELINE:attention-test] Response #1 CANCELLED by barge-in — heard="" discarded="Actually, I am calling you with a very interesting invitation. We have created F..."
+[TIMING:attention-test] TURN END turn-release=1790156543649 text="Hello? Hello?" sttMs=0
+[STT:attention-test] Transcript received: "Hello? Hello?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:attention-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:attention-test] TURN#1 turn-detected +1ms
+[TIMING:attention-test] TURN#1 stt-to-release=152ms (sttLag=n/ams)
+[PIPELINE:attention-test] attention check — acknowledging once: "Hey, can you hear me okay?"
+[TIMING:attention-test] ATTENTION tts-request +0ms
+[TIMING:attention-test] ATTENTION tts-first-chunk +0ms
+[TIMING:attention-test] ATTENTION audio-queued +0ms
+[PLAYBACK:attention-test] draining 1332ms of queued audio before leaving SPEAKING (queued=1182ms elapsed=0ms)
+[TIMING:attention-test] ATTENTION SUMMARY total=1333ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:attention-test] TURN#1 SUMMARY total=1334ms turn-detected=1ms
+[TIMING:attention-test] TURN#1
+speech-end=2026-09-23T09:42:23.498Z
+endpoint-evidence=2026-09-23T09:42:23.499Z (speech_final)
+turn-release=2026-09-23T09:42:23.649Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:attention-test] TURN#1 DELTAS
+endpoint-to-release=150ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[PIPELINE:attention-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:attention-test] run() exiting — state=LISTENING aborted=true
+  [FAIL] J6 — "Start from the beginning." REPEATS the whole cut-off reply from its first word, without the model
+         timed out after 15000ms waiting for 3 replies (have 2, state=LISTENING)
+[PIPELINE:attention-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:attention-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:attention-test] GREETING greeting-text-ready +0ms
+[TIMING:attention-test] GREETING tts-request +0ms
+[TIMING:attention-test] GREETING tts-first-chunk +0ms
+[TIMING:attention-test] GREETING audio-queued +0ms
+[PLAYBACK:attention-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:attention-test] GREETING SUMMARY total=2347ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:attention-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:attention-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:attention-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:attention-test] TURN END turn-release=1790156561028 text="Yes, tell me." sttMs=0
+[STT:attention-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:attention-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:attention-test] TURN#0 turn-detected +0ms
+[TIMING:attention-test] TURN#0 stt-to-release=152ms (sttLag=n/ams)
+[LLM:attention-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:attention-test] TURN#0 llm-request +0ms
+[SPECULATE:attention-test] ADOPTED pre-opened request — llm-request is 151ms after the provider stream was opened (first token already in hand, 133ms ago) evidence-to-llm-open=0ms
+[TIMING:attention-test] TURN#0 llm-first-token +0ms
+[TIMING:attention-test] TURN#0 first-sentence-ready +1ms
+[TIMING:attention-test] TURN#0 tts-request +1ms
+[TIMING:attention-test] TURN#0 tts-first-chunk +1ms
+[TIMING:attention-test] TURN#0 audio-queued +1ms
+[PLAYBACK:attention-test] draining 12014ms of queued audio before leaving SPEAKING (queued=11864ms elapsed=0ms)
+[TURN:attention-test] barge-in ACCEPTED on transcript: "Hello? Hello?" — words=2 confidence=0.95 isFinal=true energyAgeMs=n/a beganBeforeReply=false replyRemainingMs=10931 replyFullyQueued=true
+[TIMING:attention-test] TURN#0 SUMMARY total=935ms turn-detected=0ms llm-request=0ms llm-first-token=0ms first-sentence-ready=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:attention-test] TURN#0
+speech-end=2026-09-23T09:42:40.876Z
+endpoint-evidence=2026-09-23T09:42:40.877Z (speech_final)
+turn-release=2026-09-23T09:42:41.028Z
+llm-request=2026-09-23T09:42:41.028Z
+llm-first-token=2026-09-23T09:42:41.028Z
+first-sentence-ready=2026-09-23T09:42:41.029Z
+tts-request=2026-09-23T09:42:41.029Z
+tts-first-audio=2026-09-23T09:42:41.029Z
+audio-queued=2026-09-23T09:42:41.029Z
+[TIMING:attention-test] TURN#0 DELTAS
+endpoint-to-release=151ms
+release-to-llm-request=0ms
+llm-to-first-token=0ms
+first-token-to-sentence=1ms
+sentence-to-tts=0ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=153ms
+[PIPELINE:attention-test] Turn complete: assistant="Actually, I am calling you with a very interesting invitation. We have created F..." llmMs=18 ttsMs=0
+[RESPONSE-LEN:attention-test] TURN#0 userChars=13 assistantChars=263 estTokens=66 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=3 audioQueuedMs=11864 briefRequested=false
+[PIPELINE:attention-test] Response #1 CANCELLED by barge-in — heard="" discarded="Actually, I am calling you with a very interesting invitation. We have created F..."
+[TIMING:attention-test] TURN END turn-release=1790156562129 text="Hello? Hello?" sttMs=0
+[STT:attention-test] Transcript received: "Hello? Hello?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:attention-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:attention-test] TURN#1 turn-detected +0ms
+[TIMING:attention-test] TURN#1 stt-to-release=167ms (sttLag=n/ams)
+[PIPELINE:attention-test] attention check — acknowledging once: "Hey, can you hear me okay?"
+[TIMING:attention-test] ATTENTION tts-request +0ms
+[TIMING:attention-test] ATTENTION tts-first-chunk +0ms
+[TIMING:attention-test] ATTENTION audio-queued +0ms
+[PLAYBACK:attention-test] draining 1332ms of queued audio before leaving SPEAKING (queued=1182ms elapsed=0ms)
+[TIMING:attention-test] ATTENTION SUMMARY total=1346ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:attention-test] TURN#1 SUMMARY total=1347ms turn-detected=0ms
+[TIMING:attention-test] TURN#1
+speech-end=2026-09-23T09:42:41.962Z
+endpoint-evidence=2026-09-23T09:42:41.963Z (speech_final)
+turn-release=2026-09-23T09:42:42.129Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:attention-test] TURN#1 DELTAS
+endpoint-to-release=166ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[PIPELINE:attention-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:attention-test] run() exiting — state=LISTENING aborted=true
+  [FAIL] J7 — "No, I couldn't hear you." also REPEATS the cut-off reply from the beginning
+         timed out after 15000ms waiting for 3 replies (have 2, state=LISTENING)
+[PIPELINE:attention-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:attention-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:attention-test] GREETING greeting-text-ready +0ms
+[TIMING:attention-test] GREETING tts-request +0ms
+[TIMING:attention-test] GREETING tts-first-chunk +1ms
+[TIMING:attention-test] GREETING audio-queued +1ms
+[PLAYBACK:attention-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:attention-test] GREETING SUMMARY total=2347ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:attention-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:attention-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:attention-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:attention-test] TURN END turn-release=1790156579475 text="Yes, tell me." sttMs=0
+[STT:attention-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:attention-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:attention-test] TURN#0 turn-detected +1ms
+[TIMING:attention-test] TURN#0 stt-to-release=151ms (sttLag=n/ams)
+[LLM:attention-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:attention-test] TURN#0 llm-request +1ms
+[SPECULATE:attention-test] ADOPTED pre-opened request — llm-request is 151ms after the provider stream was opened (first token already in hand, 135ms ago) evidence-to-llm-open=0ms
+[TIMING:attention-test] TURN#0 llm-first-token +1ms
+[TIMING:attention-test] TURN#0 first-sentence-ready +1ms
+[TIMING:attention-test] TURN#0 tts-request +1ms
+[TIMING:attention-test] TURN#0 tts-first-chunk +1ms
+[TIMING:attention-test] TURN#0 audio-queued +1ms
+[PLAYBACK:attention-test] draining 12011ms of queued audio before leaving SPEAKING (queued=11864ms elapsed=3ms)
+[TURN:attention-test] barge-in ACCEPTED on transcript: "Hello? Hello?" — words=2 confidence=0.95 isFinal=true energyAgeMs=n/a beganBeforeReply=false replyRemainingMs=10936 replyFullyQueued=true
+[TIMING:attention-test] TURN#0 SUMMARY total=929ms turn-detected=1ms llm-request=1ms llm-first-token=1ms first-sentence-ready=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:attention-test] TURN#0
+speech-end=2026-09-23T09:42:59.325Z
+endpoint-evidence=2026-09-23T09:42:59.325Z (speech_final)
+turn-release=2026-09-23T09:42:59.475Z
+llm-request=2026-09-23T09:42:59.476Z
+llm-first-token=2026-09-23T09:42:59.476Z
+first-sentence-ready=2026-09-23T09:42:59.476Z
+tts-request=2026-09-23T09:42:59.476Z
+tts-first-audio=2026-09-23T09:42:59.476Z
+audio-queued=2026-09-23T09:42:59.476Z
+[TIMING:attention-test] TURN#0 DELTAS
+endpoint-to-release=150ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=0ms
+sentence-to-tts=0ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=151ms
+[PIPELINE:attention-test] Turn complete: assistant="Actually, I am calling you with a very interesting invitation. We have created F..." llmMs=16 ttsMs=0
+[RESPONSE-LEN:attention-test] TURN#0 userChars=13 assistantChars=263 estTokens=66 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=3 audioQueuedMs=11864 briefRequested=false
+[PIPELINE:attention-test] Response #1 CANCELLED by barge-in — heard="" discarded="Actually, I am calling you with a very interesting invitation. We have created F..."
+[TIMING:attention-test] TURN END turn-release=1790156580562 text="Hello? Hello?" sttMs=0
+[STT:attention-test] Transcript received: "Hello? Hello?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:attention-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:attention-test] TURN#1 turn-detected +1ms
+[TIMING:attention-test] TURN#1 stt-to-release=159ms (sttLag=n/ams)
+[PIPELINE:attention-test] attention check — acknowledging once: "Hey, can you hear me okay?"
+[TIMING:attention-test] ATTENTION tts-request +0ms
+[TIMING:attention-test] ATTENTION tts-first-chunk +0ms
+[TIMING:attention-test] ATTENTION audio-queued +0ms
+[PLAYBACK:attention-test] draining 1332ms of queued audio before leaving SPEAKING (queued=1182ms elapsed=0ms)
+[TIMING:attention-test] ATTENTION SUMMARY total=1343ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:attention-test] TURN#1 SUMMARY total=1344ms turn-detected=1ms
+[TIMING:attention-test] TURN#1
+speech-end=2026-09-23T09:43:00.404Z
+endpoint-evidence=2026-09-23T09:43:00.404Z (speech_final)
+turn-release=2026-09-23T09:43:00.562Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:attention-test] TURN#1 DELTAS
+endpoint-to-release=158ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[PIPELINE:attention-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:attention-test] run() exiting — state=LISTENING aborted=true
+  [FAIL] J8 — a substantive answer after the question takes the NORMAL path, and the held position is released
+         timed out after 15000ms waiting for 3 replies (have 2, state=LISTENING)
+[PIPELINE:attention-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:attention-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:attention-test] GREETING greeting-text-ready +0ms
+[TIMING:attention-test] GREETING tts-request +0ms
+[TIMING:attention-test] GREETING tts-first-chunk +0ms
+[TIMING:attention-test] GREETING audio-queued +0ms
+[PLAYBACK:attention-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:attention-test] GREETING SUMMARY total=2346ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:attention-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:attention-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:attention-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:attention-test] TURN END turn-release=1790156597935 text="Yes, tell me." sttMs=0
+[STT:attention-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:attention-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:attention-test] TURN#0 turn-detected +0ms
+[TIMING:attention-test] TURN#0 stt-to-release=165ms (sttLag=n/ams)
+[LLM:attention-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:attention-test] TURN#0 llm-request +0ms
+[SPECULATE:attention-test] ADOPTED pre-opened request — llm-request is 165ms after the provider stream was opened (first token already in hand, 150ms ago) evidence-to-llm-open=0ms
+[TIMING:attention-test] TURN#0 llm-first-token +0ms
+[TIMING:attention-test] TURN#0 tts-request +0ms
+[TIMING:attention-test] TURN#0 tts-first-chunk +1ms
+[TIMING:attention-test] TURN#0 audio-queued +1ms
+[PLAYBACK:attention-test] draining 696ms of queued audio before leaving SPEAKING (queued=546ms elapsed=0ms)
+[TIMING:attention-test] TURN#0 SUMMARY total=701ms turn-detected=0ms llm-request=0ms llm-first-token=0ms tts-request=0ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:attention-test] TURN#0
+speech-end=2026-09-23T09:43:17.770Z
+endpoint-evidence=2026-09-23T09:43:17.770Z (speech_final)
+turn-release=2026-09-23T09:43:17.935Z
+llm-request=2026-09-23T09:43:17.935Z
+llm-first-token=2026-09-23T09:43:17.935Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T09:43:17.935Z
+tts-first-audio=2026-09-23T09:43:17.936Z
+audio-queued=2026-09-23T09:43:17.936Z
+[TIMING:attention-test] TURN#0 DELTAS
+endpoint-to-release=165ms
+release-to-llm-request=0ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=1ms
+first-audio-to-queue=0ms
+speech-end-to-audio=166ms
+[PIPELINE:attention-test] Turn complete: assistant="Short reply." llmMs=15 ttsMs=0
+[RESPONSE-LEN:attention-test] TURN#0 userChars=13 assistantChars=12 estTokens=3 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=546 briefRequested=false
+[SPECULATE:attention-test] LLM request PRE-OPENED on speech_final evidence: text="Please continue." evidence-to-llm-open=0ms historyLength=5
+[TIMING:attention-test] TURN END turn-release=1790156598822 text="Please continue." sttMs=0
+[STT:attention-test] Transcript received: "Please continue." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:attention-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:attention-test] TURN#1 turn-detected +0ms
+[TIMING:attention-test] TURN#1 stt-to-release=154ms (sttLag=n/ams)
+[LLM:attention-test] Sending to fake-llm: historyLength=5 roles=[system,assistant,user,assistant,user] streaming=true
+[TIMING:attention-test] TURN#1 llm-request +0ms
+[SPECULATE:attention-test] ADOPTED pre-opened request — llm-request is 154ms after the provider stream was opened (first token already in hand, 138ms ago) evidence-to-llm-open=0ms
+[TIMING:attention-test] TURN#1 llm-first-token +0ms
+[TIMING:attention-test] TURN#1 tts-request +1ms
+[TIMING:attention-test] TURN#1 tts-first-chunk +1ms
+[TIMING:attention-test] TURN#1 audio-queued +1ms
+[PLAYBACK:attention-test] draining 1014ms of queued audio before leaving SPEAKING (queued=864ms elapsed=0ms)
+[TIMING:attention-test] TURN#1 SUMMARY total=1019ms turn-detected=0ms llm-request=0ms llm-first-token=0ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:attention-test] TURN#1
+speech-end=2026-09-23T09:43:18.668Z
+endpoint-evidence=2026-09-23T09:43:18.668Z (speech_final)
+turn-release=2026-09-23T09:43:18.822Z
+llm-request=2026-09-23T09:43:18.822Z
+llm-first-token=2026-09-23T09:43:18.822Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T09:43:18.823Z
+tts-first-audio=2026-09-23T09:43:18.823Z
+audio-queued=2026-09-23T09:43:18.823Z
+[TIMING:attention-test] TURN#1 DELTAS
+endpoint-to-release=154ms
+release-to-llm-request=0ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=155ms
+[PIPELINE:attention-test] Turn complete: assistant="Sure, here is more." llmMs=16 ttsMs=0
+[RESPONSE-LEN:attention-test] TURN#1 userChars=16 assistantChars=19 estTokens=5 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=864 briefRequested=false
+[SPECULATE:attention-test] LLM request PRE-OPENED on speech_final evidence: text="No." evidence-to-llm-open=1ms historyLength=7
+[TIMING:attention-test] TURN END turn-release=1790156600012 text="No." sttMs=0
+[STT:attention-test] Transcript received: "No." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:attention-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:attention-test] TURN#2 turn-detected +0ms
+[TIMING:attention-test] TURN#2 stt-to-release=158ms (sttLag=n/ams)
+[LLM:attention-test] Sending to fake-llm: historyLength=7 roles=[system,assistant,user,assistant,user,assistant,user] streaming=true
+[TIMING:attention-test] TURN#2 llm-request +0ms
+[SPECULATE:attention-test] ADOPTED pre-opened request — llm-request is 157ms after the provider stream was opened (first token already in hand, 133ms ago) evidence-to-llm-open=1ms
+[TIMING:attention-test] TURN#2 llm-first-token +0ms
+[TIMING:attention-test] TURN#2 tts-request +0ms
+[TIMING:attention-test] TURN#2 tts-first-chunk +1ms
+[TIMING:attention-test] TURN#2 audio-queued +1ms
+[PLAYBACK:attention-test] draining 696ms of queued audio before leaving SPEAKING (queued=546ms elapsed=0ms)
+[TIMING:attention-test] TURN#2 SUMMARY total=708ms turn-detected=0ms llm-request=0ms llm-first-token=0ms tts-request=0ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:attention-test] TURN#2
+speech-end=2026-09-23T09:43:19.854Z
+endpoint-evidence=2026-09-23T09:43:19.854Z (speech_final)
+turn-release=2026-09-23T09:43:20.012Z
+llm-request=2026-09-23T09:43:20.012Z
+llm-first-token=2026-09-23T09:43:20.012Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T09:43:20.012Z
+tts-first-audio=2026-09-23T09:43:20.013Z
+audio-queued=2026-09-23T09:43:20.013Z
+[TIMING:attention-test] TURN#2 DELTAS
+endpoint-to-release=158ms
+release-to-llm-request=0ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=1ms
+first-audio-to-queue=0ms
+speech-end-to-audio=159ms
+[PIPELINE:attention-test] Turn complete: assistant="Okay, noted." llmMs=24 ttsMs=1
+[RESPONSE-LEN:attention-test] TURN#2 userChars=3 assistantChars=12 estTokens=3 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=546 briefRequested=false
+[PIPELINE:attention-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:attention-test] run() exiting — state=LISTENING aborted=true
+  [PASS] J9 — the same words OUTSIDE a hearing episode are untouched: "continue" / "no" in open conversation reach the model
+  [PASS] J10 — the instruction vocabulary, asserted directly on both sides
+
+FAILURES — 11 passed, 22 failed
+  - B1 — a single "Hello?" mid-block gets one short acknowledgement, with NO language-model request
+  - B2 — the acknowledgement is SHORT
+  - B4 — a repeated hello NEVER re-speaks the campaign opening
+  - C1 — "Yes, I can hear you." resumes the block, without a language-model request
+  - C2 — a bare "Haan" after the acknowledgement resumes too
+  - C3 — a SECOND hello resumes rather than acknowledging again
+  - C4 — the resumed text is in the history the model is next shown
+  - D1 — "Hello? What is this about?" is answered contextually, not acknowledged
+  - D2 — a real question RELEASES the held script position
+  - G1 — a real interruption still barges in and is answered by the model
+  - G2 — only the part of the block the caller HEARD is committed (unchanged)
+  - H1 — no sentence the caller has heard is ever synthesized a second time
+  - H2 — the resume is a strict suffix of the interrupted reply
+  - I1 — the call carries on normally after an attention-check episode
+  - J1 — "Hello? Hello?" over a playing block STOPS it at once, asks the fixed question, and listens
+  - J2 — "Hello? Hello? Can you hear me?" over the block: cut, asked once, no generation
+  - J3 — a single "Hello" over the block keeps the EXISTING decision: it already interrupts and is asked about once
+  - J4 — "Yes." after the question RESUMES the block from where it stopped, without the model
+  - J5 — "Yes, continue from where you stopped." RESUMES from the stopping point, not from the top
+  - J6 — "Start from the beginning." REPEATS the whole cut-off reply from its first word, without the model
+  - J7 — "No, I couldn't hear you." also REPEATS the cut-off reply from the beginning
+  - J8 — a substantive answer after the question takes the NORMAL path, and the held position is released

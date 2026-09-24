@@ -1,0 +1,98 @@
+
+A. A HANGUP DURING GENERATION IS AN ENDING, NOT A FAILURE
+[PIPELINE:ending-transition-test] run() started — state=LISTENING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:ending-transition-test] Conversation started — speaking fixed greeting, state=LISTENING
+[TIMING:ending-transition-test] GREETING greeting-text-ready +0ms
+[TIMING:ending-transition-test] GREETING tts-request +6ms
+[TIMING:ending-transition-test] GREETING tts-first-chunk +8ms
+[TIMING:ending-transition-test] GREETING audio-queued +9ms
+[PLAYBACK:ending-transition-test] draining 2331ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=1ms)
+[TIMING:ending-transition-test] GREETING SUMMARY total=2347ms greeting-text-ready=0ms tts-request=6ms tts-first-chunk=8ms audio-queued=9ms
+[PIPELINE:ending-transition-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:ending-transition-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:ending-transition-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me about it." evidence-to-llm-open=14ms historyLength=3
+[TIMING:ending-transition-test] TURN END turn-release=1790180451848 text="Yes, tell me about it." sttMs=0
+[STT:ending-transition-test] Transcript received: "Yes, tell me about it." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:ending-transition-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:ending-transition-test] TURN#0 turn-detected +15ms
+[TIMING:ending-transition-test] TURN#0 stt-to-release=625ms (sttLag=n/ams)
+[LANGUAGE:ending-transition-test] call language LOCKED to en on the first meaningful utterance (basis=default-english confidence=0.75 hindiMarkers=0): "Yes, tell me about it."
+[LLM:ending-transition-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:ending-transition-test] TURN#0 llm-request +26ms
+[SPECULATE:ending-transition-test] ADOPTED pre-opened request — llm-request is 621ms after the provider stream was opened (first token already in hand, 619ms ago) evidence-to-llm-open=14ms
+[TIMING:ending-transition-test] TURN#0 llm-first-token +31ms
+[TIMING:ending-transition-test] TURN#0 SUMMARY total=39ms turn-detected=15ms llm-request=26ms llm-first-token=31ms
+[TIMING:ending-transition-test] TURN#0
+speech-end=2026-09-23T16:20:51.238Z
+endpoint-evidence=2026-09-23T16:20:51.239Z (speech_final)
+turn-release=2026-09-23T16:20:51.848Z
+llm-request=2026-09-23T16:20:51.874Z
+llm-first-token=2026-09-23T16:20:51.879Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:ending-transition-test] TURN#0 DELTAS
+endpoint-to-release=609ms
+release-to-llm-request=26ms
+llm-to-first-token=5ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[PIPELINE:ending-transition-test] Turn complete: assistant="The workshop is tomorrow at eleven in the morning and it runs for about ninety m..." llmMs=2 ttsMs=undefined
+[RESPONSE-LEN:ending-transition-test] TURN#0 userChars=22 assistantChars=86 estTokens=22 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=0 audioQueuedMs=2182 briefRequested=false
+[PIPELINE:ending-transition-test] run() exiting — state=ENDING aborted=true
+  [PASS] A1. the caller hangs up while the model is generating: no ENDING -> SPEAKING, and no pipeline error is filed
+[PIPELINE:ending-transition-test] run() started — state=LISTENING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:ending-transition-test] Conversation started — speaking fixed greeting, state=LISTENING
+[TIMING:ending-transition-test] GREETING greeting-text-ready +0ms
+[TIMING:ending-transition-test] GREETING tts-request +1ms
+[TIMING:ending-transition-test] GREETING tts-first-chunk +2ms
+[TIMING:ending-transition-test] GREETING audio-queued +2ms
+[PLAYBACK:ending-transition-test] draining 2331ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=1ms)
+[TIMING:ending-transition-test] GREETING SUMMARY total=2337ms greeting-text-ready=0ms tts-request=1ms tts-first-chunk=2ms audio-queued=2ms
+[PIPELINE:ending-transition-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:ending-transition-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:ending-transition-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me about it." evidence-to-llm-open=1ms historyLength=3
+[TIMING:ending-transition-test] TURN END turn-release=1790180455448 text="Yes, tell me about it." sttMs=0
+[STT:ending-transition-test] Transcript received: "Yes, tell me about it." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:ending-transition-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:ending-transition-test] TURN#0 turn-detected +1ms
+[TIMING:ending-transition-test] TURN#0 stt-to-release=610ms (sttLag=n/ams)
+[LANGUAGE:ending-transition-test] call language LOCKED to en on the first meaningful utterance (basis=default-english confidence=0.75 hindiMarkers=0): "Yes, tell me about it."
+[LLM:ending-transition-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:ending-transition-test] TURN#0 llm-request +2ms
+[SPECULATE:ending-transition-test] ADOPTED pre-opened request — llm-request is 610ms after the provider stream was opened (first token already in hand, 610ms ago) evidence-to-llm-open=1ms
+[TIMING:ending-transition-test] TURN#0 llm-first-token +2ms
+[PIPELINE:ending-transition-test] VOICEMAIL DETECTED ("leave a message after") — stopping the agent and hanging up
+[PIPELINE:ending-transition-test] reply SUPERSEDED before it was spoken — the caller has already said something newer (signal=superseded_pending supersederTakesFloor=true charsGenerated=86)
+[TIMING:ending-transition-test] TURN#0 SUMMARY total=53ms turn-detected=1ms llm-request=2ms llm-first-token=2ms
+[TIMING:ending-transition-test] TURN#0
+speech-end=2026-09-23T16:20:54.839Z
+endpoint-evidence=2026-09-23T16:20:54.839Z (speech_final)
+turn-release=2026-09-23T16:20:55.448Z
+llm-request=2026-09-23T16:20:55.450Z
+llm-first-token=2026-09-23T16:20:55.450Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:ending-transition-test] TURN#0 DELTAS
+endpoint-to-release=609ms
+release-to-llm-request=2ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[PIPELINE:ending-transition-test] Turn complete: assistant="The workshop is tomorrow at eleven in the morning and it runs for about ninety m..." llmMs=0 ttsMs=undefined
+[RESPONSE-LEN:ending-transition-test] TURN#0 userChars=22 assistantChars=86 estTokens=22 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=0 audioQueuedMs=2182 briefRequested=false
+[PIPELINE:ending-transition-test] Response #1 CANCELLED by barge-in — heard="" discarded="The workshop is tomorrow at eleven in the morning and it runs for about ninety m..."
+[PIPELINE:ending-transition-test] run() exiting — state=ENDING aborted=true
+  [PASS] A2. VOICEMAIL — the pipeline's OWN host.end route also ends cleanly and files no error
+
+════════════════════════════════════════════════════════════
+2 passed, 0 failed

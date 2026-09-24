@@ -1,0 +1,2615 @@
+
+SECTION A — the loop is bounded
+[PIPELINE:hearing-loop-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:hearing-loop-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:hearing-loop-test] GREETING greeting-text-ready +0ms
+[TIMING:hearing-loop-test] GREETING tts-request +4ms
+[TIMING:hearing-loop-test] GREETING tts-first-chunk +6ms
+[TIMING:hearing-loop-test] GREETING audio-queued +7ms
+[PLAYBACK:hearing-loop-test] draining 2331ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=1ms)
+[TIMING:hearing-loop-test] GREETING SUMMARY total=2355ms greeting-text-ready=0ms tts-request=4ms tts-first-chunk=6ms audio-queued=7ms
+[PIPELINE:hearing-loop-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:hearing-loop-test] entering main loop — state=SPEAKING aborted=false
+[TIMING:hearing-loop-test] TURN END turn-release=1790182360461 text="Hello? Hello?" sttMs=0
+[STT:hearing-loop-test] Transcript received: "Hello? Hello?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#0 turn-detected +1ms
+[TIMING:hearing-loop-test] TURN#0 stt-to-release=157ms (sttLag=n/ams)
+[PIPELINE:hearing-loop-test] hearing check with nothing to resume (before any block) — acknowledging once: "Hey, can you hear me okay?"
+[TIMING:hearing-loop-test] ATTENTION tts-request +0ms
+[TIMING:hearing-loop-test] ATTENTION tts-first-chunk +1ms
+[TIMING:hearing-loop-test] ATTENTION audio-queued +1ms
+[PLAYBACK:hearing-loop-test] draining 1332ms of queued audio before leaving SPEAKING (queued=1182ms elapsed=0ms)
+[TIMING:hearing-loop-test] ATTENTION SUMMARY total=1337ms tts-request=0ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:hearing-loop-test] TURN#0 SUMMARY total=1355ms turn-detected=1ms
+[TIMING:hearing-loop-test] TURN#0
+speech-end=2026-09-23T16:52:40.305Z
+endpoint-evidence=2026-09-23T16:52:40.305Z (speech_final)
+turn-release=2026-09-23T16:52:40.461Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:hearing-loop-test] TURN#0 DELTAS
+endpoint-to-release=156ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[TIMING:hearing-loop-test] TURN END turn-release=1790182361972 text="Hello? Hello?" sttMs=0
+[STT:hearing-loop-test] Transcript received: "Hello? Hello?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#0 turn-detected +1ms
+[TIMING:hearing-loop-test] TURN#0 stt-to-release=153ms (sttLag=n/ams)
+[PIPELINE:hearing-loop-test] hearing check repeated before any block — acknowledging again: "Hey, can you hear me okay?"
+[TIMING:hearing-loop-test] ATTENTION tts-request +0ms
+[TIMING:hearing-loop-test] ATTENTION tts-first-chunk +0ms
+[TIMING:hearing-loop-test] ATTENTION audio-queued +1ms
+[PLAYBACK:hearing-loop-test] draining 1332ms of queued audio before leaving SPEAKING (queued=1182ms elapsed=0ms)
+[TIMING:hearing-loop-test] ATTENTION SUMMARY total=1338ms tts-request=0ms tts-first-chunk=0ms audio-queued=1ms
+[TIMING:hearing-loop-test] TURN#0 SUMMARY total=1341ms turn-detected=1ms
+[TIMING:hearing-loop-test] TURN#0
+speech-end=2026-09-23T16:52:41.820Z
+endpoint-evidence=2026-09-23T16:52:41.820Z (speech_final)
+turn-release=2026-09-23T16:52:41.972Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:hearing-loop-test] TURN#0 DELTAS
+endpoint-to-release=152ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[TIMING:hearing-loop-test] TURN END turn-release=1790182363474 text="Hello? Hello?" sttMs=0
+[STT:hearing-loop-test] Transcript received: "Hello? Hello?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#0 turn-detected +1ms
+[TIMING:hearing-loop-test] TURN#0 stt-to-release=153ms (sttLag=n/ams)
+[PIPELINE:hearing-loop-test] 2 hearing lines already spoken with nothing in between — "Hello? Hello?" takes the contextual path instead of another
+[LLM:hearing-loop-test] Sending to fake-llm: historyLength=7 roles=[system,assistant,user,assistant,user,assistant,user] streaming=true
+[TIMING:hearing-loop-test] TURN#0 llm-request +5ms
+[TIMING:hearing-loop-test] TURN#0 llm-first-token +33ms
+[TIMING:hearing-loop-test] TURN#0 tts-request +36ms
+[TIMING:hearing-loop-test] TURN#0 tts-first-chunk +36ms
+[TIMING:hearing-loop-test] TURN#0 audio-queued +36ms
+[PLAYBACK:hearing-loop-test] draining 1741ms of queued audio before leaving SPEAKING (queued=1591ms elapsed=0ms)
+[TIMING:hearing-loop-test] TURN#0 SUMMARY total=1793ms turn-detected=1ms llm-request=5ms llm-first-token=33ms tts-request=36ms tts-first-chunk=36ms audio-queued=36ms
+[TIMING:hearing-loop-test] TURN#0
+speech-end=2026-09-23T16:52:43.322Z
+endpoint-evidence=2026-09-23T16:52:43.322Z (speech_final)
+turn-release=2026-09-23T16:52:43.474Z
+llm-request=2026-09-23T16:52:43.479Z
+llm-first-token=2026-09-23T16:52:43.507Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T16:52:43.510Z
+tts-first-audio=2026-09-23T16:52:43.510Z
+audio-queued=2026-09-23T16:52:43.510Z
+[TIMING:hearing-loop-test] TURN#0 DELTAS
+endpoint-to-release=152ms
+release-to-llm-request=5ms
+llm-to-first-token=28ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=188ms
+[PIPELINE:hearing-loop-test] Turn complete: assistant="The workshop is tomorrow at eleven." llmMs=26 ttsMs=0
+[RESPONSE-LEN:hearing-loop-test] TURN#0 userChars=13 assistantChars=35 estTokens=9 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1591 briefRequested=false
+[TIMING:hearing-loop-test] TURN END turn-release=1790182365426 text="Hello? Hello?" sttMs=0
+[STT:hearing-loop-test] Transcript received: "Hello? Hello?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#1 turn-detected +2ms
+[TIMING:hearing-loop-test] TURN#1 stt-to-release=157ms (sttLag=n/ams)
+[PIPELINE:hearing-loop-test] 2 hearing lines already spoken with nothing in between — "Hello? Hello?" takes the contextual path instead of another
+[LLM:hearing-loop-test] Sending to fake-llm: historyLength=9 roles=[system,assistant,user,assistant,user,assistant,user,assistant,user] streaming=true
+[TIMING:hearing-loop-test] TURN#1 llm-request +4ms
+[TIMING:hearing-loop-test] TURN#1 llm-first-token +16ms
+[TIMING:hearing-loop-test] TURN#1 tts-request +16ms
+[TIMING:hearing-loop-test] TURN#1 tts-first-chunk +16ms
+[TIMING:hearing-loop-test] TURN#1 audio-queued +16ms
+[PLAYBACK:hearing-loop-test] draining 1649ms of queued audio before leaving SPEAKING (queued=1500ms elapsed=1ms)
+[TIMING:hearing-loop-test] TURN#1 SUMMARY total=1676ms turn-detected=2ms llm-request=4ms llm-first-token=16ms tts-request=16ms tts-first-chunk=16ms audio-queued=16ms
+[TIMING:hearing-loop-test] TURN#1
+speech-end=2026-09-23T16:52:45.271Z
+endpoint-evidence=2026-09-23T16:52:45.271Z (speech_final)
+turn-release=2026-09-23T16:52:45.426Z
+llm-request=2026-09-23T16:52:45.430Z
+llm-first-token=2026-09-23T16:52:45.442Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T16:52:45.442Z
+tts-first-audio=2026-09-23T16:52:45.442Z
+audio-queued=2026-09-23T16:52:45.442Z
+[TIMING:hearing-loop-test] TURN#1 DELTAS
+endpoint-to-release=155ms
+release-to-llm-request=4ms
+llm-to-first-token=12ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=171ms
+[PIPELINE:hearing-loop-test] Turn complete: assistant="It runs for about ninety minutes." llmMs=12 ttsMs=0
+[RESPONSE-LEN:hearing-loop-test] TURN#1 userChars=13 assistantChars=33 estTokens=9 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1500 briefRequested=false
+[PIPELINE:hearing-loop-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:hearing-loop-test] run() exiting — state=LISTENING aborted=true
+  [PASS] A1 — before any block, "Hello? Hello?" four times produces at most TWO fixed lines
+[PIPELINE:hearing-loop-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:hearing-loop-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:hearing-loop-test] GREETING greeting-text-ready +0ms
+[TIMING:hearing-loop-test] GREETING tts-request +0ms
+[TIMING:hearing-loop-test] GREETING tts-first-chunk +1ms
+[TIMING:hearing-loop-test] GREETING audio-queued +1ms
+[PLAYBACK:hearing-loop-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:hearing-loop-test] GREETING SUMMARY total=2345ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:hearing-loop-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:hearing-loop-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:hearing-loop-test] LLM request PRE-OPENED on speech_final evidence: text="Hi, tell me." evidence-to-llm-open=5ms historyLength=3
+[TIMING:hearing-loop-test] TURN END turn-release=1790182369647 text="Hi, tell me." sttMs=0
+[STT:hearing-loop-test] Transcript received: "Hi, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#0 turn-detected +2ms
+[TIMING:hearing-loop-test] TURN#0 stt-to-release=165ms (sttLag=n/ams)
+[LLM:hearing-loop-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:hearing-loop-test] TURN#0 llm-request +7ms
+[SPECULATE:hearing-loop-test] ADOPTED pre-opened request — llm-request is 164ms after the provider stream was opened (first token already in hand, 138ms ago) evidence-to-llm-open=5ms
+[TIMING:hearing-loop-test] TURN#0 llm-first-token +7ms
+[TIMING:hearing-loop-test] TURN#0 tts-request +8ms
+[TIMING:hearing-loop-test] TURN#0 tts-first-chunk +9ms
+[TIMING:hearing-loop-test] TURN#0 audio-queued +9ms
+[PLAYBACK:hearing-loop-test] draining 1736ms of queued audio before leaving SPEAKING (queued=1591ms elapsed=5ms)
+[TIMING:hearing-loop-test] TURN#0 SUMMARY total=1750ms turn-detected=2ms llm-request=7ms llm-first-token=7ms tts-request=8ms tts-first-chunk=9ms audio-queued=9ms
+[TIMING:hearing-loop-test] TURN#0
+speech-end=2026-09-23T16:52:49.484Z
+endpoint-evidence=2026-09-23T16:52:49.485Z (speech_final)
+turn-release=2026-09-23T16:52:49.647Z
+llm-request=2026-09-23T16:52:49.654Z
+llm-first-token=2026-09-23T16:52:49.654Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T16:52:49.655Z
+tts-first-audio=2026-09-23T16:52:49.656Z
+audio-queued=2026-09-23T16:52:49.656Z
+[TIMING:hearing-loop-test] TURN#0 DELTAS
+endpoint-to-release=162ms
+release-to-llm-request=7ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=1ms
+first-audio-to-queue=0ms
+speech-end-to-audio=172ms
+[PIPELINE:hearing-loop-test] Turn complete: assistant="The workshop is tomorrow at eleven." llmMs=26 ttsMs=0
+[RESPONSE-LEN:hearing-loop-test] TURN#0 userChars=12 assistantChars=35 estTokens=9 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1591 briefRequested=false
+[TIMING:hearing-loop-test] TURN END turn-release=1790182371573 text="Hello?" sttMs=0
+[STT:hearing-loop-test] Transcript received: "Hello?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#1 turn-detected +0ms
+[TIMING:hearing-loop-test] TURN#1 stt-to-release=160ms (sttLag=n/ams)
+[LLM:hearing-loop-test] Sending to fake-llm: historyLength=5 roles=[system,assistant,user,assistant,user] streaming=true
+[TIMING:hearing-loop-test] TURN#1 llm-request +1ms
+[TIMING:hearing-loop-test] TURN#1 llm-first-token +16ms
+[TIMING:hearing-loop-test] TURN#1 tts-request +17ms
+[TIMING:hearing-loop-test] TURN#1 tts-first-chunk +18ms
+[TIMING:hearing-loop-test] TURN#1 audio-queued +18ms
+[PLAYBACK:hearing-loop-test] draining 1650ms of queued audio before leaving SPEAKING (queued=1500ms elapsed=0ms)
+[TIMING:hearing-loop-test] TURN#1 SUMMARY total=1685ms turn-detected=0ms llm-request=1ms llm-first-token=16ms tts-request=17ms tts-first-chunk=18ms audio-queued=18ms
+[TIMING:hearing-loop-test] TURN#1
+speech-end=2026-09-23T16:52:51.413Z
+endpoint-evidence=2026-09-23T16:52:51.413Z (speech_final)
+turn-release=2026-09-23T16:52:51.573Z
+llm-request=2026-09-23T16:52:51.574Z
+llm-first-token=2026-09-23T16:52:51.589Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T16:52:51.590Z
+tts-first-audio=2026-09-23T16:52:51.591Z
+audio-queued=2026-09-23T16:52:51.591Z
+[TIMING:hearing-loop-test] TURN#1 DELTAS
+endpoint-to-release=160ms
+release-to-llm-request=1ms
+llm-to-first-token=15ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=1ms
+first-audio-to-queue=0ms
+speech-end-to-audio=178ms
+[PIPELINE:hearing-loop-test] Turn complete: assistant="It runs for about ninety minutes." llmMs=15 ttsMs=1
+[RESPONSE-LEN:hearing-loop-test] TURN#1 userChars=6 assistantChars=33 estTokens=9 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1500 briefRequested=false
+[TIMING:hearing-loop-test] TURN END turn-release=1790182373415 text="Hello?" sttMs=0
+[STT:hearing-loop-test] Transcript received: "Hello?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#2 turn-detected +1ms
+[TIMING:hearing-loop-test] TURN#2 stt-to-release=156ms (sttLag=n/ams)
+[PIPELINE:hearing-loop-test] hearing check with nothing to resume (after a block) — acknowledging once: "Hey, can you hear me okay?"
+[TIMING:hearing-loop-test] ATTENTION tts-request +0ms
+[TIMING:hearing-loop-test] ATTENTION tts-first-chunk +0ms
+[TIMING:hearing-loop-test] ATTENTION audio-queued +0ms
+[PLAYBACK:hearing-loop-test] draining 1331ms of queued audio before leaving SPEAKING (queued=1182ms elapsed=1ms)
+[TIMING:hearing-loop-test] ATTENTION SUMMARY total=1343ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:hearing-loop-test] TURN#2 SUMMARY total=1346ms turn-detected=1ms
+[TIMING:hearing-loop-test] TURN#2
+speech-end=2026-09-23T16:52:53.260Z
+endpoint-evidence=2026-09-23T16:52:53.260Z (speech_final)
+turn-release=2026-09-23T16:52:53.415Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:hearing-loop-test] TURN#2 DELTAS
+endpoint-to-release=155ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[TIMING:hearing-loop-test] TURN END turn-release=1790182374945 text="Hello?" sttMs=0
+[STT:hearing-loop-test] Transcript received: "Hello?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#2 turn-detected +1ms
+[TIMING:hearing-loop-test] TURN#2 stt-to-release=153ms (sttLag=n/ams)
+[PIPELINE:hearing-loop-test] hearing check answered — following up once: "I just want to make sure you can hear me. Did you catch what I was saying?"
+[TIMING:hearing-loop-test] ATTENTION tts-request +1ms
+[TIMING:hearing-loop-test] ATTENTION tts-first-chunk +1ms
+[TIMING:hearing-loop-test] ATTENTION audio-queued +1ms
+[PLAYBACK:hearing-loop-test] draining 3514ms of queued audio before leaving SPEAKING (queued=3364ms elapsed=0ms)
+[TIMING:hearing-loop-test] ATTENTION SUMMARY total=3529ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:hearing-loop-test] TURN#2 SUMMARY total=3530ms turn-detected=1ms
+[TIMING:hearing-loop-test] TURN#2
+speech-end=2026-09-23T16:52:54.793Z
+endpoint-evidence=2026-09-23T16:52:54.793Z (speech_final)
+turn-release=2026-09-23T16:52:54.945Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:hearing-loop-test] TURN#2 DELTAS
+endpoint-to-release=152ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[TIMING:hearing-loop-test] TURN END turn-release=1790182378651 text="Hello?" sttMs=0
+[STT:hearing-loop-test] Transcript received: "Hello?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#2 turn-detected +0ms
+[TIMING:hearing-loop-test] TURN#2 stt-to-release=159ms (sttLag=n/ams)
+[PIPELINE:hearing-loop-test] 2 hearing lines already spoken with nothing in between — "Hello?" takes the contextual path instead of another
+[LLM:hearing-loop-test] Sending to fake-llm: historyLength=11 roles=[system,assistant,user,assistant,user,assistant,user,assistant,user,assistant,user] streaming=true
+[TIMING:hearing-loop-test] TURN#2 llm-request +2ms
+[TIMING:hearing-loop-test] TURN#2 llm-first-token +15ms
+[TIMING:hearing-loop-test] TURN#2 tts-request +15ms
+[TIMING:hearing-loop-test] TURN#2 tts-first-chunk +16ms
+[TIMING:hearing-loop-test] TURN#2 audio-queued +16ms
+[PLAYBACK:hearing-loop-test] draining 1332ms of queued audio before leaving SPEAKING (queued=1182ms elapsed=0ms)
+[TIMING:hearing-loop-test] TURN#2 SUMMARY total=1359ms turn-detected=0ms llm-request=2ms llm-first-token=15ms tts-request=15ms tts-first-chunk=16ms audio-queued=16ms
+[TIMING:hearing-loop-test] TURN#2
+speech-end=2026-09-23T16:52:58.492Z
+endpoint-evidence=2026-09-23T16:52:58.492Z (speech_final)
+turn-release=2026-09-23T16:52:58.651Z
+llm-request=2026-09-23T16:52:58.653Z
+llm-first-token=2026-09-23T16:52:58.666Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T16:52:58.666Z
+tts-first-audio=2026-09-23T16:52:58.667Z
+audio-queued=2026-09-23T16:52:58.667Z
+[TIMING:hearing-loop-test] TURN#2 DELTAS
+endpoint-to-release=159ms
+release-to-llm-request=2ms
+llm-to-first-token=13ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=1ms
+first-audio-to-queue=0ms
+speech-end-to-audio=175ms
+[PIPELINE:hearing-loop-test] Turn complete: assistant="There is no charge for it." llmMs=13 ttsMs=0
+[RESPONSE-LEN:hearing-loop-test] TURN#2 userChars=6 assistantChars=26 estTokens=7 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1182 briefRequested=false
+[PIPELINE:hearing-loop-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:hearing-loop-test] run() exiting — state=LISTENING aborted=true
+  [PASS] A2 — after a block, "Hello?" four times produces ONE acknowledgement and ONE follow-up, then stops
+[PIPELINE:hearing-loop-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:hearing-loop-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:hearing-loop-test] GREETING greeting-text-ready +0ms
+[TIMING:hearing-loop-test] GREETING tts-request +0ms
+[TIMING:hearing-loop-test] GREETING tts-first-chunk +0ms
+[TIMING:hearing-loop-test] GREETING audio-queued +0ms
+[PLAYBACK:hearing-loop-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:hearing-loop-test] GREETING SUMMARY total=2339ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:hearing-loop-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:hearing-loop-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:hearing-loop-test] LLM request PRE-OPENED on speech_final evidence: text="Hi, tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:hearing-loop-test] TURN END turn-release=1790182382523 text="Hi, tell me." sttMs=0
+[STT:hearing-loop-test] Transcript received: "Hi, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#0 turn-detected +1ms
+[TIMING:hearing-loop-test] TURN#0 stt-to-release=158ms (sttLag=n/ams)
+[LLM:hearing-loop-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:hearing-loop-test] TURN#0 llm-request +2ms
+[SPECULATE:hearing-loop-test] ADOPTED pre-opened request — llm-request is 159ms after the provider stream was opened (first token already in hand, 133ms ago) evidence-to-llm-open=0ms
+[TIMING:hearing-loop-test] TURN#0 llm-first-token +2ms
+[TIMING:hearing-loop-test] TURN#0 tts-request +2ms
+[TIMING:hearing-loop-test] TURN#0 tts-first-chunk +3ms
+[TIMING:hearing-loop-test] TURN#0 audio-queued +3ms
+[PLAYBACK:hearing-loop-test] draining 1741ms of queued audio before leaving SPEAKING (queued=1591ms elapsed=0ms)
+[TIMING:hearing-loop-test] TURN#0 SUMMARY total=1748ms turn-detected=1ms llm-request=2ms llm-first-token=2ms tts-request=2ms tts-first-chunk=3ms audio-queued=3ms
+[TIMING:hearing-loop-test] TURN#0
+speech-end=2026-09-23T16:53:02.366Z
+endpoint-evidence=2026-09-23T16:53:02.366Z (speech_final)
+turn-release=2026-09-23T16:53:02.523Z
+llm-request=2026-09-23T16:53:02.525Z
+llm-first-token=2026-09-23T16:53:02.525Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T16:53:02.525Z
+tts-first-audio=2026-09-23T16:53:02.526Z
+audio-queued=2026-09-23T16:53:02.526Z
+[TIMING:hearing-loop-test] TURN#0 DELTAS
+endpoint-to-release=157ms
+release-to-llm-request=2ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=1ms
+first-audio-to-queue=0ms
+speech-end-to-audio=160ms
+[PIPELINE:hearing-loop-test] Turn complete: assistant="The workshop is tomorrow at eleven." llmMs=26 ttsMs=1
+[RESPONSE-LEN:hearing-loop-test] TURN#0 userChars=12 assistantChars=35 estTokens=9 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1591 briefRequested=false
+[TIMING:hearing-loop-test] TURN END turn-release=1790182384463 text="Can you hear me?" sttMs=0
+[STT:hearing-loop-test] Transcript received: "Can you hear me?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#1 turn-detected +0ms
+[TIMING:hearing-loop-test] TURN#1 stt-to-release=160ms (sttLag=n/ams)
+[PIPELINE:hearing-loop-test] hearing check with nothing to resume (after a block) — acknowledging once: "Hey, can you hear me okay?"
+[TIMING:hearing-loop-test] ATTENTION tts-request +0ms
+[TIMING:hearing-loop-test] ATTENTION tts-first-chunk +1ms
+[TIMING:hearing-loop-test] ATTENTION audio-queued +1ms
+[PLAYBACK:hearing-loop-test] draining 1332ms of queued audio before leaving SPEAKING (queued=1182ms elapsed=0ms)
+[TIMING:hearing-loop-test] ATTENTION SUMMARY total=1335ms tts-request=0ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:hearing-loop-test] TURN#1 SUMMARY total=1336ms turn-detected=0ms
+[TIMING:hearing-loop-test] TURN#1
+speech-end=2026-09-23T16:53:04.303Z
+endpoint-evidence=2026-09-23T16:53:04.303Z (speech_final)
+turn-release=2026-09-23T16:53:04.463Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:hearing-loop-test] TURN#1 DELTAS
+endpoint-to-release=160ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[TIMING:hearing-loop-test] TURN END turn-release=1790182385989 text="Are you there?" sttMs=0
+[STT:hearing-loop-test] Transcript received: "Are you there?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#1 turn-detected +1ms
+[TIMING:hearing-loop-test] TURN#1 stt-to-release=159ms (sttLag=n/ams)
+[PIPELINE:hearing-loop-test] hearing check answered — following up once: "I just want to make sure you can hear me. Did you catch what I was saying?"
+[TIMING:hearing-loop-test] ATTENTION tts-request +0ms
+[TIMING:hearing-loop-test] ATTENTION tts-first-chunk +0ms
+[TIMING:hearing-loop-test] ATTENTION audio-queued +0ms
+[PLAYBACK:hearing-loop-test] draining 3514ms of queued audio before leaving SPEAKING (queued=3364ms elapsed=0ms)
+[TIMING:hearing-loop-test] ATTENTION SUMMARY total=3517ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:hearing-loop-test] TURN#1 SUMMARY total=3519ms turn-detected=1ms
+[TIMING:hearing-loop-test] TURN#1
+speech-end=2026-09-23T16:53:05.831Z
+endpoint-evidence=2026-09-23T16:53:05.831Z (speech_final)
+turn-release=2026-09-23T16:53:05.989Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:hearing-loop-test] TURN#1 DELTAS
+endpoint-to-release=158ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[TIMING:hearing-loop-test] TURN END turn-release=1790182389683 text="Can you hear me?" sttMs=0
+[STT:hearing-loop-test] Transcript received: "Can you hear me?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#1 turn-detected +1ms
+[TIMING:hearing-loop-test] TURN#1 stt-to-release=160ms (sttLag=n/ams)
+[PIPELINE:hearing-loop-test] 2 hearing lines already spoken with nothing in between — "Can you hear me?" takes the contextual path instead of another
+[LLM:hearing-loop-test] Sending to fake-llm: historyLength=9 roles=[system,assistant,user,assistant,user,assistant,user,assistant,user] streaming=true
+[TIMING:hearing-loop-test] TURN#1 llm-request +2ms
+[TIMING:hearing-loop-test] TURN#1 llm-first-token +16ms
+[TIMING:hearing-loop-test] TURN#1 tts-request +17ms
+[TIMING:hearing-loop-test] TURN#1 tts-first-chunk +17ms
+[TIMING:hearing-loop-test] TURN#1 audio-queued +17ms
+[PLAYBACK:hearing-loop-test] draining 1650ms of queued audio before leaving SPEAKING (queued=1500ms elapsed=0ms)
+[TIMING:hearing-loop-test] TURN#1 SUMMARY total=1671ms turn-detected=1ms llm-request=2ms llm-first-token=16ms tts-request=17ms tts-first-chunk=17ms audio-queued=17ms
+[TIMING:hearing-loop-test] TURN#1
+speech-end=2026-09-23T16:53:09.524Z
+endpoint-evidence=2026-09-23T16:53:09.524Z (speech_final)
+turn-release=2026-09-23T16:53:09.683Z
+llm-request=2026-09-23T16:53:09.685Z
+llm-first-token=2026-09-23T16:53:09.699Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T16:53:09.700Z
+tts-first-audio=2026-09-23T16:53:09.700Z
+audio-queued=2026-09-23T16:53:09.700Z
+[TIMING:hearing-loop-test] TURN#1 DELTAS
+endpoint-to-release=159ms
+release-to-llm-request=2ms
+llm-to-first-token=14ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=176ms
+[PIPELINE:hearing-loop-test] Turn complete: assistant="It runs for about ninety minutes." llmMs=14 ttsMs=0
+[RESPONSE-LEN:hearing-loop-test] TURN#1 userChars=16 assistantChars=33 estTokens=9 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1500 briefRequested=false
+[PIPELINE:hearing-loop-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:hearing-loop-test] run() exiting — state=LISTENING aborted=true
+  [PASS] A3 — "Can you hear me?" repeated is bounded the same way as "Hello?"
+[PIPELINE:hearing-loop-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:hearing-loop-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:hearing-loop-test] GREETING greeting-text-ready +0ms
+[TIMING:hearing-loop-test] GREETING tts-request +0ms
+[TIMING:hearing-loop-test] GREETING tts-first-chunk +0ms
+[TIMING:hearing-loop-test] GREETING audio-queued +1ms
+[PLAYBACK:hearing-loop-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:hearing-loop-test] GREETING SUMMARY total=2348ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=1ms
+[PIPELINE:hearing-loop-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:hearing-loop-test] entering main loop — state=SPEAKING aborted=false
+[TIMING:hearing-loop-test] TURN END turn-release=1790182393885 text="Hello? Hello?" sttMs=0
+[STT:hearing-loop-test] Transcript received: "Hello? Hello?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#0 turn-detected +1ms
+[TIMING:hearing-loop-test] TURN#0 stt-to-release=163ms (sttLag=n/ams)
+[PIPELINE:hearing-loop-test] hearing check with nothing to resume (before any block) — acknowledging once: "Hey, can you hear me okay?"
+[TIMING:hearing-loop-test] ATTENTION tts-request +0ms
+[TIMING:hearing-loop-test] ATTENTION tts-first-chunk +1ms
+[TIMING:hearing-loop-test] ATTENTION audio-queued +1ms
+[PLAYBACK:hearing-loop-test] draining 1332ms of queued audio before leaving SPEAKING (queued=1182ms elapsed=0ms)
+[TIMING:hearing-loop-test] ATTENTION SUMMARY total=1337ms tts-request=0ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:hearing-loop-test] TURN#0 SUMMARY total=1340ms turn-detected=1ms
+[TIMING:hearing-loop-test] TURN#0
+speech-end=2026-09-23T16:53:13.723Z
+endpoint-evidence=2026-09-23T16:53:13.723Z (speech_final)
+turn-release=2026-09-23T16:53:13.885Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:hearing-loop-test] TURN#0 DELTAS
+endpoint-to-release=162ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[TIMING:hearing-loop-test] TURN END turn-release=1790182395559 text="haan ji" sttMs=0
+[STT:hearing-loop-test] Transcript received: "haan ji" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#0 turn-detected +1ms
+[TIMING:hearing-loop-test] TURN#0 stt-to-release=304ms (sttLag=n/ams)
+[LANGUAGE:hearing-loop-test] per-turn detection hi IGNORED — a no-floor utterance (basis=roman-markers); active language stays en: "haan ji"
+[PIPELINE:hearing-loop-test] hearing check repeated before any block — acknowledging again: "Hey, can you hear me okay?"
+[TIMING:hearing-loop-test] ATTENTION tts-request +0ms
+[TIMING:hearing-loop-test] ATTENTION tts-first-chunk +0ms
+[TIMING:hearing-loop-test] ATTENTION audio-queued +0ms
+[PLAYBACK:hearing-loop-test] draining 1332ms of queued audio before leaving SPEAKING (queued=1182ms elapsed=0ms)
+[TIMING:hearing-loop-test] ATTENTION SUMMARY total=1340ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:hearing-loop-test] TURN#0 SUMMARY total=1342ms turn-detected=1ms
+[TIMING:hearing-loop-test] TURN#0
+speech-end=2026-09-23T16:53:15.256Z
+endpoint-evidence=2026-09-23T16:53:15.256Z (speech_final)
+turn-release=2026-09-23T16:53:15.559Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:hearing-loop-test] TURN#0 DELTAS
+endpoint-to-release=303ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[TIMING:hearing-loop-test] TURN END turn-release=1790182397075 text="Hello? Hello?" sttMs=0
+[STT:hearing-loop-test] Transcript received: "Hello? Hello?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#0 turn-detected +0ms
+[TIMING:hearing-loop-test] TURN#0 stt-to-release=158ms (sttLag=n/ams)
+[PIPELINE:hearing-loop-test] 2 hearing lines already spoken with nothing in between — "Hello? Hello?" takes the contextual path instead of another
+[LLM:hearing-loop-test] Sending to fake-llm: historyLength=7 roles=[system,assistant,user,assistant,user,assistant,user] streaming=true
+[TIMING:hearing-loop-test] TURN#0 llm-request +1ms
+[TIMING:hearing-loop-test] TURN#0 llm-first-token +16ms
+[TIMING:hearing-loop-test] TURN#0 tts-request +16ms
+[TIMING:hearing-loop-test] TURN#0 tts-first-chunk +17ms
+[TIMING:hearing-loop-test] TURN#0 audio-queued +17ms
+[PLAYBACK:hearing-loop-test] draining 1741ms of queued audio before leaving SPEAKING (queued=1591ms elapsed=0ms)
+[TIMING:hearing-loop-test] TURN#0 SUMMARY total=1770ms turn-detected=0ms llm-request=1ms llm-first-token=16ms tts-request=16ms tts-first-chunk=17ms audio-queued=17ms
+[TIMING:hearing-loop-test] TURN#0
+speech-end=2026-09-23T16:53:16.917Z
+endpoint-evidence=2026-09-23T16:53:16.917Z (speech_final)
+turn-release=2026-09-23T16:53:17.075Z
+llm-request=2026-09-23T16:53:17.076Z
+llm-first-token=2026-09-23T16:53:17.091Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T16:53:17.091Z
+tts-first-audio=2026-09-23T16:53:17.092Z
+audio-queued=2026-09-23T16:53:17.092Z
+[TIMING:hearing-loop-test] TURN#0 DELTAS
+endpoint-to-release=158ms
+release-to-llm-request=1ms
+llm-to-first-token=15ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=1ms
+first-audio-to-queue=0ms
+speech-end-to-audio=175ms
+[PIPELINE:hearing-loop-test] Turn complete: assistant="The workshop is tomorrow at eleven." llmMs=15 ttsMs=1
+[RESPONSE-LEN:hearing-loop-test] TURN#0 userChars=13 assistantChars=35 estTokens=9 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1591 briefRequested=false
+[PIPELINE:hearing-loop-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:hearing-loop-test] run() exiting — state=LISTENING aborted=true
+  [PASS] A4 — an utterance that is BOTH a check and a confirmation ("haan ji") cannot re-open the loop
+
+SECTION B — reset and recovery after a meaningful user turn
+[PIPELINE:hearing-loop-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:hearing-loop-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:hearing-loop-test] GREETING greeting-text-ready +0ms
+[TIMING:hearing-loop-test] GREETING tts-request +1ms
+[TIMING:hearing-loop-test] GREETING tts-first-chunk +1ms
+[TIMING:hearing-loop-test] GREETING audio-queued +1ms
+[PLAYBACK:hearing-loop-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:hearing-loop-test] GREETING SUMMARY total=2336ms greeting-text-ready=0ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:hearing-loop-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:hearing-loop-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:hearing-loop-test] LLM request PRE-OPENED on speech_final evidence: text="Hi, tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:hearing-loop-test] TURN END turn-release=1790182401375 text="Hi, tell me." sttMs=0
+[STT:hearing-loop-test] Transcript received: "Hi, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#0 turn-detected +1ms
+[TIMING:hearing-loop-test] TURN#0 stt-to-release=161ms (sttLag=n/ams)
+[LLM:hearing-loop-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:hearing-loop-test] TURN#0 llm-request +1ms
+[SPECULATE:hearing-loop-test] ADOPTED pre-opened request — llm-request is 160ms after the provider stream was opened (first token already in hand, 145ms ago) evidence-to-llm-open=0ms
+[TIMING:hearing-loop-test] TURN#0 llm-first-token +2ms
+[TIMING:hearing-loop-test] TURN#0 tts-request +2ms
+[TIMING:hearing-loop-test] TURN#0 tts-first-chunk +2ms
+[TIMING:hearing-loop-test] TURN#0 audio-queued +2ms
+[PLAYBACK:hearing-loop-test] draining 1741ms of queued audio before leaving SPEAKING (queued=1591ms elapsed=0ms)
+[TIMING:hearing-loop-test] TURN#0 SUMMARY total=1744ms turn-detected=1ms llm-request=1ms llm-first-token=2ms tts-request=2ms tts-first-chunk=2ms audio-queued=2ms
+[TIMING:hearing-loop-test] TURN#0
+speech-end=2026-09-23T16:53:21.215Z
+endpoint-evidence=2026-09-23T16:53:21.216Z (speech_final)
+turn-release=2026-09-23T16:53:21.375Z
+llm-request=2026-09-23T16:53:21.376Z
+llm-first-token=2026-09-23T16:53:21.377Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T16:53:21.377Z
+tts-first-audio=2026-09-23T16:53:21.377Z
+audio-queued=2026-09-23T16:53:21.377Z
+[TIMING:hearing-loop-test] TURN#0 DELTAS
+endpoint-to-release=159ms
+release-to-llm-request=1ms
+llm-to-first-token=1ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=162ms
+[PIPELINE:hearing-loop-test] Turn complete: assistant="The workshop is tomorrow at eleven." llmMs=15 ttsMs=0
+[RESPONSE-LEN:hearing-loop-test] TURN#0 userChars=12 assistantChars=35 estTokens=9 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1591 briefRequested=false
+[TIMING:hearing-loop-test] TURN END turn-release=1790182403309 text="Hello? Hello?" sttMs=0
+[STT:hearing-loop-test] Transcript received: "Hello? Hello?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#1 turn-detected +0ms
+[TIMING:hearing-loop-test] TURN#1 stt-to-release=159ms (sttLag=n/ams)
+[PIPELINE:hearing-loop-test] hearing check with nothing to resume (after a block) — acknowledging once: "Hey, can you hear me okay?"
+[TIMING:hearing-loop-test] ATTENTION tts-request +0ms
+[TIMING:hearing-loop-test] ATTENTION tts-first-chunk +0ms
+[TIMING:hearing-loop-test] ATTENTION audio-queued +0ms
+[PLAYBACK:hearing-loop-test] draining 1332ms of queued audio before leaving SPEAKING (queued=1182ms elapsed=0ms)
+[TIMING:hearing-loop-test] ATTENTION SUMMARY total=1341ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:hearing-loop-test] TURN#1 SUMMARY total=1343ms turn-detected=0ms
+[TIMING:hearing-loop-test] TURN#1
+speech-end=2026-09-23T16:53:23.150Z
+endpoint-evidence=2026-09-23T16:53:23.150Z (speech_final)
+turn-release=2026-09-23T16:53:23.309Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:hearing-loop-test] TURN#1 DELTAS
+endpoint-to-release=159ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[TIMING:hearing-loop-test] TURN END turn-release=1790182404826 text="Hello?" sttMs=0
+[STT:hearing-loop-test] Transcript received: "Hello?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#1 turn-detected +1ms
+[TIMING:hearing-loop-test] TURN#1 stt-to-release=160ms (sttLag=n/ams)
+[PIPELINE:hearing-loop-test] hearing check answered — following up once: "I just want to make sure you can hear me. Did you catch what I was saying?"
+[TIMING:hearing-loop-test] ATTENTION tts-request +0ms
+[TIMING:hearing-loop-test] ATTENTION tts-first-chunk +1ms
+[TIMING:hearing-loop-test] ATTENTION audio-queued +1ms
+[PLAYBACK:hearing-loop-test] draining 3514ms of queued audio before leaving SPEAKING (queued=3364ms elapsed=0ms)
+[TIMING:hearing-loop-test] ATTENTION SUMMARY total=3517ms tts-request=0ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:hearing-loop-test] TURN#1 SUMMARY total=3518ms turn-detected=1ms
+[TIMING:hearing-loop-test] TURN#1
+speech-end=2026-09-23T16:53:24.667Z
+endpoint-evidence=2026-09-23T16:53:24.667Z (speech_final)
+turn-release=2026-09-23T16:53:24.826Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:hearing-loop-test] TURN#1 DELTAS
+endpoint-to-release=159ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[SPECULATE:hearing-loop-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, I heard you. What is the workshop about?" evidence-to-llm-open=0ms historyLength=9
+[TIMING:hearing-loop-test] TURN END turn-release=1790182408632 text="Yes, I heard you. What is the workshop about?" sttMs=0
+[STT:hearing-loop-test] Transcript received: "Yes, I heard you. What is the workshop about?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#1 turn-detected +0ms
+[TIMING:hearing-loop-test] TURN#1 stt-to-release=256ms (sttLag=n/ams)
+[LANGUAGE:hearing-loop-test] call language LOCKED to en on the first meaningful utterance (basis=default-english confidence=0.75 hindiMarkers=0): "Yes, I heard you. What is the workshop about?"
+[LLM:hearing-loop-test] Sending to fake-llm: historyLength=9 roles=[system,assistant,user,assistant,user,assistant,user,assistant,user] streaming=true
+[TIMING:hearing-loop-test] TURN#1 llm-request +2ms
+[SPECULATE:hearing-loop-test] ADOPTED pre-opened request — llm-request is 258ms after the provider stream was opened (first token already in hand, 243ms ago) evidence-to-llm-open=0ms
+[TIMING:hearing-loop-test] TURN#1 llm-first-token +2ms
+[TIMING:hearing-loop-test] TURN#1 tts-request +2ms
+[TIMING:hearing-loop-test] TURN#1 tts-first-chunk +2ms
+[TIMING:hearing-loop-test] TURN#1 audio-queued +3ms
+[PLAYBACK:hearing-loop-test] draining 1650ms of queued audio before leaving SPEAKING (queued=1500ms elapsed=0ms)
+[TIMING:hearing-loop-test] TURN#1 SUMMARY total=1660ms turn-detected=0ms llm-request=2ms llm-first-token=2ms tts-request=2ms tts-first-chunk=2ms audio-queued=3ms
+[TIMING:hearing-loop-test] TURN#1
+speech-end=2026-09-23T16:53:28.376Z
+endpoint-evidence=2026-09-23T16:53:28.376Z (speech_final)
+turn-release=2026-09-23T16:53:28.632Z
+llm-request=2026-09-23T16:53:28.634Z
+llm-first-token=2026-09-23T16:53:28.634Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T16:53:28.634Z
+tts-first-audio=2026-09-23T16:53:28.634Z
+audio-queued=2026-09-23T16:53:28.635Z
+[TIMING:hearing-loop-test] TURN#1 DELTAS
+endpoint-to-release=256ms
+release-to-llm-request=2ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=1ms
+speech-end-to-audio=259ms
+[PIPELINE:hearing-loop-test] Turn complete: assistant="It runs for about ninety minutes." llmMs=15 ttsMs=0
+[RESPONSE-LEN:hearing-loop-test] TURN#1 userChars=45 assistantChars=33 estTokens=9 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1500 briefRequested=false
+[TIMING:hearing-loop-test] TURN END turn-release=1790182410484 text="Hello? Hello?" sttMs=0
+[STT:hearing-loop-test] Transcript received: "Hello? Hello?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#2 turn-detected +0ms
+[TIMING:hearing-loop-test] TURN#2 stt-to-release=160ms (sttLag=n/ams)
+[PIPELINE:hearing-loop-test] hearing check with nothing to resume (after a block) — acknowledging once: "Hey, can you hear me okay?"
+[TIMING:hearing-loop-test] ATTENTION tts-request +0ms
+[TIMING:hearing-loop-test] ATTENTION tts-first-chunk +0ms
+[TIMING:hearing-loop-test] ATTENTION audio-queued +0ms
+[PLAYBACK:hearing-loop-test] draining 1332ms of queued audio before leaving SPEAKING (queued=1182ms elapsed=0ms)
+[TIMING:hearing-loop-test] ATTENTION SUMMARY total=1341ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:hearing-loop-test] TURN#2 SUMMARY total=1342ms turn-detected=0ms
+[TIMING:hearing-loop-test] TURN#2
+speech-end=2026-09-23T16:53:30.324Z
+endpoint-evidence=2026-09-23T16:53:30.324Z (speech_final)
+turn-release=2026-09-23T16:53:30.484Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:hearing-loop-test] TURN#2 DELTAS
+endpoint-to-release=160ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[PIPELINE:hearing-loop-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:hearing-loop-test] run() exiting — state=LISTENING aborted=true
+  [PASS] B1 — a real contribution resets the cap: a later hearing check is acknowledged again
+[PIPELINE:hearing-loop-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:hearing-loop-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:hearing-loop-test] GREETING greeting-text-ready +0ms
+[TIMING:hearing-loop-test] GREETING tts-request +1ms
+[TIMING:hearing-loop-test] GREETING tts-first-chunk +1ms
+[TIMING:hearing-loop-test] GREETING audio-queued +1ms
+[PLAYBACK:hearing-loop-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:hearing-loop-test] GREETING SUMMARY total=2344ms greeting-text-ready=0ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:hearing-loop-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:hearing-loop-test] entering main loop — state=SPEAKING aborted=false
+[TIMING:hearing-loop-test] TURN END turn-release=1790182414363 text="Hello? Hello?" sttMs=0
+[STT:hearing-loop-test] Transcript received: "Hello? Hello?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#0 turn-detected +0ms
+[TIMING:hearing-loop-test] TURN#0 stt-to-release=159ms (sttLag=n/ams)
+[PIPELINE:hearing-loop-test] hearing check with nothing to resume (before any block) — acknowledging once: "Hey, can you hear me okay?"
+[TIMING:hearing-loop-test] ATTENTION tts-request +0ms
+[TIMING:hearing-loop-test] ATTENTION tts-first-chunk +0ms
+[TIMING:hearing-loop-test] ATTENTION audio-queued +0ms
+[PLAYBACK:hearing-loop-test] draining 1332ms of queued audio before leaving SPEAKING (queued=1182ms elapsed=0ms)
+[TIMING:hearing-loop-test] ATTENTION SUMMARY total=1341ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:hearing-loop-test] TURN#0 SUMMARY total=1342ms turn-detected=0ms
+[TIMING:hearing-loop-test] TURN#0
+speech-end=2026-09-23T16:53:34.205Z
+endpoint-evidence=2026-09-23T16:53:34.205Z (speech_final)
+turn-release=2026-09-23T16:53:34.363Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:hearing-loop-test] TURN#0 DELTAS
+endpoint-to-release=158ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[TIMING:hearing-loop-test] TURN END turn-release=1790182416345 text="Yes, I can hear you." sttMs=0
+[STT:hearing-loop-test] Transcript received: "Yes, I can hear you." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#0 turn-detected +1ms
+[TIMING:hearing-loop-test] TURN#0 stt-to-release=608ms (sttLag=n/ams)
+[LLM:hearing-loop-test] Sending to fake-llm: historyLength=5 roles=[system,assistant,user,assistant,user] streaming=true
+[TIMING:hearing-loop-test] TURN#0 llm-request +1ms
+[TIMING:hearing-loop-test] TURN#0 llm-first-token +16ms
+[TIMING:hearing-loop-test] TURN#0 tts-request +16ms
+[TIMING:hearing-loop-test] TURN#0 tts-first-chunk +17ms
+[TIMING:hearing-loop-test] TURN#0 audio-queued +17ms
+[PLAYBACK:hearing-loop-test] draining 1741ms of queued audio before leaving SPEAKING (queued=1591ms elapsed=0ms)
+[TIMING:hearing-loop-test] TURN#0 SUMMARY total=1773ms turn-detected=1ms llm-request=1ms llm-first-token=16ms tts-request=16ms tts-first-chunk=17ms audio-queued=17ms
+[TIMING:hearing-loop-test] TURN#0
+speech-end=2026-09-23T16:53:35.738Z
+endpoint-evidence=2026-09-23T16:53:35.738Z (speech_final)
+turn-release=2026-09-23T16:53:36.345Z
+llm-request=2026-09-23T16:53:36.346Z
+llm-first-token=2026-09-23T16:53:36.361Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T16:53:36.361Z
+tts-first-audio=2026-09-23T16:53:36.362Z
+audio-queued=2026-09-23T16:53:36.362Z
+[TIMING:hearing-loop-test] TURN#0 DELTAS
+endpoint-to-release=607ms
+release-to-llm-request=1ms
+llm-to-first-token=15ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=1ms
+first-audio-to-queue=0ms
+speech-end-to-audio=624ms
+[PIPELINE:hearing-loop-test] Turn complete: assistant="The workshop is tomorrow at eleven." llmMs=15 ttsMs=0
+[RESPONSE-LEN:hearing-loop-test] TURN#0 userChars=20 assistantChars=35 estTokens=9 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1591 briefRequested=false
+[TIMING:hearing-loop-test] TURN END turn-release=1790182418294 text="Hello? Hello?" sttMs=0
+[STT:hearing-loop-test] Transcript received: "Hello? Hello?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#1 turn-detected +0ms
+[TIMING:hearing-loop-test] TURN#1 stt-to-release=161ms (sttLag=n/ams)
+[PIPELINE:hearing-loop-test] hearing check with nothing to resume (after a block) — acknowledging once: "Hey, can you hear me okay?"
+[TIMING:hearing-loop-test] ATTENTION tts-request +0ms
+[TIMING:hearing-loop-test] ATTENTION tts-first-chunk +0ms
+[TIMING:hearing-loop-test] ATTENTION audio-queued +0ms
+[PLAYBACK:hearing-loop-test] draining 1332ms of queued audio before leaving SPEAKING (queued=1182ms elapsed=0ms)
+[TIMING:hearing-loop-test] ATTENTION SUMMARY total=1343ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:hearing-loop-test] TURN#1 SUMMARY total=1344ms turn-detected=0ms
+[TIMING:hearing-loop-test] TURN#1
+speech-end=2026-09-23T16:53:38.133Z
+endpoint-evidence=2026-09-23T16:53:38.133Z (speech_final)
+turn-release=2026-09-23T16:53:38.294Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:hearing-loop-test] TURN#1 DELTAS
+endpoint-to-release=161ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[PIPELINE:hearing-loop-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:hearing-loop-test] run() exiting — state=LISTENING aborted=true
+  [PASS] B2 — a hearing confirmation counts as progress: the cap is not consumed by it
+[PIPELINE:hearing-loop-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:hearing-loop-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:hearing-loop-test] GREETING greeting-text-ready +0ms
+[TIMING:hearing-loop-test] GREETING tts-request +0ms
+[TIMING:hearing-loop-test] GREETING tts-first-chunk +1ms
+[TIMING:hearing-loop-test] GREETING audio-queued +1ms
+[PLAYBACK:hearing-loop-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:hearing-loop-test] GREETING SUMMARY total=2334ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:hearing-loop-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:hearing-loop-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:hearing-loop-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:hearing-loop-test] TURN END turn-release=1790182422196 text="Yes, tell me." sttMs=0
+[STT:hearing-loop-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#0 turn-detected +2ms
+[TIMING:hearing-loop-test] TURN#0 stt-to-release=161ms (sttLag=n/ams)
+[LLM:hearing-loop-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:hearing-loop-test] TURN#0 llm-request +2ms
+[SPECULATE:hearing-loop-test] ADOPTED pre-opened request — llm-request is 161ms after the provider stream was opened (first token already in hand, 146ms ago) evidence-to-llm-open=0ms
+[TIMING:hearing-loop-test] TURN#0 llm-first-token +3ms
+[TIMING:hearing-loop-test] TURN#0 first-sentence-ready +3ms
+[TIMING:hearing-loop-test] TURN#0 tts-request +3ms
+[TIMING:hearing-loop-test] TURN#0 tts-first-chunk +4ms
+[TIMING:hearing-loop-test] TURN#0 audio-queued +4ms
+[PLAYBACK:hearing-loop-test] draining 12014ms of queued audio before leaving SPEAKING (queued=11864ms elapsed=0ms)
+[TURN:hearing-loop-test] barge-in ACCEPTED on transcript: "Hello?" — words=1 confidence=0.95 isFinal=true energyAgeMs=n/a beganBeforeReply=false replyRemainingMs=10924 replyFullyQueued=true
+[TIMING:hearing-loop-test] TURN#0 SUMMARY total=946ms turn-detected=2ms llm-request=2ms llm-first-token=3ms first-sentence-ready=3ms tts-request=3ms tts-first-chunk=4ms audio-queued=4ms
+[TIMING:hearing-loop-test] TURN#0
+speech-end=2026-09-23T16:53:42.037Z
+endpoint-evidence=2026-09-23T16:53:42.037Z (speech_final)
+turn-release=2026-09-23T16:53:42.196Z
+llm-request=2026-09-23T16:53:42.198Z
+llm-first-token=2026-09-23T16:53:42.199Z
+first-sentence-ready=2026-09-23T16:53:42.199Z
+tts-request=2026-09-23T16:53:42.199Z
+tts-first-audio=2026-09-23T16:53:42.200Z
+audio-queued=2026-09-23T16:53:42.200Z
+[TIMING:hearing-loop-test] TURN#0 DELTAS
+endpoint-to-release=159ms
+release-to-llm-request=2ms
+llm-to-first-token=1ms
+first-token-to-sentence=0ms
+sentence-to-tts=0ms
+tts-to-first-audio=1ms
+first-audio-to-queue=0ms
+speech-end-to-audio=163ms
+[PIPELINE:hearing-loop-test] Turn complete: assistant="Actually, I am calling you with a very interesting invitation. We have created F..." llmMs=15 ttsMs=0
+[RESPONSE-LEN:hearing-loop-test] TURN#0 userChars=13 assistantChars=263 estTokens=66 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=3 audioQueuedMs=11864 briefRequested=false
+[PIPELINE:hearing-loop-test] Response #1 CANCELLED by barge-in — heard="" discarded="Actually, I am calling you with a very interesting invitation. We have created F..."
+[TIMING:hearing-loop-test] TURN END turn-release=1790182423300 text="Hello?" sttMs=0
+[STT:hearing-loop-test] Transcript received: "Hello?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#1 turn-detected +0ms
+[TIMING:hearing-loop-test] TURN#1 stt-to-release=160ms (sttLag=n/ams)
+[PIPELINE:hearing-loop-test] attention check — acknowledging once: "Hey, can you hear me okay?"
+[TIMING:hearing-loop-test] ATTENTION tts-request +0ms
+[TIMING:hearing-loop-test] ATTENTION tts-first-chunk +0ms
+[TIMING:hearing-loop-test] ATTENTION audio-queued +0ms
+[PLAYBACK:hearing-loop-test] draining 1332ms of queued audio before leaving SPEAKING (queued=1182ms elapsed=0ms)
+[TIMING:hearing-loop-test] ATTENTION SUMMARY total=1343ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:hearing-loop-test] TURN#1 SUMMARY total=1345ms turn-detected=0ms
+[TIMING:hearing-loop-test] TURN#1
+speech-end=2026-09-23T16:53:43.140Z
+endpoint-evidence=2026-09-23T16:53:43.141Z (speech_final)
+turn-release=2026-09-23T16:53:43.300Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:hearing-loop-test] TURN#1 DELTAS
+endpoint-to-release=159ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[PIPELINE:hearing-loop-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:hearing-loop-test] run() exiting — state=LISTENING aborted=true
+  [FAIL] B3 — a RESUME is progress and does not consume the cap
+         timed out after 15000ms waiting for 3 replies (have 2, state=LISTENING)
+[PIPELINE:hearing-loop-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:hearing-loop-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:hearing-loop-test] GREETING greeting-text-ready +0ms
+[TIMING:hearing-loop-test] GREETING tts-request +0ms
+[TIMING:hearing-loop-test] GREETING tts-first-chunk +1ms
+[TIMING:hearing-loop-test] GREETING audio-queued +1ms
+[PLAYBACK:hearing-loop-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:hearing-loop-test] GREETING SUMMARY total=2347ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:hearing-loop-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:hearing-loop-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:hearing-loop-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:hearing-loop-test] TURN END turn-release=1790182440861 text="Yes, tell me." sttMs=0
+[STT:hearing-loop-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#0 turn-detected +0ms
+[TIMING:hearing-loop-test] TURN#0 stt-to-release=160ms (sttLag=n/ams)
+[LLM:hearing-loop-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:hearing-loop-test] TURN#0 llm-request +0ms
+[SPECULATE:hearing-loop-test] ADOPTED pre-opened request — llm-request is 161ms after the provider stream was opened (first token already in hand, 146ms ago) evidence-to-llm-open=0ms
+[TIMING:hearing-loop-test] TURN#0 llm-first-token +1ms
+[TIMING:hearing-loop-test] TURN#0 first-sentence-ready +1ms
+[TIMING:hearing-loop-test] TURN#0 tts-request +1ms
+[TIMING:hearing-loop-test] TURN#0 tts-first-chunk +1ms
+[TIMING:hearing-loop-test] TURN#0 audio-queued +1ms
+[PLAYBACK:hearing-loop-test] draining 12013ms of queued audio before leaving SPEAKING (queued=11864ms elapsed=1ms)
+[TURN:hearing-loop-test] barge-in ACCEPTED on transcript: "Hello? Hello?" — words=2 confidence=0.95 isFinal=true energyAgeMs=n/a beganBeforeReply=false replyRemainingMs=10921 replyFullyQueued=true
+[TIMING:hearing-loop-test] TURN#0 SUMMARY total=945ms turn-detected=0ms llm-request=0ms llm-first-token=1ms first-sentence-ready=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:hearing-loop-test] TURN#0
+speech-end=2026-09-23T16:54:00.701Z
+endpoint-evidence=2026-09-23T16:54:00.701Z (speech_final)
+turn-release=2026-09-23T16:54:00.861Z
+llm-request=2026-09-23T16:54:00.861Z
+llm-first-token=2026-09-23T16:54:00.862Z
+first-sentence-ready=2026-09-23T16:54:00.862Z
+tts-request=2026-09-23T16:54:00.862Z
+tts-first-audio=2026-09-23T16:54:00.862Z
+audio-queued=2026-09-23T16:54:00.862Z
+[TIMING:hearing-loop-test] TURN#0 DELTAS
+endpoint-to-release=160ms
+release-to-llm-request=0ms
+llm-to-first-token=1ms
+first-token-to-sentence=0ms
+sentence-to-tts=0ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=161ms
+[PIPELINE:hearing-loop-test] Turn complete: assistant="Actually, I am calling you with a very interesting invitation. We have created F..." llmMs=15 ttsMs=0
+[RESPONSE-LEN:hearing-loop-test] TURN#0 userChars=13 assistantChars=263 estTokens=66 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=3 audioQueuedMs=11864 briefRequested=false
+[PIPELINE:hearing-loop-test] Response #1 CANCELLED by barge-in — heard="" discarded="Actually, I am calling you with a very interesting invitation. We have created F..."
+[TIMING:hearing-loop-test] TURN END turn-release=1790182441965 text="Hello? Hello?" sttMs=0
+[STT:hearing-loop-test] Transcript received: "Hello? Hello?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#1 turn-detected +0ms
+[TIMING:hearing-loop-test] TURN#1 stt-to-release=160ms (sttLag=n/ams)
+[PIPELINE:hearing-loop-test] attention check — acknowledging once: "Hey, can you hear me okay?"
+[TIMING:hearing-loop-test] ATTENTION tts-request +0ms
+[TIMING:hearing-loop-test] ATTENTION tts-first-chunk +1ms
+[TIMING:hearing-loop-test] ATTENTION audio-queued +1ms
+[PLAYBACK:hearing-loop-test] draining 1332ms of queued audio before leaving SPEAKING (queued=1182ms elapsed=0ms)
+[TIMING:hearing-loop-test] ATTENTION SUMMARY total=1343ms tts-request=0ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:hearing-loop-test] TURN#1 SUMMARY total=1344ms turn-detected=0ms
+[TIMING:hearing-loop-test] TURN#1
+speech-end=2026-09-23T16:54:01.805Z
+endpoint-evidence=2026-09-23T16:54:01.806Z (speech_final)
+turn-release=2026-09-23T16:54:01.965Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:hearing-loop-test] TURN#1 DELTAS
+endpoint-to-release=159ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[TIMING:hearing-loop-test] TURN END turn-release=1790182443500 text="No." sttMs=0
+[STT:hearing-loop-test] Transcript received: "No." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#1 turn-detected +0ms
+[TIMING:hearing-loop-test] TURN#1 stt-to-release=159ms (sttLag=n/ams)
+[PIPELINE:hearing-loop-test] hearing check answered "No." — REPEATING the interrupted reply from the beginning: "Actually, I am calling you with a very interesting invitation. We have created F..."
+[TIMING:hearing-loop-test] ATTENTION tts-request +0ms
+[TIMING:hearing-loop-test] ATTENTION tts-first-chunk +1ms
+[TIMING:hearing-loop-test] ATTENTION audio-queued +1ms
+[PLAYBACK:hearing-loop-test] draining 12105ms of queued audio before leaving SPEAKING (queued=11955ms elapsed=0ms)
+[TURN:hearing-loop-test] barge-in ACCEPTED on transcript: "No." — words=1 confidence=0.95 isFinal=true energyAgeMs=n/a beganBeforeReply=false replyRemainingMs=11221 replyFullyQueued=true
+[TIMING:hearing-loop-test] ATTENTION SUMMARY total=735ms tts-request=0ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:hearing-loop-test] TURN#1 SUMMARY total=737ms turn-detected=0ms
+[TIMING:hearing-loop-test] TURN#1
+speech-end=2026-09-23T16:54:03.341Z
+endpoint-evidence=2026-09-23T16:54:03.341Z (speech_final)
+turn-release=2026-09-23T16:54:03.500Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:hearing-loop-test] TURN#1 DELTAS
+endpoint-to-release=159ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[TIMING:hearing-loop-test] TURN END turn-release=1790182444394 text="No." sttMs=0
+[STT:hearing-loop-test] Transcript received: "No." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#1 turn-detected +1ms
+[TIMING:hearing-loop-test] TURN#1 stt-to-release=159ms (sttLag=n/ams)
+[PIPELINE:hearing-loop-test] 2 hearing lines already spoken with nothing in between — "No." takes the contextual path instead of another
+[LLM:hearing-loop-test] Sending to fake-llm: historyLength=7 roles=[system,assistant,user,user,assistant,user,user] streaming=true
+[TIMING:hearing-loop-test] TURN#1 llm-request +1ms
+[TIMING:hearing-loop-test] TURN#1 llm-first-token +16ms
+[TIMING:hearing-loop-test] TURN#1 tts-request +17ms
+[TIMING:hearing-loop-test] TURN#1 tts-first-chunk +17ms
+[TIMING:hearing-loop-test] TURN#1 audio-queued +17ms
+[PLAYBACK:hearing-loop-test] draining 1650ms of queued audio before leaving SPEAKING (queued=1500ms elapsed=0ms)
+[TIMING:hearing-loop-test] TURN#1 SUMMARY total=1677ms turn-detected=1ms llm-request=1ms llm-first-token=16ms tts-request=17ms tts-first-chunk=17ms audio-queued=17ms
+[TIMING:hearing-loop-test] TURN#1
+speech-end=2026-09-23T16:54:04.236Z
+endpoint-evidence=2026-09-23T16:54:04.236Z (speech_final)
+turn-release=2026-09-23T16:54:04.394Z
+llm-request=2026-09-23T16:54:04.395Z
+llm-first-token=2026-09-23T16:54:04.410Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T16:54:04.411Z
+tts-first-audio=2026-09-23T16:54:04.411Z
+audio-queued=2026-09-23T16:54:04.411Z
+[TIMING:hearing-loop-test] TURN#1 DELTAS
+endpoint-to-release=158ms
+release-to-llm-request=1ms
+llm-to-first-token=15ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=175ms
+[PIPELINE:hearing-loop-test] Turn complete: assistant="It runs for about ninety minutes." llmMs=14 ttsMs=0
+[RESPONSE-LEN:hearing-loop-test] TURN#1 userChars=3 assistantChars=33 estTokens=9 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1500 briefRequested=false
+[SPECULATE:hearing-loop-test] LLM request PRE-OPENED on speech_final evidence: text="No." evidence-to-llm-open=1ms historyLength=9
+[SPECULATE:hearing-loop-test] pre-opened LLM request ABANDONED (turn acquisition ended) text="No." openMs=31 firstToken=received
+[PIPELINE:hearing-loop-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:hearing-loop-test] run() exiting — state=LISTENING aborted=true
+  [PASS] B4 — a REPEAT the caller hears none of spends a line, so repeated zero-progress repeats end at the existing cap
+[PIPELINE:hearing-loop-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:hearing-loop-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:hearing-loop-test] GREETING greeting-text-ready +0ms
+[TIMING:hearing-loop-test] GREETING tts-request +0ms
+[TIMING:hearing-loop-test] GREETING tts-first-chunk +0ms
+[TIMING:hearing-loop-test] GREETING audio-queued +0ms
+[PLAYBACK:hearing-loop-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:hearing-loop-test] GREETING SUMMARY total=2337ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:hearing-loop-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:hearing-loop-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:hearing-loop-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:hearing-loop-test] TURN END turn-release=1790182448627 text="Yes, tell me." sttMs=0
+[STT:hearing-loop-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#0 turn-detected +1ms
+[TIMING:hearing-loop-test] TURN#0 stt-to-release=160ms (sttLag=n/ams)
+[LLM:hearing-loop-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:hearing-loop-test] TURN#0 llm-request +2ms
+[SPECULATE:hearing-loop-test] ADOPTED pre-opened request — llm-request is 161ms after the provider stream was opened (first token already in hand, 142ms ago) evidence-to-llm-open=0ms
+[TIMING:hearing-loop-test] TURN#0 llm-first-token +2ms
+[TIMING:hearing-loop-test] TURN#0 tts-request +2ms
+[TIMING:hearing-loop-test] TURN#0 tts-first-chunk +3ms
+[TIMING:hearing-loop-test] TURN#0 audio-queued +3ms
+[PLAYBACK:hearing-loop-test] draining 1741ms of queued audio before leaving SPEAKING (queued=1591ms elapsed=0ms)
+[TURN:hearing-loop-test] barge-in ACCEPTED on transcript: "Hello? Hello?" — words=2 confidence=0.95 isFinal=true energyAgeMs=n/a beganBeforeReply=false replyRemainingMs=685 replyFullyQueued=true
+[TIMING:hearing-loop-test] TURN#0 SUMMARY total=909ms turn-detected=1ms llm-request=2ms llm-first-token=2ms tts-request=2ms tts-first-chunk=3ms audio-queued=3ms
+[TIMING:hearing-loop-test] TURN#0
+speech-end=2026-09-23T16:54:08.468Z
+endpoint-evidence=2026-09-23T16:54:08.468Z (speech_final)
+turn-release=2026-09-23T16:54:08.627Z
+llm-request=2026-09-23T16:54:08.629Z
+llm-first-token=2026-09-23T16:54:08.629Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T16:54:08.629Z
+tts-first-audio=2026-09-23T16:54:08.630Z
+audio-queued=2026-09-23T16:54:08.630Z
+[TIMING:hearing-loop-test] TURN#0 DELTAS
+endpoint-to-release=159ms
+release-to-llm-request=2ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=1ms
+first-audio-to-queue=0ms
+speech-end-to-audio=162ms
+[PIPELINE:hearing-loop-test] Turn complete: assistant="The workshop is tomorrow at eleven." llmMs=19 ttsMs=1
+[RESPONSE-LEN:hearing-loop-test] TURN#0 userChars=13 assistantChars=35 estTokens=9 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1591 briefRequested=false
+[PIPELINE:hearing-loop-test] Response #1 CANCELLED by barge-in — heard="" discarded="The workshop is tomorrow at eleven."
+[TIMING:hearing-loop-test] TURN END turn-release=1790182449693 text="Hello? Hello?" sttMs=0
+[STT:hearing-loop-test] Transcript received: "Hello? Hello?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#1 turn-detected +1ms
+[TIMING:hearing-loop-test] TURN#1 stt-to-release=158ms (sttLag=n/ams)
+[PIPELINE:hearing-loop-test] attention check — acknowledging once: "Hey, can you hear me okay?"
+[TIMING:hearing-loop-test] ATTENTION tts-request +0ms
+[TIMING:hearing-loop-test] ATTENTION tts-first-chunk +0ms
+[TIMING:hearing-loop-test] ATTENTION audio-queued +0ms
+[PLAYBACK:hearing-loop-test] draining 1332ms of queued audio before leaving SPEAKING (queued=1182ms elapsed=0ms)
+[TIMING:hearing-loop-test] ATTENTION SUMMARY total=1335ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:hearing-loop-test] TURN#1 SUMMARY total=1336ms turn-detected=1ms
+[TIMING:hearing-loop-test] TURN#1
+speech-end=2026-09-23T16:54:09.536Z
+endpoint-evidence=2026-09-23T16:54:09.536Z (speech_final)
+turn-release=2026-09-23T16:54:09.693Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:hearing-loop-test] TURN#1 DELTAS
+endpoint-to-release=157ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[TIMING:hearing-loop-test] TURN END turn-release=1790182451206 text="No." sttMs=0
+[STT:hearing-loop-test] Transcript received: "No." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#1 turn-detected +0ms
+[TIMING:hearing-loop-test] TURN#1 stt-to-release=161ms (sttLag=n/ams)
+[PIPELINE:hearing-loop-test] hearing check answered "No." — REPEATING the interrupted reply from the beginning: "The workshop is tomorrow at eleven."
+[TIMING:hearing-loop-test] ATTENTION tts-request +0ms
+[TIMING:hearing-loop-test] ATTENTION tts-first-chunk +0ms
+[TIMING:hearing-loop-test] ATTENTION audio-queued +0ms
+[PLAYBACK:hearing-loop-test] draining 1741ms of queued audio before leaving SPEAKING (queued=1591ms elapsed=0ms)
+[TIMING:hearing-loop-test] ATTENTION SUMMARY total=1752ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:hearing-loop-test] TURN#1 SUMMARY total=1753ms turn-detected=0ms
+[TIMING:hearing-loop-test] TURN#1
+speech-end=2026-09-23T16:54:11.045Z
+endpoint-evidence=2026-09-23T16:54:11.045Z (speech_final)
+turn-release=2026-09-23T16:54:11.206Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:hearing-loop-test] TURN#1 DELTAS
+endpoint-to-release=161ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[SPECULATE:hearing-loop-test] LLM request PRE-OPENED on speech_final evidence: text="No." evidence-to-llm-open=0ms historyLength=8
+[SPECULATE:hearing-loop-test] pre-opened LLM request ABANDONED (turn acquisition ended) text="No." openMs=24 firstToken=received
+[PIPELINE:hearing-loop-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:hearing-loop-test] run() exiting — state=LISTENING aborted=true
+  [PASS] B5 — a REPEAT delivered IN FULL releases the reply, so a second bare "No." is an answer and not another replay
+[PIPELINE:hearing-loop-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:hearing-loop-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:hearing-loop-test] GREETING greeting-text-ready +0ms
+[TIMING:hearing-loop-test] GREETING tts-request +0ms
+[TIMING:hearing-loop-test] GREETING tts-first-chunk +1ms
+[TIMING:hearing-loop-test] GREETING audio-queued +1ms
+[PLAYBACK:hearing-loop-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:hearing-loop-test] GREETING SUMMARY total=2333ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:hearing-loop-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:hearing-loop-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:hearing-loop-test] LLM request PRE-OPENED on speech_final evidence: text="Hi, tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:hearing-loop-test] TURN END turn-release=1790182455508 text="Hi, tell me." sttMs=0
+[STT:hearing-loop-test] Transcript received: "Hi, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#0 turn-detected +1ms
+[TIMING:hearing-loop-test] TURN#0 stt-to-release=158ms (sttLag=n/ams)
+[LLM:hearing-loop-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:hearing-loop-test] TURN#0 llm-request +1ms
+[SPECULATE:hearing-loop-test] ADOPTED pre-opened request — llm-request is 158ms after the provider stream was opened (first token already in hand, 143ms ago) evidence-to-llm-open=0ms
+[TIMING:hearing-loop-test] TURN#0 llm-first-token +1ms
+[TIMING:hearing-loop-test] TURN#0 tts-request +2ms
+[TIMING:hearing-loop-test] TURN#0 tts-first-chunk +2ms
+[TIMING:hearing-loop-test] TURN#0 audio-queued +2ms
+[PLAYBACK:hearing-loop-test] draining 1741ms of queued audio before leaving SPEAKING (queued=1591ms elapsed=0ms)
+[TIMING:hearing-loop-test] TURN#0 SUMMARY total=1745ms turn-detected=1ms llm-request=1ms llm-first-token=1ms tts-request=2ms tts-first-chunk=2ms audio-queued=2ms
+[TIMING:hearing-loop-test] TURN#0
+speech-end=2026-09-23T16:54:15.351Z
+endpoint-evidence=2026-09-23T16:54:15.351Z (speech_final)
+turn-release=2026-09-23T16:54:15.508Z
+llm-request=2026-09-23T16:54:15.509Z
+llm-first-token=2026-09-23T16:54:15.509Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T16:54:15.510Z
+tts-first-audio=2026-09-23T16:54:15.510Z
+audio-queued=2026-09-23T16:54:15.510Z
+[TIMING:hearing-loop-test] TURN#0 DELTAS
+endpoint-to-release=157ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=159ms
+[PIPELINE:hearing-loop-test] Turn complete: assistant="The workshop is tomorrow at eleven." llmMs=15 ttsMs=0
+[RESPONSE-LEN:hearing-loop-test] TURN#0 userChars=12 assistantChars=35 estTokens=9 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1591 briefRequested=false
+[TIMING:hearing-loop-test] TURN END turn-release=1790182457446 text="Hello? Hello?" sttMs=0
+[STT:hearing-loop-test] Transcript received: "Hello? Hello?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#1 turn-detected +0ms
+[TIMING:hearing-loop-test] TURN#1 stt-to-release=160ms (sttLag=n/ams)
+[PIPELINE:hearing-loop-test] hearing check with nothing to resume (after a block) — acknowledging once: "Hey, can you hear me okay?"
+[TIMING:hearing-loop-test] ATTENTION tts-request +1ms
+[TIMING:hearing-loop-test] ATTENTION tts-first-chunk +1ms
+[TIMING:hearing-loop-test] ATTENTION audio-queued +1ms
+[PLAYBACK:hearing-loop-test] draining 1332ms of queued audio before leaving SPEAKING (queued=1182ms elapsed=0ms)
+[TIMING:hearing-loop-test] ATTENTION SUMMARY total=1331ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:hearing-loop-test] TURN#1 SUMMARY total=1332ms turn-detected=0ms
+[TIMING:hearing-loop-test] TURN#1
+speech-end=2026-09-23T16:54:17.286Z
+endpoint-evidence=2026-09-23T16:54:17.286Z (speech_final)
+turn-release=2026-09-23T16:54:17.446Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:hearing-loop-test] TURN#1 DELTAS
+endpoint-to-release=160ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[TIMING:hearing-loop-test] TURN END turn-release=1790182458968 text="Yes." sttMs=0
+[STT:hearing-loop-test] Transcript received: "Yes." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#1 turn-detected +0ms
+[TIMING:hearing-loop-test] TURN#1 stt-to-release=158ms (sttLag=n/ams)
+[PIPELINE:hearing-loop-test] hearing check answered — following up once: "I just want to make sure you can hear me. Did you catch what I was saying?"
+[TIMING:hearing-loop-test] ATTENTION tts-request +1ms
+[TIMING:hearing-loop-test] ATTENTION tts-first-chunk +1ms
+[TIMING:hearing-loop-test] ATTENTION audio-queued +1ms
+[PLAYBACK:hearing-loop-test] draining 3514ms of queued audio before leaving SPEAKING (queued=3364ms elapsed=0ms)
+[TIMING:hearing-loop-test] ATTENTION SUMMARY total=32ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:hearing-loop-test] TURN#1 SUMMARY total=32ms turn-detected=0ms
+[TIMING:hearing-loop-test] TURN#1
+speech-end=2026-09-23T16:54:18.810Z
+endpoint-evidence=2026-09-23T16:54:18.810Z (speech_final)
+turn-release=2026-09-23T16:54:18.968Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:hearing-loop-test] TURN#1 DELTAS
+endpoint-to-release=158ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[PIPELINE:hearing-loop-test] run() exiting — state=SPEAKING aborted=true
+  [PASS] B6 — an episode with NOTHING to replay still answers its confirmation with the one follow-up
+[PIPELINE:hearing-loop-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:hearing-loop-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:hearing-loop-test] GREETING greeting-text-ready +0ms
+[TIMING:hearing-loop-test] GREETING tts-request +0ms
+[TIMING:hearing-loop-test] GREETING tts-first-chunk +0ms
+[TIMING:hearing-loop-test] GREETING audio-queued +0ms
+[PLAYBACK:hearing-loop-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:hearing-loop-test] GREETING SUMMARY total=2341ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:hearing-loop-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:hearing-loop-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:hearing-loop-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:hearing-loop-test] TURN END turn-release=1790182461502 text="Yes, tell me." sttMs=0
+[STT:hearing-loop-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#0 turn-detected +1ms
+[TIMING:hearing-loop-test] TURN#0 stt-to-release=160ms (sttLag=n/ams)
+[LLM:hearing-loop-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:hearing-loop-test] TURN#0 llm-request +1ms
+[SPECULATE:hearing-loop-test] ADOPTED pre-opened request — llm-request is 160ms after the provider stream was opened (first token already in hand, 144ms ago) evidence-to-llm-open=0ms
+[TIMING:hearing-loop-test] TURN#0 llm-first-token +1ms
+[TIMING:hearing-loop-test] TURN#0 tts-request +1ms
+[TIMING:hearing-loop-test] TURN#0 tts-first-chunk +1ms
+[TIMING:hearing-loop-test] TURN#0 audio-queued +1ms
+[PLAYBACK:hearing-loop-test] draining 1741ms of queued audio before leaving SPEAKING (queued=1591ms elapsed=0ms)
+[TURN:hearing-loop-test] barge-in ACCEPTED on transcript: "Hello? Hello?" — words=2 confidence=0.95 isFinal=true energyAgeMs=n/a beganBeforeReply=false replyRemainingMs=655 replyFullyQueued=true
+[TIMING:hearing-loop-test] TURN#0 SUMMARY total=938ms turn-detected=1ms llm-request=1ms llm-first-token=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:hearing-loop-test] TURN#0
+speech-end=2026-09-23T16:54:21.343Z
+endpoint-evidence=2026-09-23T16:54:21.343Z (speech_final)
+turn-release=2026-09-23T16:54:21.502Z
+llm-request=2026-09-23T16:54:21.503Z
+llm-first-token=2026-09-23T16:54:21.503Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T16:54:21.503Z
+tts-first-audio=2026-09-23T16:54:21.503Z
+audio-queued=2026-09-23T16:54:21.503Z
+[TIMING:hearing-loop-test] TURN#0 DELTAS
+endpoint-to-release=159ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=160ms
+[PIPELINE:hearing-loop-test] Turn complete: assistant="The workshop is tomorrow at eleven." llmMs=16 ttsMs=0
+[RESPONSE-LEN:hearing-loop-test] TURN#0 userChars=13 assistantChars=35 estTokens=9 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1591 briefRequested=false
+[PIPELINE:hearing-loop-test] Response #1 CANCELLED by barge-in — heard="" discarded="The workshop is tomorrow at eleven."
+[TIMING:hearing-loop-test] TURN END turn-release=1790182462599 text="Hello? Hello?" sttMs=0
+[STT:hearing-loop-test] Transcript received: "Hello? Hello?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#1 turn-detected +0ms
+[TIMING:hearing-loop-test] TURN#1 stt-to-release=160ms (sttLag=n/ams)
+[PIPELINE:hearing-loop-test] attention check — acknowledging once: "Hey, can you hear me okay?"
+[TIMING:hearing-loop-test] ATTENTION tts-request +0ms
+[TIMING:hearing-loop-test] ATTENTION tts-first-chunk +0ms
+[TIMING:hearing-loop-test] ATTENTION audio-queued +0ms
+[PLAYBACK:hearing-loop-test] draining 1332ms of queued audio before leaving SPEAKING (queued=1182ms elapsed=0ms)
+[TIMING:hearing-loop-test] ATTENTION SUMMARY total=1339ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:hearing-loop-test] TURN#1 SUMMARY total=1341ms turn-detected=0ms
+[TIMING:hearing-loop-test] TURN#1
+speech-end=2026-09-23T16:54:22.439Z
+endpoint-evidence=2026-09-23T16:54:22.440Z (speech_final)
+turn-release=2026-09-23T16:54:22.599Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:hearing-loop-test] TURN#1 DELTAS
+endpoint-to-release=159ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[TIMING:hearing-loop-test] TURN END turn-release=1790182464092 text="Yes." sttMs=0
+[STT:hearing-loop-test] Transcript received: "Yes." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#1 turn-detected +1ms
+[TIMING:hearing-loop-test] TURN#1 stt-to-release=152ms (sttLag=n/ams)
+[PIPELINE:hearing-loop-test] attention check answered — RESUMING from where the reply stopped: "The workshop is tomorrow at eleven."
+[TIMING:hearing-loop-test] ATTENTION tts-request +0ms
+[TIMING:hearing-loop-test] ATTENTION tts-first-chunk +0ms
+[TIMING:hearing-loop-test] ATTENTION audio-queued +0ms
+[PLAYBACK:hearing-loop-test] draining 1741ms of queued audio before leaving SPEAKING (queued=1591ms elapsed=0ms)
+[TIMING:hearing-loop-test] ATTENTION SUMMARY total=1741ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:hearing-loop-test] TURN#1 SUMMARY total=1747ms turn-detected=1ms
+[TIMING:hearing-loop-test] TURN#1
+speech-end=2026-09-23T16:54:23.941Z
+endpoint-evidence=2026-09-23T16:54:23.941Z (speech_final)
+turn-release=2026-09-23T16:54:24.092Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:hearing-loop-test] TURN#1 DELTAS
+endpoint-to-release=151ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[SPECULATE:hearing-loop-test] LLM request PRE-OPENED on speech_final evidence: text="Yes." evidence-to-llm-open=0ms historyLength=8
+[SPECULATE:hearing-loop-test] pre-opened LLM request ABANDONED (turn acquisition ended) text="Yes." openMs=32 firstToken=received
+[PIPELINE:hearing-loop-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:hearing-loop-test] run() exiting — state=LISTENING aborted=true
+  [PASS] B7 — ...but a bare "Yes." after that resume is an ANSWER, not one more hearing confirmation
+[PIPELINE:hearing-loop-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:hearing-loop-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:hearing-loop-test] GREETING greeting-text-ready +0ms
+[TIMING:hearing-loop-test] GREETING tts-request +0ms
+[TIMING:hearing-loop-test] GREETING tts-first-chunk +0ms
+[TIMING:hearing-loop-test] GREETING audio-queued +0ms
+[PLAYBACK:hearing-loop-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:hearing-loop-test] GREETING SUMMARY total=2332ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:hearing-loop-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:hearing-loop-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:hearing-loop-test] LLM request PRE-OPENED on speech_final evidence: text="Hi, tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:hearing-loop-test] TURN END turn-release=1790182468420 text="Hi, tell me." sttMs=0
+[STT:hearing-loop-test] Transcript received: "Hi, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#0 turn-detected +0ms
+[TIMING:hearing-loop-test] TURN#0 stt-to-release=161ms (sttLag=n/ams)
+[LLM:hearing-loop-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:hearing-loop-test] TURN#0 llm-request +1ms
+[SPECULATE:hearing-loop-test] ADOPTED pre-opened request — llm-request is 162ms after the provider stream was opened (first token already in hand, 145ms ago) evidence-to-llm-open=0ms
+[TIMING:hearing-loop-test] TURN#0 llm-first-token +1ms
+[TIMING:hearing-loop-test] TURN#0 tts-request +2ms
+[TIMING:hearing-loop-test] TURN#0 tts-first-chunk +2ms
+[TIMING:hearing-loop-test] TURN#0 audio-queued +2ms
+[PLAYBACK:hearing-loop-test] draining 1741ms of queued audio before leaving SPEAKING (queued=1591ms elapsed=0ms)
+[TIMING:hearing-loop-test] TURN#0 SUMMARY total=1754ms turn-detected=0ms llm-request=1ms llm-first-token=1ms tts-request=2ms tts-first-chunk=2ms audio-queued=2ms
+[TIMING:hearing-loop-test] TURN#0
+speech-end=2026-09-23T16:54:28.259Z
+endpoint-evidence=2026-09-23T16:54:28.259Z (speech_final)
+turn-release=2026-09-23T16:54:28.420Z
+llm-request=2026-09-23T16:54:28.421Z
+llm-first-token=2026-09-23T16:54:28.421Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T16:54:28.422Z
+tts-first-audio=2026-09-23T16:54:28.422Z
+audio-queued=2026-09-23T16:54:28.422Z
+[TIMING:hearing-loop-test] TURN#0 DELTAS
+endpoint-to-release=161ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=163ms
+[PIPELINE:hearing-loop-test] Turn complete: assistant="The workshop is tomorrow at eleven." llmMs=17 ttsMs=0
+[RESPONSE-LEN:hearing-loop-test] TURN#0 userChars=12 assistantChars=35 estTokens=9 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1591 briefRequested=false
+[TIMING:hearing-loop-test] TURN END turn-release=1790182470348 text="Hello." sttMs=0
+[STT:hearing-loop-test] Transcript received: "Hello." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#1 turn-detected +0ms
+[TIMING:hearing-loop-test] TURN#1 stt-to-release=158ms (sttLag=n/ams)
+[LLM:hearing-loop-test] Sending to fake-llm: historyLength=5 roles=[system,assistant,user,assistant,user] streaming=true
+[TIMING:hearing-loop-test] TURN#1 llm-request +0ms
+[TIMING:hearing-loop-test] TURN#1 llm-first-token +25ms
+[TIMING:hearing-loop-test] TURN#1 tts-request +25ms
+[TIMING:hearing-loop-test] TURN#1 tts-first-chunk +25ms
+[TIMING:hearing-loop-test] TURN#1 audio-queued +25ms
+[PLAYBACK:hearing-loop-test] draining 1650ms of queued audio before leaving SPEAKING (queued=1500ms elapsed=0ms)
+[TIMING:hearing-loop-test] TURN#1 SUMMARY total=1688ms turn-detected=0ms llm-request=0ms llm-first-token=25ms tts-request=25ms tts-first-chunk=25ms audio-queued=25ms
+[TIMING:hearing-loop-test] TURN#1
+speech-end=2026-09-23T16:54:30.190Z
+endpoint-evidence=2026-09-23T16:54:30.190Z (speech_final)
+turn-release=2026-09-23T16:54:30.348Z
+llm-request=2026-09-23T16:54:30.348Z
+llm-first-token=2026-09-23T16:54:30.373Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T16:54:30.373Z
+tts-first-audio=2026-09-23T16:54:30.373Z
+audio-queued=2026-09-23T16:54:30.373Z
+[TIMING:hearing-loop-test] TURN#1 DELTAS
+endpoint-to-release=158ms
+release-to-llm-request=0ms
+llm-to-first-token=25ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=183ms
+[PIPELINE:hearing-loop-test] Turn complete: assistant="It runs for about ninety minutes." llmMs=24 ttsMs=0
+[RESPONSE-LEN:hearing-loop-test] TURN#1 userChars=6 assistantChars=33 estTokens=9 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1500 briefRequested=false
+[TIMING:hearing-loop-test] TURN END turn-release=1790182472862 text="Can you hear me?" sttMs=0
+[STT:hearing-loop-test] Transcript received: "Can you hear me?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#2 turn-detected +1ms
+[TIMING:hearing-loop-test] TURN#2 stt-to-release=161ms (sttLag=n/ams)
+[PIPELINE:hearing-loop-test] hearing check with nothing to resume (after a block) — acknowledging once: "Hey, can you hear me okay?"
+[TIMING:hearing-loop-test] ATTENTION tts-request +0ms
+[TIMING:hearing-loop-test] ATTENTION tts-first-chunk +0ms
+[TIMING:hearing-loop-test] ATTENTION audio-queued +0ms
+[PLAYBACK:hearing-loop-test] draining 1331ms of queued audio before leaving SPEAKING (queued=1182ms elapsed=1ms)
+[TIMING:hearing-loop-test] ATTENTION SUMMARY total=1338ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:hearing-loop-test] TURN#2 SUMMARY total=1339ms turn-detected=1ms
+[TIMING:hearing-loop-test] TURN#2
+speech-end=2026-09-23T16:54:32.702Z
+endpoint-evidence=2026-09-23T16:54:32.702Z (speech_final)
+turn-release=2026-09-23T16:54:32.862Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:hearing-loop-test] TURN#2 DELTAS
+endpoint-to-release=160ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[TIMING:hearing-loop-test] TURN END turn-release=1790182475375 text="Hello." sttMs=0
+[STT:hearing-loop-test] Transcript received: "Hello." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#2 turn-detected +0ms
+[TIMING:hearing-loop-test] TURN#2 stt-to-release=158ms (sttLag=n/ams)
+[PIPELINE:hearing-loop-test] hearing check answered — following up once: "I just want to make sure you can hear me. Did you catch what I was saying?"
+[TIMING:hearing-loop-test] ATTENTION tts-request +0ms
+[TIMING:hearing-loop-test] ATTENTION tts-first-chunk +0ms
+[TIMING:hearing-loop-test] ATTENTION audio-queued +0ms
+[PLAYBACK:hearing-loop-test] draining 3514ms of queued audio before leaving SPEAKING (queued=3364ms elapsed=0ms)
+[TURN:hearing-loop-test] barge-in ACCEPTED on transcript: "Can you hear me?" — words=4 confidence=0.95 isFinal=true energyAgeMs=n/a beganBeforeReply=false replyRemainingMs=1016 replyFullyQueued=true
+[TIMING:hearing-loop-test] ATTENTION SUMMARY total=2348ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:hearing-loop-test] TURN#2 SUMMARY total=2349ms turn-detected=0ms
+[TIMING:hearing-loop-test] TURN#2
+speech-end=2026-09-23T16:54:35.217Z
+endpoint-evidence=2026-09-23T16:54:35.217Z (speech_final)
+turn-release=2026-09-23T16:54:35.375Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:hearing-loop-test] TURN#2 DELTAS
+endpoint-to-release=158ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[TIMING:hearing-loop-test] TURN END turn-release=1790182477882 text="Can you hear me?" sttMs=0
+[STT:hearing-loop-test] Transcript received: "Can you hear me?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#2 turn-detected +1ms
+[TIMING:hearing-loop-test] TURN#2 stt-to-release=159ms (sttLag=n/ams)
+[PIPELINE:hearing-loop-test] 2 hearing lines already spoken with nothing in between — "Can you hear me?" takes the contextual path instead of another
+[LLM:hearing-loop-test] Sending to fake-llm: historyLength=10 roles=[system,assistant,user,assistant,user,assistant,user,assistant,user,user] streaming=true
+[TIMING:hearing-loop-test] TURN#2 llm-request +1ms
+[TIMING:hearing-loop-test] TURN#2 llm-first-token +16ms
+[TIMING:hearing-loop-test] TURN#2 tts-request +17ms
+[TIMING:hearing-loop-test] TURN#2 tts-first-chunk +17ms
+[TIMING:hearing-loop-test] TURN#2 audio-queued +17ms
+[PLAYBACK:hearing-loop-test] draining 1332ms of queued audio before leaving SPEAKING (queued=1182ms elapsed=0ms)
+[TIMING:hearing-loop-test] TURN#2 SUMMARY total=1360ms turn-detected=1ms llm-request=1ms llm-first-token=16ms tts-request=17ms tts-first-chunk=17ms audio-queued=17ms
+[TIMING:hearing-loop-test] TURN#2
+speech-end=2026-09-23T16:54:37.724Z
+endpoint-evidence=2026-09-23T16:54:37.724Z (speech_final)
+turn-release=2026-09-23T16:54:37.882Z
+llm-request=2026-09-23T16:54:37.883Z
+llm-first-token=2026-09-23T16:54:37.898Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T16:54:37.899Z
+tts-first-audio=2026-09-23T16:54:37.899Z
+audio-queued=2026-09-23T16:54:37.899Z
+[TIMING:hearing-loop-test] TURN#2 DELTAS
+endpoint-to-release=158ms
+release-to-llm-request=1ms
+llm-to-first-token=15ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=175ms
+[PIPELINE:hearing-loop-test] Turn complete: assistant="There is no charge for it." llmMs=14 ttsMs=0
+[RESPONSE-LEN:hearing-loop-test] TURN#2 userChars=16 assistantChars=26 estTokens=7 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1182 briefRequested=false
+[TIMING:hearing-loop-test] TURN END turn-release=1790182480386 text="Hello." sttMs=0
+[STT:hearing-loop-test] Transcript received: "Hello." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#3 turn-detected +1ms
+[TIMING:hearing-loop-test] TURN#3 stt-to-release=157ms (sttLag=n/ams)
+[LLM:hearing-loop-test] Sending to fake-llm: historyLength=12 roles=[system,assistant,user,assistant,user,assistant,user,assistant,user,user,assistant,user] streaming=true
+[TIMING:hearing-loop-test] TURN#3 llm-request +1ms
+[TIMING:hearing-loop-test] TURN#3 llm-first-token +17ms
+[TIMING:hearing-loop-test] TURN#3 tts-request +17ms
+[TIMING:hearing-loop-test] TURN#3 tts-first-chunk +18ms
+[TIMING:hearing-loop-test] TURN#3 audio-queued +18ms
+[PLAYBACK:hearing-loop-test] draining 1468ms of queued audio before leaving SPEAKING (queued=1318ms elapsed=0ms)
+[TIMING:hearing-loop-test] TURN#3 SUMMARY total=1501ms turn-detected=1ms llm-request=1ms llm-first-token=17ms tts-request=17ms tts-first-chunk=18ms audio-queued=18ms
+[TIMING:hearing-loop-test] TURN#3
+speech-end=2026-09-23T16:54:40.230Z
+endpoint-evidence=2026-09-23T16:54:40.230Z (speech_final)
+turn-release=2026-09-23T16:54:40.386Z
+llm-request=2026-09-23T16:54:40.387Z
+llm-first-token=2026-09-23T16:54:40.403Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T16:54:40.403Z
+tts-first-audio=2026-09-23T16:54:40.404Z
+audio-queued=2026-09-23T16:54:40.404Z
+[TIMING:hearing-loop-test] TURN#3 DELTAS
+endpoint-to-release=156ms
+release-to-llm-request=1ms
+llm-to-first-token=16ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=1ms
+first-audio-to-queue=0ms
+speech-end-to-audio=174ms
+[PIPELINE:hearing-loop-test] Turn complete: assistant="I can reserve a seat for you." llmMs=16 ttsMs=0
+[RESPONSE-LEN:hearing-loop-test] TURN#3 userChars=6 assistantChars=29 estTokens=8 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1318 briefRequested=false
+[TIMING:hearing-loop-test] TURN END turn-release=1790182482904 text="Can you hear me?" sttMs=0
+[STT:hearing-loop-test] Transcript received: "Can you hear me?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#4 turn-detected +1ms
+[TIMING:hearing-loop-test] TURN#4 stt-to-release=161ms (sttLag=n/ams)
+[PIPELINE:hearing-loop-test] 2 hearing lines already spoken with nothing in between — "Can you hear me?" takes the contextual path instead of another
+[LLM:hearing-loop-test] Sending to fake-llm: historyLength=14 roles=[system,assistant,user,assistant,user,assistant,user,assistant,user,user,assistant,user,assistant,user] streaming=true
+[TIMING:hearing-loop-test] TURN#4 llm-request +1ms
+[TIMING:hearing-loop-test] TURN#4 llm-first-token +16ms
+[TIMING:hearing-loop-test] TURN#4 tts-request +17ms
+[TIMING:hearing-loop-test] TURN#4 tts-first-chunk +17ms
+[TIMING:hearing-loop-test] TURN#4 audio-queued +17ms
+[PLAYBACK:hearing-loop-test] draining 1650ms of queued audio before leaving SPEAKING (queued=1500ms elapsed=0ms)
+[TIMING:hearing-loop-test] TURN#4 SUMMARY total=1680ms turn-detected=1ms llm-request=1ms llm-first-token=16ms tts-request=17ms tts-first-chunk=17ms audio-queued=17ms
+[TIMING:hearing-loop-test] TURN#4
+speech-end=2026-09-23T16:54:42.744Z
+endpoint-evidence=2026-09-23T16:54:42.744Z (speech_final)
+turn-release=2026-09-23T16:54:42.904Z
+llm-request=2026-09-23T16:54:42.905Z
+llm-first-token=2026-09-23T16:54:42.920Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T16:54:42.921Z
+tts-first-audio=2026-09-23T16:54:42.921Z
+audio-queued=2026-09-23T16:54:42.921Z
+[TIMING:hearing-loop-test] TURN#4 DELTAS
+endpoint-to-release=160ms
+release-to-llm-request=1ms
+llm-to-first-token=15ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=177ms
+[PIPELINE:hearing-loop-test] Turn complete: assistant="It runs for about ninety minutes." llmMs=15 ttsMs=0
+[RESPONSE-LEN:hearing-loop-test] TURN#4 userChars=16 assistantChars=33 estTokens=9 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1500 briefRequested=false
+[PIPELINE:hearing-loop-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:hearing-loop-test] run() exiting — state=LISTENING aborted=true
+  [PASS] B8 — a NON-QUALIFYING check cannot hand the cap back: an alternating pattern still ends
+[PIPELINE:hearing-loop-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:hearing-loop-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:hearing-loop-test] GREETING greeting-text-ready +0ms
+[TIMING:hearing-loop-test] GREETING tts-request +1ms
+[TIMING:hearing-loop-test] GREETING tts-first-chunk +1ms
+[TIMING:hearing-loop-test] GREETING audio-queued +1ms
+[PLAYBACK:hearing-loop-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:hearing-loop-test] GREETING SUMMARY total=2345ms greeting-text-ready=0ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:hearing-loop-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:hearing-loop-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:hearing-loop-test] LLM request PRE-OPENED on speech_final evidence: text="Hi, tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:hearing-loop-test] TURN END turn-release=1790182487779 text="Hi, tell me." sttMs=0
+[STT:hearing-loop-test] Transcript received: "Hi, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#0 turn-detected +0ms
+[TIMING:hearing-loop-test] TURN#0 stt-to-release=160ms (sttLag=n/ams)
+[LLM:hearing-loop-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:hearing-loop-test] TURN#0 llm-request +0ms
+[SPECULATE:hearing-loop-test] ADOPTED pre-opened request — llm-request is 160ms after the provider stream was opened (first token already in hand, 145ms ago) evidence-to-llm-open=0ms
+[TIMING:hearing-loop-test] TURN#0 llm-first-token +1ms
+[TIMING:hearing-loop-test] TURN#0 tts-request +1ms
+[TIMING:hearing-loop-test] TURN#0 tts-first-chunk +1ms
+[TIMING:hearing-loop-test] TURN#0 audio-queued +1ms
+[PLAYBACK:hearing-loop-test] draining 1741ms of queued audio before leaving SPEAKING (queued=1591ms elapsed=0ms)
+[TIMING:hearing-loop-test] TURN#0 SUMMARY total=1752ms turn-detected=0ms llm-request=0ms llm-first-token=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:hearing-loop-test] TURN#0
+speech-end=2026-09-23T16:54:47.619Z
+endpoint-evidence=2026-09-23T16:54:47.619Z (speech_final)
+turn-release=2026-09-23T16:54:47.779Z
+llm-request=2026-09-23T16:54:47.779Z
+llm-first-token=2026-09-23T16:54:47.780Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T16:54:47.780Z
+tts-first-audio=2026-09-23T16:54:47.780Z
+audio-queued=2026-09-23T16:54:47.780Z
+[TIMING:hearing-loop-test] TURN#0 DELTAS
+endpoint-to-release=160ms
+release-to-llm-request=0ms
+llm-to-first-token=1ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=161ms
+[PIPELINE:hearing-loop-test] Turn complete: assistant="The workshop is tomorrow at eleven." llmMs=15 ttsMs=0
+[RESPONSE-LEN:hearing-loop-test] TURN#0 userChars=12 assistantChars=35 estTokens=9 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1591 briefRequested=false
+[TIMING:hearing-loop-test] TURN END turn-release=1790182489723 text="Hello." sttMs=0
+[STT:hearing-loop-test] Transcript received: "Hello." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#1 turn-detected +1ms
+[TIMING:hearing-loop-test] TURN#1 stt-to-release=161ms (sttLag=n/ams)
+[LLM:hearing-loop-test] Sending to fake-llm: historyLength=5 roles=[system,assistant,user,assistant,user] streaming=true
+[TIMING:hearing-loop-test] TURN#1 llm-request +1ms
+[TIMING:hearing-loop-test] TURN#1 llm-first-token +17ms
+[TIMING:hearing-loop-test] TURN#1 tts-request +17ms
+[TIMING:hearing-loop-test] TURN#1 tts-first-chunk +17ms
+[TIMING:hearing-loop-test] TURN#1 audio-queued +18ms
+[PLAYBACK:hearing-loop-test] draining 1650ms of queued audio before leaving SPEAKING (queued=1500ms elapsed=0ms)
+[TIMING:hearing-loop-test] TURN#1 SUMMARY total=1678ms turn-detected=1ms llm-request=1ms llm-first-token=17ms tts-request=17ms tts-first-chunk=17ms audio-queued=18ms
+[TIMING:hearing-loop-test] TURN#1
+speech-end=2026-09-23T16:54:49.563Z
+endpoint-evidence=2026-09-23T16:54:49.563Z (speech_final)
+turn-release=2026-09-23T16:54:49.723Z
+llm-request=2026-09-23T16:54:49.724Z
+llm-first-token=2026-09-23T16:54:49.740Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T16:54:49.740Z
+tts-first-audio=2026-09-23T16:54:49.740Z
+audio-queued=2026-09-23T16:54:49.741Z
+[TIMING:hearing-loop-test] TURN#1 DELTAS
+endpoint-to-release=160ms
+release-to-llm-request=1ms
+llm-to-first-token=16ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=1ms
+speech-end-to-audio=178ms
+[PIPELINE:hearing-loop-test] Turn complete: assistant="It runs for about ninety minutes." llmMs=16 ttsMs=0
+[RESPONSE-LEN:hearing-loop-test] TURN#1 userChars=6 assistantChars=33 estTokens=9 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1500 briefRequested=false
+[TIMING:hearing-loop-test] TURN END turn-release=1790182492228 text="Hello." sttMs=0
+[STT:hearing-loop-test] Transcript received: "Hello." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#2 turn-detected +0ms
+[TIMING:hearing-loop-test] TURN#2 stt-to-release=161ms (sttLag=n/ams)
+[PIPELINE:hearing-loop-test] hearing check with nothing to resume (after a block) — acknowledging once: "Hey, can you hear me okay?"
+[TIMING:hearing-loop-test] ATTENTION tts-request +0ms
+[TIMING:hearing-loop-test] ATTENTION tts-first-chunk +0ms
+[TIMING:hearing-loop-test] ATTENTION audio-queued +0ms
+[PLAYBACK:hearing-loop-test] draining 1332ms of queued audio before leaving SPEAKING (queued=1182ms elapsed=0ms)
+[TIMING:hearing-loop-test] ATTENTION SUMMARY total=1332ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:hearing-loop-test] TURN#2 SUMMARY total=1333ms turn-detected=0ms
+[TIMING:hearing-loop-test] TURN#2
+speech-end=2026-09-23T16:54:52.067Z
+endpoint-evidence=2026-09-23T16:54:52.067Z (speech_final)
+turn-release=2026-09-23T16:54:52.228Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:hearing-loop-test] TURN#2 DELTAS
+endpoint-to-release=161ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[TIMING:hearing-loop-test] TURN END turn-release=1790182494729 text="Hello." sttMs=0
+[STT:hearing-loop-test] Transcript received: "Hello." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#2 turn-detected +0ms
+[TIMING:hearing-loop-test] TURN#2 stt-to-release=161ms (sttLag=n/ams)
+[PIPELINE:hearing-loop-test] hearing check answered — following up once: "I just want to make sure you can hear me. Did you catch what I was saying?"
+[TIMING:hearing-loop-test] ATTENTION tts-request +0ms
+[TIMING:hearing-loop-test] ATTENTION tts-first-chunk +0ms
+[TIMING:hearing-loop-test] ATTENTION audio-queued +0ms
+[PLAYBACK:hearing-loop-test] draining 3513ms of queued audio before leaving SPEAKING (queued=3364ms elapsed=1ms)
+[TURN:hearing-loop-test] barge-in ACCEPTED on transcript: "Hello." — words=1 confidence=0.95 isFinal=true energyAgeMs=n/a beganBeforeReply=false replyRemainingMs=1012 replyFullyQueued=true
+[TIMING:hearing-loop-test] ATTENTION SUMMARY total=2353ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:hearing-loop-test] TURN#2 SUMMARY total=2353ms turn-detected=0ms
+[TIMING:hearing-loop-test] TURN#2
+speech-end=2026-09-23T16:54:54.568Z
+endpoint-evidence=2026-09-23T16:54:54.568Z (speech_final)
+turn-release=2026-09-23T16:54:54.729Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:hearing-loop-test] TURN#2 DELTAS
+endpoint-to-release=161ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[TIMING:hearing-loop-test] TURN END turn-release=1790182497240 text="Hello." sttMs=0
+[STT:hearing-loop-test] Transcript received: "Hello." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#2 turn-detected +1ms
+[TIMING:hearing-loop-test] TURN#2 stt-to-release=160ms (sttLag=n/ams)
+[PIPELINE:hearing-loop-test] 2 hearing lines already spoken with nothing in between — "Hello." takes the contextual path instead of another
+[LLM:hearing-loop-test] Sending to fake-llm: historyLength=10 roles=[system,assistant,user,assistant,user,assistant,user,assistant,user,user] streaming=true
+[TIMING:hearing-loop-test] TURN#2 llm-request +1ms
+[TIMING:hearing-loop-test] TURN#2 llm-first-token +16ms
+[TIMING:hearing-loop-test] TURN#2 tts-request +16ms
+[TIMING:hearing-loop-test] TURN#2 tts-first-chunk +16ms
+[TIMING:hearing-loop-test] TURN#2 audio-queued +16ms
+[PLAYBACK:hearing-loop-test] draining 1332ms of queued audio before leaving SPEAKING (queued=1182ms elapsed=0ms)
+[TIMING:hearing-loop-test] TURN#2 SUMMARY total=1358ms turn-detected=1ms llm-request=1ms llm-first-token=16ms tts-request=16ms tts-first-chunk=16ms audio-queued=16ms
+[TIMING:hearing-loop-test] TURN#2
+speech-end=2026-09-23T16:54:57.081Z
+endpoint-evidence=2026-09-23T16:54:57.082Z (speech_final)
+turn-release=2026-09-23T16:54:57.240Z
+llm-request=2026-09-23T16:54:57.241Z
+llm-first-token=2026-09-23T16:54:57.256Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T16:54:57.256Z
+tts-first-audio=2026-09-23T16:54:57.256Z
+audio-queued=2026-09-23T16:54:57.256Z
+[TIMING:hearing-loop-test] TURN#2 DELTAS
+endpoint-to-release=158ms
+release-to-llm-request=1ms
+llm-to-first-token=15ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=175ms
+[PIPELINE:hearing-loop-test] Turn complete: assistant="There is no charge for it." llmMs=15 ttsMs=0
+[RESPONSE-LEN:hearing-loop-test] TURN#2 userChars=6 assistantChars=26 estTokens=7 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1182 briefRequested=false
+[SPECULATE:hearing-loop-test] LLM request PRE-OPENED on speech_final evidence: text="What time does it start?" evidence-to-llm-open=0ms historyLength=12
+[TIMING:hearing-loop-test] TURN END turn-release=1790182499756 text="What time does it start?" sttMs=0
+[STT:hearing-loop-test] Transcript received: "What time does it start?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#3 turn-detected +1ms
+[TIMING:hearing-loop-test] TURN#3 stt-to-release=160ms (sttLag=n/ams)
+[LANGUAGE:hearing-loop-test] call language LOCKED to en on the first meaningful utterance (basis=default-english confidence=0.75 hindiMarkers=0): "What time does it start?"
+[LLM:hearing-loop-test] Sending to fake-llm: historyLength=12 roles=[system,assistant,user,assistant,user,assistant,user,assistant,user,user,assistant,user] streaming=true
+[TIMING:hearing-loop-test] TURN#3 llm-request +1ms
+[SPECULATE:hearing-loop-test] ADOPTED pre-opened request — llm-request is 160ms after the provider stream was opened (first token already in hand, 145ms ago) evidence-to-llm-open=0ms
+[TIMING:hearing-loop-test] TURN#3 llm-first-token +1ms
+[TIMING:hearing-loop-test] TURN#3 tts-request +2ms
+[TIMING:hearing-loop-test] TURN#3 tts-first-chunk +2ms
+[TIMING:hearing-loop-test] TURN#3 audio-queued +2ms
+[PLAYBACK:hearing-loop-test] draining 1468ms of queued audio before leaving SPEAKING (queued=1318ms elapsed=0ms)
+[TIMING:hearing-loop-test] TURN#3 SUMMARY total=1487ms turn-detected=1ms llm-request=1ms llm-first-token=1ms tts-request=2ms tts-first-chunk=2ms audio-queued=2ms
+[TIMING:hearing-loop-test] TURN#3
+speech-end=2026-09-23T16:54:59.597Z
+endpoint-evidence=2026-09-23T16:54:59.597Z (speech_final)
+turn-release=2026-09-23T16:54:59.756Z
+llm-request=2026-09-23T16:54:59.757Z
+llm-first-token=2026-09-23T16:54:59.757Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T16:54:59.758Z
+tts-first-audio=2026-09-23T16:54:59.758Z
+audio-queued=2026-09-23T16:54:59.758Z
+[TIMING:hearing-loop-test] TURN#3 DELTAS
+endpoint-to-release=159ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=161ms
+[PIPELINE:hearing-loop-test] Turn complete: assistant="I can reserve a seat for you." llmMs=15 ttsMs=0
+[RESPONSE-LEN:hearing-loop-test] TURN#3 userChars=24 assistantChars=29 estTokens=8 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1318 briefRequested=false
+[TIMING:hearing-loop-test] TURN END turn-release=1790182502262 text="Hello." sttMs=0
+[STT:hearing-loop-test] Transcript received: "Hello." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#4 turn-detected +1ms
+[TIMING:hearing-loop-test] TURN#4 stt-to-release=165ms (sttLag=n/ams)
+[LLM:hearing-loop-test] Sending to fake-llm: historyLength=14 roles=[system,assistant,user,assistant,user,assistant,user,assistant,user,user,assistant,user,assistant,user] streaming=true
+[TIMING:hearing-loop-test] TURN#4 llm-request +1ms
+[TIMING:hearing-loop-test] TURN#4 llm-first-token +15ms
+[TIMING:hearing-loop-test] TURN#4 tts-request +16ms
+[TIMING:hearing-loop-test] TURN#4 tts-first-chunk +16ms
+[TIMING:hearing-loop-test] TURN#4 audio-queued +16ms
+[PLAYBACK:hearing-loop-test] draining 1650ms of queued audio before leaving SPEAKING (queued=1500ms elapsed=0ms)
+[TIMING:hearing-loop-test] TURN#4 SUMMARY total=1668ms turn-detected=1ms llm-request=1ms llm-first-token=15ms tts-request=16ms tts-first-chunk=16ms audio-queued=16ms
+[TIMING:hearing-loop-test] TURN#4
+speech-end=2026-09-23T16:55:02.098Z
+endpoint-evidence=2026-09-23T16:55:02.098Z (speech_final)
+turn-release=2026-09-23T16:55:02.262Z
+llm-request=2026-09-23T16:55:02.263Z
+llm-first-token=2026-09-23T16:55:02.277Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T16:55:02.278Z
+tts-first-audio=2026-09-23T16:55:02.278Z
+audio-queued=2026-09-23T16:55:02.278Z
+[TIMING:hearing-loop-test] TURN#4 DELTAS
+endpoint-to-release=164ms
+release-to-llm-request=1ms
+llm-to-first-token=14ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=180ms
+[PIPELINE:hearing-loop-test] Turn complete: assistant="It runs for about ninety minutes." llmMs=14 ttsMs=0
+[RESPONSE-LEN:hearing-loop-test] TURN#4 userChars=6 assistantChars=33 estTokens=9 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1500 briefRequested=false
+[TIMING:hearing-loop-test] TURN END turn-release=1790182504762 text="Hello." sttMs=0
+[STT:hearing-loop-test] Transcript received: "Hello." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#5 turn-detected +1ms
+[TIMING:hearing-loop-test] TURN#5 stt-to-release=158ms (sttLag=n/ams)
+[PIPELINE:hearing-loop-test] hearing check with nothing to resume (after a block) — acknowledging once: "Hey, can you hear me okay?"
+[TIMING:hearing-loop-test] ATTENTION tts-request +0ms
+[TIMING:hearing-loop-test] ATTENTION tts-first-chunk +0ms
+[TIMING:hearing-loop-test] ATTENTION audio-queued +0ms
+[PLAYBACK:hearing-loop-test] draining 1332ms of queued audio before leaving SPEAKING (queued=1182ms elapsed=0ms)
+[TIMING:hearing-loop-test] ATTENTION SUMMARY total=1338ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:hearing-loop-test] TURN#5 SUMMARY total=1339ms turn-detected=1ms
+[TIMING:hearing-loop-test] TURN#5
+speech-end=2026-09-23T16:55:04.605Z
+endpoint-evidence=2026-09-23T16:55:04.605Z (speech_final)
+turn-release=2026-09-23T16:55:04.762Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:hearing-loop-test] TURN#5 DELTAS
+endpoint-to-release=157ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[PIPELINE:hearing-loop-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:hearing-loop-test] run() exiting — state=LISTENING aborted=true
+  [PASS] B9 — ...and a REAL contribution still hands the budget back
+
+SECTION C — self-echo: what the guard suppresses, what the cap bounds
+[PIPELINE:hearing-loop-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:hearing-loop-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:hearing-loop-test] GREETING greeting-text-ready +0ms
+[TIMING:hearing-loop-test] GREETING tts-request +0ms
+[TIMING:hearing-loop-test] GREETING tts-first-chunk +1ms
+[TIMING:hearing-loop-test] GREETING audio-queued +1ms
+[PLAYBACK:hearing-loop-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:hearing-loop-test] GREETING SUMMARY total=2337ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:hearing-loop-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:hearing-loop-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:hearing-loop-test] LLM request PRE-OPENED on speech_final evidence: text="Hi, tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:hearing-loop-test] TURN END turn-release=1790182509636 text="Hi, tell me." sttMs=0
+[STT:hearing-loop-test] Transcript received: "Hi, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#0 turn-detected +1ms
+[TIMING:hearing-loop-test] TURN#0 stt-to-release=155ms (sttLag=n/ams)
+[LLM:hearing-loop-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:hearing-loop-test] TURN#0 llm-request +1ms
+[SPECULATE:hearing-loop-test] ADOPTED pre-opened request — llm-request is 154ms after the provider stream was opened (first token already in hand, 139ms ago) evidence-to-llm-open=0ms
+[TIMING:hearing-loop-test] TURN#0 llm-first-token +2ms
+[TIMING:hearing-loop-test] TURN#0 tts-request +2ms
+[TIMING:hearing-loop-test] TURN#0 tts-first-chunk +2ms
+[TIMING:hearing-loop-test] TURN#0 audio-queued +2ms
+[PLAYBACK:hearing-loop-test] draining 1741ms of queued audio before leaving SPEAKING (queued=1591ms elapsed=0ms)
+[TIMING:hearing-loop-test] TURN#0 SUMMARY total=1757ms turn-detected=1ms llm-request=1ms llm-first-token=2ms tts-request=2ms tts-first-chunk=2ms audio-queued=2ms
+[TIMING:hearing-loop-test] TURN#0
+speech-end=2026-09-23T16:55:09.482Z
+endpoint-evidence=2026-09-23T16:55:09.483Z (speech_final)
+turn-release=2026-09-23T16:55:09.636Z
+llm-request=2026-09-23T16:55:09.637Z
+llm-first-token=2026-09-23T16:55:09.638Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T16:55:09.638Z
+tts-first-audio=2026-09-23T16:55:09.638Z
+audio-queued=2026-09-23T16:55:09.638Z
+[TIMING:hearing-loop-test] TURN#0 DELTAS
+endpoint-to-release=153ms
+release-to-llm-request=1ms
+llm-to-first-token=1ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=156ms
+[PIPELINE:hearing-loop-test] Turn complete: assistant="The workshop is tomorrow at eleven." llmMs=15 ttsMs=0
+[RESPONSE-LEN:hearing-loop-test] TURN#0 userChars=12 assistantChars=35 estTokens=9 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1591 briefRequested=false
+[TIMING:hearing-loop-test] TURN END turn-release=1790182511570 text="Hello? Hello?" sttMs=0
+[STT:hearing-loop-test] Transcript received: "Hello? Hello?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#1 turn-detected +1ms
+[TIMING:hearing-loop-test] TURN#1 stt-to-release=162ms (sttLag=n/ams)
+[PIPELINE:hearing-loop-test] hearing check with nothing to resume (after a block) — acknowledging once: "Hey, can you hear me okay?"
+[TIMING:hearing-loop-test] ATTENTION tts-request +0ms
+[TIMING:hearing-loop-test] ATTENTION tts-first-chunk +0ms
+[TIMING:hearing-loop-test] ATTENTION audio-queued +0ms
+[PLAYBACK:hearing-loop-test] draining 1332ms of queued audio before leaving SPEAKING (queued=1182ms elapsed=0ms)
+[TIMING:hearing-loop-test] ATTENTION SUMMARY total=1336ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:hearing-loop-test] TURN#1 SUMMARY total=1337ms turn-detected=1ms
+[TIMING:hearing-loop-test] TURN#1
+speech-end=2026-09-23T16:55:11.409Z
+endpoint-evidence=2026-09-23T16:55:11.409Z (speech_final)
+turn-release=2026-09-23T16:55:11.570Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:hearing-loop-test] TURN#1 DELTAS
+endpoint-to-release=161ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[TURN:hearing-loop-test] SELF-ECHO suppressed (our own audio back up the inbound track): "Hey, can you hear me okay?" — 5/5 word pairs (100%) match assistant audio already played
+[PIPELINE:hearing-loop-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:hearing-loop-test] run() exiting — state=LISTENING aborted=true
+  [PASS] C1 — our own acknowledgement, echoed back whole, is still suppressed and never becomes a turn
+[PIPELINE:hearing-loop-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:hearing-loop-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:hearing-loop-test] GREETING greeting-text-ready +0ms
+[TIMING:hearing-loop-test] GREETING tts-request +0ms
+[TIMING:hearing-loop-test] GREETING tts-first-chunk +0ms
+[TIMING:hearing-loop-test] GREETING audio-queued +0ms
+[PLAYBACK:hearing-loop-test] draining 2331ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=1ms)
+[TIMING:hearing-loop-test] GREETING SUMMARY total=2342ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:hearing-loop-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:hearing-loop-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:hearing-loop-test] LLM request PRE-OPENED on speech_final evidence: text="Hi, tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:hearing-loop-test] TURN END turn-release=1790182516186 text="Hi, tell me." sttMs=0
+[STT:hearing-loop-test] Transcript received: "Hi, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#0 turn-detected +1ms
+[TIMING:hearing-loop-test] TURN#0 stt-to-release=160ms (sttLag=n/ams)
+[LLM:hearing-loop-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:hearing-loop-test] TURN#0 llm-request +1ms
+[SPECULATE:hearing-loop-test] ADOPTED pre-opened request — llm-request is 160ms after the provider stream was opened (first token already in hand, 145ms ago) evidence-to-llm-open=0ms
+[TIMING:hearing-loop-test] TURN#0 llm-first-token +2ms
+[TIMING:hearing-loop-test] TURN#0 tts-request +2ms
+[TIMING:hearing-loop-test] TURN#0 tts-first-chunk +2ms
+[TIMING:hearing-loop-test] TURN#0 audio-queued +2ms
+[PLAYBACK:hearing-loop-test] draining 1741ms of queued audio before leaving SPEAKING (queued=1591ms elapsed=0ms)
+[TIMING:hearing-loop-test] TURN#0 SUMMARY total=1749ms turn-detected=1ms llm-request=1ms llm-first-token=2ms tts-request=2ms tts-first-chunk=2ms audio-queued=2ms
+[TIMING:hearing-loop-test] TURN#0
+speech-end=2026-09-23T16:55:16.027Z
+endpoint-evidence=2026-09-23T16:55:16.027Z (speech_final)
+turn-release=2026-09-23T16:55:16.186Z
+llm-request=2026-09-23T16:55:16.187Z
+llm-first-token=2026-09-23T16:55:16.188Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T16:55:16.188Z
+tts-first-audio=2026-09-23T16:55:16.188Z
+audio-queued=2026-09-23T16:55:16.188Z
+[TIMING:hearing-loop-test] TURN#0 DELTAS
+endpoint-to-release=159ms
+release-to-llm-request=1ms
+llm-to-first-token=1ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=161ms
+[PIPELINE:hearing-loop-test] Turn complete: assistant="The workshop is tomorrow at eleven." llmMs=15 ttsMs=0
+[RESPONSE-LEN:hearing-loop-test] TURN#0 userChars=12 assistantChars=35 estTokens=9 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1591 briefRequested=false
+[TIMING:hearing-loop-test] TURN END turn-release=1790182518109 text="Can you hear?" sttMs=0
+[STT:hearing-loop-test] Transcript received: "Can you hear?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#1 turn-detected +0ms
+[TIMING:hearing-loop-test] TURN#1 stt-to-release=158ms (sttLag=n/ams)
+[PIPELINE:hearing-loop-test] hearing check with nothing to resume (after a block) — acknowledging once: "Hey, can you hear me okay?"
+[TIMING:hearing-loop-test] ATTENTION tts-request +0ms
+[TIMING:hearing-loop-test] ATTENTION tts-first-chunk +0ms
+[TIMING:hearing-loop-test] ATTENTION audio-queued +0ms
+[PLAYBACK:hearing-loop-test] draining 1332ms of queued audio before leaving SPEAKING (queued=1182ms elapsed=0ms)
+[TIMING:hearing-loop-test] ATTENTION SUMMARY total=1338ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:hearing-loop-test] TURN#1 SUMMARY total=1340ms turn-detected=0ms
+[TIMING:hearing-loop-test] TURN#1
+speech-end=2026-09-23T16:55:17.951Z
+endpoint-evidence=2026-09-23T16:55:17.951Z (speech_final)
+turn-release=2026-09-23T16:55:18.109Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:hearing-loop-test] TURN#1 DELTAS
+endpoint-to-release=158ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[TIMING:hearing-loop-test] TURN END turn-release=1790182519641 text="Can you hear?" sttMs=0
+[STT:hearing-loop-test] Transcript received: "Can you hear?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#1 turn-detected +0ms
+[TIMING:hearing-loop-test] TURN#1 stt-to-release=161ms (sttLag=n/ams)
+[PIPELINE:hearing-loop-test] hearing check answered — following up once: "I just want to make sure you can hear me. Did you catch what I was saying?"
+[TIMING:hearing-loop-test] ATTENTION tts-request +1ms
+[TIMING:hearing-loop-test] ATTENTION tts-first-chunk +1ms
+[TIMING:hearing-loop-test] ATTENTION audio-queued +1ms
+[PLAYBACK:hearing-loop-test] draining 3514ms of queued audio before leaving SPEAKING (queued=3364ms elapsed=0ms)
+[TIMING:hearing-loop-test] ATTENTION SUMMARY total=3520ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:hearing-loop-test] TURN#1 SUMMARY total=3520ms turn-detected=0ms
+[TIMING:hearing-loop-test] TURN#1
+speech-end=2026-09-23T16:55:19.480Z
+endpoint-evidence=2026-09-23T16:55:19.480Z (speech_final)
+turn-release=2026-09-23T16:55:19.641Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:hearing-loop-test] TURN#1 DELTAS
+endpoint-to-release=161ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[TIMING:hearing-loop-test] TURN END turn-release=1790182523352 text="Can you hear?" sttMs=0
+[STT:hearing-loop-test] Transcript received: "Can you hear?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#1 turn-detected +0ms
+[TIMING:hearing-loop-test] TURN#1 stt-to-release=159ms (sttLag=n/ams)
+[PIPELINE:hearing-loop-test] 2 hearing lines already spoken with nothing in between — "Can you hear?" takes the contextual path instead of another
+[LLM:hearing-loop-test] Sending to fake-llm: historyLength=9 roles=[system,assistant,user,assistant,user,assistant,user,assistant,user] streaming=true
+[TIMING:hearing-loop-test] TURN#1 llm-request +1ms
+[TIMING:hearing-loop-test] TURN#1 llm-first-token +24ms
+[TIMING:hearing-loop-test] TURN#1 tts-request +25ms
+[TIMING:hearing-loop-test] TURN#1 tts-first-chunk +25ms
+[TIMING:hearing-loop-test] TURN#1 audio-queued +25ms
+[PLAYBACK:hearing-loop-test] draining 1650ms of queued audio before leaving SPEAKING (queued=1500ms elapsed=0ms)
+[TIMING:hearing-loop-test] TURN#1 SUMMARY total=1678ms turn-detected=0ms llm-request=1ms llm-first-token=24ms tts-request=25ms tts-first-chunk=25ms audio-queued=25ms
+[TIMING:hearing-loop-test] TURN#1
+speech-end=2026-09-23T16:55:23.193Z
+endpoint-evidence=2026-09-23T16:55:23.193Z (speech_final)
+turn-release=2026-09-23T16:55:23.352Z
+llm-request=2026-09-23T16:55:23.353Z
+llm-first-token=2026-09-23T16:55:23.376Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T16:55:23.377Z
+tts-first-audio=2026-09-23T16:55:23.377Z
+audio-queued=2026-09-23T16:55:23.377Z
+[TIMING:hearing-loop-test] TURN#1 DELTAS
+endpoint-to-release=159ms
+release-to-llm-request=1ms
+llm-to-first-token=23ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=184ms
+[PIPELINE:hearing-loop-test] Turn complete: assistant="It runs for about ninety minutes." llmMs=23 ttsMs=0
+[RESPONSE-LEN:hearing-loop-test] TURN#1 userChars=13 assistantChars=33 estTokens=9 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1500 briefRequested=false
+[TIMING:hearing-loop-test] TURN END turn-release=1790182525221 text="Can you hear?" sttMs=0
+[STT:hearing-loop-test] Transcript received: "Can you hear?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#2 turn-detected +1ms
+[TIMING:hearing-loop-test] TURN#2 stt-to-release=160ms (sttLag=n/ams)
+[PIPELINE:hearing-loop-test] 2 hearing lines already spoken with nothing in between — "Can you hear?" takes the contextual path instead of another
+[LLM:hearing-loop-test] Sending to fake-llm: historyLength=11 roles=[system,assistant,user,assistant,user,assistant,user,assistant,user,assistant,user] streaming=true
+[TIMING:hearing-loop-test] TURN#2 llm-request +1ms
+[TIMING:hearing-loop-test] TURN#2 llm-first-token +16ms
+[TIMING:hearing-loop-test] TURN#2 tts-request +16ms
+[TIMING:hearing-loop-test] TURN#2 tts-first-chunk +16ms
+[TIMING:hearing-loop-test] TURN#2 audio-queued +16ms
+[PLAYBACK:hearing-loop-test] draining 1332ms of queued audio before leaving SPEAKING (queued=1182ms elapsed=0ms)
+[TIMING:hearing-loop-test] TURN#2 SUMMARY total=1354ms turn-detected=1ms llm-request=1ms llm-first-token=16ms tts-request=16ms tts-first-chunk=16ms audio-queued=16ms
+[TIMING:hearing-loop-test] TURN#2
+speech-end=2026-09-23T16:55:25.062Z
+endpoint-evidence=2026-09-23T16:55:25.062Z (speech_final)
+turn-release=2026-09-23T16:55:25.221Z
+llm-request=2026-09-23T16:55:25.222Z
+llm-first-token=2026-09-23T16:55:25.237Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T16:55:25.237Z
+tts-first-audio=2026-09-23T16:55:25.237Z
+audio-queued=2026-09-23T16:55:25.237Z
+[TIMING:hearing-loop-test] TURN#2 DELTAS
+endpoint-to-release=159ms
+release-to-llm-request=1ms
+llm-to-first-token=15ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=175ms
+[PIPELINE:hearing-loop-test] Turn complete: assistant="There is no charge for it." llmMs=15 ttsMs=0
+[RESPONSE-LEN:hearing-loop-test] TURN#2 userChars=13 assistantChars=26 estTokens=7 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1182 briefRequested=false
+[PIPELINE:hearing-loop-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:hearing-loop-test] run() exiting — state=LISTENING aborted=true
+  [PASS] C2 — an echo FRAGMENT the guard cannot judge cannot sustain a loop either
+
+SECTION D — every valid hearing-check behaviour, unchanged
+[PIPELINE:hearing-loop-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:hearing-loop-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:hearing-loop-test] GREETING greeting-text-ready +0ms
+[TIMING:hearing-loop-test] GREETING tts-request +0ms
+[TIMING:hearing-loop-test] GREETING tts-first-chunk +0ms
+[TIMING:hearing-loop-test] GREETING audio-queued +0ms
+[PLAYBACK:hearing-loop-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:hearing-loop-test] GREETING SUMMARY total=2344ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:hearing-loop-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:hearing-loop-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:hearing-loop-test] LLM request PRE-OPENED on speech_final evidence: text="Hello." evidence-to-llm-open=0ms historyLength=3
+[TIMING:hearing-loop-test] TURN END turn-release=1790182529096 text="Hello." sttMs=0
+[STT:hearing-loop-test] Transcript received: "Hello." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#0 turn-detected +0ms
+[TIMING:hearing-loop-test] TURN#0 stt-to-release=158ms (sttLag=n/ams)
+[LLM:hearing-loop-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:hearing-loop-test] TURN#0 llm-request +1ms
+[SPECULATE:hearing-loop-test] ADOPTED pre-opened request — llm-request is 159ms after the provider stream was opened (first token already in hand, 144ms ago) evidence-to-llm-open=0ms
+[TIMING:hearing-loop-test] TURN#0 llm-first-token +1ms
+[TIMING:hearing-loop-test] TURN#0 tts-request +2ms
+[TIMING:hearing-loop-test] TURN#0 tts-first-chunk +2ms
+[TIMING:hearing-loop-test] TURN#0 audio-queued +2ms
+[PLAYBACK:hearing-loop-test] draining 1741ms of queued audio before leaving SPEAKING (queued=1591ms elapsed=0ms)
+[TIMING:hearing-loop-test] TURN#0 SUMMARY total=1743ms turn-detected=0ms llm-request=1ms llm-first-token=1ms tts-request=2ms tts-first-chunk=2ms audio-queued=2ms
+[TIMING:hearing-loop-test] TURN#0
+speech-end=2026-09-23T16:55:28.938Z
+endpoint-evidence=2026-09-23T16:55:28.938Z (speech_final)
+turn-release=2026-09-23T16:55:29.096Z
+llm-request=2026-09-23T16:55:29.097Z
+llm-first-token=2026-09-23T16:55:29.097Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T16:55:29.098Z
+tts-first-audio=2026-09-23T16:55:29.098Z
+audio-queued=2026-09-23T16:55:29.098Z
+[TIMING:hearing-loop-test] TURN#0 DELTAS
+endpoint-to-release=158ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=160ms
+[PIPELINE:hearing-loop-test] Turn complete: assistant="The workshop is tomorrow at eleven." llmMs=15 ttsMs=0
+[RESPONSE-LEN:hearing-loop-test] TURN#0 userChars=6 assistantChars=35 estTokens=9 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1591 briefRequested=false
+[PIPELINE:hearing-loop-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:hearing-loop-test] run() exiting — state=LISTENING aborted=true
+  [PASS] D1 — a single casual "Hello." before any block is still the caller answering the phone
+[PIPELINE:hearing-loop-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:hearing-loop-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:hearing-loop-test] GREETING greeting-text-ready +0ms
+[TIMING:hearing-loop-test] GREETING tts-request +0ms
+[TIMING:hearing-loop-test] GREETING tts-first-chunk +0ms
+[TIMING:hearing-loop-test] GREETING audio-queued +0ms
+[PLAYBACK:hearing-loop-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:hearing-loop-test] GREETING SUMMARY total=2332ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:hearing-loop-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:hearing-loop-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:hearing-loop-test] LLM request PRE-OPENED on speech_final evidence: text="Hi, tell me." evidence-to-llm-open=1ms historyLength=3
+[TIMING:hearing-loop-test] TURN END turn-release=1790182533380 text="Hi, tell me." sttMs=0
+[STT:hearing-loop-test] Transcript received: "Hi, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#0 turn-detected +0ms
+[TIMING:hearing-loop-test] TURN#0 stt-to-release=161ms (sttLag=n/ams)
+[LLM:hearing-loop-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:hearing-loop-test] TURN#0 llm-request +1ms
+[SPECULATE:hearing-loop-test] ADOPTED pre-opened request — llm-request is 161ms after the provider stream was opened (first token already in hand, 146ms ago) evidence-to-llm-open=1ms
+[TIMING:hearing-loop-test] TURN#0 llm-first-token +1ms
+[TIMING:hearing-loop-test] TURN#0 tts-request +1ms
+[TIMING:hearing-loop-test] TURN#0 tts-first-chunk +2ms
+[TIMING:hearing-loop-test] TURN#0 audio-queued +2ms
+[PLAYBACK:hearing-loop-test] draining 1741ms of queued audio before leaving SPEAKING (queued=1591ms elapsed=0ms)
+[TIMING:hearing-loop-test] TURN#0 SUMMARY total=1746ms turn-detected=0ms llm-request=1ms llm-first-token=1ms tts-request=1ms tts-first-chunk=2ms audio-queued=2ms
+[TIMING:hearing-loop-test] TURN#0
+speech-end=2026-09-23T16:55:33.219Z
+endpoint-evidence=2026-09-23T16:55:33.219Z (speech_final)
+turn-release=2026-09-23T16:55:33.380Z
+llm-request=2026-09-23T16:55:33.381Z
+llm-first-token=2026-09-23T16:55:33.381Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T16:55:33.381Z
+tts-first-audio=2026-09-23T16:55:33.382Z
+audio-queued=2026-09-23T16:55:33.382Z
+[TIMING:hearing-loop-test] TURN#0 DELTAS
+endpoint-to-release=161ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=1ms
+first-audio-to-queue=0ms
+speech-end-to-audio=163ms
+[PIPELINE:hearing-loop-test] Turn complete: assistant="The workshop is tomorrow at eleven." llmMs=15 ttsMs=0
+[RESPONSE-LEN:hearing-loop-test] TURN#0 userChars=12 assistantChars=35 estTokens=9 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1591 briefRequested=false
+[TIMING:hearing-loop-test] TURN END turn-release=1790182535301 text="Hello? Hello?" sttMs=0
+[STT:hearing-loop-test] Transcript received: "Hello? Hello?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#1 turn-detected +0ms
+[TIMING:hearing-loop-test] TURN#1 stt-to-release=159ms (sttLag=n/ams)
+[PIPELINE:hearing-loop-test] hearing check with nothing to resume (after a block) — acknowledging once: "Hey, can you hear me okay?"
+[TIMING:hearing-loop-test] ATTENTION tts-request +0ms
+[TIMING:hearing-loop-test] ATTENTION tts-first-chunk +0ms
+[TIMING:hearing-loop-test] ATTENTION audio-queued +0ms
+[PLAYBACK:hearing-loop-test] draining 1332ms of queued audio before leaving SPEAKING (queued=1182ms elapsed=0ms)
+[TIMING:hearing-loop-test] ATTENTION SUMMARY total=1331ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:hearing-loop-test] TURN#1 SUMMARY total=1333ms turn-detected=0ms
+[TIMING:hearing-loop-test] TURN#1
+speech-end=2026-09-23T16:55:35.142Z
+endpoint-evidence=2026-09-23T16:55:35.142Z (speech_final)
+turn-release=2026-09-23T16:55:35.301Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:hearing-loop-test] TURN#1 DELTAS
+endpoint-to-release=159ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[PIPELINE:hearing-loop-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:hearing-loop-test] run() exiting — state=LISTENING aborted=true
+  [PASS] D2 — a REPEATED "Hello?" after a block still gets exactly one acknowledgement, with no model request
+[PIPELINE:hearing-loop-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:hearing-loop-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:hearing-loop-test] GREETING greeting-text-ready +0ms
+[TIMING:hearing-loop-test] GREETING tts-request +0ms
+[TIMING:hearing-loop-test] GREETING tts-first-chunk +0ms
+[TIMING:hearing-loop-test] GREETING audio-queued +0ms
+[PLAYBACK:hearing-loop-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:hearing-loop-test] GREETING SUMMARY total=2332ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:hearing-loop-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:hearing-loop-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:hearing-loop-test] LLM request PRE-OPENED on speech_final evidence: text="Hi, tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:hearing-loop-test] TURN END turn-release=1790182539173 text="Hi, tell me." sttMs=0
+[STT:hearing-loop-test] Transcript received: "Hi, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#0 turn-detected +1ms
+[TIMING:hearing-loop-test] TURN#0 stt-to-release=159ms (sttLag=n/ams)
+[LLM:hearing-loop-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:hearing-loop-test] TURN#0 llm-request +1ms
+[SPECULATE:hearing-loop-test] ADOPTED pre-opened request — llm-request is 159ms after the provider stream was opened (first token already in hand, 143ms ago) evidence-to-llm-open=0ms
+[TIMING:hearing-loop-test] TURN#0 llm-first-token +2ms
+[TIMING:hearing-loop-test] TURN#0 tts-request +2ms
+[TIMING:hearing-loop-test] TURN#0 tts-first-chunk +2ms
+[TIMING:hearing-loop-test] TURN#0 audio-queued +2ms
+[PLAYBACK:hearing-loop-test] draining 1741ms of queued audio before leaving SPEAKING (queued=1591ms elapsed=0ms)
+[TIMING:hearing-loop-test] TURN#0 SUMMARY total=1748ms turn-detected=1ms llm-request=1ms llm-first-token=2ms tts-request=2ms tts-first-chunk=2ms audio-queued=2ms
+[TIMING:hearing-loop-test] TURN#0
+speech-end=2026-09-23T16:55:39.015Z
+endpoint-evidence=2026-09-23T16:55:39.015Z (speech_final)
+turn-release=2026-09-23T16:55:39.173Z
+llm-request=2026-09-23T16:55:39.174Z
+llm-first-token=2026-09-23T16:55:39.175Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T16:55:39.175Z
+tts-first-audio=2026-09-23T16:55:39.175Z
+audio-queued=2026-09-23T16:55:39.175Z
+[TIMING:hearing-loop-test] TURN#0 DELTAS
+endpoint-to-release=158ms
+release-to-llm-request=1ms
+llm-to-first-token=1ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=160ms
+[PIPELINE:hearing-loop-test] Turn complete: assistant="The workshop is tomorrow at eleven." llmMs=16 ttsMs=0
+[RESPONSE-LEN:hearing-loop-test] TURN#0 userChars=12 assistantChars=35 estTokens=9 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1591 briefRequested=false
+[SPECULATE:hearing-loop-test] LLM request PRE-OPENED on speech_final evidence: text="Hello? What is this about?" evidence-to-llm-open=0ms historyLength=5
+[TIMING:hearing-loop-test] TURN END turn-release=1790182541096 text="Hello? What is this about?" sttMs=0
+[STT:hearing-loop-test] Transcript received: "Hello? What is this about?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#1 turn-detected +1ms
+[TIMING:hearing-loop-test] TURN#1 stt-to-release=160ms (sttLag=n/ams)
+[LANGUAGE:hearing-loop-test] call language LOCKED to en on the first meaningful utterance (basis=default-english confidence=0.75 hindiMarkers=0): "Hello? What is this about?"
+[LLM:hearing-loop-test] Sending to fake-llm: historyLength=5 roles=[system,assistant,user,assistant,user] streaming=true
+[TIMING:hearing-loop-test] TURN#1 llm-request +1ms
+[SPECULATE:hearing-loop-test] ADOPTED pre-opened request — llm-request is 160ms after the provider stream was opened (first token already in hand, 145ms ago) evidence-to-llm-open=0ms
+[TIMING:hearing-loop-test] TURN#1 llm-first-token +2ms
+[TIMING:hearing-loop-test] TURN#1 tts-request +2ms
+[TIMING:hearing-loop-test] TURN#1 tts-first-chunk +3ms
+[TIMING:hearing-loop-test] TURN#1 audio-queued +3ms
+[PLAYBACK:hearing-loop-test] draining 1650ms of queued audio before leaving SPEAKING (queued=1500ms elapsed=0ms)
+[TIMING:hearing-loop-test] TURN#1 SUMMARY total=1668ms turn-detected=1ms llm-request=1ms llm-first-token=2ms tts-request=2ms tts-first-chunk=3ms audio-queued=3ms
+[TIMING:hearing-loop-test] TURN#1
+speech-end=2026-09-23T16:55:40.937Z
+endpoint-evidence=2026-09-23T16:55:40.937Z (speech_final)
+turn-release=2026-09-23T16:55:41.096Z
+llm-request=2026-09-23T16:55:41.097Z
+llm-first-token=2026-09-23T16:55:41.098Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T16:55:41.098Z
+tts-first-audio=2026-09-23T16:55:41.099Z
+audio-queued=2026-09-23T16:55:41.099Z
+[TIMING:hearing-loop-test] TURN#1 DELTAS
+endpoint-to-release=159ms
+release-to-llm-request=1ms
+llm-to-first-token=1ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=1ms
+first-audio-to-queue=0ms
+speech-end-to-audio=162ms
+[PIPELINE:hearing-loop-test] Turn complete: assistant="It runs for about ninety minutes." llmMs=15 ttsMs=0
+[RESPONSE-LEN:hearing-loop-test] TURN#1 userChars=26 assistantChars=33 estTokens=9 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1500 briefRequested=false
+[PIPELINE:hearing-loop-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:hearing-loop-test] run() exiting — state=LISTENING aborted=true
+  [PASS] D3 — "Hello? What is this about?" is a real question and still takes the contextual path
+[PIPELINE:hearing-loop-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:hearing-loop-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:hearing-loop-test] GREETING greeting-text-ready +0ms
+[TIMING:hearing-loop-test] GREETING tts-request +0ms
+[TIMING:hearing-loop-test] GREETING tts-first-chunk +0ms
+[TIMING:hearing-loop-test] GREETING audio-queued +0ms
+[PLAYBACK:hearing-loop-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:hearing-loop-test] GREETING SUMMARY total=2331ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:hearing-loop-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:hearing-loop-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:hearing-loop-test] LLM request PRE-OPENED on speech_final evidence: text="Hi, tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:hearing-loop-test] TURN END turn-release=1790182545289 text="Hi, tell me." sttMs=0
+[STT:hearing-loop-test] Transcript received: "Hi, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#0 turn-detected +0ms
+[TIMING:hearing-loop-test] TURN#0 stt-to-release=159ms (sttLag=n/ams)
+[LLM:hearing-loop-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:hearing-loop-test] TURN#0 llm-request +1ms
+[SPECULATE:hearing-loop-test] ADOPTED pre-opened request — llm-request is 160ms after the provider stream was opened (first token already in hand, 144ms ago) evidence-to-llm-open=0ms
+[TIMING:hearing-loop-test] TURN#0 llm-first-token +1ms
+[TIMING:hearing-loop-test] TURN#0 tts-request +1ms
+[TIMING:hearing-loop-test] TURN#0 tts-first-chunk +2ms
+[TIMING:hearing-loop-test] TURN#0 audio-queued +2ms
+[PLAYBACK:hearing-loop-test] draining 1741ms of queued audio before leaving SPEAKING (queued=1591ms elapsed=0ms)
+[TIMING:hearing-loop-test] TURN#0 SUMMARY total=1751ms turn-detected=0ms llm-request=1ms llm-first-token=1ms tts-request=1ms tts-first-chunk=2ms audio-queued=2ms
+[TIMING:hearing-loop-test] TURN#0
+speech-end=2026-09-23T16:55:45.130Z
+endpoint-evidence=2026-09-23T16:55:45.130Z (speech_final)
+turn-release=2026-09-23T16:55:45.289Z
+llm-request=2026-09-23T16:55:45.290Z
+llm-first-token=2026-09-23T16:55:45.290Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T16:55:45.290Z
+tts-first-audio=2026-09-23T16:55:45.291Z
+audio-queued=2026-09-23T16:55:45.291Z
+[TIMING:hearing-loop-test] TURN#0 DELTAS
+endpoint-to-release=159ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=1ms
+first-audio-to-queue=0ms
+speech-end-to-audio=161ms
+[PIPELINE:hearing-loop-test] Turn complete: assistant="The workshop is tomorrow at eleven." llmMs=16 ttsMs=0
+[RESPONSE-LEN:hearing-loop-test] TURN#0 userChars=12 assistantChars=35 estTokens=9 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1591 briefRequested=false
+[TIMING:hearing-loop-test] TURN END turn-release=1790182547208 text="Hello? Hello?" sttMs=0
+[STT:hearing-loop-test] Transcript received: "Hello? Hello?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#1 turn-detected +1ms
+[TIMING:hearing-loop-test] TURN#1 stt-to-release=153ms (sttLag=n/ams)
+[PIPELINE:hearing-loop-test] hearing check with nothing to resume (after a block) — acknowledging once: "Hey, can you hear me okay?"
+[TIMING:hearing-loop-test] ATTENTION tts-request +0ms
+[TIMING:hearing-loop-test] ATTENTION tts-first-chunk +0ms
+[TIMING:hearing-loop-test] ATTENTION audio-queued +0ms
+[PLAYBACK:hearing-loop-test] draining 1332ms of queued audio before leaving SPEAKING (queued=1182ms elapsed=0ms)
+[TIMING:hearing-loop-test] ATTENTION SUMMARY total=1345ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:hearing-loop-test] TURN#1 SUMMARY total=1346ms turn-detected=1ms
+[TIMING:hearing-loop-test] TURN#1
+speech-end=2026-09-23T16:55:47.056Z
+endpoint-evidence=2026-09-23T16:55:47.056Z (speech_final)
+turn-release=2026-09-23T16:55:47.208Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:hearing-loop-test] TURN#1 DELTAS
+endpoint-to-release=152ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[TIMING:hearing-loop-test] TURN END turn-release=1790182548715 text="Hello? Hello?" sttMs=0
+[STT:hearing-loop-test] Transcript received: "Hello? Hello?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#1 turn-detected +0ms
+[TIMING:hearing-loop-test] TURN#1 stt-to-release=160ms (sttLag=n/ams)
+[PIPELINE:hearing-loop-test] hearing check answered — following up once: "I just want to make sure you can hear me. Did you catch what I was saying?"
+[TIMING:hearing-loop-test] ATTENTION tts-request +0ms
+[TIMING:hearing-loop-test] ATTENTION tts-first-chunk +0ms
+[TIMING:hearing-loop-test] ATTENTION audio-queued +0ms
+[PLAYBACK:hearing-loop-test] draining 3514ms of queued audio before leaving SPEAKING (queued=3364ms elapsed=0ms)
+[TIMING:hearing-loop-test] ATTENTION SUMMARY total=3519ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:hearing-loop-test] TURN#1 SUMMARY total=3520ms turn-detected=0ms
+[TIMING:hearing-loop-test] TURN#1
+speech-end=2026-09-23T16:55:48.555Z
+endpoint-evidence=2026-09-23T16:55:48.555Z (speech_final)
+turn-release=2026-09-23T16:55:48.715Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:hearing-loop-test] TURN#1 DELTAS
+endpoint-to-release=160ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[SPECULATE:hearing-loop-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, I heard you. Tell me more." evidence-to-llm-open=0ms historyLength=9
+[TIMING:hearing-loop-test] TURN END turn-release=1790182552873 text="Yes, I heard you. Tell me more." sttMs=0
+[STT:hearing-loop-test] Transcript received: "Yes, I heard you. Tell me more." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:hearing-loop-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:hearing-loop-test] TURN#1 turn-detected +1ms
+[TIMING:hearing-loop-test] TURN#1 stt-to-release=608ms (sttLag=n/ams)
+[LANGUAGE:hearing-loop-test] call language LOCKED to en on the first meaningful utterance (basis=default-english confidence=0.75 hindiMarkers=0): "Yes, I heard you. Tell me more."
+[LLM:hearing-loop-test] Sending to fake-llm: historyLength=9 roles=[system,assistant,user,assistant,user,assistant,user,assistant,user] streaming=true
+[TIMING:hearing-loop-test] TURN#1 llm-request +1ms
+[SPECULATE:hearing-loop-test] ADOPTED pre-opened request — llm-request is 608ms after the provider stream was opened (first token already in hand, 593ms ago) evidence-to-llm-open=0ms
+[TIMING:hearing-loop-test] TURN#1 llm-first-token +1ms
+[TIMING:hearing-loop-test] TURN#1 tts-request +1ms
+[TIMING:hearing-loop-test] TURN#1 tts-first-chunk +2ms
+[TIMING:hearing-loop-test] TURN#1 audio-queued +2ms
+[PLAYBACK:hearing-loop-test] draining 1650ms of queued audio before leaving SPEAKING (queued=1500ms elapsed=0ms)
+[TIMING:hearing-loop-test] TURN#1 SUMMARY total=1662ms turn-detected=1ms llm-request=1ms llm-first-token=1ms tts-request=1ms tts-first-chunk=2ms audio-queued=2ms
+[TIMING:hearing-loop-test] TURN#1
+speech-end=2026-09-23T16:55:52.266Z
+endpoint-evidence=2026-09-23T16:55:52.266Z (speech_final)
+turn-release=2026-09-23T16:55:52.873Z
+llm-request=2026-09-23T16:55:52.874Z
+llm-first-token=2026-09-23T16:55:52.874Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T16:55:52.874Z
+tts-first-audio=2026-09-23T16:55:52.875Z
+audio-queued=2026-09-23T16:55:52.875Z
+[TIMING:hearing-loop-test] TURN#1 DELTAS
+endpoint-to-release=607ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=1ms
+first-audio-to-queue=0ms
+speech-end-to-audio=609ms
+[PIPELINE:hearing-loop-test] Turn complete: assistant="It runs for about ninety minutes." llmMs=15 ttsMs=1
+[RESPONSE-LEN:hearing-loop-test] TURN#1 userChars=31 assistantChars=33 estTokens=9 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1500 briefRequested=false
+[PIPELINE:hearing-loop-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:hearing-loop-test] run() exiting — state=LISTENING aborted=true
+  [PASS] D4 — the acknowledgement + follow-up pair still runs in full before the cap bites
+
+FAILURES — 18 passed, 1 failed
+  - B3 — a RESUME is progress and does not consume the cap

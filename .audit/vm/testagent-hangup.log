@@ -1,0 +1,34 @@
+
+F. WHAT COUNTS AS THE AGENT CLOSING THE CONVERSATION
+  [PASS] F1. a sign-off the agent ends its turn on closes the call
+  [PASS] F2. a closing phrase used MID-CONVERSATION does not close the call
+  [PASS] F3. a turn that still asks something is a handover point, never an ending
+  [PASS] F4. an ordinary courtesy is not a sign-off
+  [PASS] F5. the last turn must be the AGENT's — a talking caller is never cut off
+  [PASS] F6. an agent-only transcript never closes a call
+
+G. A CLOSING WITH A TRAILING VOCATIVE (THE REPORTED DEFECT)
+  [PASS] G1. the reported production closings close the call
+  [PASS] G2. ...and the exact ending that stopped the call is still short of the cap
+  [PASS] G3. a CONTINUATION after the phrase is still not a closing
+  [PASS] G4. a tail longer than a vocative is not a closing
+  [PASS] G5. a turn using a closing phrase mid-sentence AND at its end still closes
+[campaign-db] connection pool created (max=6, pid=32732)
+C:\Users\admin\Downloads\voice-agent-lab_1\voice-agent-lab\node_modules\pg-pool\index.js:45
+    Error.captureStackTrace(err)
+          ^
+
+Error: Connection terminated due to connection timeout
+    at C:\Users\admin\Downloads\voice-agent-lab_1\voice-agent-lab\node_modules\pg-pool\index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async <anonymous> (C:\Users\admin\Downloads\voice-agent-lab_1\voice-agent-lab\src\campaign\tests\agent-hangup-tests.ts:494:3) {
+  [cause]: Error: Connection terminated unexpectedly
+      at Connection.<anonymous> (C:\Users\admin\Downloads\voice-agent-lab_1\voice-agent-lab\node_modules\pg\lib\client.js:204:73)
+      at Object.onceWrapper (node:events:630:28)
+      at Connection.emit (node:events:509:28)
+      at Socket.<anonymous> (C:\Users\admin\Downloads\voice-agent-lab_1\voice-agent-lab\node_modules\pg\lib\connection.js:64:12)
+      at Socket.emit (node:events:521:24)
+      at TCP.<anonymous> (node:net:351:12)
+}
+
+Node.js v24.18.1

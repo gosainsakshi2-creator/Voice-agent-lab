@@ -1,0 +1,414 @@
+
+SECTION A — our own audio, transcribed as the caller (the defect)
+[PIPELINE:self-echo-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:self-echo-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:self-echo-test] GREETING greeting-text-ready +0ms
+[TIMING:self-echo-test] GREETING tts-request +4ms
+[TIMING:self-echo-test] GREETING tts-first-chunk +6ms
+[TIMING:self-echo-test] GREETING audio-queued +6ms
+[PLAYBACK:self-echo-test] draining 4376ms of queued audio before leaving SPEAKING (queued=4227ms elapsed=1ms)
+[TIMING:self-echo-test] GREETING SUMMARY total=800ms greeting-text-ready=0ms tts-request=4ms tts-first-chunk=6ms audio-queued=6ms
+[PIPELINE:self-echo-test] Greeting spoken: text="Hello Sakshi, this is Rohan calling from FlexiFunnels about the free AI workshop this Sunday." state=SPEAKING
+[PIPELINE:self-echo-test] entering main loop — state=SPEAKING aborted=true
+[PIPELINE:self-echo-test] run() exiting — state=SPEAKING aborted=true
+  [PASS] the echo of the opening line does not become a caller turn
+[PIPELINE:self-echo-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:self-echo-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:self-echo-test] GREETING greeting-text-ready +0ms
+[TIMING:self-echo-test] GREETING tts-request +1ms
+[TIMING:self-echo-test] GREETING tts-first-chunk +2ms
+[TIMING:self-echo-test] GREETING audio-queued +2ms
+[PLAYBACK:self-echo-test] draining 4377ms of queued audio before leaving SPEAKING (queued=4227ms elapsed=0ms)
+[TIMING:self-echo-test] GREETING SUMMARY total=4389ms greeting-text-ready=0ms tts-request=1ms tts-first-chunk=2ms audio-queued=2ms
+[PIPELINE:self-echo-test] Greeting spoken: text="Hello Sakshi, this is Rohan calling from FlexiFunnels about the free AI workshop this Sunday." state=SPEAKING
+[PIPELINE:self-echo-test] entering main loop — state=SPEAKING aborted=false
+[TIMING:self-echo-test] TURN END turn-release=1790155193428 text="Nothing much, thanks for calling me today." sttMs=0
+[STT:self-echo-test] Transcript received: "Nothing much, thanks for calling me today." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:self-echo-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:self-echo-test] TURN#0 turn-detected +3ms
+[TIMING:self-echo-test] TURN#0 stt-to-release=4306ms (sttLag=n/ams)
+[LANGUAGE:self-echo-test] call language LOCKED to en on the first meaningful utterance (basis=default-english confidence=0.75 hindiMarkers=0): "Nothing much, thanks for calling me today."
+[LLM:self-echo-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:self-echo-test] TURN#0 llm-request +10ms
+[TIMING:self-echo-test] TURN#0 llm-first-token +31ms
+[TIMING:self-echo-test] TURN#0 tts-request +32ms
+[TIMING:self-echo-test] TURN#0 tts-first-chunk +32ms
+[TIMING:self-echo-test] TURN#0 audio-queued +32ms
+[PLAYBACK:self-echo-test] draining 2423ms of queued audio before leaving SPEAKING (queued=2273ms elapsed=0ms)
+[TIMING:self-echo-test] TURN#0 SUMMARY total=2461ms turn-detected=3ms llm-request=10ms llm-first-token=31ms tts-request=32ms tts-first-chunk=32ms audio-queued=32ms
+[TIMING:self-echo-test] TURN#0
+speech-end=2026-09-23T09:19:49.126Z
+endpoint-evidence=2026-09-23T09:19:49.126Z (speech_final)
+turn-release=2026-09-23T09:19:53.428Z
+llm-request=2026-09-23T09:19:53.438Z
+llm-first-token=2026-09-23T09:19:53.459Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T09:19:53.460Z
+tts-first-audio=2026-09-23T09:19:53.460Z
+audio-queued=2026-09-23T09:19:53.460Z
+[TIMING:self-echo-test] TURN#0 DELTAS
+endpoint-to-release=4302ms
+release-to-llm-request=10ms
+llm-to-first-token=21ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=4334ms
+[PIPELINE:self-echo-test] Turn complete: assistant="You're welcome. What would you like to talk about?" llmMs=21 ttsMs=0
+[RESPONSE-LEN:self-echo-test] TURN#0 userChars=42 assistantChars=50 estTokens=13 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=2273 briefRequested=false
+[TURN:self-echo-test] SELF-ECHO suppressed (our own audio back up the inbound track): "You are welcome. What would you like to talk" — 6/8 word pairs (75%) match assistant audio already played
+[PIPELINE:self-echo-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:self-echo-test] run() exiting — state=LISTENING aborted=true
+  [PASS] the echo whose final lands AFTER the reply finished playing is still suppressed
+[PIPELINE:self-echo-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:self-echo-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:self-echo-test] GREETING greeting-text-ready +0ms
+[TIMING:self-echo-test] GREETING tts-request +0ms
+[TIMING:self-echo-test] GREETING tts-first-chunk +0ms
+[TIMING:self-echo-test] GREETING audio-queued +0ms
+[PLAYBACK:self-echo-test] draining 4377ms of queued audio before leaving SPEAKING (queued=4227ms elapsed=0ms)
+[TIMING:self-echo-test] GREETING SUMMARY total=4381ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:self-echo-test] Greeting spoken: text="Hello Sakshi, this is Rohan calling from FlexiFunnels about the free AI workshop this Sunday." state=SPEAKING
+[PIPELINE:self-echo-test] entering main loop — state=SPEAKING aborted=false
+[TIMING:self-echo-test] TURN END turn-release=1790155200924 text="Can you tell me what you do?" sttMs=0
+[STT:self-echo-test] Transcript received: "Can you tell me what you do?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:self-echo-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:self-echo-test] TURN#0 turn-detected +0ms
+[TIMING:self-echo-test] TURN#0 stt-to-release=4300ms (sttLag=n/ams)
+[LANGUAGE:self-echo-test] call language LOCKED to en on the first meaningful utterance (basis=default-english confidence=0.75 hindiMarkers=0): "Can you tell me what you do?"
+[LLM:self-echo-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:self-echo-test] TURN#0 llm-request +2ms
+[TIMING:self-echo-test] TURN#0 llm-first-token +15ms
+[TIMING:self-echo-test] TURN#0 tts-request +15ms
+[TIMING:self-echo-test] TURN#0 tts-first-chunk +15ms
+[TIMING:self-echo-test] TURN#0 audio-queued +15ms
+[PLAYBACK:self-echo-test] draining 3877ms of queued audio before leaving SPEAKING (queued=3727ms elapsed=0ms)
+[TIMING:self-echo-test] TURN#0 SUMMARY total=3897ms turn-detected=0ms llm-request=2ms llm-first-token=15ms tts-request=15ms tts-first-chunk=15ms audio-queued=15ms
+[TIMING:self-echo-test] TURN#0
+speech-end=2026-09-23T09:19:56.624Z
+endpoint-evidence=2026-09-23T09:19:56.624Z (speech_final)
+turn-release=2026-09-23T09:20:00.924Z
+llm-request=2026-09-23T09:20:00.926Z
+llm-first-token=2026-09-23T09:20:00.939Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T09:20:00.939Z
+tts-first-audio=2026-09-23T09:20:00.939Z
+audio-queued=2026-09-23T09:20:00.939Z
+[TIMING:self-echo-test] TURN#0 DELTAS
+endpoint-to-release=4300ms
+release-to-llm-request=2ms
+llm-to-first-token=13ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=4315ms
+[PIPELINE:self-echo-test] Turn complete: assistant="I'm here for anything you need, billing, your account, or help using FlexiFunnel..." llmMs=12 ttsMs=0
+[RESPONSE-LEN:self-echo-test] TURN#0 userChars=28 assistantChars=82 estTokens=21 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=3727 briefRequested=false
+[TURN:self-echo-test] SELF-ECHO suppressed (our own audio back up the inbound track): "In here for anything you need" — 4/5 word pairs (80%) match assistant audio already played
+[PIPELINE:self-echo-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:self-echo-test] run() exiting — state=LISTENING aborted=true
+  [PASS] mis-recognised echo still matches — "In here" for "I'm here"
+
+SECTION B — what the guard must NEVER touch
+[PIPELINE:self-echo-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:self-echo-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:self-echo-test] GREETING greeting-text-ready +0ms
+[TIMING:self-echo-test] GREETING tts-request +1ms
+[TIMING:self-echo-test] GREETING tts-first-chunk +1ms
+[TIMING:self-echo-test] GREETING audio-queued +1ms
+[PLAYBACK:self-echo-test] draining 4377ms of queued audio before leaving SPEAKING (queued=4227ms elapsed=0ms)
+[TIMING:self-echo-test] GREETING SUMMARY total=4386ms greeting-text-ready=0ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:self-echo-test] Greeting spoken: text="Hello Sakshi, this is Rohan calling from FlexiFunnels about the free AI workshop this Sunday." state=SPEAKING
+[PIPELINE:self-echo-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:self-echo-test] LLM request PRE-OPENED on speech_final evidence: text="Tell me more please." evidence-to-llm-open=0ms historyLength=3
+[TIMING:self-echo-test] TURN END turn-release=1790155210022 text="Tell me more please." sttMs=0
+[STT:self-echo-test] Transcript received: "Tell me more please." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:self-echo-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:self-echo-test] TURN#0 turn-detected +0ms
+[TIMING:self-echo-test] TURN#0 stt-to-release=151ms (sttLag=n/ams)
+[LANGUAGE:self-echo-test] call language LOCKED to en on the first meaningful utterance (basis=default-english confidence=0.75 hindiMarkers=0): "Tell me more please."
+[LLM:self-echo-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:self-echo-test] TURN#0 llm-request +1ms
+[SPECULATE:self-echo-test] ADOPTED pre-opened request — llm-request is 152ms after the provider stream was opened (first token already in hand, 136ms ago) evidence-to-llm-open=0ms
+[TIMING:self-echo-test] TURN#0 llm-first-token +1ms
+[TIMING:self-echo-test] TURN#0 first-sentence-ready +1ms
+[TIMING:self-echo-test] TURN#0 tts-request +1ms
+[TIMING:self-echo-test] TURN#0 tts-first-chunk +1ms
+[TIMING:self-echo-test] TURN#0 audio-queued +1ms
+[PLAYBACK:self-echo-test] draining 4786ms of queued audio before leaving SPEAKING (queued=4636ms elapsed=0ms)
+[TURN:self-echo-test] barge-in ACCEPTED on transcript: "Actually how much does the price come to?" — words=8 confidence=0.95 isFinal=true energyAgeMs=1 beganBeforeReply=false replyRemainingMs=4221 replyFullyQueued=true
+[TIMING:self-echo-test] TURN#0 SUMMARY total=417ms turn-detected=0ms llm-request=1ms llm-first-token=1ms first-sentence-ready=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:self-echo-test] TURN#0
+speech-end=2026-09-23T09:20:09.871Z
+endpoint-evidence=2026-09-23T09:20:09.871Z (speech_final)
+turn-release=2026-09-23T09:20:10.022Z
+llm-request=2026-09-23T09:20:10.023Z
+llm-first-token=2026-09-23T09:20:10.023Z
+first-sentence-ready=2026-09-23T09:20:10.023Z
+tts-request=2026-09-23T09:20:10.023Z
+tts-first-audio=2026-09-23T09:20:10.023Z
+audio-queued=2026-09-23T09:20:10.023Z
+[TIMING:self-echo-test] TURN#0 DELTAS
+endpoint-to-release=151ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=0ms
+sentence-to-tts=0ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=152ms
+[PIPELINE:self-echo-test] Turn complete: assistant="We have created Flexi Genie, which automates your online business. It builds fun..." llmMs=16 ttsMs=0
+[RESPONSE-LEN:self-echo-test] TURN#0 userChars=20 assistantChars=103 estTokens=26 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=2 audioQueuedMs=4636 briefRequested=false
+[PIPELINE:self-echo-test] Response #1 CANCELLED by barge-in — heard="" discarded="We have created Flexi Genie, which automates your online business. It builds fun..."
+[TIMING:self-echo-test] TURN END turn-release=1790155210602 text="Actually how much does the price come to?" sttMs=0
+[STT:self-echo-test] Transcript received: "Actually how much does the price come to?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:self-echo-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:self-echo-test] TURN#1 turn-detected +1ms
+[TIMING:self-echo-test] TURN#1 stt-to-release=165ms (sttLag=n/ams)
+[LLM:self-echo-test] Sending to fake-llm: historyLength=4 roles=[system,assistant,user,user] streaming=true
+[TIMING:self-echo-test] TURN#1 llm-request +1ms
+[TIMING:self-echo-test] TURN#1 llm-first-token +17ms
+[TIMING:self-echo-test] TURN#1 tts-request +17ms
+[TIMING:self-echo-test] TURN#1 tts-first-chunk +18ms
+[TIMING:self-echo-test] TURN#1 audio-queued +18ms
+[PLAYBACK:self-echo-test] draining 2059ms of queued audio before leaving SPEAKING (queued=1909ms elapsed=0ms)
+[TIMING:self-echo-test] TURN#1 SUMMARY total=2085ms turn-detected=1ms llm-request=1ms llm-first-token=17ms tts-request=17ms tts-first-chunk=18ms audio-queued=18ms
+[TIMING:self-echo-test] TURN#1
+speech-end=2026-09-23T09:20:10.438Z
+endpoint-evidence=2026-09-23T09:20:10.439Z (speech_final)
+turn-release=2026-09-23T09:20:10.602Z
+llm-request=2026-09-23T09:20:10.603Z
+llm-first-token=2026-09-23T09:20:10.619Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T09:20:10.619Z
+tts-first-audio=2026-09-23T09:20:10.620Z
+audio-queued=2026-09-23T09:20:10.620Z
+[TIMING:self-echo-test] TURN#1 DELTAS
+endpoint-to-release=163ms
+release-to-llm-request=1ms
+llm-to-first-token=16ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=1ms
+first-audio-to-queue=0ms
+speech-end-to-audio=182ms
+[PIPELINE:self-echo-test] Turn complete: assistant="The workshop is free and runs this Sunday." llmMs=16 ttsMs=1
+[RESPONSE-LEN:self-echo-test] TURN#1 userChars=41 assistantChars=42 estTokens=11 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1909 briefRequested=false
+[PIPELINE:self-echo-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:self-echo-test] run() exiting — state=LISTENING aborted=true
+  [FAIL] a genuine interruption still interrupts, and is still answered
+         timed out after 15000ms waiting for 3 replies (have 2, state=LISTENING)
+[PIPELINE:self-echo-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:self-echo-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:self-echo-test] GREETING greeting-text-ready +0ms
+[TIMING:self-echo-test] GREETING tts-request +0ms
+[TIMING:self-echo-test] GREETING tts-first-chunk +0ms
+[TIMING:self-echo-test] GREETING audio-queued +0ms
+[PLAYBACK:self-echo-test] draining 4377ms of queued audio before leaving SPEAKING (queued=4227ms elapsed=0ms)
+[TIMING:self-echo-test] GREETING SUMMARY total=4377ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:self-echo-test] Greeting spoken: text="Hello Sakshi, this is Rohan calling from FlexiFunnels about the free AI workshop this Sunday." state=SPEAKING
+[PIPELINE:self-echo-test] entering main loop — state=SPEAKING aborted=false
+[TIMING:self-echo-test] TURN END turn-release=1790155229847 text="What can you help me with?" sttMs=0
+[STT:self-echo-test] Transcript received: "What can you help me with?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:self-echo-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:self-echo-test] TURN#0 turn-detected +1ms
+[TIMING:self-echo-test] TURN#0 stt-to-release=4296ms (sttLag=n/ams)
+[LANGUAGE:self-echo-test] call language LOCKED to en on the first meaningful utterance (basis=default-english confidence=0.75 hindiMarkers=0): "What can you help me with?"
+[LLM:self-echo-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:self-echo-test] TURN#0 llm-request +1ms
+[TIMING:self-echo-test] TURN#0 llm-first-token +16ms
+[TIMING:self-echo-test] TURN#0 tts-request +17ms
+[TIMING:self-echo-test] TURN#0 tts-first-chunk +17ms
+[TIMING:self-echo-test] TURN#0 audio-queued +17ms
+[PLAYBACK:self-echo-test] draining 2241ms of queued audio before leaving SPEAKING (queued=2091ms elapsed=0ms)
+[TIMING:self-echo-test] TURN#0 SUMMARY total=2259ms turn-detected=1ms llm-request=1ms llm-first-token=16ms tts-request=17ms tts-first-chunk=17ms audio-queued=17ms
+[TIMING:self-echo-test] TURN#0
+speech-end=2026-09-23T09:20:25.552Z
+endpoint-evidence=2026-09-23T09:20:25.552Z (speech_final)
+turn-release=2026-09-23T09:20:29.847Z
+llm-request=2026-09-23T09:20:29.848Z
+llm-first-token=2026-09-23T09:20:29.863Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T09:20:29.864Z
+tts-first-audio=2026-09-23T09:20:29.864Z
+audio-queued=2026-09-23T09:20:29.864Z
+[TIMING:self-echo-test] TURN#0 DELTAS
+endpoint-to-release=4295ms
+release-to-llm-request=1ms
+llm-to-first-token=15ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=4312ms
+[PIPELINE:self-echo-test] Turn complete: assistant="Wait, stop, hello, yes, billing, your account." llmMs=15 ttsMs=0
+[RESPONSE-LEN:self-echo-test] TURN#0 userChars=26 assistantChars=46 estTokens=12 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=2091 briefRequested=false
+[SPECULATE:self-echo-test] LLM request PRE-OPENED on speech_final evidence: text="Wait stop" evidence-to-llm-open=0ms historyLength=5
+[TIMING:self-echo-test] TURN END turn-release=1790155232438 text="Wait stop" sttMs=0
+[STT:self-echo-test] Transcript received: "Wait stop" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:self-echo-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:self-echo-test] TURN#1 turn-detected +0ms
+[TIMING:self-echo-test] TURN#1 stt-to-release=301ms (sttLag=n/ams)
+[LLM:self-echo-test] Sending to fake-llm: historyLength=5 roles=[system,assistant,user,assistant,user] streaming=true
+[TIMING:self-echo-test] TURN#1 llm-request +0ms
+[SPECULATE:self-echo-test] ADOPTED pre-opened request — llm-request is 301ms after the provider stream was opened (first token already in hand, 286ms ago) evidence-to-llm-open=0ms
+[TIMING:self-echo-test] TURN#1 llm-first-token +0ms
+[TIMING:self-echo-test] TURN#1 tts-request +0ms
+[TIMING:self-echo-test] TURN#1 tts-first-chunk +0ms
+[TIMING:self-echo-test] TURN#1 audio-queued +0ms
+[PLAYBACK:self-echo-test] draining 558ms of queued audio before leaving SPEAKING (queued=409ms elapsed=1ms)
+[TIMING:self-echo-test] TURN#1 SUMMARY total=115ms turn-detected=0ms llm-request=0ms llm-first-token=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:self-echo-test] TURN#1
+speech-end=2026-09-23T09:20:32.137Z
+endpoint-evidence=2026-09-23T09:20:32.137Z (speech_final)
+turn-release=2026-09-23T09:20:32.438Z
+llm-request=2026-09-23T09:20:32.438Z
+llm-first-token=2026-09-23T09:20:32.438Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T09:20:32.438Z
+tts-first-audio=2026-09-23T09:20:32.438Z
+audio-queued=2026-09-23T09:20:32.438Z
+[TIMING:self-echo-test] TURN#1 DELTAS
+endpoint-to-release=301ms
+release-to-llm-request=0ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=301ms
+[PIPELINE:self-echo-test] Turn complete: assistant="Answered." llmMs=15 ttsMs=0
+[RESPONSE-LEN:self-echo-test] TURN#1 userChars=9 assistantChars=9 estTokens=3 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=409 briefRequested=false
+[PIPELINE:self-echo-test] run() exiting — state=SPEAKING aborted=true
+  [PASS] short caller utterances are never suppressed, whatever the assistant said
+[PIPELINE:self-echo-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:self-echo-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:self-echo-test] GREETING greeting-text-ready +0ms
+[TIMING:self-echo-test] GREETING tts-request +0ms
+[TIMING:self-echo-test] GREETING tts-first-chunk +0ms
+[TIMING:self-echo-test] GREETING audio-queued +1ms
+[PLAYBACK:self-echo-test] draining 4377ms of queued audio before leaving SPEAKING (queued=4227ms elapsed=0ms)
+[TIMING:self-echo-test] GREETING SUMMARY total=4380ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=1ms
+[PIPELINE:self-echo-test] Greeting spoken: text="Hello Sakshi, this is Rohan calling from FlexiFunnels about the free AI workshop this Sunday." state=SPEAKING
+[PIPELINE:self-echo-test] entering main loop — state=SPEAKING aborted=false
+[TIMING:self-echo-test] TURN END turn-release=1790155236936 text="What can you help me with?" sttMs=0
+[STT:self-echo-test] Transcript received: "What can you help me with?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:self-echo-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:self-echo-test] TURN#0 turn-detected +0ms
+[TIMING:self-echo-test] TURN#0 stt-to-release=4285ms (sttLag=n/ams)
+[LANGUAGE:self-echo-test] call language LOCKED to en on the first meaningful utterance (basis=default-english confidence=0.75 hindiMarkers=0): "What can you help me with?"
+[LLM:self-echo-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:self-echo-test] TURN#0 llm-request +0ms
+[TIMING:self-echo-test] TURN#0 llm-first-token +15ms
+[TIMING:self-echo-test] TURN#0 tts-request +15ms
+[TIMING:self-echo-test] TURN#0 tts-first-chunk +15ms
+[TIMING:self-echo-test] TURN#0 audio-queued +15ms
+[PLAYBACK:self-echo-test] draining 3877ms of queued audio before leaving SPEAKING (queued=3727ms elapsed=0ms)
+[TIMING:self-echo-test] TURN#0 SUMMARY total=3909ms turn-detected=0ms llm-request=0ms llm-first-token=15ms tts-request=15ms tts-first-chunk=15ms audio-queued=15ms
+[TIMING:self-echo-test] TURN#0
+speech-end=2026-09-23T09:20:32.651Z
+endpoint-evidence=2026-09-23T09:20:32.651Z (speech_final)
+turn-release=2026-09-23T09:20:36.936Z
+llm-request=2026-09-23T09:20:36.936Z
+llm-first-token=2026-09-23T09:20:36.951Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T09:20:36.951Z
+tts-first-audio=2026-09-23T09:20:36.951Z
+audio-queued=2026-09-23T09:20:36.951Z
+[TIMING:self-echo-test] TURN#0 DELTAS
+endpoint-to-release=4285ms
+release-to-llm-request=0ms
+llm-to-first-token=15ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=4300ms
+[PIPELINE:self-echo-test] Turn complete: assistant="I'm here for anything you need, billing, your account, or help using FlexiFunnel..." llmMs=15 ttsMs=0
+[RESPONSE-LEN:self-echo-test] TURN#0 userChars=26 assistantChars=82 estTokens=21 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=3727 briefRequested=false
+[SPECULATE:self-echo-test] LLM request PRE-OPENED on speech_final evidence: text="Yes I need help with my billing account please" evidence-to-llm-open=0ms historyLength=5
+[TIMING:self-echo-test] TURN END turn-release=1790155241458 text="Yes I need help with my billing account please" sttMs=0
+[STT:self-echo-test] Transcript received: "Yes I need help with my billing account please" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:self-echo-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:self-echo-test] TURN#1 turn-detected +1ms
+[TIMING:self-echo-test] TURN#1 stt-to-release=613ms (sttLag=n/ams)
+[LLM:self-echo-test] Sending to fake-llm: historyLength=5 roles=[system,assistant,user,assistant,user] streaming=true
+[TIMING:self-echo-test] TURN#1 llm-request +1ms
+[SPECULATE:self-echo-test] ADOPTED pre-opened request — llm-request is 613ms after the provider stream was opened (first token already in hand, 602ms ago) evidence-to-llm-open=0ms
+[TIMING:self-echo-test] TURN#1 llm-first-token +2ms
+[TIMING:self-echo-test] TURN#1 tts-request +2ms
+[TIMING:self-echo-test] TURN#1 tts-first-chunk +2ms
+[TIMING:self-echo-test] TURN#1 audio-queued +2ms
+[PLAYBACK:self-echo-test] draining 1423ms of queued audio before leaving SPEAKING (queued=1273ms elapsed=0ms)
+[TIMING:self-echo-test] TURN#1 SUMMARY total=392ms turn-detected=1ms llm-request=1ms llm-first-token=2ms tts-request=2ms tts-first-chunk=2ms audio-queued=2ms
+[TIMING:self-echo-test] TURN#1
+speech-end=2026-09-23T09:20:40.846Z
+endpoint-evidence=2026-09-23T09:20:40.846Z (speech_final)
+turn-release=2026-09-23T09:20:41.458Z
+llm-request=2026-09-23T09:20:41.459Z
+llm-first-token=2026-09-23T09:20:41.460Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T09:20:41.460Z
+tts-first-audio=2026-09-23T09:20:41.460Z
+audio-queued=2026-09-23T09:20:41.460Z
+[TIMING:self-echo-test] TURN#1 DELTAS
+endpoint-to-release=612ms
+release-to-llm-request=1ms
+llm-to-first-token=1ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=614ms
+[PIPELINE:self-echo-test] Turn complete: assistant="Let me pull up your billing." llmMs=11 ttsMs=0
+[RESPONSE-LEN:self-echo-test] TURN#1 userChars=46 assistantChars=28 estTokens=7 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1273 briefRequested=false
+[PIPELINE:self-echo-test] run() exiting — state=SPEAKING aborted=true
+  [PASS] a caller reusing the reply's own vocabulary is still answered
+[PIPELINE:self-echo-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:self-echo-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:self-echo-test] GREETING greeting-text-ready +0ms
+[TIMING:self-echo-test] GREETING tts-request +0ms
+[TIMING:self-echo-test] GREETING tts-first-chunk +0ms
+[TIMING:self-echo-test] GREETING audio-queued +0ms
+[PLAYBACK:self-echo-test] draining 4377ms of queued audio before leaving SPEAKING (queued=4227ms elapsed=0ms)
+[TIMING:self-echo-test] GREETING SUMMARY total=4379ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:self-echo-test] Greeting spoken: text="Hello Sakshi, this is Rohan calling from FlexiFunnels about the free AI workshop this Sunday." state=SPEAKING
+[PIPELINE:self-echo-test] entering main loop — state=SPEAKING aborted=false
+[TIMING:self-echo-test] TURN END turn-release=1790155246231 text="Hello Sakshi this is Rohan calling from FlexiFunnels" sttMs=0
+[STT:self-echo-test] Transcript received: "Hello Sakshi this is Rohan calling from FlexiFunnels" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:self-echo-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:self-echo-test] TURN#0 turn-detected +0ms
+[TIMING:self-echo-test] TURN#0 stt-to-release=4380ms (sttLag=n/ams)
+[LANGUAGE:self-echo-test] call language LOCKED to en on the first meaningful utterance (basis=default-english confidence=0.75 hindiMarkers=0): "Hello Sakshi this is Rohan calling from FlexiFunnels"
+[LLM:self-echo-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:self-echo-test] TURN#0 llm-request +0ms
+[TIMING:self-echo-test] TURN#0 SUMMARY total=16ms turn-detected=0ms llm-request=0ms
+[TIMING:self-echo-test] TURN#0
+speech-end=2026-09-23T09:20:41.851Z
+endpoint-evidence=2026-09-23T09:20:41.851Z (speech_final)
+turn-release=2026-09-23T09:20:46.231Z
+llm-request=2026-09-23T09:20:46.231Z
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:self-echo-test] TURN#0 DELTAS
+endpoint-to-release=4380ms
+release-to-llm-request=0ms
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[PIPELINE:self-echo-test] Turn complete: assistant="" llmMs=undefined ttsMs=undefined
+[RESPONSE-LEN:self-echo-test] TURN#0 userChars=52 assistantChars=0 estTokens=0 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=0 audioQueuedMs=4227 briefRequested=false
+[PIPELINE:self-echo-test] Response #1 produced NO text (outcome=empty_response charsGenerated=0 ttsChunks=0) — not committed to history
+[PIPELINE:self-echo-test] run() exiting — state=THINKING aborted=true
+  [PASS] with nothing played yet, no transcript can be judged an echo
+
+FAILED — 6 passed, 1 failed
+  - a genuine interruption still interrupts, and is still answered

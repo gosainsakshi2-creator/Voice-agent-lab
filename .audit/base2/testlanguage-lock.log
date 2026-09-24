@@ -1,0 +1,2706 @@
+
+A — the detector's evidence surface (additive; lock-grade vs. hint-grade)
+  [PASS] A1 — Devanagari is script evidence: `devanagari`, Hindi, lock-grade
+  [PASS] A2 — romanized Hindi is marker evidence: `roman-markers`, Hindi, lock-grade
+  [PASS] A3 — a genuinely mixed utterance is `mixed-script` HINGLISH, and lock-grade
+  [PASS] A4 — clean English (no Hindi marker at all) is `default-english` and IS lock-grade
+  [PASS] A5 — English fall-through WITH a Hindi word in it is NOT lock-grade (audit §B5)
+  [PASS] A5b — an utterance that NAMES a language is refused as lock evidence, in either direction
+  [PASS] A6 — an all-neutral utterance carries no evidence: `neutral`, previous kept, not lock-grade
+  [PASS] A7 — an empty utterance is `empty` and not lock-grade
+  [PASS] A8 — ADDITIVE ONLY: language, confidence and script are unchanged for every shape
+  [PASS] A9 — the word floor is what it claims to be, on the utterances the pipeline tests use
+  [PASS] A10 — the caller's explicit-language escape hatch is still stated in every hint
+
+B — an English first utterance locks English, and it stays English
+[PIPELINE:language-lock-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:language-lock-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:language-lock-test] GREETING greeting-text-ready +0ms
+[TIMING:language-lock-test] GREETING tts-request +4ms
+[TIMING:language-lock-test] GREETING tts-first-chunk +8ms
+[TIMING:language-lock-test] GREETING audio-queued +9ms
+[PLAYBACK:language-lock-test] draining 2330ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=2ms)
+[TIMING:language-lock-test] GREETING SUMMARY total=2352ms greeting-text-ready=0ms tts-request=4ms tts-first-chunk=8ms audio-queued=9ms
+[PIPELINE:language-lock-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:language-lock-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:language-lock-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me more about this workshop." evidence-to-llm-open=16ms historyLength=3
+[TIMING:language-lock-test] TURN END turn-release=1790171127807 text="Yes, tell me more about this workshop." sttMs=0
+[STT:language-lock-test] Transcript received: "Yes, tell me more about this workshop." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#0 turn-detected +3ms
+[TIMING:language-lock-test] TURN#0 stt-to-release=621ms (sttLag=n/ams)
+[LANGUAGE:language-lock-test] call language LOCKED to en on the first meaningful utterance (basis=default-english confidence=0.75 hindiMarkers=0): "Yes, tell me more about this workshop."
+[LLM:language-lock-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:language-lock-test] TURN#0 llm-request +13ms
+[SPECULATE:language-lock-test] ADOPTED pre-opened request — llm-request is 612ms after the provider stream was opened (first token already in hand, 600ms ago) evidence-to-llm-open=16ms
+[TIMING:language-lock-test] TURN#0 llm-first-token +15ms
+[TIMING:language-lock-test] TURN#0 tts-request +18ms
+[TIMING:language-lock-test] TURN#0 tts-first-chunk +19ms
+[TIMING:language-lock-test] TURN#0 audio-queued +19ms
+[PLAYBACK:language-lock-test] draining 1105ms of queued audio before leaving SPEAKING (queued=955ms elapsed=0ms)
+[TIMING:language-lock-test] TURN#0 SUMMARY total=1126ms turn-detected=3ms llm-request=13ms llm-first-token=15ms tts-request=18ms tts-first-chunk=19ms audio-queued=19ms
+[TIMING:language-lock-test] TURN#0
+speech-end=2026-09-23T13:45:27.189Z
+endpoint-evidence=2026-09-23T13:45:27.192Z (speech_final)
+turn-release=2026-09-23T13:45:27.807Z
+llm-request=2026-09-23T13:45:27.820Z
+llm-first-token=2026-09-23T13:45:27.822Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T13:45:27.825Z
+tts-first-audio=2026-09-23T13:45:27.826Z
+audio-queued=2026-09-23T13:45:27.826Z
+[TIMING:language-lock-test] TURN#0 DELTAS
+endpoint-to-release=615ms
+release-to-llm-request=13ms
+llm-to-first-token=2ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=1ms
+first-audio-to-queue=0ms
+speech-end-to-audio=637ms
+[PIPELINE:language-lock-test] Turn complete: assistant="Sure, let me explain." llmMs=12 ttsMs=1
+[RESPONSE-LEN:language-lock-test] TURN#0 userChars=38 assistantChars=21 estTokens=6 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=955 briefRequested=false
+[PIPELINE:language-lock-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:language-lock-test] run() exiting — state=LISTENING aborted=true
+  [PASS] B1 — first meaningful utterance in English locks the call to English, overriding the CONFIGURED Hindi
+[PIPELINE:language-lock-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:language-lock-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:language-lock-test] GREETING greeting-text-ready +0ms
+[TIMING:language-lock-test] GREETING tts-request +0ms
+[TIMING:language-lock-test] GREETING tts-first-chunk +0ms
+[TIMING:language-lock-test] GREETING audio-queued +0ms
+[PLAYBACK:language-lock-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:language-lock-test] GREETING SUMMARY total=2344ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:language-lock-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:language-lock-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:language-lock-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me more about this workshop." evidence-to-llm-open=0ms historyLength=3
+[TIMING:language-lock-test] TURN END turn-release=1790171131905 text="Yes, tell me more about this workshop." sttMs=0
+[STT:language-lock-test] Transcript received: "Yes, tell me more about this workshop." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#0 turn-detected +1ms
+[TIMING:language-lock-test] TURN#0 stt-to-release=602ms (sttLag=n/ams)
+[LANGUAGE:language-lock-test] call language LOCKED to en on the first meaningful utterance (basis=default-english confidence=0.75 hindiMarkers=0): "Yes, tell me more about this workshop."
+[LLM:language-lock-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:language-lock-test] TURN#0 llm-request +2ms
+[SPECULATE:language-lock-test] ADOPTED pre-opened request — llm-request is 603ms after the provider stream was opened (first token already in hand, 588ms ago) evidence-to-llm-open=0ms
+[TIMING:language-lock-test] TURN#0 llm-first-token +3ms
+[TIMING:language-lock-test] TURN#0 tts-request +5ms
+[TIMING:language-lock-test] TURN#0 tts-first-chunk +5ms
+[TIMING:language-lock-test] TURN#0 audio-queued +6ms
+[PLAYBACK:language-lock-test] draining 1105ms of queued audio before leaving SPEAKING (queued=955ms elapsed=0ms)
+[TIMING:language-lock-test] TURN#0 SUMMARY total=1126ms turn-detected=1ms llm-request=2ms llm-first-token=3ms tts-request=5ms tts-first-chunk=5ms audio-queued=6ms
+[TIMING:language-lock-test] TURN#0
+speech-end=2026-09-23T13:45:31.304Z
+endpoint-evidence=2026-09-23T13:45:31.304Z (speech_final)
+turn-release=2026-09-23T13:45:31.905Z
+llm-request=2026-09-23T13:45:31.907Z
+llm-first-token=2026-09-23T13:45:31.908Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T13:45:31.910Z
+tts-first-audio=2026-09-23T13:45:31.910Z
+audio-queued=2026-09-23T13:45:31.911Z
+[TIMING:language-lock-test] TURN#0 DELTAS
+endpoint-to-release=601ms
+release-to-llm-request=2ms
+llm-to-first-token=1ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=1ms
+speech-end-to-audio=607ms
+[PIPELINE:language-lock-test] Turn complete: assistant="Sure, let me explain." llmMs=15 ttsMs=0
+[RESPONSE-LEN:language-lock-test] TURN#0 userChars=38 assistantChars=21 estTokens=6 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=955 briefRequested=false
+[SPECULATE:language-lock-test] LLM request PRE-OPENED on speech_final evidence: text="मुझे इसके बारे में जानकारी चाहिए।" evidence-to-llm-open=6ms historyLength=5
+[TIMING:language-lock-test] TURN END turn-release=1790171133653 text="मुझे इसके बारे में जानकारी चाहिए।" sttMs=0
+[STT:language-lock-test] Transcript received: "मुझे इसके बारे में जानकारी चाहिए।" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#1 turn-detected +1ms
+[TIMING:language-lock-test] TURN#1 stt-to-release=619ms (sttLag=n/ams)
+[LLM:language-lock-test] Sending to fake-llm: historyLength=5 roles=[system,assistant,user,assistant,user] streaming=true
+[TIMING:language-lock-test] TURN#1 llm-request +3ms
+[SPECULATE:language-lock-test] ADOPTED pre-opened request — llm-request is 615ms after the provider stream was opened (first token already in hand, 600ms ago) evidence-to-llm-open=6ms
+[TIMING:language-lock-test] TURN#1 llm-first-token +3ms
+[TIMING:language-lock-test] TURN#1 tts-request +4ms
+[TIMING:language-lock-test] TURN#1 tts-first-chunk +4ms
+[TIMING:language-lock-test] TURN#1 audio-queued +4ms
+[PLAYBACK:language-lock-test] draining 1150ms of queued audio before leaving SPEAKING (queued=1000ms elapsed=0ms)
+[TIMING:language-lock-test] TURN#1 SUMMARY total=1159ms turn-detected=1ms llm-request=3ms llm-first-token=3ms tts-request=4ms tts-first-chunk=4ms audio-queued=4ms
+[TIMING:language-lock-test] TURN#1
+speech-end=2026-09-23T13:45:33.035Z
+endpoint-evidence=2026-09-23T13:45:33.035Z (speech_final)
+turn-release=2026-09-23T13:45:33.653Z
+llm-request=2026-09-23T13:45:33.656Z
+llm-first-token=2026-09-23T13:45:33.656Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T13:45:33.657Z
+tts-first-audio=2026-09-23T13:45:33.657Z
+audio-queued=2026-09-23T13:45:33.657Z
+[TIMING:language-lock-test] TURN#1 DELTAS
+endpoint-to-release=618ms
+release-to-llm-request=3ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=622ms
+[PIPELINE:language-lock-test] Turn complete: assistant="It is a short session." llmMs=15 ttsMs=0
+[RESPONSE-LEN:language-lock-test] TURN#1 userChars=33 assistantChars=22 estTokens=6 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1000 briefRequested=false
+[SPECULATE:language-lock-test] LLM request PRE-OPENED on speech_final evidence: text="Haan ji, mujhe iske baare mein bataiye." evidence-to-llm-open=1ms historyLength=7
+[TIMING:language-lock-test] TURN END turn-release=1790171135426 text="Haan ji, mujhe iske baare mein bataiye." sttMs=0
+[STT:language-lock-test] Transcript received: "Haan ji, mujhe iske baare mein bataiye." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#2 turn-detected +1ms
+[TIMING:language-lock-test] TURN#2 stt-to-release=613ms (sttLag=n/ams)
+[LLM:language-lock-test] Sending to fake-llm: historyLength=7 roles=[system,assistant,user,assistant,user,assistant,user] streaming=true
+[TIMING:language-lock-test] TURN#2 llm-request +2ms
+[SPECULATE:language-lock-test] ADOPTED pre-opened request — llm-request is 613ms after the provider stream was opened (first token already in hand, 591ms ago) evidence-to-llm-open=1ms
+[TIMING:language-lock-test] TURN#2 llm-first-token +2ms
+[TIMING:language-lock-test] TURN#2 tts-request +3ms
+[TIMING:language-lock-test] TURN#2 tts-first-chunk +3ms
+[TIMING:language-lock-test] TURN#2 audio-queued +3ms
+[PLAYBACK:language-lock-test] draining 1331ms of queued audio before leaving SPEAKING (queued=1182ms elapsed=1ms)
+[TIMING:language-lock-test] TURN#2 SUMMARY total=1348ms turn-detected=1ms llm-request=2ms llm-first-token=2ms tts-request=3ms tts-first-chunk=3ms audio-queued=3ms
+[TIMING:language-lock-test] TURN#2
+speech-end=2026-09-23T13:45:34.814Z
+endpoint-evidence=2026-09-23T13:45:34.814Z (speech_final)
+turn-release=2026-09-23T13:45:35.426Z
+llm-request=2026-09-23T13:45:35.428Z
+llm-first-token=2026-09-23T13:45:35.428Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T13:45:35.429Z
+tts-first-audio=2026-09-23T13:45:35.429Z
+audio-queued=2026-09-23T13:45:35.429Z
+[TIMING:language-lock-test] TURN#2 DELTAS
+endpoint-to-release=612ms
+release-to-llm-request=2ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=615ms
+[PIPELINE:language-lock-test] Turn complete: assistant="There is no charge for it." llmMs=22 ttsMs=0
+[RESPONSE-LEN:language-lock-test] TURN#2 userChars=39 assistantChars=26 estTokens=7 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1182 briefRequested=false
+[PIPELINE:language-lock-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:language-lock-test] run() exiting — state=LISTENING aborted=true
+  [PASS] B2 — a later Hindi turn does NOT silently change the locked language
+
+C — a Hindi / Hinglish first utterance locks and stays
+[PIPELINE:language-lock-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:language-lock-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:language-lock-test] GREETING greeting-text-ready +0ms
+[TIMING:language-lock-test] GREETING tts-request +1ms
+[TIMING:language-lock-test] GREETING tts-first-chunk +1ms
+[TIMING:language-lock-test] GREETING audio-queued +1ms
+[PLAYBACK:language-lock-test] draining 2331ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=1ms)
+[TIMING:language-lock-test] GREETING SUMMARY total=2334ms greeting-text-ready=0ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:language-lock-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:language-lock-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:language-lock-test] LLM request PRE-OPENED on speech_final evidence: text="मुझे इसके बारे में जानकारी चाहिए।" evidence-to-llm-open=2ms historyLength=3
+[TIMING:language-lock-test] TURN END turn-release=1790171139763 text="मुझे इसके बारे में जानकारी चाहिए।" sttMs=0
+[STT:language-lock-test] Transcript received: "मुझे इसके बारे में जानकारी चाहिए।" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#0 turn-detected +1ms
+[TIMING:language-lock-test] TURN#0 stt-to-release=605ms (sttLag=n/ams)
+[LANGUAGE:language-lock-test] call language LOCKED to hi on the first meaningful utterance (basis=devanagari confidence=0.9 hindiMarkers=0): "मुझे इसके बारे में जानकारी चाहिए।"
+[LLM:language-lock-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:language-lock-test] TURN#0 llm-request +3ms
+[SPECULATE:language-lock-test] ADOPTED pre-opened request — llm-request is 604ms after the provider stream was opened (first token already in hand, 582ms ago) evidence-to-llm-open=2ms
+[TIMING:language-lock-test] TURN#0 llm-first-token +4ms
+[TIMING:language-lock-test] TURN#0 tts-request +4ms
+[TIMING:language-lock-test] TURN#0 tts-first-chunk +5ms
+[TIMING:language-lock-test] TURN#0 audio-queued +5ms
+[PLAYBACK:language-lock-test] draining 1105ms of queued audio before leaving SPEAKING (queued=955ms elapsed=0ms)
+[TIMING:language-lock-test] TURN#0 SUMMARY total=1114ms turn-detected=1ms llm-request=3ms llm-first-token=4ms tts-request=4ms tts-first-chunk=5ms audio-queued=5ms
+[TIMING:language-lock-test] TURN#0
+speech-end=2026-09-23T13:45:39.159Z
+endpoint-evidence=2026-09-23T13:45:39.160Z (speech_final)
+turn-release=2026-09-23T13:45:39.763Z
+llm-request=2026-09-23T13:45:39.766Z
+llm-first-token=2026-09-23T13:45:39.767Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T13:45:39.767Z
+tts-first-audio=2026-09-23T13:45:39.768Z
+audio-queued=2026-09-23T13:45:39.768Z
+[TIMING:language-lock-test] TURN#0 DELTAS
+endpoint-to-release=603ms
+release-to-llm-request=3ms
+llm-to-first-token=1ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=1ms
+first-audio-to-queue=0ms
+speech-end-to-audio=609ms
+[PIPELINE:language-lock-test] Turn complete: assistant="Sure, let me explain." llmMs=22 ttsMs=0
+[RESPONSE-LEN:language-lock-test] TURN#0 userChars=33 assistantChars=21 estTokens=6 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=955 briefRequested=false
+[SPECULATE:language-lock-test] LLM request PRE-OPENED on speech_final evidence: text="Actually I would prefer if we speak about the timing." evidence-to-llm-open=0ms historyLength=5
+[TIMING:language-lock-test] TURN END turn-release=1790171141494 text="Actually I would prefer if we speak about the timing." sttMs=0
+[STT:language-lock-test] Transcript received: "Actually I would prefer if we speak about the timing." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#1 turn-detected +1ms
+[TIMING:language-lock-test] TURN#1 stt-to-release=609ms (sttLag=n/ams)
+[LLM:language-lock-test] Sending to fake-llm: historyLength=5 roles=[system,assistant,user,assistant,user] streaming=true
+[TIMING:language-lock-test] TURN#1 llm-request +1ms
+[SPECULATE:language-lock-test] ADOPTED pre-opened request — llm-request is 608ms after the provider stream was opened (first token already in hand, 594ms ago) evidence-to-llm-open=0ms
+[TIMING:language-lock-test] TURN#1 llm-first-token +1ms
+[TIMING:language-lock-test] TURN#1 tts-request +2ms
+[TIMING:language-lock-test] TURN#1 tts-first-chunk +2ms
+[TIMING:language-lock-test] TURN#1 audio-queued +2ms
+[PLAYBACK:language-lock-test] draining 1150ms of queued audio before leaving SPEAKING (queued=1000ms elapsed=0ms)
+[TIMING:language-lock-test] TURN#1 SUMMARY total=1167ms turn-detected=1ms llm-request=1ms llm-first-token=1ms tts-request=2ms tts-first-chunk=2ms audio-queued=2ms
+[TIMING:language-lock-test] TURN#1
+speech-end=2026-09-23T13:45:40.886Z
+endpoint-evidence=2026-09-23T13:45:40.887Z (speech_final)
+turn-release=2026-09-23T13:45:41.494Z
+llm-request=2026-09-23T13:45:41.495Z
+llm-first-token=2026-09-23T13:45:41.495Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T13:45:41.496Z
+tts-first-audio=2026-09-23T13:45:41.496Z
+audio-queued=2026-09-23T13:45:41.496Z
+[TIMING:language-lock-test] TURN#1 DELTAS
+endpoint-to-release=607ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=610ms
+[PIPELINE:language-lock-test] Turn complete: assistant="It is a short session." llmMs=14 ttsMs=0
+[RESPONSE-LEN:language-lock-test] TURN#1 userChars=53 assistantChars=22 estTokens=6 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1000 briefRequested=false
+[PIPELINE:language-lock-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:language-lock-test] run() exiting — state=LISTENING aborted=true
+  [PASS] C1 — Devanagari first utterance locks Hindi; a later full English turn does not switch it
+[PIPELINE:language-lock-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:language-lock-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:language-lock-test] GREETING greeting-text-ready +1ms
+[TIMING:language-lock-test] GREETING tts-request +1ms
+[TIMING:language-lock-test] GREETING tts-first-chunk +2ms
+[TIMING:language-lock-test] GREETING audio-queued +2ms
+[PLAYBACK:language-lock-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:language-lock-test] GREETING SUMMARY total=2344ms greeting-text-ready=1ms tts-request=1ms tts-first-chunk=2ms audio-queued=2ms
+[PIPELINE:language-lock-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:language-lock-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:language-lock-test] LLM request PRE-OPENED on speech_final evidence: text="Haan ji, mujhe iske baare mein bataiye." evidence-to-llm-open=1ms historyLength=3
+[TIMING:language-lock-test] TURN END turn-release=1790171145621 text="Haan ji, mujhe iske baare mein bataiye." sttMs=0
+[STT:language-lock-test] Transcript received: "Haan ji, mujhe iske baare mein bataiye." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#0 turn-detected +1ms
+[TIMING:language-lock-test] TURN#0 stt-to-release=602ms (sttLag=n/ams)
+[LANGUAGE:language-lock-test] call language LOCKED to hi on the first meaningful utterance (basis=roman-markers confidence=0.8785714285714286 hindiMarkers=5): "Haan ji, mujhe iske baare mein bataiye."
+[LLM:language-lock-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:language-lock-test] TURN#0 llm-request +2ms
+[SPECULATE:language-lock-test] ADOPTED pre-opened request — llm-request is 602ms after the provider stream was opened (first token already in hand, 589ms ago) evidence-to-llm-open=1ms
+[TIMING:language-lock-test] TURN#0 llm-first-token +2ms
+[TIMING:language-lock-test] TURN#0 tts-request +2ms
+[TIMING:language-lock-test] TURN#0 tts-first-chunk +2ms
+[TIMING:language-lock-test] TURN#0 audio-queued +2ms
+[PLAYBACK:language-lock-test] draining 1105ms of queued audio before leaving SPEAKING (queued=955ms elapsed=0ms)
+[TIMING:language-lock-test] TURN#0 SUMMARY total=1110ms turn-detected=1ms llm-request=2ms llm-first-token=2ms tts-request=2ms tts-first-chunk=2ms audio-queued=2ms
+[TIMING:language-lock-test] TURN#0
+speech-end=2026-09-23T13:45:45.020Z
+endpoint-evidence=2026-09-23T13:45:45.020Z (speech_final)
+turn-release=2026-09-23T13:45:45.621Z
+llm-request=2026-09-23T13:45:45.623Z
+llm-first-token=2026-09-23T13:45:45.623Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T13:45:45.623Z
+tts-first-audio=2026-09-23T13:45:45.623Z
+audio-queued=2026-09-23T13:45:45.623Z
+[TIMING:language-lock-test] TURN#0 DELTAS
+endpoint-to-release=601ms
+release-to-llm-request=2ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=603ms
+[PIPELINE:language-lock-test] Turn complete: assistant="Sure, let me explain." llmMs=13 ttsMs=0
+[RESPONSE-LEN:language-lock-test] TURN#0 userChars=39 assistantChars=21 estTokens=6 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=955 briefRequested=false
+[SPECULATE:language-lock-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me more about this workshop." evidence-to-llm-open=0ms historyLength=5
+[TIMING:language-lock-test] TURN END turn-release=1790171147345 text="Yes, tell me more about this workshop." sttMs=0
+[STT:language-lock-test] Transcript received: "Yes, tell me more about this workshop." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#1 turn-detected +1ms
+[TIMING:language-lock-test] TURN#1 stt-to-release=615ms (sttLag=n/ams)
+[LLM:language-lock-test] Sending to fake-llm: historyLength=5 roles=[system,assistant,user,assistant,user] streaming=true
+[TIMING:language-lock-test] TURN#1 llm-request +2ms
+[SPECULATE:language-lock-test] ADOPTED pre-opened request — llm-request is 614ms after the provider stream was opened (first token already in hand, 600ms ago) evidence-to-llm-open=0ms
+[TIMING:language-lock-test] TURN#1 llm-first-token +3ms
+[TIMING:language-lock-test] TURN#1 tts-request +3ms
+[TIMING:language-lock-test] TURN#1 tts-first-chunk +4ms
+[TIMING:language-lock-test] TURN#1 audio-queued +4ms
+[PLAYBACK:language-lock-test] draining 1150ms of queued audio before leaving SPEAKING (queued=1000ms elapsed=0ms)
+[TIMING:language-lock-test] TURN#1 SUMMARY total=1169ms turn-detected=1ms llm-request=2ms llm-first-token=3ms tts-request=3ms tts-first-chunk=4ms audio-queued=4ms
+[TIMING:language-lock-test] TURN#1
+speech-end=2026-09-23T13:45:46.732Z
+endpoint-evidence=2026-09-23T13:45:46.733Z (speech_final)
+turn-release=2026-09-23T13:45:47.345Z
+llm-request=2026-09-23T13:45:47.347Z
+llm-first-token=2026-09-23T13:45:47.348Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T13:45:47.348Z
+tts-first-audio=2026-09-23T13:45:47.349Z
+audio-queued=2026-09-23T13:45:47.349Z
+[TIMING:language-lock-test] TURN#1 DELTAS
+endpoint-to-release=612ms
+release-to-llm-request=2ms
+llm-to-first-token=1ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=1ms
+first-audio-to-queue=0ms
+speech-end-to-audio=617ms
+[PIPELINE:language-lock-test] Turn complete: assistant="It is a short session." llmMs=14 ttsMs=0
+[RESPONSE-LEN:language-lock-test] TURN#1 userChars=38 assistantChars=22 estTokens=6 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1000 briefRequested=false
+[PIPELINE:language-lock-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:language-lock-test] run() exiting — state=LISTENING aborted=true
+  [PASS] C2 — romanized Hinglish first utterance locks Hindi and holds
+[PIPELINE:language-lock-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:language-lock-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:language-lock-test] GREETING greeting-text-ready +0ms
+[TIMING:language-lock-test] GREETING tts-request +1ms
+[TIMING:language-lock-test] GREETING tts-first-chunk +1ms
+[TIMING:language-lock-test] GREETING audio-queued +1ms
+[PLAYBACK:language-lock-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:language-lock-test] GREETING SUMMARY total=2335ms greeting-text-ready=0ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:language-lock-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:language-lock-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:language-lock-test] LLM request PRE-OPENED on speech_final evidence: text="मुझे workshop की details chahiye please" evidence-to-llm-open=2ms historyLength=3
+[TIMING:language-lock-test] TURN END turn-release=1790171151500 text="मुझे workshop की details chahiye please" sttMs=0
+[STT:language-lock-test] Transcript received: "मुझे workshop की details chahiye please" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#0 turn-detected +1ms
+[TIMING:language-lock-test] TURN#0 stt-to-release=619ms (sttLag=n/ams)
+[LANGUAGE:language-lock-test] call language LOCKED to hi-en on the first meaningful utterance (basis=mixed-script confidence=0.85 hindiMarkers=0): "मुझे workshop की details chahiye please"
+[LLM:language-lock-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:language-lock-test] TURN#0 llm-request +1ms
+[SPECULATE:language-lock-test] ADOPTED pre-opened request — llm-request is 617ms after the provider stream was opened (first token already in hand, 601ms ago) evidence-to-llm-open=2ms
+[TIMING:language-lock-test] TURN#0 llm-first-token +2ms
+[TIMING:language-lock-test] TURN#0 tts-request +3ms
+[TIMING:language-lock-test] TURN#0 tts-first-chunk +3ms
+[TIMING:language-lock-test] TURN#0 audio-queued +3ms
+[PLAYBACK:language-lock-test] draining 1105ms of queued audio before leaving SPEAKING (queued=955ms elapsed=0ms)
+[TIMING:language-lock-test] TURN#0 SUMMARY total=1111ms turn-detected=1ms llm-request=1ms llm-first-token=2ms tts-request=3ms tts-first-chunk=3ms audio-queued=3ms
+[TIMING:language-lock-test] TURN#0
+speech-end=2026-09-23T13:45:50.882Z
+endpoint-evidence=2026-09-23T13:45:50.882Z (speech_final)
+turn-release=2026-09-23T13:45:51.500Z
+llm-request=2026-09-23T13:45:51.501Z
+llm-first-token=2026-09-23T13:45:51.502Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T13:45:51.503Z
+tts-first-audio=2026-09-23T13:45:51.503Z
+audio-queued=2026-09-23T13:45:51.503Z
+[TIMING:language-lock-test] TURN#0 DELTAS
+endpoint-to-release=618ms
+release-to-llm-request=1ms
+llm-to-first-token=1ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=621ms
+[PIPELINE:language-lock-test] Turn complete: assistant="Sure, let me explain." llmMs=16 ttsMs=0
+[RESPONSE-LEN:language-lock-test] TURN#0 userChars=39 assistantChars=21 estTokens=6 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=955 briefRequested=false
+[SPECULATE:language-lock-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me more about this workshop." evidence-to-llm-open=1ms historyLength=5
+[TIMING:language-lock-test] TURN END turn-release=1790171153258 text="Yes, tell me more about this workshop." sttMs=0
+[STT:language-lock-test] Transcript received: "Yes, tell me more about this workshop." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#1 turn-detected +1ms
+[TIMING:language-lock-test] TURN#1 stt-to-release=614ms (sttLag=n/ams)
+[LLM:language-lock-test] Sending to fake-llm: historyLength=5 roles=[system,assistant,user,assistant,user] streaming=true
+[TIMING:language-lock-test] TURN#1 llm-request +1ms
+[SPECULATE:language-lock-test] ADOPTED pre-opened request — llm-request is 613ms after the provider stream was opened (first token already in hand, 598ms ago) evidence-to-llm-open=1ms
+[TIMING:language-lock-test] TURN#1 llm-first-token +2ms
+[TIMING:language-lock-test] TURN#1 tts-request +5ms
+[TIMING:language-lock-test] TURN#1 tts-first-chunk +5ms
+[TIMING:language-lock-test] TURN#1 audio-queued +5ms
+[PLAYBACK:language-lock-test] draining 1150ms of queued audio before leaving SPEAKING (queued=1000ms elapsed=0ms)
+[TIMING:language-lock-test] TURN#1 SUMMARY total=1159ms turn-detected=1ms llm-request=1ms llm-first-token=2ms tts-request=5ms tts-first-chunk=5ms audio-queued=5ms
+[TIMING:language-lock-test] TURN#1
+speech-end=2026-09-23T13:45:52.645Z
+endpoint-evidence=2026-09-23T13:45:52.645Z (speech_final)
+turn-release=2026-09-23T13:45:53.258Z
+llm-request=2026-09-23T13:45:53.259Z
+llm-first-token=2026-09-23T13:45:53.260Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T13:45:53.263Z
+tts-first-audio=2026-09-23T13:45:53.263Z
+audio-queued=2026-09-23T13:45:53.263Z
+[TIMING:language-lock-test] TURN#1 DELTAS
+endpoint-to-release=613ms
+release-to-llm-request=1ms
+llm-to-first-token=1ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=618ms
+[PIPELINE:language-lock-test] Turn complete: assistant="It is a short session." llmMs=15 ttsMs=0
+[RESPONSE-LEN:language-lock-test] TURN#1 userChars=38 assistantChars=22 estTokens=6 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1000 briefRequested=false
+[PIPELINE:language-lock-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:language-lock-test] run() exiting — state=LISTENING aborted=true
+  [PASS] C3 — a MIXED first utterance locks HINGLISH, not one of the pure languages
+
+D — no false locks (and the lock is delayed, never lost)
+[PIPELINE:language-lock-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:language-lock-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:language-lock-test] GREETING greeting-text-ready +0ms
+[TIMING:language-lock-test] GREETING tts-request +0ms
+[TIMING:language-lock-test] GREETING tts-first-chunk +0ms
+[TIMING:language-lock-test] GREETING audio-queued +0ms
+[PLAYBACK:language-lock-test] draining 2331ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=1ms)
+[TIMING:language-lock-test] GREETING SUMMARY total=2334ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:language-lock-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:language-lock-test] entering main loop — state=SPEAKING aborted=false
+[TIMING:language-lock-test] TURN END turn-release=1790171156764 text="Hello?" sttMs=0
+[STT:language-lock-test] Transcript received: "Hello?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[PIPELINE:language-lock-test] pickup acknowledgement ignored (not a turn): "Hello?" — the opening line is the answer to it
+[SPECULATE:language-lock-test] LLM request PRE-OPENED on speech_final evidence: text="मुझे इसके बारे में जानकारी चाहिए।" evidence-to-llm-open=1ms historyLength=3
+[TIMING:language-lock-test] TURN END turn-release=1790171157791 text="मुझे इसके बारे में जानकारी चाहिए।" sttMs=0
+[STT:language-lock-test] Transcript received: "मुझे इसके बारे में जानकारी चाहिए।" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#0 turn-detected +1ms
+[TIMING:language-lock-test] TURN#0 stt-to-release=604ms (sttLag=n/ams)
+[LANGUAGE:language-lock-test] call language LOCKED to hi on the first meaningful utterance (basis=devanagari confidence=0.9 hindiMarkers=0): "मुझे इसके बारे में जानकारी चाहिए।"
+[LLM:language-lock-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:language-lock-test] TURN#0 llm-request +2ms
+[SPECULATE:language-lock-test] ADOPTED pre-opened request — llm-request is 604ms after the provider stream was opened (first token already in hand, 594ms ago) evidence-to-llm-open=1ms
+[TIMING:language-lock-test] TURN#0 llm-first-token +2ms
+[TIMING:language-lock-test] TURN#0 tts-request +3ms
+[TIMING:language-lock-test] TURN#0 tts-first-chunk +3ms
+[TIMING:language-lock-test] TURN#0 audio-queued +4ms
+[PLAYBACK:language-lock-test] draining 1105ms of queued audio before leaving SPEAKING (queued=955ms elapsed=0ms)
+[TIMING:language-lock-test] TURN#0 SUMMARY total=1116ms turn-detected=1ms llm-request=2ms llm-first-token=2ms tts-request=3ms tts-first-chunk=3ms audio-queued=4ms
+[TIMING:language-lock-test] TURN#0
+speech-end=2026-09-23T13:45:57.188Z
+endpoint-evidence=2026-09-23T13:45:57.188Z (speech_final)
+turn-release=2026-09-23T13:45:57.791Z
+llm-request=2026-09-23T13:45:57.793Z
+llm-first-token=2026-09-23T13:45:57.793Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T13:45:57.794Z
+tts-first-audio=2026-09-23T13:45:57.794Z
+audio-queued=2026-09-23T13:45:57.795Z
+[TIMING:language-lock-test] TURN#0 DELTAS
+endpoint-to-release=603ms
+release-to-llm-request=2ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=1ms
+speech-end-to-audio=607ms
+[PIPELINE:language-lock-test] Turn complete: assistant="Sure, let me explain." llmMs=10 ttsMs=0
+[RESPONSE-LEN:language-lock-test] TURN#0 userChars=33 assistantChars=21 estTokens=6 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=955 briefRequested=false
+[PIPELINE:language-lock-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:language-lock-test] run() exiting — state=LISTENING aborted=true
+  [PASS] D1a — a 'Hello?' spoken WHILE the opening line plays is the pickup acknowledgement: not a turn, no lock
+[PIPELINE:language-lock-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:language-lock-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:language-lock-test] GREETING greeting-text-ready +0ms
+[TIMING:language-lock-test] GREETING tts-request +0ms
+[TIMING:language-lock-test] GREETING tts-first-chunk +0ms
+[TIMING:language-lock-test] GREETING audio-queued +0ms
+[PLAYBACK:language-lock-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:language-lock-test] GREETING SUMMARY total=2339ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:language-lock-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:language-lock-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:language-lock-test] LLM request PRE-OPENED on speech_final evidence: text="Hello?" evidence-to-llm-open=9ms historyLength=3
+[TIMING:language-lock-test] TURN END turn-release=1790171161580 text="Hello?" sttMs=0
+[STT:language-lock-test] Transcript received: "Hello?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#0 turn-detected +0ms
+[TIMING:language-lock-test] TURN#0 stt-to-release=162ms (sttLag=n/ams)
+[LLM:language-lock-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:language-lock-test] TURN#0 llm-request +4ms
+[SPECULATE:language-lock-test] ADOPTED pre-opened request — llm-request is 157ms after the provider stream was opened (first token already in hand, 141ms ago) evidence-to-llm-open=9ms
+[TIMING:language-lock-test] TURN#0 llm-first-token +4ms
+[TIMING:language-lock-test] TURN#0 tts-request +4ms
+[TIMING:language-lock-test] TURN#0 tts-first-chunk +5ms
+[TIMING:language-lock-test] TURN#0 audio-queued +5ms
+[PLAYBACK:language-lock-test] draining 1105ms of queued audio before leaving SPEAKING (queued=955ms elapsed=0ms)
+[TIMING:language-lock-test] TURN#0 SUMMARY total=1110ms turn-detected=0ms llm-request=4ms llm-first-token=4ms tts-request=4ms tts-first-chunk=5ms audio-queued=5ms
+[TIMING:language-lock-test] TURN#0
+speech-end=2026-09-23T13:46:01.418Z
+endpoint-evidence=2026-09-23T13:46:01.418Z (speech_final)
+turn-release=2026-09-23T13:46:01.580Z
+llm-request=2026-09-23T13:46:01.584Z
+llm-first-token=2026-09-23T13:46:01.584Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T13:46:01.584Z
+tts-first-audio=2026-09-23T13:46:01.585Z
+audio-queued=2026-09-23T13:46:01.585Z
+[TIMING:language-lock-test] TURN#0 DELTAS
+endpoint-to-release=162ms
+release-to-llm-request=4ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=1ms
+first-audio-to-queue=0ms
+speech-end-to-audio=167ms
+[PIPELINE:language-lock-test] Turn complete: assistant="Sure, let me explain." llmMs=16 ttsMs=0
+[RESPONSE-LEN:language-lock-test] TURN#0 userChars=6 assistantChars=21 estTokens=6 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=955 briefRequested=false
+[SPECULATE:language-lock-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me more about this workshop." evidence-to-llm-open=0ms historyLength=5
+[TIMING:language-lock-test] TURN END turn-release=1790171163467 text="Yes, tell me more about this workshop." sttMs=0
+[STT:language-lock-test] Transcript received: "Yes, tell me more about this workshop." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#1 turn-detected +1ms
+[TIMING:language-lock-test] TURN#1 stt-to-release=603ms (sttLag=n/ams)
+[LANGUAGE:language-lock-test] call language LOCKED to en on the first meaningful utterance (basis=default-english confidence=0.75 hindiMarkers=0): "Yes, tell me more about this workshop."
+[LLM:language-lock-test] Sending to fake-llm: historyLength=5 roles=[system,assistant,user,assistant,user] streaming=true
+[TIMING:language-lock-test] TURN#1 llm-request +2ms
+[SPECULATE:language-lock-test] ADOPTED pre-opened request — llm-request is 603ms after the provider stream was opened (first token already in hand, 588ms ago) evidence-to-llm-open=0ms
+[TIMING:language-lock-test] TURN#1 llm-first-token +2ms
+[TIMING:language-lock-test] TURN#1 tts-request +2ms
+[TIMING:language-lock-test] TURN#1 tts-first-chunk +3ms
+[TIMING:language-lock-test] TURN#1 audio-queued +3ms
+[PLAYBACK:language-lock-test] draining 1150ms of queued audio before leaving SPEAKING (queued=1000ms elapsed=0ms)
+[TIMING:language-lock-test] TURN#1 SUMMARY total=1163ms turn-detected=1ms llm-request=2ms llm-first-token=2ms tts-request=2ms tts-first-chunk=3ms audio-queued=3ms
+[TIMING:language-lock-test] TURN#1
+speech-end=2026-09-23T13:46:02.865Z
+endpoint-evidence=2026-09-23T13:46:02.866Z (speech_final)
+turn-release=2026-09-23T13:46:03.467Z
+llm-request=2026-09-23T13:46:03.469Z
+llm-first-token=2026-09-23T13:46:03.469Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T13:46:03.469Z
+tts-first-audio=2026-09-23T13:46:03.470Z
+audio-queued=2026-09-23T13:46:03.470Z
+[TIMING:language-lock-test] TURN#1 DELTAS
+endpoint-to-release=601ms
+release-to-llm-request=2ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=1ms
+first-audio-to-queue=0ms
+speech-end-to-audio=605ms
+[PIPELINE:language-lock-test] Turn complete: assistant="It is a short session." llmMs=15 ttsMs=1
+[RESPONSE-LEN:language-lock-test] TURN#1 userChars=38 assistantChars=22 estTokens=6 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1000 briefRequested=false
+[PIPELINE:language-lock-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:language-lock-test] run() exiting — state=LISTENING aborted=true
+  [PASS] D1b — a bare greeting AFTER the opening line is a turn, but still takes no floor and locks nothing
+[PIPELINE:language-lock-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:language-lock-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:language-lock-test] GREETING greeting-text-ready +1ms
+[TIMING:language-lock-test] GREETING tts-request +1ms
+[TIMING:language-lock-test] GREETING tts-first-chunk +1ms
+[TIMING:language-lock-test] GREETING audio-queued +1ms
+[PLAYBACK:language-lock-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:language-lock-test] GREETING SUMMARY total=2332ms greeting-text-ready=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:language-lock-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:language-lock-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:language-lock-test] LLM request PRE-OPENED on speech_final evidence: text="मुझे इसके बारे में जानकारी चाहिए।" evidence-to-llm-open=0ms historyLength=3
+[TIMING:language-lock-test] TURN END turn-release=1790171167793 text="मुझे इसके बारे में जानकारी चाहिए।" sttMs=0
+[STT:language-lock-test] Transcript received: "मुझे इसके बारे में जानकारी चाहिए।" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#0 turn-detected +0ms
+[TIMING:language-lock-test] TURN#0 stt-to-release=610ms (sttLag=n/ams)
+[LANGUAGE:language-lock-test] call language LOCKED to hi on the first meaningful utterance (basis=devanagari confidence=0.9 hindiMarkers=0): "मुझे इसके बारे में जानकारी चाहिए।"
+[LLM:language-lock-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:language-lock-test] TURN#0 llm-request +1ms
+[SPECULATE:language-lock-test] ADOPTED pre-opened request — llm-request is 610ms after the provider stream was opened (first token already in hand, 595ms ago) evidence-to-llm-open=0ms
+[TIMING:language-lock-test] TURN#0 llm-first-token +2ms
+[TIMING:language-lock-test] TURN#0 tts-request +2ms
+[TIMING:language-lock-test] TURN#0 tts-first-chunk +2ms
+[TIMING:language-lock-test] TURN#0 audio-queued +2ms
+[PLAYBACK:language-lock-test] draining 1104ms of queued audio before leaving SPEAKING (queued=955ms elapsed=1ms)
+[TIMING:language-lock-test] TURN#0 SUMMARY total=1107ms turn-detected=0ms llm-request=1ms llm-first-token=2ms tts-request=2ms tts-first-chunk=2ms audio-queued=2ms
+[TIMING:language-lock-test] TURN#0
+speech-end=2026-09-23T13:46:07.184Z
+endpoint-evidence=2026-09-23T13:46:07.184Z (speech_final)
+turn-release=2026-09-23T13:46:07.793Z
+llm-request=2026-09-23T13:46:07.794Z
+llm-first-token=2026-09-23T13:46:07.795Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T13:46:07.795Z
+tts-first-audio=2026-09-23T13:46:07.795Z
+audio-queued=2026-09-23T13:46:07.795Z
+[TIMING:language-lock-test] TURN#0 DELTAS
+endpoint-to-release=609ms
+release-to-llm-request=1ms
+llm-to-first-token=1ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=611ms
+[PIPELINE:language-lock-test] Turn complete: assistant="Sure, let me explain." llmMs=15 ttsMs=0
+[RESPONSE-LEN:language-lock-test] TURN#0 userChars=33 assistantChars=21 estTokens=6 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=955 briefRequested=false
+[PIPELINE:language-lock-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:language-lock-test] run() exiting — state=LISTENING aborted=true
+[PIPELINE:language-lock-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:language-lock-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:language-lock-test] GREETING greeting-text-ready +0ms
+[TIMING:language-lock-test] GREETING tts-request +0ms
+[TIMING:language-lock-test] GREETING tts-first-chunk +0ms
+[TIMING:language-lock-test] GREETING audio-queued +1ms
+[PLAYBACK:language-lock-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:language-lock-test] GREETING SUMMARY total=2339ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=1ms
+[PIPELINE:language-lock-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:language-lock-test] entering main loop — state=SPEAKING aborted=false
+[TIMING:language-lock-test] TURN END turn-release=1790171174003 text="Actually hold on." sttMs=0
+[STT:language-lock-test] Transcript received: "Actually hold on." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=grace_cap_reached readsUnfinished=true graces=2 graceTrace=[1,2] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#0 turn-detected +0ms
+[TIMING:language-lock-test] TURN#0 stt-to-release=2723ms (sttLag=n/ams)
+[LLM:language-lock-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:language-lock-test] TURN#0 llm-request +1ms
+[TIMING:language-lock-test] TURN#0 llm-first-token +15ms
+[TIMING:language-lock-test] TURN#0 tts-request +16ms
+[TIMING:language-lock-test] TURN#0 tts-first-chunk +16ms
+[TIMING:language-lock-test] TURN#0 audio-queued +16ms
+[PLAYBACK:language-lock-test] draining 1105ms of queued audio before leaving SPEAKING (queued=955ms elapsed=0ms)
+[TIMING:language-lock-test] TURN#0 SUMMARY total=1121ms turn-detected=0ms llm-request=1ms llm-first-token=15ms tts-request=16ms tts-first-chunk=16ms audio-queued=16ms
+[TIMING:language-lock-test] TURN#0
+speech-end=2026-09-23T13:46:11.280Z
+endpoint-evidence=2026-09-23T13:46:11.280Z (speech_final)
+turn-release=2026-09-23T13:46:14.003Z
+llm-request=2026-09-23T13:46:14.004Z
+llm-first-token=2026-09-23T13:46:14.018Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T13:46:14.019Z
+tts-first-audio=2026-09-23T13:46:14.019Z
+audio-queued=2026-09-23T13:46:14.019Z
+[TIMING:language-lock-test] TURN#0 DELTAS
+endpoint-to-release=2723ms
+release-to-llm-request=1ms
+llm-to-first-token=14ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=2739ms
+[PIPELINE:language-lock-test] Turn complete: assistant="Sure, let me explain." llmMs=14 ttsMs=0
+[RESPONSE-LEN:language-lock-test] TURN#0 userChars=17 assistantChars=21 estTokens=6 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=955 briefRequested=false
+[SPECULATE:language-lock-test] LLM request PRE-OPENED on speech_final evidence: text="Yes okay sure thanks" evidence-to-llm-open=1ms historyLength=5
+[TIMING:language-lock-test] TURN END turn-release=1790171175454 text="Yes okay sure thanks" sttMs=0
+[STT:language-lock-test] Transcript received: "Yes okay sure thanks" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#1 turn-detected +1ms
+[TIMING:language-lock-test] TURN#1 stt-to-release=317ms (sttLag=n/ams)
+[LLM:language-lock-test] Sending to fake-llm: historyLength=5 roles=[system,assistant,user,assistant,user] streaming=true
+[TIMING:language-lock-test] TURN#1 llm-request +1ms
+[SPECULATE:language-lock-test] ADOPTED pre-opened request — llm-request is 316ms after the provider stream was opened (first token already in hand, 291ms ago) evidence-to-llm-open=1ms
+[TIMING:language-lock-test] TURN#1 llm-first-token +1ms
+[TIMING:language-lock-test] TURN#1 tts-request +2ms
+[TIMING:language-lock-test] TURN#1 tts-first-chunk +2ms
+[TIMING:language-lock-test] TURN#1 audio-queued +2ms
+[PLAYBACK:language-lock-test] draining 1150ms of queued audio before leaving SPEAKING (queued=1000ms elapsed=0ms)
+[TIMING:language-lock-test] TURN#1 SUMMARY total=98ms turn-detected=1ms llm-request=1ms llm-first-token=1ms tts-request=2ms tts-first-chunk=2ms audio-queued=2ms
+[TIMING:language-lock-test] TURN#1
+speech-end=2026-09-23T13:46:15.138Z
+endpoint-evidence=2026-09-23T13:46:15.138Z (speech_final)
+turn-release=2026-09-23T13:46:15.454Z
+llm-request=2026-09-23T13:46:15.455Z
+llm-first-token=2026-09-23T13:46:15.455Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T13:46:15.456Z
+tts-first-audio=2026-09-23T13:46:15.456Z
+audio-queued=2026-09-23T13:46:15.456Z
+[TIMING:language-lock-test] TURN#1 DELTAS
+endpoint-to-release=316ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=318ms
+[PIPELINE:language-lock-test] Turn complete: assistant="It is a short session." llmMs=25 ttsMs=0
+[RESPONSE-LEN:language-lock-test] TURN#1 userChars=20 assistantChars=22 estTokens=6 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1000 briefRequested=false
+[PIPELINE:language-lock-test] run() exiting — state=SPEAKING aborted=true
+  [PASS] D2 — a bare acknowledgement / all-neutral turn locks nothing
+[PIPELINE:language-lock-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:language-lock-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:language-lock-test] GREETING greeting-text-ready +0ms
+[TIMING:language-lock-test] GREETING tts-request +1ms
+[TIMING:language-lock-test] GREETING tts-first-chunk +1ms
+[TIMING:language-lock-test] GREETING audio-queued +1ms
+[PLAYBACK:language-lock-test] draining 2331ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=1ms)
+[TIMING:language-lock-test] GREETING SUMMARY total=2335ms greeting-text-ready=0ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:language-lock-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:language-lock-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:language-lock-test] LLM request PRE-OPENED on speech_final evidence: text="Ji boliye" evidence-to-llm-open=0ms historyLength=3
+[TIMING:language-lock-test] TURN END turn-release=1790171178222 text="Ji boliye" sttMs=0
+[STT:language-lock-test] Transcript received: "Ji boliye" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#0 turn-detected +0ms
+[TIMING:language-lock-test] TURN#0 stt-to-release=308ms (sttLag=n/ams)
+[LLM:language-lock-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:language-lock-test] TURN#0 llm-request +1ms
+[SPECULATE:language-lock-test] ADOPTED pre-opened request — llm-request is 309ms after the provider stream was opened (first token already in hand, 293ms ago) evidence-to-llm-open=0ms
+[TIMING:language-lock-test] TURN#0 llm-first-token +1ms
+[TIMING:language-lock-test] TURN#0 tts-request +1ms
+[TIMING:language-lock-test] TURN#0 tts-first-chunk +1ms
+[TIMING:language-lock-test] TURN#0 audio-queued +1ms
+[PLAYBACK:language-lock-test] draining 1105ms of queued audio before leaving SPEAKING (queued=955ms elapsed=0ms)
+[TIMING:language-lock-test] TURN#0 SUMMARY total=1108ms turn-detected=0ms llm-request=1ms llm-first-token=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:language-lock-test] TURN#0
+speech-end=2026-09-23T13:46:17.914Z
+endpoint-evidence=2026-09-23T13:46:17.914Z (speech_final)
+turn-release=2026-09-23T13:46:18.222Z
+llm-request=2026-09-23T13:46:18.223Z
+llm-first-token=2026-09-23T13:46:18.223Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T13:46:18.223Z
+tts-first-audio=2026-09-23T13:46:18.223Z
+audio-queued=2026-09-23T13:46:18.223Z
+[TIMING:language-lock-test] TURN#0 DELTAS
+endpoint-to-release=308ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=309ms
+[PIPELINE:language-lock-test] Turn complete: assistant="Sure, let me explain." llmMs=16 ttsMs=0
+[RESPONSE-LEN:language-lock-test] TURN#0 userChars=9 assistantChars=21 estTokens=6 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=955 briefRequested=false
+[SPECULATE:language-lock-test] LLM request PRE-OPENED on speech_final evidence: text="Haan ji, mujhe iske baare mein bataiye." evidence-to-llm-open=0ms historyLength=5
+[TIMING:language-lock-test] TURN END turn-release=1790171179963 text="Haan ji, mujhe iske baare mein bataiye." sttMs=0
+[STT:language-lock-test] Transcript received: "Haan ji, mujhe iske baare mein bataiye." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#1 turn-detected +0ms
+[TIMING:language-lock-test] TURN#1 stt-to-release=608ms (sttLag=n/ams)
+[LANGUAGE:language-lock-test] call language LOCKED to hi on the first meaningful utterance (basis=roman-markers confidence=0.8785714285714286 hindiMarkers=5): "Haan ji, mujhe iske baare mein bataiye."
+[LLM:language-lock-test] Sending to fake-llm: historyLength=5 roles=[system,assistant,user,assistant,user] streaming=true
+[TIMING:language-lock-test] TURN#1 llm-request +1ms
+[SPECULATE:language-lock-test] ADOPTED pre-opened request — llm-request is 609ms after the provider stream was opened (first token already in hand, 586ms ago) evidence-to-llm-open=0ms
+[TIMING:language-lock-test] TURN#1 llm-first-token +1ms
+[TIMING:language-lock-test] TURN#1 tts-request +1ms
+[TIMING:language-lock-test] TURN#1 tts-first-chunk +1ms
+[TIMING:language-lock-test] TURN#1 audio-queued +1ms
+[PLAYBACK:language-lock-test] draining 1150ms of queued audio before leaving SPEAKING (queued=1000ms elapsed=0ms)
+[TIMING:language-lock-test] TURN#1 SUMMARY total=1155ms turn-detected=0ms llm-request=1ms llm-first-token=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:language-lock-test] TURN#1
+speech-end=2026-09-23T13:46:19.355Z
+endpoint-evidence=2026-09-23T13:46:19.355Z (speech_final)
+turn-release=2026-09-23T13:46:19.963Z
+llm-request=2026-09-23T13:46:19.964Z
+llm-first-token=2026-09-23T13:46:19.964Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T13:46:19.964Z
+tts-first-audio=2026-09-23T13:46:19.964Z
+audio-queued=2026-09-23T13:46:19.964Z
+[TIMING:language-lock-test] TURN#1 DELTAS
+endpoint-to-release=608ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=609ms
+[PIPELINE:language-lock-test] Turn complete: assistant="It is a short session." llmMs=23 ttsMs=0
+[RESPONSE-LEN:language-lock-test] TURN#1 userChars=39 assistantChars=22 estTokens=6 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1000 briefRequested=false
+[PIPELINE:language-lock-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:language-lock-test] run() exiting — state=LISTENING aborted=true
+  [PASS] D3 — an utterance below the word floor does not lock, and does not prevent a later one
+[PIPELINE:language-lock-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:language-lock-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:language-lock-test] GREETING greeting-text-ready +0ms
+[TIMING:language-lock-test] GREETING tts-request +1ms
+[TIMING:language-lock-test] GREETING tts-first-chunk +2ms
+[TIMING:language-lock-test] GREETING audio-queued +2ms
+[PLAYBACK:language-lock-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:language-lock-test] GREETING SUMMARY total=2339ms greeting-text-ready=0ms tts-request=1ms tts-first-chunk=2ms audio-queued=2ms
+[PIPELINE:language-lock-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:language-lock-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:language-lock-test] LLM request PRE-OPENED on speech_final evidence: text="Aap tell me about the workshop please" evidence-to-llm-open=0ms historyLength=3
+[TIMING:language-lock-test] TURN END turn-release=1790171184094 text="Aap tell me about the workshop please" sttMs=0
+[STT:language-lock-test] Transcript received: "Aap tell me about the workshop please" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#0 turn-detected +2ms
+[TIMING:language-lock-test] TURN#0 stt-to-release=606ms (sttLag=n/ams)
+[LLM:language-lock-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:language-lock-test] TURN#0 llm-request +3ms
+[SPECULATE:language-lock-test] ADOPTED pre-opened request — llm-request is 606ms after the provider stream was opened (first token already in hand, 591ms ago) evidence-to-llm-open=0ms
+[TIMING:language-lock-test] TURN#0 llm-first-token +4ms
+[TIMING:language-lock-test] TURN#0 tts-request +4ms
+[TIMING:language-lock-test] TURN#0 tts-first-chunk +5ms
+[TIMING:language-lock-test] TURN#0 audio-queued +5ms
+[PLAYBACK:language-lock-test] draining 1105ms of queued audio before leaving SPEAKING (queued=955ms elapsed=0ms)
+[TIMING:language-lock-test] TURN#0 SUMMARY total=1118ms turn-detected=2ms llm-request=3ms llm-first-token=4ms tts-request=4ms tts-first-chunk=5ms audio-queued=5ms
+[TIMING:language-lock-test] TURN#0
+speech-end=2026-09-23T13:46:23.491Z
+endpoint-evidence=2026-09-23T13:46:23.491Z (speech_final)
+turn-release=2026-09-23T13:46:24.094Z
+llm-request=2026-09-23T13:46:24.097Z
+llm-first-token=2026-09-23T13:46:24.098Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T13:46:24.098Z
+tts-first-audio=2026-09-23T13:46:24.099Z
+audio-queued=2026-09-23T13:46:24.099Z
+[TIMING:language-lock-test] TURN#0 DELTAS
+endpoint-to-release=603ms
+release-to-llm-request=3ms
+llm-to-first-token=1ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=1ms
+first-audio-to-queue=0ms
+speech-end-to-audio=608ms
+[PIPELINE:language-lock-test] Turn complete: assistant="Sure, let me explain." llmMs=15 ttsMs=1
+[RESPONSE-LEN:language-lock-test] TURN#0 userChars=37 assistantChars=21 estTokens=6 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=955 briefRequested=false
+[SPECULATE:language-lock-test] LLM request PRE-OPENED on speech_final evidence: text="मुझे इसके बारे में जानकारी चाहिए।" evidence-to-llm-open=0ms historyLength=5
+[TIMING:language-lock-test] TURN END turn-release=1790171185849 text="मुझे इसके बारे में जानकारी चाहिए।" sttMs=0
+[STT:language-lock-test] Transcript received: "मुझे इसके बारे में जानकारी चाहिए।" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#1 turn-detected +1ms
+[TIMING:language-lock-test] TURN#1 stt-to-release=606ms (sttLag=n/ams)
+[LANGUAGE:language-lock-test] call language LOCKED to hi on the first meaningful utterance (basis=devanagari confidence=0.9 hindiMarkers=0): "मुझे इसके बारे में जानकारी चाहिए।"
+[LLM:language-lock-test] Sending to fake-llm: historyLength=5 roles=[system,assistant,user,assistant,user] streaming=true
+[TIMING:language-lock-test] TURN#1 llm-request +2ms
+[SPECULATE:language-lock-test] ADOPTED pre-opened request — llm-request is 607ms after the provider stream was opened (first token already in hand, 591ms ago) evidence-to-llm-open=0ms
+[TIMING:language-lock-test] TURN#1 llm-first-token +2ms
+[TIMING:language-lock-test] TURN#1 tts-request +3ms
+[TIMING:language-lock-test] TURN#1 tts-first-chunk +3ms
+[TIMING:language-lock-test] TURN#1 audio-queued +3ms
+[PLAYBACK:language-lock-test] draining 1150ms of queued audio before leaving SPEAKING (queued=1000ms elapsed=0ms)
+[TIMING:language-lock-test] TURN#1 SUMMARY total=1164ms turn-detected=1ms llm-request=2ms llm-first-token=2ms tts-request=3ms tts-first-chunk=3ms audio-queued=3ms
+[TIMING:language-lock-test] TURN#1
+speech-end=2026-09-23T13:46:25.244Z
+endpoint-evidence=2026-09-23T13:46:25.244Z (speech_final)
+turn-release=2026-09-23T13:46:25.849Z
+llm-request=2026-09-23T13:46:25.851Z
+llm-first-token=2026-09-23T13:46:25.851Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T13:46:25.852Z
+tts-first-audio=2026-09-23T13:46:25.852Z
+audio-queued=2026-09-23T13:46:25.852Z
+[TIMING:language-lock-test] TURN#1 DELTAS
+endpoint-to-release=605ms
+release-to-llm-request=2ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=608ms
+[PIPELINE:language-lock-test] Turn complete: assistant="It is a short session." llmMs=16 ttsMs=0
+[RESPONSE-LEN:language-lock-test] TURN#1 userChars=33 assistantChars=22 estTokens=6 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1000 briefRequested=false
+[PIPELINE:language-lock-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:language-lock-test] run() exiting — state=LISTENING aborted=true
+  [PASS] D4 — the documented English fall-through is NOT made permanent (audit §B5 / §F.6)
+[PIPELINE:language-lock-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:language-lock-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:language-lock-test] GREETING greeting-text-ready +0ms
+[TIMING:language-lock-test] GREETING tts-request +0ms
+[TIMING:language-lock-test] GREETING tts-first-chunk +0ms
+[TIMING:language-lock-test] GREETING audio-queued +0ms
+[PLAYBACK:language-lock-test] draining 2331ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=1ms)
+[TIMING:language-lock-test] GREETING SUMMARY total=2348ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:language-lock-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:language-lock-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:language-lock-test] LLM request PRE-OPENED on speech_final evidence: text="Please speak in Hindi" evidence-to-llm-open=0ms historyLength=3
+[TIMING:language-lock-test] TURN END turn-release=1790171189690 text="Please speak in Hindi" sttMs=0
+[STT:language-lock-test] Transcript received: "Please speak in Hindi" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#0 turn-detected +1ms
+[TIMING:language-lock-test] TURN#0 stt-to-release=315ms (sttLag=n/ams)
+[LLM:language-lock-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:language-lock-test] TURN#0 llm-request +1ms
+[SPECULATE:language-lock-test] ADOPTED pre-opened request — llm-request is 314ms after the provider stream was opened (first token already in hand, 300ms ago) evidence-to-llm-open=0ms
+[TIMING:language-lock-test] TURN#0 llm-first-token +2ms
+[TIMING:language-lock-test] TURN#0 tts-request +2ms
+[TIMING:language-lock-test] TURN#0 tts-first-chunk +3ms
+[TIMING:language-lock-test] TURN#0 audio-queued +3ms
+[PLAYBACK:language-lock-test] draining 1105ms of queued audio before leaving SPEAKING (queued=955ms elapsed=0ms)
+[TIMING:language-lock-test] TURN#0 SUMMARY total=1113ms turn-detected=1ms llm-request=1ms llm-first-token=2ms tts-request=2ms tts-first-chunk=3ms audio-queued=3ms
+[TIMING:language-lock-test] TURN#0
+speech-end=2026-09-23T13:46:29.376Z
+endpoint-evidence=2026-09-23T13:46:29.377Z (speech_final)
+turn-release=2026-09-23T13:46:29.690Z
+llm-request=2026-09-23T13:46:29.691Z
+llm-first-token=2026-09-23T13:46:29.692Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T13:46:29.692Z
+tts-first-audio=2026-09-23T13:46:29.693Z
+audio-queued=2026-09-23T13:46:29.693Z
+[TIMING:language-lock-test] TURN#0 DELTAS
+endpoint-to-release=313ms
+release-to-llm-request=1ms
+llm-to-first-token=1ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=1ms
+first-audio-to-queue=0ms
+speech-end-to-audio=317ms
+[PIPELINE:language-lock-test] Turn complete: assistant="Sure, let me explain." llmMs=14 ttsMs=0
+[RESPONSE-LEN:language-lock-test] TURN#0 userChars=21 assistantChars=21 estTokens=6 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=955 briefRequested=false
+[SPECULATE:language-lock-test] LLM request PRE-OPENED on speech_final evidence: text="मुझे इसके बारे में जानकारी चाहिए।" evidence-to-llm-open=0ms historyLength=5
+[TIMING:language-lock-test] TURN END turn-release=1790171191588 text="मुझे इसके बारे में जानकारी चाहिए।" sttMs=0
+[STT:language-lock-test] Transcript received: "मुझे इसके बारे में जानकारी चाहिए।" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#1 turn-detected +1ms
+[TIMING:language-lock-test] TURN#1 stt-to-release=603ms (sttLag=n/ams)
+[LANGUAGE:language-lock-test] call language LOCKED to hi on the first meaningful utterance (basis=devanagari confidence=0.9 hindiMarkers=0): "मुझे इसके बारे में जानकारी चाहिए।"
+[LLM:language-lock-test] Sending to fake-llm: historyLength=5 roles=[system,assistant,user,assistant,user] streaming=true
+[TIMING:language-lock-test] TURN#1 llm-request +1ms
+[SPECULATE:language-lock-test] ADOPTED pre-opened request — llm-request is 603ms after the provider stream was opened (first token already in hand, 579ms ago) evidence-to-llm-open=0ms
+[TIMING:language-lock-test] TURN#1 llm-first-token +1ms
+[TIMING:language-lock-test] TURN#1 tts-request +2ms
+[TIMING:language-lock-test] TURN#1 tts-first-chunk +2ms
+[TIMING:language-lock-test] TURN#1 audio-queued +2ms
+[PLAYBACK:language-lock-test] draining 1150ms of queued audio before leaving SPEAKING (queued=1000ms elapsed=0ms)
+[TIMING:language-lock-test] TURN#1 SUMMARY total=1154ms turn-detected=1ms llm-request=1ms llm-first-token=1ms tts-request=2ms tts-first-chunk=2ms audio-queued=2ms
+[TIMING:language-lock-test] TURN#1
+speech-end=2026-09-23T13:46:30.986Z
+endpoint-evidence=2026-09-23T13:46:30.986Z (speech_final)
+turn-release=2026-09-23T13:46:31.588Z
+llm-request=2026-09-23T13:46:31.589Z
+llm-first-token=2026-09-23T13:46:31.589Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T13:46:31.590Z
+tts-first-audio=2026-09-23T13:46:31.590Z
+audio-queued=2026-09-23T13:46:31.590Z
+[TIMING:language-lock-test] TURN#1 DELTAS
+endpoint-to-release=602ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=604ms
+[PIPELINE:language-lock-test] Turn complete: assistant="It is a short session." llmMs=24 ttsMs=0
+[RESPONSE-LEN:language-lock-test] TURN#1 userChars=33 assistantChars=22 estTokens=6 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1000 briefRequested=false
+[PIPELINE:language-lock-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:language-lock-test] run() exiting — state=LISTENING aborted=true
+  [PASS] D4b — an explicit request for Hindi does NOT lock the call into English
+[PIPELINE:language-lock-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:language-lock-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:language-lock-test] GREETING greeting-text-ready +0ms
+[TIMING:language-lock-test] GREETING tts-request +1ms
+[TIMING:language-lock-test] GREETING tts-first-chunk +1ms
+[TIMING:language-lock-test] GREETING audio-queued +2ms
+[PLAYBACK:language-lock-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:language-lock-test] GREETING SUMMARY total=2333ms greeting-text-ready=0ms tts-request=1ms tts-first-chunk=1ms audio-queued=2ms
+[PIPELINE:language-lock-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:language-lock-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:language-lock-test] LLM request PRE-OPENED on speech_final evidence: text="Hello? What is this about exactly?" evidence-to-llm-open=1ms historyLength=3
+[TIMING:language-lock-test] TURN END turn-release=1790171195435 text="Hello? What is this about exactly?" sttMs=0
+[STT:language-lock-test] Transcript received: "Hello? What is this about exactly?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#0 turn-detected +1ms
+[TIMING:language-lock-test] TURN#0 stt-to-release=160ms (sttLag=n/ams)
+[LANGUAGE:language-lock-test] call language LOCKED to en on the first meaningful utterance (basis=default-english confidence=0.75 hindiMarkers=0): "Hello? What is this about exactly?"
+[LLM:language-lock-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:language-lock-test] TURN#0 llm-request +1ms
+[SPECULATE:language-lock-test] ADOPTED pre-opened request — llm-request is 159ms after the provider stream was opened (first token already in hand, 143ms ago) evidence-to-llm-open=1ms
+[TIMING:language-lock-test] TURN#0 llm-first-token +2ms
+[TIMING:language-lock-test] TURN#0 tts-request +2ms
+[TIMING:language-lock-test] TURN#0 tts-first-chunk +2ms
+[TIMING:language-lock-test] TURN#0 audio-queued +3ms
+[PLAYBACK:language-lock-test] draining 1105ms of queued audio before leaving SPEAKING (queued=955ms elapsed=0ms)
+[TIMING:language-lock-test] TURN#0 SUMMARY total=1109ms turn-detected=1ms llm-request=1ms llm-first-token=2ms tts-request=2ms tts-first-chunk=2ms audio-queued=3ms
+[TIMING:language-lock-test] TURN#0
+speech-end=2026-09-23T13:46:35.276Z
+endpoint-evidence=2026-09-23T13:46:35.276Z (speech_final)
+turn-release=2026-09-23T13:46:35.435Z
+llm-request=2026-09-23T13:46:35.436Z
+llm-first-token=2026-09-23T13:46:35.437Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T13:46:35.437Z
+tts-first-audio=2026-09-23T13:46:35.437Z
+audio-queued=2026-09-23T13:46:35.438Z
+[TIMING:language-lock-test] TURN#0 DELTAS
+endpoint-to-release=159ms
+release-to-llm-request=1ms
+llm-to-first-token=1ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=1ms
+speech-end-to-audio=162ms
+[PIPELINE:language-lock-test] Turn complete: assistant="Sure, let me explain." llmMs=16 ttsMs=0
+[RESPONSE-LEN:language-lock-test] TURN#0 userChars=34 assistantChars=21 estTokens=6 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=955 briefRequested=false
+[PIPELINE:language-lock-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:language-lock-test] run() exiting — state=LISTENING aborted=true
+  [PASS] D5 — a greeting-plus-question IS a real turn and does lock (both sides of the floor test)
+
+E — hearing check and backchannel: no accidental switch
+[PIPELINE:language-lock-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:language-lock-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:language-lock-test] GREETING greeting-text-ready +0ms
+[TIMING:language-lock-test] GREETING tts-request +0ms
+[TIMING:language-lock-test] GREETING tts-first-chunk +1ms
+[TIMING:language-lock-test] GREETING audio-queued +1ms
+[PLAYBACK:language-lock-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:language-lock-test] GREETING SUMMARY total=2348ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:language-lock-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:language-lock-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:language-lock-test] LLM request PRE-OPENED on speech_final evidence: text="मुझे इसके बारे में जानकारी चाहिए।" evidence-to-llm-open=1ms historyLength=3
+[TIMING:language-lock-test] TURN END turn-release=1790171199543 text="मुझे इसके बारे में जानकारी चाहिए।" sttMs=0
+[STT:language-lock-test] Transcript received: "मुझे इसके बारे में जानकारी चाहिए।" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#0 turn-detected +0ms
+[TIMING:language-lock-test] TURN#0 stt-to-release=616ms (sttLag=n/ams)
+[LANGUAGE:language-lock-test] call language LOCKED to hi on the first meaningful utterance (basis=devanagari confidence=0.9 hindiMarkers=0): "मुझे इसके बारे में जानकारी चाहिए।"
+[LLM:language-lock-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:language-lock-test] TURN#0 llm-request +1ms
+[SPECULATE:language-lock-test] ADOPTED pre-opened request — llm-request is 616ms after the provider stream was opened (first token already in hand, 602ms ago) evidence-to-llm-open=1ms
+[TIMING:language-lock-test] TURN#0 llm-first-token +1ms
+[TIMING:language-lock-test] TURN#0 tts-request +1ms
+[TIMING:language-lock-test] TURN#0 tts-first-chunk +2ms
+[TIMING:language-lock-test] TURN#0 audio-queued +2ms
+[PLAYBACK:language-lock-test] draining 1105ms of queued audio before leaving SPEAKING (queued=955ms elapsed=0ms)
+[TIMING:language-lock-test] TURN#0 SUMMARY total=1121ms turn-detected=0ms llm-request=1ms llm-first-token=1ms tts-request=1ms tts-first-chunk=2ms audio-queued=2ms
+[TIMING:language-lock-test] TURN#0
+speech-end=2026-09-23T13:46:38.927Z
+endpoint-evidence=2026-09-23T13:46:38.927Z (speech_final)
+turn-release=2026-09-23T13:46:39.543Z
+llm-request=2026-09-23T13:46:39.544Z
+llm-first-token=2026-09-23T13:46:39.544Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T13:46:39.544Z
+tts-first-audio=2026-09-23T13:46:39.545Z
+audio-queued=2026-09-23T13:46:39.545Z
+[TIMING:language-lock-test] TURN#0 DELTAS
+endpoint-to-release=616ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=1ms
+first-audio-to-queue=0ms
+speech-end-to-audio=618ms
+[PIPELINE:language-lock-test] Turn complete: assistant="Sure, let me explain." llmMs=14 ttsMs=0
+[RESPONSE-LEN:language-lock-test] TURN#0 userChars=33 assistantChars=21 estTokens=6 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=955 briefRequested=false
+[TIMING:language-lock-test] TURN END turn-release=1790171200818 text="Hello? Can you hear me?" sttMs=0
+[STT:language-lock-test] Transcript received: "Hello? Can you hear me?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#1 turn-detected +1ms
+[TIMING:language-lock-test] TURN#1 stt-to-release=152ms (sttLag=n/ams)
+[PIPELINE:language-lock-test] hearing check with nothing to resume (after a block) — acknowledging once: "हाँ, क्या आपको मेरी आवाज़ ठीक से सुनाई दे रही है?"
+[TIMING:language-lock-test] ATTENTION tts-request +7ms
+[TIMING:language-lock-test] ATTENTION tts-first-chunk +9ms
+[TIMING:language-lock-test] ATTENTION audio-queued +9ms
+[PLAYBACK:language-lock-test] draining 2377ms of queued audio before leaving SPEAKING (queued=2227ms elapsed=0ms)
+[TIMING:language-lock-test] ATTENTION SUMMARY total=2389ms tts-request=7ms tts-first-chunk=9ms audio-queued=9ms
+[TIMING:language-lock-test] TURN#1 SUMMARY total=2395ms turn-detected=1ms
+[TIMING:language-lock-test] TURN#1
+speech-end=2026-09-23T13:46:40.667Z
+endpoint-evidence=2026-09-23T13:46:40.667Z (speech_final)
+turn-release=2026-09-23T13:46:40.818Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:language-lock-test] TURN#1 DELTAS
+endpoint-to-release=151ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[PIPELINE:language-lock-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:language-lock-test] run() exiting — state=LISTENING aborted=true
+  [PASS] E1 — a presence check is answered in the LOCKED language and cannot re-lock
+[PIPELINE:language-lock-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:language-lock-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:language-lock-test] GREETING greeting-text-ready +0ms
+[TIMING:language-lock-test] GREETING tts-request +0ms
+[TIMING:language-lock-test] GREETING tts-first-chunk +0ms
+[TIMING:language-lock-test] GREETING audio-queued +0ms
+[PLAYBACK:language-lock-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:language-lock-test] GREETING SUMMARY total=2333ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:language-lock-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:language-lock-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:language-lock-test] LLM request PRE-OPENED on speech_final evidence: text="मुझे इसके बारे में जानकारी चाहिए।" evidence-to-llm-open=0ms historyLength=3
+[TIMING:language-lock-test] TURN END turn-release=1790171206222 text="मुझे इसके बारे में जानकारी चाहिए।" sttMs=0
+[STT:language-lock-test] Transcript received: "मुझे इसके बारे में जानकारी चाहिए।" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#0 turn-detected +1ms
+[TIMING:language-lock-test] TURN#0 stt-to-release=615ms (sttLag=n/ams)
+[LANGUAGE:language-lock-test] call language LOCKED to hi on the first meaningful utterance (basis=devanagari confidence=0.9 hindiMarkers=0): "मुझे इसके बारे में जानकारी चाहिए।"
+[LLM:language-lock-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:language-lock-test] TURN#0 llm-request +1ms
+[SPECULATE:language-lock-test] ADOPTED pre-opened request — llm-request is 615ms after the provider stream was opened (first token already in hand, 590ms ago) evidence-to-llm-open=0ms
+[TIMING:language-lock-test] TURN#0 llm-first-token +1ms
+[TIMING:language-lock-test] TURN#0 tts-request +1ms
+[TIMING:language-lock-test] TURN#0 tts-first-chunk +1ms
+[TIMING:language-lock-test] TURN#0 audio-queued +1ms
+[PLAYBACK:language-lock-test] draining 1105ms of queued audio before leaving SPEAKING (queued=955ms elapsed=0ms)
+[TIMING:language-lock-test] TURN#0 SUMMARY total=1112ms turn-detected=1ms llm-request=1ms llm-first-token=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:language-lock-test] TURN#0
+speech-end=2026-09-23T13:46:45.608Z
+endpoint-evidence=2026-09-23T13:46:45.608Z (speech_final)
+turn-release=2026-09-23T13:46:46.222Z
+llm-request=2026-09-23T13:46:46.223Z
+llm-first-token=2026-09-23T13:46:46.223Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T13:46:46.223Z
+tts-first-audio=2026-09-23T13:46:46.223Z
+audio-queued=2026-09-23T13:46:46.223Z
+[TIMING:language-lock-test] TURN#0 DELTAS
+endpoint-to-release=614ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=615ms
+[PIPELINE:language-lock-test] Turn complete: assistant="Sure, let me explain." llmMs=25 ttsMs=0
+[RESPONSE-LEN:language-lock-test] TURN#0 userChars=33 assistantChars=21 estTokens=6 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=955 briefRequested=false
+[TIMING:language-lock-test] TURN END turn-release=1790171207498 text="Hello? Can you hear me?" sttMs=0
+[STT:language-lock-test] Transcript received: "Hello? Can you hear me?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#1 turn-detected +1ms
+[TIMING:language-lock-test] TURN#1 stt-to-release=164ms (sttLag=n/ams)
+[PIPELINE:language-lock-test] hearing check with nothing to resume (after a block) — acknowledging once: "हाँ, क्या आपको मेरी आवाज़ ठीक से सुनाई दे रही है?"
+[TIMING:language-lock-test] ATTENTION tts-request +0ms
+[TIMING:language-lock-test] ATTENTION tts-first-chunk +1ms
+[TIMING:language-lock-test] ATTENTION audio-queued +1ms
+[PLAYBACK:language-lock-test] draining 2377ms of queued audio before leaving SPEAKING (queued=2227ms elapsed=0ms)
+[TIMING:language-lock-test] ATTENTION SUMMARY total=2392ms tts-request=0ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:language-lock-test] TURN#1 SUMMARY total=2394ms turn-detected=1ms
+[TIMING:language-lock-test] TURN#1
+speech-end=2026-09-23T13:46:47.335Z
+endpoint-evidence=2026-09-23T13:46:47.335Z (speech_final)
+turn-release=2026-09-23T13:46:47.498Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:language-lock-test] TURN#1 DELTAS
+endpoint-to-release=163ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[TIMING:language-lock-test] TURN END turn-release=1790171210493 text="Yes, I can hear you." sttMs=0
+[STT:language-lock-test] Transcript received: "Yes, I can hear you." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#1 turn-detected +1ms
+[TIMING:language-lock-test] TURN#1 stt-to-release=602ms (sttLag=n/ams)
+[PIPELINE:language-lock-test] hearing check answered — following up once: "बस कन्फ़र्म करना था कि आप मुझे सुन पा रहे हैं। जो मैंने अभी कहा, वो आपने सुना?"
+[TIMING:language-lock-test] ATTENTION tts-request +0ms
+[TIMING:language-lock-test] ATTENTION tts-first-chunk +0ms
+[TIMING:language-lock-test] ATTENTION audio-queued +0ms
+[PLAYBACK:language-lock-test] draining 3696ms of queued audio before leaving SPEAKING (queued=3546ms elapsed=0ms)
+[TIMING:language-lock-test] ATTENTION SUMMARY total=3702ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:language-lock-test] TURN#1 SUMMARY total=3706ms turn-detected=1ms
+[TIMING:language-lock-test] TURN#1
+speech-end=2026-09-23T13:46:49.892Z
+endpoint-evidence=2026-09-23T13:46:49.892Z (speech_final)
+turn-release=2026-09-23T13:46:50.493Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:language-lock-test] TURN#1 DELTAS
+endpoint-to-release=601ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[PIPELINE:language-lock-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:language-lock-test] run() exiting — state=LISTENING aborted=true
+  [PASS] E2 — the caller's English answer to the fixed hearing line cannot switch a Hindi call
+[PIPELINE:language-lock-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:language-lock-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:language-lock-test] GREETING greeting-text-ready +1ms
+[TIMING:language-lock-test] GREETING tts-request +1ms
+[TIMING:language-lock-test] GREETING tts-first-chunk +1ms
+[TIMING:language-lock-test] GREETING audio-queued +1ms
+[PLAYBACK:language-lock-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:language-lock-test] GREETING SUMMARY total=2341ms greeting-text-ready=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:language-lock-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:language-lock-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:language-lock-test] LLM request PRE-OPENED on speech_final evidence: text="मुझे इसके बारे में जानकारी चाहिए।" evidence-to-llm-open=0ms historyLength=3
+[TIMING:language-lock-test] TURN END turn-release=1790171217180 text="मुझे इसके बारे में जानकारी चाहिए।" sttMs=0
+[STT:language-lock-test] Transcript received: "मुझे इसके बारे में जानकारी चाहिए।" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#0 turn-detected +1ms
+[TIMING:language-lock-test] TURN#0 stt-to-release=607ms (sttLag=n/ams)
+[LANGUAGE:language-lock-test] call language LOCKED to hi on the first meaningful utterance (basis=devanagari confidence=0.9 hindiMarkers=0): "मुझे इसके बारे में जानकारी चाहिए।"
+[LLM:language-lock-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:language-lock-test] TURN#0 llm-request +1ms
+[SPECULATE:language-lock-test] ADOPTED pre-opened request — llm-request is 607ms after the provider stream was opened (first token already in hand, 583ms ago) evidence-to-llm-open=0ms
+[TIMING:language-lock-test] TURN#0 llm-first-token +1ms
+[TIMING:language-lock-test] TURN#0 tts-request +2ms
+[TIMING:language-lock-test] TURN#0 tts-first-chunk +2ms
+[TIMING:language-lock-test] TURN#0 audio-queued +2ms
+[PLAYBACK:language-lock-test] draining 1105ms of queued audio before leaving SPEAKING (queued=955ms elapsed=0ms)
+[TIMING:language-lock-test] TURN#0 SUMMARY total=1117ms turn-detected=1ms llm-request=1ms llm-first-token=1ms tts-request=2ms tts-first-chunk=2ms audio-queued=2ms
+[TIMING:language-lock-test] TURN#0
+speech-end=2026-09-23T13:46:56.574Z
+endpoint-evidence=2026-09-23T13:46:56.574Z (speech_final)
+turn-release=2026-09-23T13:46:57.180Z
+llm-request=2026-09-23T13:46:57.181Z
+llm-first-token=2026-09-23T13:46:57.181Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T13:46:57.182Z
+tts-first-audio=2026-09-23T13:46:57.182Z
+audio-queued=2026-09-23T13:46:57.182Z
+[TIMING:language-lock-test] TURN#0 DELTAS
+endpoint-to-release=606ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=608ms
+[PIPELINE:language-lock-test] Turn complete: assistant="Sure, let me explain." llmMs=24 ttsMs=0
+[RESPONSE-LEN:language-lock-test] TURN#0 userChars=33 assistantChars=21 estTokens=6 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=955 briefRequested=false
+[TIMING:language-lock-test] TURN END turn-release=1790171218630 text="Hello? Can you hear me?" sttMs=0
+[STT:language-lock-test] Transcript received: "Hello? Can you hear me?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#1 turn-detected +1ms
+[TIMING:language-lock-test] TURN#1 stt-to-release=159ms (sttLag=n/ams)
+[PIPELINE:language-lock-test] hearing check with nothing to resume (after a block) — acknowledging once: "हाँ, क्या आपको मेरी आवाज़ ठीक से सुनाई दे रही है?"
+[TIMING:language-lock-test] ATTENTION tts-request +0ms
+[TIMING:language-lock-test] ATTENTION tts-first-chunk +0ms
+[TIMING:language-lock-test] ATTENTION audio-queued +0ms
+[PLAYBACK:language-lock-test] draining 2376ms of queued audio before leaving SPEAKING (queued=2227ms elapsed=1ms)
+[TIMING:language-lock-test] ATTENTION SUMMARY total=2383ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:language-lock-test] TURN#1 SUMMARY total=2385ms turn-detected=1ms
+[TIMING:language-lock-test] TURN#1
+speech-end=2026-09-23T13:46:58.472Z
+endpoint-evidence=2026-09-23T13:46:58.472Z (speech_final)
+turn-release=2026-09-23T13:46:58.630Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:language-lock-test] TURN#1 DELTAS
+endpoint-to-release=158ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[TIMING:language-lock-test] TURN END turn-release=1790171221628 text="Yes, I can hear you clearly." sttMs=0
+[STT:language-lock-test] Transcript received: "Yes, I can hear you clearly." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#1 turn-detected +1ms
+[TIMING:language-lock-test] TURN#1 stt-to-release=606ms (sttLag=n/ams)
+[LLM:language-lock-test] Sending to fake-llm: historyLength=7 roles=[system,assistant,user,assistant,user,assistant,user] streaming=true
+[TIMING:language-lock-test] TURN#1 llm-request +2ms
+[TIMING:language-lock-test] TURN#1 llm-first-token +12ms
+[TIMING:language-lock-test] TURN#1 tts-request +13ms
+[TIMING:language-lock-test] TURN#1 tts-first-chunk +13ms
+[TIMING:language-lock-test] TURN#1 audio-queued +13ms
+[PLAYBACK:language-lock-test] draining 1150ms of queued audio before leaving SPEAKING (queued=1000ms elapsed=0ms)
+[TIMING:language-lock-test] TURN#1 SUMMARY total=1170ms turn-detected=1ms llm-request=2ms llm-first-token=12ms tts-request=13ms tts-first-chunk=13ms audio-queued=13ms
+[TIMING:language-lock-test] TURN#1
+speech-end=2026-09-23T13:47:01.023Z
+endpoint-evidence=2026-09-23T13:47:01.023Z (speech_final)
+turn-release=2026-09-23T13:47:01.628Z
+llm-request=2026-09-23T13:47:01.630Z
+llm-first-token=2026-09-23T13:47:01.640Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T13:47:01.641Z
+tts-first-audio=2026-09-23T13:47:01.641Z
+audio-queued=2026-09-23T13:47:01.641Z
+[TIMING:language-lock-test] TURN#1 DELTAS
+endpoint-to-release=605ms
+release-to-llm-request=2ms
+llm-to-first-token=10ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=618ms
+[PIPELINE:language-lock-test] Turn complete: assistant="It is a short session." llmMs=10 ttsMs=0
+[RESPONSE-LEN:language-lock-test] TURN#1 userChars=28 assistantChars=22 estTokens=6 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1000 briefRequested=false
+[PIPELINE:language-lock-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:language-lock-test] run() exiting — state=LISTENING aborted=true
+  [PASS] E2b — the same mimicry on the DECLINE branch (free-form wording) also cannot switch the call
+[PIPELINE:language-lock-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:language-lock-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:language-lock-test] GREETING greeting-text-ready +0ms
+[TIMING:language-lock-test] GREETING tts-request +0ms
+[TIMING:language-lock-test] GREETING tts-first-chunk +1ms
+[TIMING:language-lock-test] GREETING audio-queued +1ms
+[PLAYBACK:language-lock-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:language-lock-test] GREETING SUMMARY total=2337ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:language-lock-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:language-lock-test] entering main loop — state=SPEAKING aborted=false
+[TIMING:language-lock-test] TURN END turn-release=1790171225483 text="Hello? Hello?" sttMs=0
+[STT:language-lock-test] Transcript received: "Hello? Hello?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#0 turn-detected +1ms
+[TIMING:language-lock-test] TURN#0 stt-to-release=157ms (sttLag=n/ams)
+[PIPELINE:language-lock-test] hearing check with nothing to resume (before any block) — acknowledging once: "हाँ, क्या आपको मेरी आवाज़ ठीक से सुनाई दे रही है?"
+[TIMING:language-lock-test] ATTENTION tts-request +0ms
+[TIMING:language-lock-test] ATTENTION tts-first-chunk +0ms
+[TIMING:language-lock-test] ATTENTION audio-queued +0ms
+[PLAYBACK:language-lock-test] draining 2377ms of queued audio before leaving SPEAKING (queued=2227ms elapsed=0ms)
+[TIMING:language-lock-test] ATTENTION SUMMARY total=2379ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:language-lock-test] TURN#0 SUMMARY total=2380ms turn-detected=1ms
+[TIMING:language-lock-test] TURN#0
+speech-end=2026-09-23T13:47:05.327Z
+endpoint-evidence=2026-09-23T13:47:05.327Z (speech_final)
+turn-release=2026-09-23T13:47:05.483Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:language-lock-test] TURN#0 DELTAS
+endpoint-to-release=156ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[TIMING:language-lock-test] TURN END turn-release=1790171228484 text="Yes, I can hear you." sttMs=0
+[STT:language-lock-test] Transcript received: "Yes, I can hear you." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#0 turn-detected +0ms
+[TIMING:language-lock-test] TURN#0 stt-to-release=611ms (sttLag=n/ams)
+[LLM:language-lock-test] Sending to fake-llm: historyLength=5 roles=[system,assistant,user,assistant,user] streaming=true
+[TIMING:language-lock-test] TURN#0 llm-request +0ms
+[TIMING:language-lock-test] TURN#0 llm-first-token +16ms
+[TIMING:language-lock-test] TURN#0 tts-request +23ms
+[TIMING:language-lock-test] TURN#0 tts-first-chunk +23ms
+[TIMING:language-lock-test] TURN#0 audio-queued +23ms
+[PLAYBACK:language-lock-test] draining 1105ms of queued audio before leaving SPEAKING (queued=955ms elapsed=0ms)
+[TIMING:language-lock-test] TURN#0 SUMMARY total=1134ms turn-detected=0ms llm-request=0ms llm-first-token=16ms tts-request=23ms tts-first-chunk=23ms audio-queued=23ms
+[TIMING:language-lock-test] TURN#0
+speech-end=2026-09-23T13:47:07.873Z
+endpoint-evidence=2026-09-23T13:47:07.873Z (speech_final)
+turn-release=2026-09-23T13:47:08.484Z
+llm-request=2026-09-23T13:47:08.484Z
+llm-first-token=2026-09-23T13:47:08.500Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T13:47:08.507Z
+tts-first-audio=2026-09-23T13:47:08.507Z
+audio-queued=2026-09-23T13:47:08.507Z
+[TIMING:language-lock-test] TURN#0 DELTAS
+endpoint-to-release=611ms
+release-to-llm-request=0ms
+llm-to-first-token=16ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=634ms
+[PIPELINE:language-lock-test] Turn complete: assistant="Sure, let me explain." llmMs=15 ttsMs=0
+[RESPONSE-LEN:language-lock-test] TURN#0 userChars=20 assistantChars=21 estTokens=6 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=955 briefRequested=false
+[SPECULATE:language-lock-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me more about this workshop." evidence-to-llm-open=0ms historyLength=7
+[TIMING:language-lock-test] TURN END turn-release=1790171230401 text="Yes, tell me more about this workshop." sttMs=0
+[STT:language-lock-test] Transcript received: "Yes, tell me more about this workshop." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#1 turn-detected +1ms
+[TIMING:language-lock-test] TURN#1 stt-to-release=611ms (sttLag=n/ams)
+[LANGUAGE:language-lock-test] call language LOCKED to en on the first meaningful utterance (basis=default-english confidence=0.75 hindiMarkers=0): "Yes, tell me more about this workshop."
+[LLM:language-lock-test] Sending to fake-llm: historyLength=7 roles=[system,assistant,user,assistant,user,assistant,user] streaming=true
+[TIMING:language-lock-test] TURN#1 llm-request +1ms
+[SPECULATE:language-lock-test] ADOPTED pre-opened request — llm-request is 611ms after the provider stream was opened (first token already in hand, 596ms ago) evidence-to-llm-open=0ms
+[TIMING:language-lock-test] TURN#1 llm-first-token +2ms
+[TIMING:language-lock-test] TURN#1 tts-request +2ms
+[TIMING:language-lock-test] TURN#1 tts-first-chunk +2ms
+[TIMING:language-lock-test] TURN#1 audio-queued +2ms
+[PLAYBACK:language-lock-test] draining 1150ms of queued audio before leaving SPEAKING (queued=1000ms elapsed=0ms)
+[TIMING:language-lock-test] TURN#1 SUMMARY total=1160ms turn-detected=1ms llm-request=1ms llm-first-token=2ms tts-request=2ms tts-first-chunk=2ms audio-queued=2ms
+[TIMING:language-lock-test] TURN#1
+speech-end=2026-09-23T13:47:09.791Z
+endpoint-evidence=2026-09-23T13:47:09.791Z (speech_final)
+turn-release=2026-09-23T13:47:10.401Z
+llm-request=2026-09-23T13:47:10.402Z
+llm-first-token=2026-09-23T13:47:10.403Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T13:47:10.403Z
+tts-first-audio=2026-09-23T13:47:10.403Z
+audio-queued=2026-09-23T13:47:10.403Z
+[TIMING:language-lock-test] TURN#1 DELTAS
+endpoint-to-release=610ms
+release-to-llm-request=1ms
+llm-to-first-token=1ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=612ms
+[PIPELINE:language-lock-test] Turn complete: assistant="It is a short session." llmMs=15 ttsMs=0
+[RESPONSE-LEN:language-lock-test] TURN#1 userChars=38 assistantChars=22 estTokens=6 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1000 briefRequested=false
+[PIPELINE:language-lock-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:language-lock-test] run() exiting — state=LISTENING aborted=true
+  [PASS] E3 — an open hearing episode cannot take a FIRST lock either (nothing is locked yet)
+[PIPELINE:language-lock-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:language-lock-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:language-lock-test] GREETING greeting-text-ready +0ms
+[TIMING:language-lock-test] GREETING tts-request +0ms
+[TIMING:language-lock-test] GREETING tts-first-chunk +0ms
+[TIMING:language-lock-test] GREETING audio-queued +0ms
+[PLAYBACK:language-lock-test] draining 2331ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=1ms)
+[TIMING:language-lock-test] GREETING SUMMARY total=2332ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:language-lock-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:language-lock-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:language-lock-test] LLM request PRE-OPENED on speech_final evidence: text="Haan ji, mujhe iske baare mein bataiye." evidence-to-llm-open=0ms historyLength=3
+[TIMING:language-lock-test] TURN END turn-release=1790171234700 text="Haan ji, mujhe iske baare mein bataiye." sttMs=0
+[STT:language-lock-test] Transcript received: "Haan ji, mujhe iske baare mein bataiye." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#0 turn-detected +1ms
+[TIMING:language-lock-test] TURN#0 stt-to-release=609ms (sttLag=n/ams)
+[LANGUAGE:language-lock-test] call language LOCKED to hi on the first meaningful utterance (basis=roman-markers confidence=0.8785714285714286 hindiMarkers=5): "Haan ji, mujhe iske baare mein bataiye."
+[LLM:language-lock-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:language-lock-test] TURN#0 llm-request +1ms
+[SPECULATE:language-lock-test] ADOPTED pre-opened request — llm-request is 609ms after the provider stream was opened (first token already in hand, 593ms ago) evidence-to-llm-open=0ms
+[TIMING:language-lock-test] TURN#0 llm-first-token +2ms
+[TIMING:language-lock-test] TURN#0 tts-request +2ms
+[TIMING:language-lock-test] TURN#0 tts-first-chunk +2ms
+[TIMING:language-lock-test] TURN#0 audio-queued +2ms
+[PLAYBACK:language-lock-test] draining 1105ms of queued audio before leaving SPEAKING (queued=955ms elapsed=0ms)
+[TIMING:language-lock-test] TURN#0 SUMMARY total=1112ms turn-detected=1ms llm-request=1ms llm-first-token=2ms tts-request=2ms tts-first-chunk=2ms audio-queued=2ms
+[TIMING:language-lock-test] TURN#0
+speech-end=2026-09-23T13:47:14.092Z
+endpoint-evidence=2026-09-23T13:47:14.092Z (speech_final)
+turn-release=2026-09-23T13:47:14.700Z
+llm-request=2026-09-23T13:47:14.701Z
+llm-first-token=2026-09-23T13:47:14.702Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T13:47:14.702Z
+tts-first-audio=2026-09-23T13:47:14.702Z
+audio-queued=2026-09-23T13:47:14.702Z
+[TIMING:language-lock-test] TURN#0 DELTAS
+endpoint-to-release=608ms
+release-to-llm-request=1ms
+llm-to-first-token=1ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=610ms
+[PIPELINE:language-lock-test] Turn complete: assistant="Sure, let me explain." llmMs=16 ttsMs=0
+[RESPONSE-LEN:language-lock-test] TURN#0 userChars=39 assistantChars=21 estTokens=6 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=955 briefRequested=false
+[SPECULATE:language-lock-test] LLM request PRE-OPENED on speech_final evidence: text="Okay." evidence-to-llm-open=0ms historyLength=5
+[TIMING:language-lock-test] TURN END turn-release=1790171235982 text="Okay." sttMs=0
+[STT:language-lock-test] Transcript received: "Okay." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#1 turn-detected +0ms
+[TIMING:language-lock-test] TURN#1 stt-to-release=154ms (sttLag=n/ams)
+[LLM:language-lock-test] Sending to fake-llm: historyLength=5 roles=[system,assistant,user,assistant,user] streaming=true
+[TIMING:language-lock-test] TURN#1 llm-request +1ms
+[SPECULATE:language-lock-test] ADOPTED pre-opened request — llm-request is 155ms after the provider stream was opened (first token already in hand, 131ms ago) evidence-to-llm-open=0ms
+[TIMING:language-lock-test] TURN#1 llm-first-token +2ms
+[TIMING:language-lock-test] TURN#1 tts-request +2ms
+[TIMING:language-lock-test] TURN#1 tts-first-chunk +3ms
+[TIMING:language-lock-test] TURN#1 audio-queued +3ms
+[PLAYBACK:language-lock-test] draining 1150ms of queued audio before leaving SPEAKING (queued=1000ms elapsed=0ms)
+[TURN:language-lock-test] barge-in ACCEPTED on transcript: "Yes yes." — words=2 confidence=0.95 isFinal=true energyAgeMs=n/a beganBeforeReply=false replyRemainingMs=904 replyFullyQueued=true
+[TIMING:language-lock-test] TURN#1 SUMMARY total=101ms turn-detected=0ms llm-request=1ms llm-first-token=2ms tts-request=2ms tts-first-chunk=3ms audio-queued=3ms
+[TIMING:language-lock-test] TURN#1
+speech-end=2026-09-23T13:47:15.828Z
+endpoint-evidence=2026-09-23T13:47:15.828Z (speech_final)
+turn-release=2026-09-23T13:47:15.982Z
+llm-request=2026-09-23T13:47:15.983Z
+llm-first-token=2026-09-23T13:47:15.984Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T13:47:15.984Z
+tts-first-audio=2026-09-23T13:47:15.985Z
+audio-queued=2026-09-23T13:47:15.985Z
+[TIMING:language-lock-test] TURN#1 DELTAS
+endpoint-to-release=154ms
+release-to-llm-request=1ms
+llm-to-first-token=1ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=1ms
+first-audio-to-queue=0ms
+speech-end-to-audio=157ms
+[PIPELINE:language-lock-test] Turn complete: assistant="It is a short session." llmMs=24 ttsMs=0
+[RESPONSE-LEN:language-lock-test] TURN#1 userChars=5 assistantChars=22 estTokens=6 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1000 briefRequested=false
+[PIPELINE:language-lock-test] Response #2 CANCELLED by barge-in — heard="" discarded="It is a short session."
+[TIMING:language-lock-test] TURN END turn-release=1790171236234 text="Yes yes." sttMs=0
+[STT:language-lock-test] Transcript received: "Yes yes." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#2 turn-detected +0ms
+[TIMING:language-lock-test] TURN#2 stt-to-release=153ms (sttLag=n/ams)
+[LLM:language-lock-test] Sending to fake-llm: historyLength=6 roles=[system,assistant,user,assistant,user,user] streaming=true
+[TIMING:language-lock-test] TURN#2 llm-request +1ms
+[TIMING:language-lock-test] TURN#2 llm-first-token +21ms
+[TIMING:language-lock-test] TURN#2 tts-request +21ms
+[TIMING:language-lock-test] TURN#2 tts-first-chunk +22ms
+[TIMING:language-lock-test] TURN#2 audio-queued +22ms
+[PLAYBACK:language-lock-test] draining 1332ms of queued audio before leaving SPEAKING (queued=1182ms elapsed=0ms)
+[TURN:language-lock-test] barge-in ACCEPTED on transcript: "Hmm." — words=1 confidence=0.95 isFinal=true energyAgeMs=n/a beganBeforeReply=false replyRemainingMs=1094 replyFullyQueued=true
+[TIMING:language-lock-test] TURN#2 SUMMARY total=111ms turn-detected=0ms llm-request=1ms llm-first-token=21ms tts-request=21ms tts-first-chunk=22ms audio-queued=22ms
+[TIMING:language-lock-test] TURN#2
+speech-end=2026-09-23T13:47:16.081Z
+endpoint-evidence=2026-09-23T13:47:16.083Z (speech_final)
+turn-release=2026-09-23T13:47:16.234Z
+llm-request=2026-09-23T13:47:16.235Z
+llm-first-token=2026-09-23T13:47:16.255Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T13:47:16.255Z
+tts-first-audio=2026-09-23T13:47:16.256Z
+audio-queued=2026-09-23T13:47:16.256Z
+[TIMING:language-lock-test] TURN#2 DELTAS
+endpoint-to-release=151ms
+release-to-llm-request=1ms
+llm-to-first-token=20ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=1ms
+first-audio-to-queue=0ms
+speech-end-to-audio=175ms
+[PIPELINE:language-lock-test] Turn complete: assistant="There is no charge for it." llmMs=20 ttsMs=0
+[RESPONSE-LEN:language-lock-test] TURN#2 userChars=8 assistantChars=26 estTokens=7 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1182 briefRequested=false
+[PIPELINE:language-lock-test] Response #3 CANCELLED by barge-in — heard="" discarded="There is no charge for it."
+[PIPELINE:language-lock-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:language-lock-test] run() exiting — state=LISTENING aborted=true
+  [PASS] E4 — a backchannel mid-call never moves a locked language
+
+F — everything else still works
+[PIPELINE:language-lock-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:language-lock-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:language-lock-test] GREETING greeting-text-ready +0ms
+[TIMING:language-lock-test] GREETING tts-request +0ms
+[TIMING:language-lock-test] GREETING tts-first-chunk +1ms
+[TIMING:language-lock-test] GREETING audio-queued +1ms
+[PLAYBACK:language-lock-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:language-lock-test] GREETING SUMMARY total=2341ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:language-lock-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:language-lock-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:language-lock-test] LLM request PRE-OPENED on speech_final evidence: text="मुझे इसके बारे में जानकारी चाहिए।" evidence-to-llm-open=0ms historyLength=3
+[TIMING:language-lock-test] TURN END turn-release=1790171239556 text="मुझे इसके बारे में जानकारी चाहिए।" sttMs=0
+[STT:language-lock-test] Transcript received: "मुझे इसके बारे में जानकारी चाहिए।" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#0 turn-detected +1ms
+[TIMING:language-lock-test] TURN#0 stt-to-release=604ms (sttLag=n/ams)
+[LANGUAGE:language-lock-test] call language LOCKED to hi on the first meaningful utterance (basis=devanagari confidence=0.9 hindiMarkers=0): "मुझे इसके बारे में जानकारी चाहिए।"
+[LLM:language-lock-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:language-lock-test] TURN#0 llm-request +1ms
+[SPECULATE:language-lock-test] ADOPTED pre-opened request — llm-request is 604ms after the provider stream was opened (first token already in hand, 582ms ago) evidence-to-llm-open=0ms
+[TIMING:language-lock-test] TURN#0 llm-first-token +2ms
+[TIMING:language-lock-test] TURN#0 tts-request +2ms
+[TIMING:language-lock-test] TURN#0 tts-first-chunk +2ms
+[TIMING:language-lock-test] TURN#0 audio-queued +2ms
+[PLAYBACK:language-lock-test] draining 1105ms of queued audio before leaving SPEAKING (queued=955ms elapsed=0ms)
+[TIMING:language-lock-test] TURN#0 SUMMARY total=1112ms turn-detected=1ms llm-request=1ms llm-first-token=2ms tts-request=2ms tts-first-chunk=2ms audio-queued=2ms
+[TIMING:language-lock-test] TURN#0
+speech-end=2026-09-23T13:47:18.953Z
+endpoint-evidence=2026-09-23T13:47:18.953Z (speech_final)
+turn-release=2026-09-23T13:47:19.556Z
+llm-request=2026-09-23T13:47:19.557Z
+llm-first-token=2026-09-23T13:47:19.558Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T13:47:19.558Z
+tts-first-audio=2026-09-23T13:47:19.558Z
+audio-queued=2026-09-23T13:47:19.558Z
+[TIMING:language-lock-test] TURN#0 DELTAS
+endpoint-to-release=603ms
+release-to-llm-request=1ms
+llm-to-first-token=1ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=605ms
+[PIPELINE:language-lock-test] Turn complete: assistant="Sure, let me explain." llmMs=22 ttsMs=0
+[RESPONSE-LEN:language-lock-test] TURN#0 userChars=33 assistantChars=21 estTokens=6 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=955 briefRequested=false
+[PIPELINE:language-lock-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:language-lock-test] run() exiting — state=LISTENING aborted=true
+  [PASS] F1 — the pre-opened LLM request is still ADOPTED on the very turn that takes the lock
+[PIPELINE:language-lock-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:language-lock-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:language-lock-test] GREETING greeting-text-ready +0ms
+[TIMING:language-lock-test] GREETING tts-request +0ms
+[TIMING:language-lock-test] GREETING tts-first-chunk +1ms
+[TIMING:language-lock-test] GREETING audio-queued +1ms
+[PLAYBACK:language-lock-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:language-lock-test] GREETING SUMMARY total=2347ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:language-lock-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:language-lock-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:language-lock-test] LLM request PRE-OPENED on speech_final evidence: text="मुझे इसके बारे में जानकारी चाहिए।" evidence-to-llm-open=0ms historyLength=3
+[TIMING:language-lock-test] TURN END turn-release=1790171243655 text="मुझे इसके बारे में जानकारी चाहिए।" sttMs=0
+[STT:language-lock-test] Transcript received: "मुझे इसके बारे में जानकारी चाहिए।" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#0 turn-detected +1ms
+[TIMING:language-lock-test] TURN#0 stt-to-release=607ms (sttLag=n/ams)
+[LANGUAGE:language-lock-test] call language LOCKED to hi on the first meaningful utterance (basis=devanagari confidence=0.9 hindiMarkers=0): "मुझे इसके बारे में जानकारी चाहिए।"
+[LLM:language-lock-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:language-lock-test] TURN#0 llm-request +2ms
+[SPECULATE:language-lock-test] ADOPTED pre-opened request — llm-request is 607ms after the provider stream was opened (first token already in hand, 592ms ago) evidence-to-llm-open=0ms
+[TIMING:language-lock-test] TURN#0 llm-first-token +2ms
+[TIMING:language-lock-test] TURN#0 tts-request +2ms
+[TIMING:language-lock-test] TURN#0 tts-first-chunk +3ms
+[TIMING:language-lock-test] TURN#0 audio-queued +3ms
+[PLAYBACK:language-lock-test] draining 1105ms of queued audio before leaving SPEAKING (queued=955ms elapsed=0ms)
+[TIMING:language-lock-test] TURN#0 SUMMARY total=1110ms turn-detected=1ms llm-request=2ms llm-first-token=2ms tts-request=2ms tts-first-chunk=3ms audio-queued=3ms
+[TIMING:language-lock-test] TURN#0
+speech-end=2026-09-23T13:47:23.049Z
+endpoint-evidence=2026-09-23T13:47:23.050Z (speech_final)
+turn-release=2026-09-23T13:47:23.655Z
+llm-request=2026-09-23T13:47:23.657Z
+llm-first-token=2026-09-23T13:47:23.657Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T13:47:23.657Z
+tts-first-audio=2026-09-23T13:47:23.658Z
+audio-queued=2026-09-23T13:47:23.658Z
+[TIMING:language-lock-test] TURN#0 DELTAS
+endpoint-to-release=605ms
+release-to-llm-request=2ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=1ms
+first-audio-to-queue=0ms
+speech-end-to-audio=609ms
+[PIPELINE:language-lock-test] Turn complete: assistant="Sure, let me explain." llmMs=15 ttsMs=1
+[RESPONSE-LEN:language-lock-test] TURN#0 userChars=33 assistantChars=21 estTokens=6 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=955 briefRequested=false
+[SPECULATE:language-lock-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me more about this workshop." evidence-to-llm-open=0ms historyLength=5
+[TIMING:language-lock-test] TURN END turn-release=1790171245404 text="Yes, tell me more about this workshop." sttMs=0
+[STT:language-lock-test] Transcript received: "Yes, tell me more about this workshop." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#1 turn-detected +0ms
+[TIMING:language-lock-test] TURN#1 stt-to-release=606ms (sttLag=n/ams)
+[LLM:language-lock-test] Sending to fake-llm: historyLength=5 roles=[system,assistant,user,assistant,user] streaming=true
+[TIMING:language-lock-test] TURN#1 llm-request +1ms
+[SPECULATE:language-lock-test] ADOPTED pre-opened request — llm-request is 607ms after the provider stream was opened (first token already in hand, 592ms ago) evidence-to-llm-open=0ms
+[TIMING:language-lock-test] TURN#1 llm-first-token +1ms
+[TIMING:language-lock-test] TURN#1 tts-request +1ms
+[TIMING:language-lock-test] TURN#1 tts-first-chunk +1ms
+[TIMING:language-lock-test] TURN#1 audio-queued +1ms
+[PLAYBACK:language-lock-test] draining 1150ms of queued audio before leaving SPEAKING (queued=1000ms elapsed=0ms)
+[TIMING:language-lock-test] TURN#1 SUMMARY total=1157ms turn-detected=0ms llm-request=1ms llm-first-token=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:language-lock-test] TURN#1
+speech-end=2026-09-23T13:47:24.798Z
+endpoint-evidence=2026-09-23T13:47:24.798Z (speech_final)
+turn-release=2026-09-23T13:47:25.404Z
+llm-request=2026-09-23T13:47:25.405Z
+llm-first-token=2026-09-23T13:47:25.405Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T13:47:25.405Z
+tts-first-audio=2026-09-23T13:47:25.405Z
+audio-queued=2026-09-23T13:47:25.405Z
+[TIMING:language-lock-test] TURN#1 DELTAS
+endpoint-to-release=606ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=607ms
+[PIPELINE:language-lock-test] Turn complete: assistant="It is a short session." llmMs=15 ttsMs=0
+[RESPONSE-LEN:language-lock-test] TURN#1 userChars=38 assistantChars=22 estTokens=6 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1000 briefRequested=false
+[PIPELINE:language-lock-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:language-lock-test] run() exiting — state=LISTENING aborted=true
+  [PASS] F2 — TTS is asked for the locked language, for generated replies and fixed lines alike
+[PIPELINE:language-lock-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:language-lock-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:language-lock-test] GREETING greeting-text-ready +0ms
+[TIMING:language-lock-test] GREETING tts-request +0ms
+[TIMING:language-lock-test] GREETING tts-first-chunk +0ms
+[TIMING:language-lock-test] GREETING audio-queued +1ms
+[PLAYBACK:language-lock-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:language-lock-test] GREETING SUMMARY total=2347ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=1ms
+[PIPELINE:language-lock-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:language-lock-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:language-lock-test] LLM request PRE-OPENED on speech_final evidence: text="मुझे इसके बारे में जानकारी चाहिए।" evidence-to-llm-open=0ms historyLength=3
+[TIMING:language-lock-test] TURN END turn-release=1790171249556 text="मुझे इसके बारे में जानकारी चाहिए।" sttMs=0
+[STT:language-lock-test] Transcript received: "मुझे इसके बारे में जानकारी चाहिए।" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#0 turn-detected +1ms
+[TIMING:language-lock-test] TURN#0 stt-to-release=614ms (sttLag=n/ams)
+[LANGUAGE:language-lock-test] call language LOCKED to hi on the first meaningful utterance (basis=devanagari confidence=0.9 hindiMarkers=0): "मुझे इसके बारे में जानकारी चाहिए।"
+[LLM:language-lock-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:language-lock-test] TURN#0 llm-request +2ms
+[SPECULATE:language-lock-test] ADOPTED pre-opened request — llm-request is 615ms after the provider stream was opened (first token already in hand, 601ms ago) evidence-to-llm-open=0ms
+[TIMING:language-lock-test] TURN#0 llm-first-token +2ms
+[TIMING:language-lock-test] TURN#0 tts-request +3ms
+[TIMING:language-lock-test] TURN#0 tts-first-chunk +3ms
+[TIMING:language-lock-test] TURN#0 audio-queued +3ms
+[PLAYBACK:language-lock-test] draining 1105ms of queued audio before leaving SPEAKING (queued=955ms elapsed=0ms)
+[TIMING:language-lock-test] TURN#0 SUMMARY total=1114ms turn-detected=1ms llm-request=2ms llm-first-token=2ms tts-request=3ms tts-first-chunk=3ms audio-queued=3ms
+[TIMING:language-lock-test] TURN#0
+speech-end=2026-09-23T13:47:28.943Z
+endpoint-evidence=2026-09-23T13:47:28.943Z (speech_final)
+turn-release=2026-09-23T13:47:29.556Z
+llm-request=2026-09-23T13:47:29.558Z
+llm-first-token=2026-09-23T13:47:29.558Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T13:47:29.559Z
+tts-first-audio=2026-09-23T13:47:29.559Z
+audio-queued=2026-09-23T13:47:29.559Z
+[TIMING:language-lock-test] TURN#0 DELTAS
+endpoint-to-release=613ms
+release-to-llm-request=2ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=616ms
+[PIPELINE:language-lock-test] Turn complete: assistant="Sure, let me explain." llmMs=14 ttsMs=0
+[RESPONSE-LEN:language-lock-test] TURN#0 userChars=33 assistantChars=21 estTokens=6 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=955 briefRequested=false
+[SPECULATE:language-lock-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me more about this workshop." evidence-to-llm-open=0ms historyLength=5
+[TIMING:language-lock-test] TURN END turn-release=1790171251296 text="Yes, tell me more about this workshop." sttMs=0
+[STT:language-lock-test] Transcript received: "Yes, tell me more about this workshop." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#1 turn-detected +2ms
+[TIMING:language-lock-test] TURN#1 stt-to-release=613ms (sttLag=n/ams)
+[LLM:language-lock-test] Sending to fake-llm: historyLength=5 roles=[system,assistant,user,assistant,user] streaming=true
+[TIMING:language-lock-test] TURN#1 llm-request +3ms
+[SPECULATE:language-lock-test] ADOPTED pre-opened request — llm-request is 614ms after the provider stream was opened (first token already in hand, 598ms ago) evidence-to-llm-open=0ms
+[TIMING:language-lock-test] TURN#1 llm-first-token +4ms
+[TIMING:language-lock-test] TURN#1 tts-request +4ms
+[TIMING:language-lock-test] TURN#1 tts-first-chunk +4ms
+[TIMING:language-lock-test] TURN#1 audio-queued +4ms
+[PLAYBACK:language-lock-test] draining 1149ms of queued audio before leaving SPEAKING (queued=1000ms elapsed=1ms)
+[TIMING:language-lock-test] TURN#1 SUMMARY total=1168ms turn-detected=2ms llm-request=3ms llm-first-token=4ms tts-request=4ms tts-first-chunk=4ms audio-queued=4ms
+[TIMING:language-lock-test] TURN#1
+speech-end=2026-09-23T13:47:30.685Z
+endpoint-evidence=2026-09-23T13:47:30.685Z (speech_final)
+turn-release=2026-09-23T13:47:31.296Z
+llm-request=2026-09-23T13:47:31.299Z
+llm-first-token=2026-09-23T13:47:31.300Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T13:47:31.300Z
+tts-first-audio=2026-09-23T13:47:31.300Z
+audio-queued=2026-09-23T13:47:31.300Z
+[TIMING:language-lock-test] TURN#1 DELTAS
+endpoint-to-release=611ms
+release-to-llm-request=3ms
+llm-to-first-token=1ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=615ms
+[PIPELINE:language-lock-test] Turn complete: assistant="It is a short session." llmMs=16 ttsMs=0
+[RESPONSE-LEN:language-lock-test] TURN#1 userChars=38 assistantChars=22 estTokens=6 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1000 briefRequested=false
+[PIPELINE:language-lock-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:language-lock-test] run() exiting — state=LISTENING aborted=true
+  [PASS] F3 — conversation history, turn order and reply count are unchanged by the lock
+  [PASS] F4 — ConversationMemory clamps a raw per-turn language once locked (the voicemail path's protection)
+
+G — a no-floor utterance cannot move the UNLOCKED active language (2026-09-21)
+[PIPELINE:language-lock-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:language-lock-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:language-lock-test] GREETING greeting-text-ready +0ms
+[TIMING:language-lock-test] GREETING tts-request +0ms
+[TIMING:language-lock-test] GREETING tts-first-chunk +0ms
+[TIMING:language-lock-test] GREETING audio-queued +0ms
+[PLAYBACK:language-lock-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:language-lock-test] GREETING SUMMARY total=2345ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:language-lock-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:language-lock-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:language-lock-test] LLM request PRE-OPENED on speech_final evidence: text="हेलो।" evidence-to-llm-open=6ms historyLength=3
+[TIMING:language-lock-test] TURN END turn-release=1790171254975 text="हेलो।" sttMs=0
+[STT:language-lock-test] Transcript received: "हेलो।" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#0 turn-detected +1ms
+[TIMING:language-lock-test] TURN#0 stt-to-release=163ms (sttLag=n/ams)
+[LANGUAGE:language-lock-test] per-turn detection hi IGNORED — a no-floor utterance (basis=devanagari); active language stays en: "हेलो।"
+[LLM:language-lock-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:language-lock-test] TURN#0 llm-request +2ms
+[SPECULATE:language-lock-test] ADOPTED pre-opened request — llm-request is 157ms after the provider stream was opened (first token already in hand, 147ms ago) evidence-to-llm-open=6ms
+[TIMING:language-lock-test] TURN#0 llm-first-token +3ms
+[TIMING:language-lock-test] TURN#0 tts-request +3ms
+[TIMING:language-lock-test] TURN#0 tts-first-chunk +3ms
+[TIMING:language-lock-test] TURN#0 audio-queued +4ms
+[PLAYBACK:language-lock-test] draining 1105ms of queued audio before leaving SPEAKING (queued=955ms elapsed=0ms)
+[TIMING:language-lock-test] TURN#0 SUMMARY total=1113ms turn-detected=1ms llm-request=2ms llm-first-token=3ms tts-request=3ms tts-first-chunk=3ms audio-queued=4ms
+[TIMING:language-lock-test] TURN#0
+speech-end=2026-09-23T13:47:34.814Z
+endpoint-evidence=2026-09-23T13:47:34.814Z (speech_final)
+turn-release=2026-09-23T13:47:34.975Z
+llm-request=2026-09-23T13:47:34.977Z
+llm-first-token=2026-09-23T13:47:34.978Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T13:47:34.978Z
+tts-first-audio=2026-09-23T13:47:34.978Z
+audio-queued=2026-09-23T13:47:34.979Z
+[TIMING:language-lock-test] TURN#0 DELTAS
+endpoint-to-release=161ms
+release-to-llm-request=2ms
+llm-to-first-token=1ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=1ms
+speech-end-to-audio=165ms
+[PIPELINE:language-lock-test] Turn complete: assistant="Sure, let me explain." llmMs=10 ttsMs=0
+[RESPONSE-LEN:language-lock-test] TURN#0 userChars=5 assistantChars=21 estTokens=6 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=955 briefRequested=false
+[PIPELINE:language-lock-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:language-lock-test] run() exiting — state=LISTENING aborted=true
+  [PASS] G1 — English campaign: a Devanagari bare greeting keeps the active language ENGLISH and locks nothing
+[PIPELINE:language-lock-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:language-lock-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:language-lock-test] GREETING greeting-text-ready +0ms
+[TIMING:language-lock-test] GREETING tts-request +1ms
+[TIMING:language-lock-test] GREETING tts-first-chunk +1ms
+[TIMING:language-lock-test] GREETING audio-queued +1ms
+[PLAYBACK:language-lock-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:language-lock-test] GREETING SUMMARY total=2335ms greeting-text-ready=0ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:language-lock-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:language-lock-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:language-lock-test] LLM request PRE-OPENED on speech_final evidence: text="Yes okay sure thanks" evidence-to-llm-open=0ms historyLength=3
+[TIMING:language-lock-test] TURN END turn-release=1790171258918 text="Yes okay sure thanks" sttMs=0
+[STT:language-lock-test] Transcript received: "Yes okay sure thanks" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#0 turn-detected +0ms
+[TIMING:language-lock-test] TURN#0 stt-to-release=301ms (sttLag=n/ams)
+[LLM:language-lock-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:language-lock-test] TURN#0 llm-request +1ms
+[SPECULATE:language-lock-test] ADOPTED pre-opened request — llm-request is 302ms after the provider stream was opened (first token already in hand, 287ms ago) evidence-to-llm-open=0ms
+[TIMING:language-lock-test] TURN#0 llm-first-token +1ms
+[TIMING:language-lock-test] TURN#0 tts-request +1ms
+[TIMING:language-lock-test] TURN#0 tts-first-chunk +2ms
+[TIMING:language-lock-test] TURN#0 audio-queued +2ms
+[PLAYBACK:language-lock-test] draining 1105ms of queued audio before leaving SPEAKING (queued=955ms elapsed=0ms)
+[TIMING:language-lock-test] TURN#0 SUMMARY total=1109ms turn-detected=0ms llm-request=1ms llm-first-token=1ms tts-request=1ms tts-first-chunk=2ms audio-queued=2ms
+[TIMING:language-lock-test] TURN#0
+speech-end=2026-09-23T13:47:38.617Z
+endpoint-evidence=2026-09-23T13:47:38.617Z (speech_final)
+turn-release=2026-09-23T13:47:38.918Z
+llm-request=2026-09-23T13:47:38.919Z
+llm-first-token=2026-09-23T13:47:38.919Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T13:47:38.919Z
+tts-first-audio=2026-09-23T13:47:38.920Z
+audio-queued=2026-09-23T13:47:38.920Z
+[TIMING:language-lock-test] TURN#0 DELTAS
+endpoint-to-release=301ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=1ms
+first-audio-to-queue=0ms
+speech-end-to-audio=303ms
+[PIPELINE:language-lock-test] Turn complete: assistant="Sure, let me explain." llmMs=15 ttsMs=0
+[RESPONSE-LEN:language-lock-test] TURN#0 userChars=20 assistantChars=21 estTokens=6 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=955 briefRequested=false
+[SPECULATE:language-lock-test] LLM request PRE-OPENED on speech_final evidence: text="हाँ।" evidence-to-llm-open=0ms historyLength=5
+[TIMING:language-lock-test] TURN END turn-release=1790171260366 text="हाँ।" sttMs=0
+[STT:language-lock-test] Transcript received: "हाँ।" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#1 turn-detected +0ms
+[TIMING:language-lock-test] TURN#1 stt-to-release=163ms (sttLag=n/ams)
+[LANGUAGE:language-lock-test] per-turn detection hi IGNORED — a no-floor utterance (basis=devanagari); active language stays en: "हाँ।"
+[LLM:language-lock-test] Sending to fake-llm: historyLength=5 roles=[system,assistant,user,assistant,user] streaming=true
+[TIMING:language-lock-test] TURN#1 llm-request +1ms
+[SPECULATE:language-lock-test] ADOPTED pre-opened request — llm-request is 164ms after the provider stream was opened (first token already in hand, 147ms ago) evidence-to-llm-open=0ms
+[TIMING:language-lock-test] TURN#1 llm-first-token +1ms
+[TIMING:language-lock-test] TURN#1 tts-request +1ms
+[TIMING:language-lock-test] TURN#1 tts-first-chunk +1ms
+[TIMING:language-lock-test] TURN#1 audio-queued +1ms
+[PLAYBACK:language-lock-test] draining 1149ms of queued audio before leaving SPEAKING (queued=1000ms elapsed=1ms)
+[TIMING:language-lock-test] TURN#1 SUMMARY total=1154ms turn-detected=0ms llm-request=1ms llm-first-token=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:language-lock-test] TURN#1
+speech-end=2026-09-23T13:47:40.203Z
+endpoint-evidence=2026-09-23T13:47:40.203Z (speech_final)
+turn-release=2026-09-23T13:47:40.366Z
+llm-request=2026-09-23T13:47:40.367Z
+llm-first-token=2026-09-23T13:47:40.367Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T13:47:40.367Z
+tts-first-audio=2026-09-23T13:47:40.367Z
+audio-queued=2026-09-23T13:47:40.367Z
+[TIMING:language-lock-test] TURN#1 DELTAS
+endpoint-to-release=163ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=164ms
+[PIPELINE:language-lock-test] Turn complete: assistant="It is a short session." llmMs=17 ttsMs=0
+[RESPONSE-LEN:language-lock-test] TURN#1 userChars=4 assistantChars=22 estTokens=6 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1000 briefRequested=false
+[PIPELINE:language-lock-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:language-lock-test] run() exiting — state=LISTENING aborted=true
+[PIPELINE:language-lock-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:language-lock-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:language-lock-test] GREETING greeting-text-ready +1ms
+[TIMING:language-lock-test] GREETING tts-request +1ms
+[TIMING:language-lock-test] GREETING tts-first-chunk +1ms
+[TIMING:language-lock-test] GREETING audio-queued +1ms
+[PLAYBACK:language-lock-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:language-lock-test] GREETING SUMMARY total=2341ms greeting-text-ready=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:language-lock-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:language-lock-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:language-lock-test] LLM request PRE-OPENED on speech_final evidence: text="Yes okay sure thanks" evidence-to-llm-open=0ms historyLength=3
+[TIMING:language-lock-test] TURN END turn-release=1790171264365 text="Yes okay sure thanks" sttMs=0
+[STT:language-lock-test] Transcript received: "Yes okay sure thanks" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#0 turn-detected +1ms
+[TIMING:language-lock-test] TURN#0 stt-to-release=313ms (sttLag=n/ams)
+[LLM:language-lock-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:language-lock-test] TURN#0 llm-request +2ms
+[SPECULATE:language-lock-test] ADOPTED pre-opened request — llm-request is 314ms after the provider stream was opened (first token already in hand, 297ms ago) evidence-to-llm-open=0ms
+[TIMING:language-lock-test] TURN#0 llm-first-token +3ms
+[TIMING:language-lock-test] TURN#0 tts-request +5ms
+[TIMING:language-lock-test] TURN#0 tts-first-chunk +5ms
+[TIMING:language-lock-test] TURN#0 audio-queued +5ms
+[PLAYBACK:language-lock-test] draining 1105ms of queued audio before leaving SPEAKING (queued=955ms elapsed=0ms)
+[TIMING:language-lock-test] TURN#0 SUMMARY total=1153ms turn-detected=1ms llm-request=2ms llm-first-token=3ms tts-request=5ms tts-first-chunk=5ms audio-queued=5ms
+[TIMING:language-lock-test] TURN#0
+speech-end=2026-09-23T13:47:44.053Z
+endpoint-evidence=2026-09-23T13:47:44.053Z (speech_final)
+turn-release=2026-09-23T13:47:44.365Z
+llm-request=2026-09-23T13:47:44.367Z
+llm-first-token=2026-09-23T13:47:44.368Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T13:47:44.370Z
+tts-first-audio=2026-09-23T13:47:44.370Z
+audio-queued=2026-09-23T13:47:44.370Z
+[TIMING:language-lock-test] TURN#0 DELTAS
+endpoint-to-release=312ms
+release-to-llm-request=2ms
+llm-to-first-token=1ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=317ms
+[PIPELINE:language-lock-test] Turn complete: assistant="Sure, let me explain." llmMs=17 ttsMs=0
+[RESPONSE-LEN:language-lock-test] TURN#0 userChars=20 assistantChars=21 estTokens=6 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=955 briefRequested=false
+[SPECULATE:language-lock-test] LLM request PRE-OPENED on speech_final evidence: text="जी।" evidence-to-llm-open=1ms historyLength=5
+[TIMING:language-lock-test] TURN END turn-release=1790171265864 text="जी।" sttMs=0
+[STT:language-lock-test] Transcript received: "जी।" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#1 turn-detected +0ms
+[TIMING:language-lock-test] TURN#1 stt-to-release=165ms (sttLag=n/ams)
+[LANGUAGE:language-lock-test] per-turn detection hi IGNORED — a no-floor utterance (basis=devanagari); active language stays en: "जी।"
+[LLM:language-lock-test] Sending to fake-llm: historyLength=5 roles=[system,assistant,user,assistant,user] streaming=true
+[TIMING:language-lock-test] TURN#1 llm-request +0ms
+[SPECULATE:language-lock-test] ADOPTED pre-opened request — llm-request is 164ms after the provider stream was opened (first token already in hand, 138ms ago) evidence-to-llm-open=1ms
+[TIMING:language-lock-test] TURN#1 llm-first-token +1ms
+[TIMING:language-lock-test] TURN#1 tts-request +1ms
+[TIMING:language-lock-test] TURN#1 tts-first-chunk +2ms
+[TIMING:language-lock-test] TURN#1 audio-queued +2ms
+[PLAYBACK:language-lock-test] draining 1150ms of queued audio before leaving SPEAKING (queued=1000ms elapsed=0ms)
+[TIMING:language-lock-test] TURN#1 SUMMARY total=1166ms turn-detected=0ms llm-request=0ms llm-first-token=1ms tts-request=1ms tts-first-chunk=2ms audio-queued=2ms
+[TIMING:language-lock-test] TURN#1
+speech-end=2026-09-23T13:47:45.699Z
+endpoint-evidence=2026-09-23T13:47:45.699Z (speech_final)
+turn-release=2026-09-23T13:47:45.864Z
+llm-request=2026-09-23T13:47:45.864Z
+llm-first-token=2026-09-23T13:47:45.865Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T13:47:45.865Z
+tts-first-audio=2026-09-23T13:47:45.866Z
+audio-queued=2026-09-23T13:47:45.866Z
+[TIMING:language-lock-test] TURN#1 DELTAS
+endpoint-to-release=165ms
+release-to-llm-request=0ms
+llm-to-first-token=1ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=1ms
+first-audio-to-queue=0ms
+speech-end-to-audio=167ms
+[PIPELINE:language-lock-test] Turn complete: assistant="It is a short session." llmMs=26 ttsMs=0
+[RESPONSE-LEN:language-lock-test] TURN#1 userChars=3 assistantChars=22 estTokens=6 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1000 briefRequested=false
+[PIPELINE:language-lock-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:language-lock-test] run() exiting — state=LISTENING aborted=true
+  [PASS] G2 — English campaign: a Devanagari bare acknowledgement keeps the active language ENGLISH
+[PIPELINE:language-lock-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:language-lock-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:language-lock-test] GREETING greeting-text-ready +0ms
+[TIMING:language-lock-test] GREETING tts-request +1ms
+[TIMING:language-lock-test] GREETING tts-first-chunk +1ms
+[TIMING:language-lock-test] GREETING audio-queued +1ms
+[PLAYBACK:language-lock-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:language-lock-test] GREETING SUMMARY total=2343ms greeting-text-ready=0ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:language-lock-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:language-lock-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:language-lock-test] LLM request PRE-OPENED on speech_final evidence: text="Yes okay sure thanks" evidence-to-llm-open=1ms historyLength=3
+[TIMING:language-lock-test] TURN END turn-release=1790171269878 text="Yes okay sure thanks" sttMs=0
+[STT:language-lock-test] Transcript received: "Yes okay sure thanks" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#0 turn-detected +1ms
+[TIMING:language-lock-test] TURN#0 stt-to-release=319ms (sttLag=n/ams)
+[LLM:language-lock-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:language-lock-test] TURN#0 llm-request +1ms
+[SPECULATE:language-lock-test] ADOPTED pre-opened request — llm-request is 318ms after the provider stream was opened (first token already in hand, 302ms ago) evidence-to-llm-open=1ms
+[TIMING:language-lock-test] TURN#0 llm-first-token +2ms
+[TIMING:language-lock-test] TURN#0 tts-request +2ms
+[TIMING:language-lock-test] TURN#0 tts-first-chunk +2ms
+[TIMING:language-lock-test] TURN#0 audio-queued +2ms
+[PLAYBACK:language-lock-test] draining 1105ms of queued audio before leaving SPEAKING (queued=955ms elapsed=0ms)
+[TIMING:language-lock-test] TURN#0 SUMMARY total=1116ms turn-detected=1ms llm-request=1ms llm-first-token=2ms tts-request=2ms tts-first-chunk=2ms audio-queued=2ms
+[TIMING:language-lock-test] TURN#0
+speech-end=2026-09-23T13:47:49.560Z
+endpoint-evidence=2026-09-23T13:47:49.560Z (speech_final)
+turn-release=2026-09-23T13:47:49.878Z
+llm-request=2026-09-23T13:47:49.879Z
+llm-first-token=2026-09-23T13:47:49.880Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T13:47:49.880Z
+tts-first-audio=2026-09-23T13:47:49.880Z
+audio-queued=2026-09-23T13:47:49.880Z
+[TIMING:language-lock-test] TURN#0 DELTAS
+endpoint-to-release=318ms
+release-to-llm-request=1ms
+llm-to-first-token=1ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=320ms
+[PIPELINE:language-lock-test] Turn complete: assistant="Sure, let me explain." llmMs=16 ttsMs=0
+[RESPONSE-LEN:language-lock-test] TURN#0 userChars=20 assistantChars=21 estTokens=6 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=955 briefRequested=false
+[SPECULATE:language-lock-test] LLM request PRE-OPENED on speech_final evidence: text="यस।" evidence-to-llm-open=1ms historyLength=5
+[TIMING:language-lock-test] TURN END turn-release=1790171271343 text="यस।" sttMs=0
+[STT:language-lock-test] Transcript received: "यस।" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#1 turn-detected +1ms
+[TIMING:language-lock-test] TURN#1 stt-to-release=173ms (sttLag=n/ams)
+[LLM:language-lock-test] Sending to fake-llm: historyLength=5 roles=[system,assistant,user,assistant,user] streaming=true
+[TIMING:language-lock-test] TURN#1 llm-request +1ms
+[SPECULATE:language-lock-test] ADOPTED pre-opened request — llm-request is 172ms after the provider stream was opened (first token already in hand, 151ms ago) evidence-to-llm-open=1ms
+[TIMING:language-lock-test] TURN#1 llm-first-token +1ms
+[TIMING:language-lock-test] TURN#1 tts-request +2ms
+[TIMING:language-lock-test] TURN#1 tts-first-chunk +2ms
+[TIMING:language-lock-test] TURN#1 audio-queued +2ms
+[PLAYBACK:language-lock-test] draining 1150ms of queued audio before leaving SPEAKING (queued=1000ms elapsed=0ms)
+[TIMING:language-lock-test] TURN#1 SUMMARY total=1160ms turn-detected=1ms llm-request=1ms llm-first-token=1ms tts-request=2ms tts-first-chunk=2ms audio-queued=2ms
+[TIMING:language-lock-test] TURN#1
+speech-end=2026-09-23T13:47:51.171Z
+endpoint-evidence=2026-09-23T13:47:51.171Z (speech_final)
+turn-release=2026-09-23T13:47:51.343Z
+llm-request=2026-09-23T13:47:51.344Z
+llm-first-token=2026-09-23T13:47:51.344Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T13:47:51.345Z
+tts-first-audio=2026-09-23T13:47:51.345Z
+audio-queued=2026-09-23T13:47:51.345Z
+[TIMING:language-lock-test] TURN#1 DELTAS
+endpoint-to-release=172ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=174ms
+[PIPELINE:language-lock-test] Turn complete: assistant="It is a short session." llmMs=21 ttsMs=0
+[RESPONSE-LEN:language-lock-test] TURN#1 userChars=3 assistantChars=22 estTokens=6 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1000 briefRequested=false
+[PIPELINE:language-lock-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:language-lock-test] run() exiting — state=LISTENING aborted=true
+  [PASS] G2b — BOUNDARY: 'यस।' is in no acknowledgement table, so it takes the floor and still follows the detection (documented, not widened)
+[PIPELINE:language-lock-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:language-lock-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:language-lock-test] GREETING greeting-text-ready +0ms
+[TIMING:language-lock-test] GREETING tts-request +1ms
+[TIMING:language-lock-test] GREETING tts-first-chunk +1ms
+[TIMING:language-lock-test] GREETING audio-queued +1ms
+[PLAYBACK:language-lock-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:language-lock-test] GREETING SUMMARY total=2336ms greeting-text-ready=0ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:language-lock-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:language-lock-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:language-lock-test] LLM request PRE-OPENED on speech_final evidence: text="Hello?" evidence-to-llm-open=0ms historyLength=3
+[TIMING:language-lock-test] TURN END turn-release=1790171275201 text="Hello?" sttMs=0
+[STT:language-lock-test] Transcript received: "Hello?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#0 turn-detected +1ms
+[TIMING:language-lock-test] TURN#0 stt-to-release=156ms (sttLag=n/ams)
+[LLM:language-lock-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:language-lock-test] TURN#0 llm-request +1ms
+[SPECULATE:language-lock-test] ADOPTED pre-opened request — llm-request is 156ms after the provider stream was opened (first token already in hand, 140ms ago) evidence-to-llm-open=0ms
+[TIMING:language-lock-test] TURN#0 llm-first-token +1ms
+[TIMING:language-lock-test] TURN#0 tts-request +2ms
+[TIMING:language-lock-test] TURN#0 tts-first-chunk +2ms
+[TIMING:language-lock-test] TURN#0 audio-queued +2ms
+[PLAYBACK:language-lock-test] draining 1105ms of queued audio before leaving SPEAKING (queued=955ms elapsed=0ms)
+[TIMING:language-lock-test] TURN#0 SUMMARY total=1107ms turn-detected=1ms llm-request=1ms llm-first-token=1ms tts-request=2ms tts-first-chunk=2ms audio-queued=2ms
+[TIMING:language-lock-test] TURN#0
+speech-end=2026-09-23T13:47:55.046Z
+endpoint-evidence=2026-09-23T13:47:55.046Z (speech_final)
+turn-release=2026-09-23T13:47:55.201Z
+llm-request=2026-09-23T13:47:55.202Z
+llm-first-token=2026-09-23T13:47:55.202Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T13:47:55.203Z
+tts-first-audio=2026-09-23T13:47:55.203Z
+audio-queued=2026-09-23T13:47:55.203Z
+[TIMING:language-lock-test] TURN#0 DELTAS
+endpoint-to-release=155ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=157ms
+[PIPELINE:language-lock-test] Turn complete: assistant="Sure, let me explain." llmMs=16 ttsMs=0
+[RESPONSE-LEN:language-lock-test] TURN#0 userChars=6 assistantChars=21 estTokens=6 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=955 briefRequested=false
+[PIPELINE:language-lock-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:language-lock-test] run() exiting — state=LISTENING aborted=true
+  [PASS] G3 — English campaign: an English greeting stays English
+[PIPELINE:language-lock-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:language-lock-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:language-lock-test] GREETING greeting-text-ready +0ms
+[TIMING:language-lock-test] GREETING tts-request +0ms
+[TIMING:language-lock-test] GREETING tts-first-chunk +1ms
+[TIMING:language-lock-test] GREETING audio-queued +1ms
+[PLAYBACK:language-lock-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:language-lock-test] GREETING SUMMARY total=2335ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:language-lock-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:language-lock-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:language-lock-test] LLM request PRE-OPENED on speech_final evidence: text="हेलो।" evidence-to-llm-open=0ms historyLength=3
+[TIMING:language-lock-test] TURN END turn-release=1790171279003 text="हेलो।" sttMs=0
+[STT:language-lock-test] Transcript received: "हेलो।" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#0 turn-detected +0ms
+[TIMING:language-lock-test] TURN#0 stt-to-release=159ms (sttLag=n/ams)
+[LANGUAGE:language-lock-test] per-turn detection hi IGNORED — a no-floor utterance (basis=devanagari); active language stays en: "हेलो।"
+[LLM:language-lock-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:language-lock-test] TURN#0 llm-request +1ms
+[SPECULATE:language-lock-test] ADOPTED pre-opened request — llm-request is 160ms after the provider stream was opened (first token already in hand, 144ms ago) evidence-to-llm-open=0ms
+[TIMING:language-lock-test] TURN#0 llm-first-token +1ms
+[TIMING:language-lock-test] TURN#0 tts-request +1ms
+[TIMING:language-lock-test] TURN#0 tts-first-chunk +1ms
+[TIMING:language-lock-test] TURN#0 audio-queued +1ms
+[PLAYBACK:language-lock-test] draining 1105ms of queued audio before leaving SPEAKING (queued=955ms elapsed=0ms)
+[TIMING:language-lock-test] TURN#0 SUMMARY total=1112ms turn-detected=0ms llm-request=1ms llm-first-token=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:language-lock-test] TURN#0
+speech-end=2026-09-23T13:47:58.844Z
+endpoint-evidence=2026-09-23T13:47:58.844Z (speech_final)
+turn-release=2026-09-23T13:47:59.003Z
+llm-request=2026-09-23T13:47:59.004Z
+llm-first-token=2026-09-23T13:47:59.004Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T13:47:59.004Z
+tts-first-audio=2026-09-23T13:47:59.004Z
+audio-queued=2026-09-23T13:47:59.004Z
+[TIMING:language-lock-test] TURN#0 DELTAS
+endpoint-to-release=159ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=160ms
+[PIPELINE:language-lock-test] Turn complete: assistant="Sure, let me explain." llmMs=16 ttsMs=0
+[RESPONSE-LEN:language-lock-test] TURN#0 userChars=5 assistantChars=21 estTokens=6 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=955 briefRequested=false
+[SPECULATE:language-lock-test] LLM request PRE-OPENED on speech_final evidence: text="मुझे इसके बारे में जानकारी चाहिए।" evidence-to-llm-open=1ms historyLength=5
+[TIMING:language-lock-test] TURN END turn-release=1790171280920 text="मुझे इसके बारे में जानकारी चाहिए।" sttMs=0
+[STT:language-lock-test] Transcript received: "मुझे इसके बारे में जानकारी चाहिए।" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#1 turn-detected +1ms
+[TIMING:language-lock-test] TURN#1 stt-to-release=613ms (sttLag=n/ams)
+[LANGUAGE:language-lock-test] call language LOCKED to hi on the first meaningful utterance (basis=devanagari confidence=0.9 hindiMarkers=0): "मुझे इसके बारे में जानकारी चाहिए।"
+[LLM:language-lock-test] Sending to fake-llm: historyLength=5 roles=[system,assistant,user,assistant,user] streaming=true
+[TIMING:language-lock-test] TURN#1 llm-request +1ms
+[SPECULATE:language-lock-test] ADOPTED pre-opened request — llm-request is 612ms after the provider stream was opened (first token already in hand, 597ms ago) evidence-to-llm-open=1ms
+[TIMING:language-lock-test] TURN#1 llm-first-token +1ms
+[TIMING:language-lock-test] TURN#1 tts-request +2ms
+[TIMING:language-lock-test] TURN#1 tts-first-chunk +2ms
+[TIMING:language-lock-test] TURN#1 audio-queued +2ms
+[PLAYBACK:language-lock-test] draining 1150ms of queued audio before leaving SPEAKING (queued=1000ms elapsed=0ms)
+[TIMING:language-lock-test] TURN#1 SUMMARY total=1155ms turn-detected=1ms llm-request=1ms llm-first-token=1ms tts-request=2ms tts-first-chunk=2ms audio-queued=2ms
+[TIMING:language-lock-test] TURN#1
+speech-end=2026-09-23T13:48:00.308Z
+endpoint-evidence=2026-09-23T13:48:00.308Z (speech_final)
+turn-release=2026-09-23T13:48:00.920Z
+llm-request=2026-09-23T13:48:00.921Z
+llm-first-token=2026-09-23T13:48:00.921Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T13:48:00.922Z
+tts-first-audio=2026-09-23T13:48:00.922Z
+audio-queued=2026-09-23T13:48:00.922Z
+[TIMING:language-lock-test] TURN#1 DELTAS
+endpoint-to-release=612ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=614ms
+[PIPELINE:language-lock-test] Turn complete: assistant="It is a short session." llmMs=15 ttsMs=0
+[RESPONSE-LEN:language-lock-test] TURN#1 userChars=33 assistantChars=22 estTokens=6 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1000 briefRequested=false
+[PIPELINE:language-lock-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:language-lock-test] run() exiting — state=LISTENING aborted=true
+  [PASS] G4 — English campaign: SUBSTANTIVE Devanagari still follows the caller into Hindi (existing adaptation and lock)
+[PIPELINE:language-lock-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:language-lock-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:language-lock-test] GREETING greeting-text-ready +0ms
+[TIMING:language-lock-test] GREETING tts-request +1ms
+[TIMING:language-lock-test] GREETING tts-first-chunk +1ms
+[TIMING:language-lock-test] GREETING audio-queued +1ms
+[PLAYBACK:language-lock-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:language-lock-test] GREETING SUMMARY total=2339ms greeting-text-ready=0ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:language-lock-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:language-lock-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:language-lock-test] LLM request PRE-OPENED on speech_final evidence: text="मुझे इसके बारे में जानकारी चाहिए।" evidence-to-llm-open=0ms historyLength=3
+[TIMING:language-lock-test] TURN END turn-release=1790171285226 text="मुझे इसके बारे में जानकारी चाहिए।" sttMs=0
+[STT:language-lock-test] Transcript received: "मुझे इसके बारे में जानकारी चाहिए।" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#0 turn-detected +0ms
+[TIMING:language-lock-test] TURN#0 stt-to-release=612ms (sttLag=n/ams)
+[LANGUAGE:language-lock-test] call language LOCKED to hi on the first meaningful utterance (basis=devanagari confidence=0.9 hindiMarkers=0): "मुझे इसके बारे में जानकारी चाहिए।"
+[LLM:language-lock-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:language-lock-test] TURN#0 llm-request +1ms
+[SPECULATE:language-lock-test] ADOPTED pre-opened request — llm-request is 613ms after the provider stream was opened (first token already in hand, 598ms ago) evidence-to-llm-open=0ms
+[TIMING:language-lock-test] TURN#0 llm-first-token +1ms
+[TIMING:language-lock-test] TURN#0 tts-request +1ms
+[TIMING:language-lock-test] TURN#0 tts-first-chunk +1ms
+[TIMING:language-lock-test] TURN#0 audio-queued +1ms
+[PLAYBACK:language-lock-test] draining 1105ms of queued audio before leaving SPEAKING (queued=955ms elapsed=0ms)
+[TIMING:language-lock-test] TURN#0 SUMMARY total=1114ms turn-detected=0ms llm-request=1ms llm-first-token=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:language-lock-test] TURN#0
+speech-end=2026-09-23T13:48:04.614Z
+endpoint-evidence=2026-09-23T13:48:04.614Z (speech_final)
+turn-release=2026-09-23T13:48:05.226Z
+llm-request=2026-09-23T13:48:05.227Z
+llm-first-token=2026-09-23T13:48:05.227Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T13:48:05.227Z
+tts-first-audio=2026-09-23T13:48:05.227Z
+audio-queued=2026-09-23T13:48:05.227Z
+[TIMING:language-lock-test] TURN#0 DELTAS
+endpoint-to-release=612ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=613ms
+[PIPELINE:language-lock-test] Turn complete: assistant="Sure, let me explain." llmMs=15 ttsMs=0
+[RESPONSE-LEN:language-lock-test] TURN#0 userChars=33 assistantChars=21 estTokens=6 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=955 briefRequested=false
+[TIMING:language-lock-test] TURN END turn-release=1790171286678 text="Hello?" sttMs=0
+[STT:language-lock-test] Transcript received: "Hello?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#1 turn-detected +2ms
+[TIMING:language-lock-test] TURN#1 stt-to-release=160ms (sttLag=n/ams)
+[LLM:language-lock-test] Sending to fake-llm: historyLength=5 roles=[system,assistant,user,assistant,user] streaming=true
+[TIMING:language-lock-test] TURN#1 llm-request +3ms
+[TIMING:language-lock-test] TURN#1 llm-first-token +18ms
+[TIMING:language-lock-test] TURN#1 tts-request +18ms
+[TIMING:language-lock-test] TURN#1 tts-first-chunk +18ms
+[TIMING:language-lock-test] TURN#1 audio-queued +18ms
+[PLAYBACK:language-lock-test] draining 1150ms of queued audio before leaving SPEAKING (queued=1000ms elapsed=0ms)
+[TIMING:language-lock-test] TURN#1 SUMMARY total=1177ms turn-detected=2ms llm-request=3ms llm-first-token=18ms tts-request=18ms tts-first-chunk=18ms audio-queued=18ms
+[TIMING:language-lock-test] TURN#1
+speech-end=2026-09-23T13:48:06.520Z
+endpoint-evidence=2026-09-23T13:48:06.520Z (speech_final)
+turn-release=2026-09-23T13:48:06.678Z
+llm-request=2026-09-23T13:48:06.681Z
+llm-first-token=2026-09-23T13:48:06.696Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T13:48:06.696Z
+tts-first-audio=2026-09-23T13:48:06.696Z
+audio-queued=2026-09-23T13:48:06.696Z
+[TIMING:language-lock-test] TURN#1 DELTAS
+endpoint-to-release=158ms
+release-to-llm-request=3ms
+llm-to-first-token=15ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=176ms
+[PIPELINE:language-lock-test] Turn complete: assistant="It is a short session." llmMs=15 ttsMs=0
+[RESPONSE-LEN:language-lock-test] TURN#1 userChars=6 assistantChars=22 estTokens=6 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1000 briefRequested=false
+[SPECULATE:language-lock-test] LLM request PRE-OPENED on speech_final evidence: text="Okay." evidence-to-llm-open=0ms historyLength=7
+[TIMING:language-lock-test] TURN END turn-release=1790171288173 text="Okay." sttMs=0
+[STT:language-lock-test] Transcript received: "Okay." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#2 turn-detected +0ms
+[TIMING:language-lock-test] TURN#2 stt-to-release=162ms (sttLag=n/ams)
+[LLM:language-lock-test] Sending to fake-llm: historyLength=7 roles=[system,assistant,user,assistant,user,assistant,user] streaming=true
+[TIMING:language-lock-test] TURN#2 llm-request +1ms
+[SPECULATE:language-lock-test] ADOPTED pre-opened request — llm-request is 163ms after the provider stream was opened (first token already in hand, 148ms ago) evidence-to-llm-open=0ms
+[TIMING:language-lock-test] TURN#2 llm-first-token +1ms
+[TIMING:language-lock-test] TURN#2 tts-request +2ms
+[TIMING:language-lock-test] TURN#2 tts-first-chunk +2ms
+[TIMING:language-lock-test] TURN#2 audio-queued +2ms
+[PLAYBACK:language-lock-test] draining 1332ms of queued audio before leaving SPEAKING (queued=1182ms elapsed=0ms)
+[TIMING:language-lock-test] TURN#2 SUMMARY total=1340ms turn-detected=0ms llm-request=1ms llm-first-token=1ms tts-request=2ms tts-first-chunk=2ms audio-queued=2ms
+[TIMING:language-lock-test] TURN#2
+speech-end=2026-09-23T13:48:08.011Z
+endpoint-evidence=2026-09-23T13:48:08.011Z (speech_final)
+turn-release=2026-09-23T13:48:08.173Z
+llm-request=2026-09-23T13:48:08.174Z
+llm-first-token=2026-09-23T13:48:08.174Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T13:48:08.175Z
+tts-first-audio=2026-09-23T13:48:08.175Z
+audio-queued=2026-09-23T13:48:08.175Z
+[TIMING:language-lock-test] TURN#2 DELTAS
+endpoint-to-release=162ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=164ms
+[PIPELINE:language-lock-test] Turn complete: assistant="There is no charge for it." llmMs=15 ttsMs=0
+[RESPONSE-LEN:language-lock-test] TURN#2 userChars=5 assistantChars=26 estTokens=7 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1182 briefRequested=false
+[SPECULATE:language-lock-test] LLM request PRE-OPENED on speech_final evidence: text="Yes." evidence-to-llm-open=0ms historyLength=9
+[TIMING:language-lock-test] TURN END turn-release=1790171289839 text="Yes." sttMs=0
+[STT:language-lock-test] Transcript received: "Yes." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#3 turn-detected +1ms
+[TIMING:language-lock-test] TURN#3 stt-to-release=161ms (sttLag=n/ams)
+[LLM:language-lock-test] Sending to fake-llm: historyLength=9 roles=[system,assistant,user,assistant,user,assistant,user,assistant,user] streaming=true
+[TIMING:language-lock-test] TURN#3 llm-request +2ms
+[SPECULATE:language-lock-test] ADOPTED pre-opened request — llm-request is 161ms after the provider stream was opened (first token already in hand, 146ms ago) evidence-to-llm-open=0ms
+[TIMING:language-lock-test] TURN#3 llm-first-token +2ms
+[TIMING:language-lock-test] TURN#3 tts-request +3ms
+[TIMING:language-lock-test] TURN#3 tts-first-chunk +3ms
+[TIMING:language-lock-test] TURN#3 audio-queued +3ms
+[PLAYBACK:language-lock-test] draining 1468ms of queued audio before leaving SPEAKING (queued=1318ms elapsed=0ms)
+[TIMING:language-lock-test] TURN#3 SUMMARY total=1474ms turn-detected=1ms llm-request=2ms llm-first-token=2ms tts-request=3ms tts-first-chunk=3ms audio-queued=3ms
+[TIMING:language-lock-test] TURN#3
+speech-end=2026-09-23T13:48:09.679Z
+endpoint-evidence=2026-09-23T13:48:09.680Z (speech_final)
+turn-release=2026-09-23T13:48:09.839Z
+llm-request=2026-09-23T13:48:09.841Z
+llm-first-token=2026-09-23T13:48:09.841Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T13:48:09.842Z
+tts-first-audio=2026-09-23T13:48:09.842Z
+audio-queued=2026-09-23T13:48:09.842Z
+[TIMING:language-lock-test] TURN#3 DELTAS
+endpoint-to-release=159ms
+release-to-llm-request=2ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=163ms
+[PIPELINE:language-lock-test] Turn complete: assistant="I can reserve a seat for you." llmMs=15 ttsMs=0
+[RESPONSE-LEN:language-lock-test] TURN#3 userChars=4 assistantChars=29 estTokens=8 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1318 briefRequested=false
+[TIMING:language-lock-test] TURN END turn-release=1790171291651 text="हेलो।" sttMs=0
+[STT:language-lock-test] Transcript received: "हेलो।" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#4 turn-detected +9ms
+[TIMING:language-lock-test] TURN#4 stt-to-release=163ms (sttLag=n/ams)
+[LLM:language-lock-test] Sending to fake-llm: historyLength=11 roles=[system,assistant,user,assistant,user,assistant,user,assistant,user,assistant,user] streaming=true
+[TIMING:language-lock-test] TURN#4 llm-request +9ms
+[TIMING:language-lock-test] TURN#4 llm-first-token +21ms
+[TIMING:language-lock-test] TURN#4 tts-request +21ms
+[TIMING:language-lock-test] TURN#4 tts-first-chunk +21ms
+[TIMING:language-lock-test] TURN#4 audio-queued +21ms
+[PLAYBACK:language-lock-test] draining 377ms of queued audio before leaving SPEAKING (queued=227ms elapsed=0ms)
+[TIMING:language-lock-test] TURN#4 SUMMARY total=409ms turn-detected=9ms llm-request=9ms llm-first-token=21ms tts-request=21ms tts-first-chunk=21ms audio-queued=21ms
+[TIMING:language-lock-test] TURN#4
+speech-end=2026-09-23T13:48:11.497Z
+endpoint-evidence=2026-09-23T13:48:11.497Z (speech_final)
+turn-release=2026-09-23T13:48:11.651Z
+llm-request=2026-09-23T13:48:11.660Z
+llm-first-token=2026-09-23T13:48:11.672Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T13:48:11.672Z
+tts-first-audio=2026-09-23T13:48:11.672Z
+audio-queued=2026-09-23T13:48:11.672Z
+[TIMING:language-lock-test] TURN#4 DELTAS
+endpoint-to-release=154ms
+release-to-llm-request=9ms
+llm-to-first-token=12ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=175ms
+[PIPELINE:language-lock-test] Turn complete: assistant="Okay." llmMs=12 ttsMs=0
+[RESPONSE-LEN:language-lock-test] TURN#4 userChars=5 assistantChars=5 estTokens=2 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=227 briefRequested=false
+[SPECULATE:language-lock-test] LLM request PRE-OPENED on speech_final evidence: text="हाँ।" evidence-to-llm-open=0ms historyLength=13
+[TIMING:language-lock-test] TURN END turn-release=1790171292412 text="हाँ।" sttMs=0
+[STT:language-lock-test] Transcript received: "हाँ।" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#5 turn-detected +0ms
+[TIMING:language-lock-test] TURN#5 stt-to-release=161ms (sttLag=n/ams)
+[LLM:language-lock-test] Sending to fake-llm: historyLength=13 roles=[system,assistant,user,assistant,user,assistant,user,assistant,user,assistant,user,assistant,user] streaming=true
+[TIMING:language-lock-test] TURN#5 llm-request +1ms
+[SPECULATE:language-lock-test] ADOPTED pre-opened request — llm-request is 162ms after the provider stream was opened (first token already in hand, 147ms ago) evidence-to-llm-open=0ms
+[TIMING:language-lock-test] TURN#5 llm-first-token +1ms
+[TIMING:language-lock-test] TURN#5 tts-request +2ms
+[TIMING:language-lock-test] TURN#5 tts-first-chunk +2ms
+[TIMING:language-lock-test] TURN#5 audio-queued +2ms
+[PLAYBACK:language-lock-test] draining 377ms of queued audio before leaving SPEAKING (queued=227ms elapsed=0ms)
+[TIMING:language-lock-test] TURN#5 SUMMARY total=384ms turn-detected=0ms llm-request=1ms llm-first-token=1ms tts-request=2ms tts-first-chunk=2ms audio-queued=2ms
+[TIMING:language-lock-test] TURN#5
+speech-end=2026-09-23T13:48:12.251Z
+endpoint-evidence=2026-09-23T13:48:12.251Z (speech_final)
+turn-release=2026-09-23T13:48:12.412Z
+llm-request=2026-09-23T13:48:12.413Z
+llm-first-token=2026-09-23T13:48:12.413Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T13:48:12.414Z
+tts-first-audio=2026-09-23T13:48:12.414Z
+audio-queued=2026-09-23T13:48:12.414Z
+[TIMING:language-lock-test] TURN#5 DELTAS
+endpoint-to-release=161ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=163ms
+[PIPELINE:language-lock-test] Turn complete: assistant="Okay." llmMs=15 ttsMs=0
+[RESPONSE-LEN:language-lock-test] TURN#5 userChars=4 assistantChars=5 estTokens=2 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=227 briefRequested=false
+[PIPELINE:language-lock-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:language-lock-test] run() exiting — state=LISTENING aborted=true
+  [PASS] G5 — a LOCKED Hindi call: a greeting or acknowledgement leaves the lock and the active language untouched
+[PIPELINE:language-lock-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:language-lock-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:language-lock-test] GREETING greeting-text-ready +0ms
+[TIMING:language-lock-test] GREETING tts-request +0ms
+[TIMING:language-lock-test] GREETING tts-first-chunk +1ms
+[TIMING:language-lock-test] GREETING audio-queued +1ms
+[PLAYBACK:language-lock-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:language-lock-test] GREETING SUMMARY total=2338ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:language-lock-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:language-lock-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:language-lock-test] LLM request PRE-OPENED on speech_final evidence: text="Ji boliye" evidence-to-llm-open=0ms historyLength=3
+[TIMING:language-lock-test] TURN END turn-release=1790171295646 text="Ji boliye" sttMs=0
+[STT:language-lock-test] Transcript received: "Ji boliye" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#0 turn-detected +1ms
+[TIMING:language-lock-test] TURN#0 stt-to-release=305ms (sttLag=n/ams)
+[LLM:language-lock-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:language-lock-test] TURN#0 llm-request +1ms
+[SPECULATE:language-lock-test] ADOPTED pre-opened request — llm-request is 305ms after the provider stream was opened (first token already in hand, 292ms ago) evidence-to-llm-open=0ms
+[TIMING:language-lock-test] TURN#0 llm-first-token +1ms
+[TIMING:language-lock-test] TURN#0 tts-request +2ms
+[TIMING:language-lock-test] TURN#0 tts-first-chunk +2ms
+[TIMING:language-lock-test] TURN#0 audio-queued +2ms
+[PLAYBACK:language-lock-test] draining 1105ms of queued audio before leaving SPEAKING (queued=955ms elapsed=0ms)
+[TIMING:language-lock-test] TURN#0 SUMMARY total=1122ms turn-detected=1ms llm-request=1ms llm-first-token=1ms tts-request=2ms tts-first-chunk=2ms audio-queued=2ms
+[TIMING:language-lock-test] TURN#0
+speech-end=2026-09-23T13:48:15.342Z
+endpoint-evidence=2026-09-23T13:48:15.342Z (speech_final)
+turn-release=2026-09-23T13:48:15.646Z
+llm-request=2026-09-23T13:48:15.647Z
+llm-first-token=2026-09-23T13:48:15.647Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T13:48:15.648Z
+tts-first-audio=2026-09-23T13:48:15.648Z
+audio-queued=2026-09-23T13:48:15.648Z
+[TIMING:language-lock-test] TURN#0 DELTAS
+endpoint-to-release=304ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=306ms
+[PIPELINE:language-lock-test] Turn complete: assistant="Sure, let me explain." llmMs=13 ttsMs=0
+[RESPONSE-LEN:language-lock-test] TURN#0 userChars=9 assistantChars=21 estTokens=6 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=955 briefRequested=false
+[PIPELINE:language-lock-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:language-lock-test] run() exiting — state=LISTENING aborted=true
+[PIPELINE:language-lock-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:language-lock-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:language-lock-test] GREETING greeting-text-ready +0ms
+[TIMING:language-lock-test] GREETING tts-request +1ms
+[TIMING:language-lock-test] GREETING tts-first-chunk +1ms
+[TIMING:language-lock-test] GREETING audio-queued +1ms
+[PLAYBACK:language-lock-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:language-lock-test] GREETING SUMMARY total=2335ms greeting-text-ready=0ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:language-lock-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:language-lock-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:language-lock-test] LLM request PRE-OPENED on speech_final evidence: text="Aap tell me about the workshop please" evidence-to-llm-open=0ms historyLength=3
+[TIMING:language-lock-test] TURN END turn-release=1790171299743 text="Aap tell me about the workshop please" sttMs=0
+[STT:language-lock-test] Transcript received: "Aap tell me about the workshop please" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#0 turn-detected +1ms
+[TIMING:language-lock-test] TURN#0 stt-to-release=605ms (sttLag=n/ams)
+[LLM:language-lock-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:language-lock-test] TURN#0 llm-request +1ms
+[SPECULATE:language-lock-test] ADOPTED pre-opened request — llm-request is 605ms after the provider stream was opened (first token already in hand, 595ms ago) evidence-to-llm-open=0ms
+[TIMING:language-lock-test] TURN#0 llm-first-token +1ms
+[TIMING:language-lock-test] TURN#0 tts-request +2ms
+[TIMING:language-lock-test] TURN#0 tts-first-chunk +2ms
+[TIMING:language-lock-test] TURN#0 audio-queued +2ms
+[PLAYBACK:language-lock-test] draining 1105ms of queued audio before leaving SPEAKING (queued=955ms elapsed=0ms)
+[TIMING:language-lock-test] TURN#0 SUMMARY total=1110ms turn-detected=1ms llm-request=1ms llm-first-token=1ms tts-request=2ms tts-first-chunk=2ms audio-queued=2ms
+[TIMING:language-lock-test] TURN#0
+speech-end=2026-09-23T13:48:19.139Z
+endpoint-evidence=2026-09-23T13:48:19.139Z (speech_final)
+turn-release=2026-09-23T13:48:19.743Z
+llm-request=2026-09-23T13:48:19.744Z
+llm-first-token=2026-09-23T13:48:19.744Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T13:48:19.745Z
+tts-first-audio=2026-09-23T13:48:19.745Z
+audio-queued=2026-09-23T13:48:19.745Z
+[TIMING:language-lock-test] TURN#0 DELTAS
+endpoint-to-release=604ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=606ms
+[PIPELINE:language-lock-test] Turn complete: assistant="Sure, let me explain." llmMs=10 ttsMs=0
+[RESPONSE-LEN:language-lock-test] TURN#0 userChars=37 assistantChars=21 estTokens=6 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=955 briefRequested=false
+[PIPELINE:language-lock-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:language-lock-test] run() exiting — state=LISTENING aborted=true
+[PIPELINE:language-lock-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:language-lock-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:language-lock-test] GREETING greeting-text-ready +0ms
+[TIMING:language-lock-test] GREETING tts-request +0ms
+[TIMING:language-lock-test] GREETING tts-first-chunk +1ms
+[TIMING:language-lock-test] GREETING audio-queued +1ms
+[PLAYBACK:language-lock-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:language-lock-test] GREETING SUMMARY total=2336ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:language-lock-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:language-lock-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:language-lock-test] LLM request PRE-OPENED on speech_final evidence: text="Please speak in Hindi" evidence-to-llm-open=1ms historyLength=3
+[TIMING:language-lock-test] TURN END turn-release=1790171303562 text="Please speak in Hindi" sttMs=0
+[STT:language-lock-test] Transcript received: "Please speak in Hindi" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#0 turn-detected +21ms
+[TIMING:language-lock-test] TURN#0 stt-to-release=339ms (sttLag=n/ams)
+[LLM:language-lock-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:language-lock-test] TURN#0 llm-request +21ms
+[SPECULATE:language-lock-test] ADOPTED pre-opened request — llm-request is 338ms after the provider stream was opened (first token already in hand, 323ms ago) evidence-to-llm-open=1ms
+[TIMING:language-lock-test] TURN#0 llm-first-token +22ms
+[TIMING:language-lock-test] TURN#0 tts-request +23ms
+[TIMING:language-lock-test] TURN#0 tts-first-chunk +24ms
+[TIMING:language-lock-test] TURN#0 audio-queued +24ms
+[PLAYBACK:language-lock-test] draining 1105ms of queued audio before leaving SPEAKING (queued=955ms elapsed=0ms)
+[TIMING:language-lock-test] TURN#0 SUMMARY total=1140ms turn-detected=21ms llm-request=21ms llm-first-token=22ms tts-request=23ms tts-first-chunk=24ms audio-queued=24ms
+[TIMING:language-lock-test] TURN#0
+speech-end=2026-09-23T13:48:23.244Z
+endpoint-evidence=2026-09-23T13:48:23.244Z (speech_final)
+turn-release=2026-09-23T13:48:23.562Z
+llm-request=2026-09-23T13:48:23.583Z
+llm-first-token=2026-09-23T13:48:23.584Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T13:48:23.585Z
+tts-first-audio=2026-09-23T13:48:23.586Z
+audio-queued=2026-09-23T13:48:23.586Z
+[TIMING:language-lock-test] TURN#0 DELTAS
+endpoint-to-release=318ms
+release-to-llm-request=21ms
+llm-to-first-token=1ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=1ms
+first-audio-to-queue=0ms
+speech-end-to-audio=342ms
+[PIPELINE:language-lock-test] Turn complete: assistant="Sure, let me explain." llmMs=15 ttsMs=0
+[RESPONSE-LEN:language-lock-test] TURN#0 userChars=21 assistantChars=21 estTokens=6 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=955 briefRequested=false
+[PIPELINE:language-lock-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:language-lock-test] run() exiting — state=LISTENING aborted=true
+  [PASS] G6 — the floor-taking cases keep EXACTLY their existing per-turn behaviour (D3 / D4 / D4b restated)
+[PIPELINE:language-lock-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:language-lock-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:language-lock-test] GREETING greeting-text-ready +0ms
+[TIMING:language-lock-test] GREETING tts-request +0ms
+[TIMING:language-lock-test] GREETING tts-first-chunk +0ms
+[TIMING:language-lock-test] GREETING audio-queued +0ms
+[PLAYBACK:language-lock-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:language-lock-test] GREETING SUMMARY total=2338ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:language-lock-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:language-lock-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:language-lock-test] LLM request PRE-OPENED on speech_final evidence: text="Yes okay sure thanks" evidence-to-llm-open=1ms historyLength=3
+[TIMING:language-lock-test] TURN END turn-release=1790171307535 text="Yes okay sure thanks" sttMs=0
+[STT:language-lock-test] Transcript received: "Yes okay sure thanks" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#0 turn-detected +0ms
+[TIMING:language-lock-test] TURN#0 stt-to-release=316ms (sttLag=n/ams)
+[LLM:language-lock-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:language-lock-test] TURN#0 llm-request +1ms
+[SPECULATE:language-lock-test] ADOPTED pre-opened request — llm-request is 316ms after the provider stream was opened (first token already in hand, 303ms ago) evidence-to-llm-open=1ms
+[TIMING:language-lock-test] TURN#0 llm-first-token +1ms
+[TIMING:language-lock-test] TURN#0 tts-request +2ms
+[TIMING:language-lock-test] TURN#0 tts-first-chunk +2ms
+[TIMING:language-lock-test] TURN#0 audio-queued +2ms
+[PLAYBACK:language-lock-test] draining 1105ms of queued audio before leaving SPEAKING (queued=955ms elapsed=0ms)
+[TIMING:language-lock-test] TURN#0 SUMMARY total=1121ms turn-detected=0ms llm-request=1ms llm-first-token=1ms tts-request=2ms tts-first-chunk=2ms audio-queued=2ms
+[TIMING:language-lock-test] TURN#0
+speech-end=2026-09-23T13:48:27.219Z
+endpoint-evidence=2026-09-23T13:48:27.219Z (speech_final)
+turn-release=2026-09-23T13:48:27.535Z
+llm-request=2026-09-23T13:48:27.536Z
+llm-first-token=2026-09-23T13:48:27.536Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T13:48:27.537Z
+tts-first-audio=2026-09-23T13:48:27.537Z
+audio-queued=2026-09-23T13:48:27.537Z
+[TIMING:language-lock-test] TURN#0 DELTAS
+endpoint-to-release=316ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=318ms
+[PIPELINE:language-lock-test] Turn complete: assistant="Sure, let me explain." llmMs=13 ttsMs=0
+[RESPONSE-LEN:language-lock-test] TURN#0 userChars=20 assistantChars=21 estTokens=6 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=955 briefRequested=false
+[SPECULATE:language-lock-test] LLM request PRE-OPENED on speech_final evidence: text="जी हाँ, ठीक है।" evidence-to-llm-open=0ms historyLength=5
+[TIMING:language-lock-test] TURN END turn-release=1790171308984 text="जी हाँ, ठीक है।" sttMs=0
+[STT:language-lock-test] Transcript received: "जी हाँ, ठीक है।" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:language-lock-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:language-lock-test] TURN#1 turn-detected +0ms
+[TIMING:language-lock-test] TURN#1 stt-to-release=160ms (sttLag=n/ams)
+[LANGUAGE:language-lock-test] per-turn detection hi IGNORED — a no-floor utterance (basis=devanagari); active language stays en: "जी हाँ, ठीक है।"
+[LLM:language-lock-test] Sending to fake-llm: historyLength=5 roles=[system,assistant,user,assistant,user] streaming=true
+[TIMING:language-lock-test] TURN#1 llm-request +1ms
+[SPECULATE:language-lock-test] ADOPTED pre-opened request — llm-request is 161ms after the provider stream was opened (first token already in hand, 145ms ago) evidence-to-llm-open=0ms
+[TIMING:language-lock-test] TURN#1 llm-first-token +2ms
+[TIMING:language-lock-test] TURN#1 tts-request +3ms
+[TIMING:language-lock-test] TURN#1 tts-first-chunk +3ms
+[TIMING:language-lock-test] TURN#1 audio-queued +3ms
+[PLAYBACK:language-lock-test] draining 1150ms of queued audio before leaving SPEAKING (queued=1000ms elapsed=0ms)
+[TIMING:language-lock-test] TURN#1 SUMMARY total=1168ms turn-detected=0ms llm-request=1ms llm-first-token=2ms tts-request=3ms tts-first-chunk=3ms audio-queued=3ms
+[TIMING:language-lock-test] TURN#1
+speech-end=2026-09-23T13:48:28.824Z
+endpoint-evidence=2026-09-23T13:48:28.824Z (speech_final)
+turn-release=2026-09-23T13:48:28.984Z
+llm-request=2026-09-23T13:48:28.985Z
+llm-first-token=2026-09-23T13:48:28.986Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T13:48:28.987Z
+tts-first-audio=2026-09-23T13:48:28.987Z
+audio-queued=2026-09-23T13:48:28.987Z
+[TIMING:language-lock-test] TURN#1 DELTAS
+endpoint-to-release=160ms
+release-to-llm-request=1ms
+llm-to-first-token=1ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=163ms
+[PIPELINE:language-lock-test] Turn complete: assistant="It is a short session." llmMs=16 ttsMs=0
+[RESPONSE-LEN:language-lock-test] TURN#1 userChars=15 assistantChars=22 estTokens=6 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1000 briefRequested=false
+[PIPELINE:language-lock-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:language-lock-test] run() exiting — state=LISTENING aborted=true
+  [PASS] G7 — the pre-opened request is still adopted on a no-floor turn (both language paths agree)
+  [PASS] F5 — an unlocked call still behaves exactly as it did: the language follows the detection
+
+41 passed, 0 failed

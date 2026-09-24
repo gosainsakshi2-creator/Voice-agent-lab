@@ -1,0 +1,2308 @@
+
+SECTION A — the VAD's two energy gates (`MulawVadSegmenter`)
+  [PASS] no `onLoudSpeech` supplied — the segmenter behaves exactly as before
+  [PASS] QUIET speech is liveness only — it never reports as near-end speech
+  [PASS] LOUD speech reports near-end speech, and reports how long it has lasted
+  [PASS] a run long enough to barge in with no transcript is reachable through real speech
+  [PASS] a gap longer than the tolerance ENDS the run — background chatter never accumulates
+
+SECTION B — the unheard remainder of an interrupted reply (`unspokenTail`)
+  [PASS] the remainder is whatever follows what the caller heard
+  [PASS] whitespace differences do not matter — the utterances are joined, not sliced
+  [PASS] nothing heard means the whole reply is unheard
+  [PASS] everything heard means there is nothing to resume
+  [PASS] divergence resumes NOTHING rather than guessing
+
+SECTION C — the opening line is not interruptible, from ANY path
+[PIPELINE:barge-in-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:barge-in-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:barge-in-test] GREETING greeting-text-ready +0ms
+[TIMING:barge-in-test] GREETING tts-request +1ms
+[TIMING:barge-in-test] GREETING tts-first-chunk +2ms
+[PIPELINE:barge-in-test] barge-in DECLINED — the fixed opening line is still playing
+[TIMING:barge-in-test] GREETING audio-queued +2ms
+[PLAYBACK:barge-in-test] draining 4376ms of queued audio before leaving SPEAKING (queued=4227ms elapsed=1ms)
+[TIMING:barge-in-test] GREETING SUMMARY total=4381ms greeting-text-ready=0ms tts-request=1ms tts-first-chunk=2ms audio-queued=2ms
+[PIPELINE:barge-in-test] Greeting spoken: text="Hello Sakshi, this is Rohan calling from FlexiFunnels about the free AI workshop this Sunday." state=SPEAKING
+[PIPELINE:barge-in-test] entering main loop — state=SPEAKING aborted=false
+[PIPELINE:barge-in-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:barge-in-test] run() exiting — state=LISTENING aborted=true
+  [PASS] "hello" as the caller picks up does not truncate the opening line
+[PIPELINE:barge-in-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:barge-in-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:barge-in-test] GREETING greeting-text-ready +0ms
+[TIMING:barge-in-test] GREETING tts-request +2ms
+[TIMING:barge-in-test] GREETING tts-first-chunk +2ms
+[TIMING:barge-in-test] GREETING audio-queued +2ms
+[PLAYBACK:barge-in-test] draining 4371ms of queued audio before leaving SPEAKING (queued=4227ms elapsed=6ms)
+[TIMING:barge-in-test] GREETING SUMMARY total=4384ms greeting-text-ready=0ms tts-request=2ms tts-first-chunk=2ms audio-queued=2ms
+[PIPELINE:barge-in-test] Greeting spoken: text="Hello Sakshi, this is Rohan calling from FlexiFunnels about the free AI workshop this Sunday." state=SPEAKING
+[PIPELINE:barge-in-test] entering main loop — state=SPEAKING aborted=false
+[TIMING:barge-in-test] TURN END turn-release=1790159226052 text="Hello? Who is this?" sttMs=0
+[STT:barge-in-test] Transcript received: "Hello? Who is this?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:barge-in-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:barge-in-test] TURN#0 turn-detected +4ms
+[TIMING:barge-in-test] TURN#0 stt-to-release=4383ms (sttLag=n/ams)
+[LANGUAGE:barge-in-test] call language LOCKED to en on the first meaningful utterance (basis=default-english confidence=0.75 hindiMarkers=0): "Hello? Who is this?"
+[LLM:barge-in-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:barge-in-test] TURN#0 llm-request +12ms
+[TIMING:barge-in-test] TURN#0 llm-first-token +32ms
+[TIMING:barge-in-test] TURN#0 tts-request +34ms
+[TIMING:barge-in-test] TURN#0 tts-first-chunk +34ms
+[TIMING:barge-in-test] TURN#0 audio-queued +34ms
+[PLAYBACK:barge-in-test] draining 1285ms of queued audio before leaving SPEAKING (queued=1136ms elapsed=1ms)
+[TIMING:barge-in-test] TURN#0 SUMMARY total=1334ms turn-detected=4ms llm-request=12ms llm-first-token=32ms tts-request=34ms tts-first-chunk=34ms audio-queued=34ms
+[TIMING:barge-in-test] TURN#0
+speech-end=2026-09-23T10:27:01.673Z
+endpoint-evidence=2026-09-23T10:27:01.673Z (speech_final)
+turn-release=2026-09-23T10:27:06.052Z
+llm-request=2026-09-23T10:27:06.064Z
+llm-first-token=2026-09-23T10:27:06.084Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T10:27:06.086Z
+tts-first-audio=2026-09-23T10:27:06.086Z
+audio-queued=2026-09-23T10:27:06.086Z
+[TIMING:barge-in-test] TURN#0 DELTAS
+endpoint-to-release=4379ms
+release-to-llm-request=12ms
+llm-to-first-token=20ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=4413ms
+[PIPELINE:barge-in-test] Turn complete: assistant="It is a free AI workshop." llmMs=20 ttsMs=0
+[RESPONSE-LEN:barge-in-test] TURN#0 userChars=19 assistantChars=25 estTokens=7 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1136 briefRequested=false
+[PIPELINE:barge-in-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:barge-in-test] run() exiting — state=LISTENING aborted=true
+  [PASS] the caller's words during the opening line are not lost — they are answered after it
+[PIPELINE:barge-in-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:barge-in-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:barge-in-test] GREETING greeting-text-ready +0ms
+[TIMING:barge-in-test] GREETING tts-request +1ms
+[TIMING:barge-in-test] GREETING tts-first-chunk +1ms
+[TIMING:barge-in-test] GREETING audio-queued +1ms
+[PLAYBACK:barge-in-test] draining 4377ms of queued audio before leaving SPEAKING (queued=4227ms elapsed=0ms)
+[TIMING:barge-in-test] GREETING SUMMARY total=4383ms greeting-text-ready=0ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:barge-in-test] Greeting spoken: text="Hello Sakshi, this is Rohan calling from FlexiFunnels about the free AI workshop this Sunday." state=SPEAKING
+[PIPELINE:barge-in-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:barge-in-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=4ms historyLength=3
+[TIMING:barge-in-test] TURN END turn-release=1790159231945 text="Yes, tell me." sttMs=0
+[STT:barge-in-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:barge-in-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:barge-in-test] TURN#0 turn-detected +1ms
+[TIMING:barge-in-test] TURN#0 stt-to-release=155ms (sttLag=n/ams)
+[LLM:barge-in-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:barge-in-test] TURN#0 llm-request +2ms
+[SPECULATE:barge-in-test] ADOPTED pre-opened request — llm-request is 152ms after the provider stream was opened (first token already in hand, 131ms ago) evidence-to-llm-open=4ms
+[TIMING:barge-in-test] TURN#0 llm-first-token +2ms
+[TIMING:barge-in-test] TURN#0 first-sentence-ready +3ms
+[TIMING:barge-in-test] TURN#0 tts-request +3ms
+[TIMING:barge-in-test] TURN#0 tts-first-chunk +3ms
+[TIMING:barge-in-test] TURN#0 audio-queued +3ms
+[PLAYBACK:barge-in-test] draining 4786ms of queued audio before leaving SPEAKING (queued=4636ms elapsed=0ms)
+[TIMING:barge-in-test] TURN#0 SUMMARY total=436ms turn-detected=1ms llm-request=2ms llm-first-token=2ms first-sentence-ready=3ms tts-request=3ms tts-first-chunk=3ms audio-queued=3ms
+[TIMING:barge-in-test] TURN#0
+speech-end=2026-09-23T10:27:11.791Z
+endpoint-evidence=2026-09-23T10:27:11.791Z (speech_final)
+turn-release=2026-09-23T10:27:11.945Z
+llm-request=2026-09-23T10:27:11.947Z
+llm-first-token=2026-09-23T10:27:11.947Z
+first-sentence-ready=2026-09-23T10:27:11.948Z
+tts-request=2026-09-23T10:27:11.948Z
+tts-first-audio=2026-09-23T10:27:11.948Z
+audio-queued=2026-09-23T10:27:11.948Z
+[TIMING:barge-in-test] TURN#0 DELTAS
+endpoint-to-release=154ms
+release-to-llm-request=2ms
+llm-to-first-token=0ms
+first-token-to-sentence=1ms
+sentence-to-tts=0ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=157ms
+[PIPELINE:barge-in-test] Turn complete: assistant="We have created Flexi Genie, which automates your online business. It builds fun..." llmMs=21 ttsMs=0
+[RESPONSE-LEN:barge-in-test] TURN#0 userChars=13 assistantChars=103 estTokens=26 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=2 audioQueuedMs=4636 briefRequested=false
+[PIPELINE:barge-in-test] Response #1 CANCELLED by barge-in — heard="" discarded="We have created Flexi Genie, which automates your online business. It builds fun..."
+[PIPELINE:barge-in-test] run() exiting — state=LISTENING aborted=true
+  [PASS] once the opening line is done, a barge-in is accepted exactly as before
+
+SECTION D — a transcribed voice the transport does not corroborate
+[PIPELINE:barge-in-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:barge-in-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:barge-in-test] GREETING greeting-text-ready +0ms
+[TIMING:barge-in-test] GREETING tts-request +0ms
+[TIMING:barge-in-test] GREETING tts-first-chunk +1ms
+[TIMING:barge-in-test] GREETING audio-queued +1ms
+[PLAYBACK:barge-in-test] draining 4377ms of queued audio before leaving SPEAKING (queued=4227ms elapsed=0ms)
+[TIMING:barge-in-test] GREETING SUMMARY total=4387ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:barge-in-test] Greeting spoken: text="Hello Sakshi, this is Rohan calling from FlexiFunnels about the free AI workshop this Sunday." state=SPEAKING
+[PIPELINE:barge-in-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:barge-in-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=1ms historyLength=3
+[TIMING:barge-in-test] TURN END turn-release=1790159236949 text="Yes, tell me." sttMs=0
+[STT:barge-in-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:barge-in-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:barge-in-test] TURN#0 turn-detected +0ms
+[TIMING:barge-in-test] TURN#0 stt-to-release=167ms (sttLag=n/ams)
+[LLM:barge-in-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:barge-in-test] TURN#0 llm-request +0ms
+[SPECULATE:barge-in-test] ADOPTED pre-opened request — llm-request is 166ms after the provider stream was opened (first token already in hand, 151ms ago) evidence-to-llm-open=1ms
+[TIMING:barge-in-test] TURN#0 llm-first-token +1ms
+[TIMING:barge-in-test] TURN#0 first-sentence-ready +1ms
+[TIMING:barge-in-test] TURN#0 tts-request +1ms
+[TIMING:barge-in-test] TURN#0 tts-first-chunk +1ms
+[TIMING:barge-in-test] TURN#0 audio-queued +1ms
+[PLAYBACK:barge-in-test] draining 4785ms of queued audio before leaving SPEAKING (queued=4636ms elapsed=1ms)
+[TURN:barge-in-test] uncorroborated speech ignored (not the caller interrupting): "and then he told her the whole story about it" — confidence=0.95 loudSpeechAgeMs=30001
+[TIMING:barge-in-test] TURN#0 SUMMARY total=4789ms turn-detected=0ms llm-request=0ms llm-first-token=1ms first-sentence-ready=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:barge-in-test] TURN#0
+speech-end=2026-09-23T10:27:16.782Z
+endpoint-evidence=2026-09-23T10:27:16.782Z (speech_final)
+turn-release=2026-09-23T10:27:16.949Z
+llm-request=2026-09-23T10:27:16.949Z
+llm-first-token=2026-09-23T10:27:16.950Z
+first-sentence-ready=2026-09-23T10:27:16.950Z
+tts-request=2026-09-23T10:27:16.950Z
+tts-first-audio=2026-09-23T10:27:16.950Z
+audio-queued=2026-09-23T10:27:16.950Z
+[TIMING:barge-in-test] TURN#0 DELTAS
+endpoint-to-release=167ms
+release-to-llm-request=0ms
+llm-to-first-token=1ms
+first-token-to-sentence=0ms
+sentence-to-tts=0ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=168ms
+[PIPELINE:barge-in-test] Turn complete: assistant="We have created Flexi Genie, which automates your online business. It builds fun..." llmMs=15 ttsMs=0
+[RESPONSE-LEN:barge-in-test] TURN#0 userChars=13 assistantChars=103 estTokens=26 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=2 audioQueuedMs=4636 briefRequested=false
+[PIPELINE:barge-in-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:barge-in-test] run() exiting — state=LISTENING aborted=true
+  [PASS] a background voice does NOT interrupt, and does NOT become a turn
+[PIPELINE:barge-in-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:barge-in-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:barge-in-test] GREETING greeting-text-ready +0ms
+[TIMING:barge-in-test] GREETING tts-request +0ms
+[TIMING:barge-in-test] GREETING tts-first-chunk +0ms
+[TIMING:barge-in-test] GREETING audio-queued +0ms
+[PLAYBACK:barge-in-test] draining 4377ms of queued audio before leaving SPEAKING (queued=4227ms elapsed=0ms)
+[TIMING:barge-in-test] GREETING SUMMARY total=4382ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:barge-in-test] Greeting spoken: text="Hello Sakshi, this is Rohan calling from FlexiFunnels about the free AI workshop this Sunday." state=SPEAKING
+[PIPELINE:barge-in-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:barge-in-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=1ms historyLength=3
+[TIMING:barge-in-test] TURN END turn-release=1790159246327 text="Yes, tell me." sttMs=0
+[STT:barge-in-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:barge-in-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:barge-in-test] TURN#0 turn-detected +0ms
+[TIMING:barge-in-test] TURN#0 stt-to-release=158ms (sttLag=n/ams)
+[LLM:barge-in-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:barge-in-test] TURN#0 llm-request +1ms
+[SPECULATE:barge-in-test] ADOPTED pre-opened request — llm-request is 158ms after the provider stream was opened (first token already in hand, 143ms ago) evidence-to-llm-open=1ms
+[TIMING:barge-in-test] TURN#0 llm-first-token +1ms
+[TIMING:barge-in-test] TURN#0 first-sentence-ready +1ms
+[TIMING:barge-in-test] TURN#0 tts-request +1ms
+[TIMING:barge-in-test] TURN#0 tts-first-chunk +1ms
+[TIMING:barge-in-test] TURN#0 audio-queued +1ms
+[PLAYBACK:barge-in-test] draining 4785ms of queued audio before leaving SPEAKING (queued=4636ms elapsed=1ms)
+[TURN:barge-in-test] uncorroborated speech ignored (not the caller interrupting): "mumble something unclear" — confidence=0.12 loudSpeechAgeMs=1
+[TIMING:barge-in-test] TURN#0 SUMMARY total=4790ms turn-detected=0ms llm-request=1ms llm-first-token=1ms first-sentence-ready=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:barge-in-test] TURN#0
+speech-end=2026-09-23T10:27:26.169Z
+endpoint-evidence=2026-09-23T10:27:26.169Z (speech_final)
+turn-release=2026-09-23T10:27:26.327Z
+llm-request=2026-09-23T10:27:26.328Z
+llm-first-token=2026-09-23T10:27:26.328Z
+first-sentence-ready=2026-09-23T10:27:26.328Z
+tts-request=2026-09-23T10:27:26.328Z
+tts-first-audio=2026-09-23T10:27:26.328Z
+audio-queued=2026-09-23T10:27:26.328Z
+[TIMING:barge-in-test] TURN#0 DELTAS
+endpoint-to-release=158ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=0ms
+sentence-to-tts=0ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=159ms
+[PIPELINE:barge-in-test] Turn complete: assistant="We have created Flexi Genie, which automates your online business. It builds fun..." llmMs=15 ttsMs=0
+[RESPONSE-LEN:barge-in-test] TURN#0 userChars=13 assistantChars=103 estTokens=26 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=2 audioQueuedMs=4636 briefRequested=false
+[PIPELINE:barge-in-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:barge-in-test] run() exiting — state=LISTENING aborted=true
+  [PASS] a LOW-CONFIDENCE transcript does not interrupt either
+[PIPELINE:barge-in-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:barge-in-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:barge-in-test] GREETING greeting-text-ready +0ms
+[TIMING:barge-in-test] GREETING tts-request +1ms
+[TIMING:barge-in-test] GREETING tts-first-chunk +1ms
+[TIMING:barge-in-test] GREETING audio-queued +1ms
+[PLAYBACK:barge-in-test] draining 4377ms of queued audio before leaving SPEAKING (queued=4227ms elapsed=0ms)
+[TIMING:barge-in-test] GREETING SUMMARY total=4383ms greeting-text-ready=0ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:barge-in-test] Greeting spoken: text="Hello Sakshi, this is Rohan calling from FlexiFunnels about the free AI workshop this Sunday." state=SPEAKING
+[PIPELINE:barge-in-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:barge-in-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:barge-in-test] TURN END turn-release=1790159255709 text="Yes, tell me." sttMs=0
+[STT:barge-in-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:barge-in-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:barge-in-test] TURN#0 turn-detected +0ms
+[TIMING:barge-in-test] TURN#0 stt-to-release=159ms (sttLag=n/ams)
+[LLM:barge-in-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:barge-in-test] TURN#0 llm-request +1ms
+[SPECULATE:barge-in-test] ADOPTED pre-opened request — llm-request is 160ms after the provider stream was opened (first token already in hand, 145ms ago) evidence-to-llm-open=0ms
+[TIMING:barge-in-test] TURN#0 llm-first-token +1ms
+[TIMING:barge-in-test] TURN#0 first-sentence-ready +2ms
+[TIMING:barge-in-test] TURN#0 tts-request +2ms
+[TIMING:barge-in-test] TURN#0 tts-first-chunk +2ms
+[TIMING:barge-in-test] TURN#0 audio-queued +2ms
+[PLAYBACK:barge-in-test] draining 4786ms of queued audio before leaving SPEAKING (queued=4636ms elapsed=0ms)
+[TURN:barge-in-test] barge-in ACCEPTED on transcript: "No, I am not interested at all." — words=7 confidence=0.95 isFinal=true energyAgeMs=n/a beganBeforeReply=false replyRemainingMs=4190 replyFullyQueued=true
+[TIMING:barge-in-test] TURN#0 SUMMARY total=448ms turn-detected=0ms llm-request=1ms llm-first-token=1ms first-sentence-ready=2ms tts-request=2ms tts-first-chunk=2ms audio-queued=2ms
+[TIMING:barge-in-test] TURN#0
+speech-end=2026-09-23T10:27:35.550Z
+endpoint-evidence=2026-09-23T10:27:35.550Z (speech_final)
+turn-release=2026-09-23T10:27:35.709Z
+llm-request=2026-09-23T10:27:35.710Z
+llm-first-token=2026-09-23T10:27:35.710Z
+first-sentence-ready=2026-09-23T10:27:35.711Z
+tts-request=2026-09-23T10:27:35.711Z
+tts-first-audio=2026-09-23T10:27:35.711Z
+audio-queued=2026-09-23T10:27:35.711Z
+[TIMING:barge-in-test] TURN#0 DELTAS
+endpoint-to-release=159ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=1ms
+sentence-to-tts=0ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=161ms
+[PIPELINE:barge-in-test] Turn complete: assistant="We have created Flexi Genie, which automates your online business. It builds fun..." llmMs=15 ttsMs=0
+[RESPONSE-LEN:barge-in-test] TURN#0 userChars=13 assistantChars=103 estTokens=26 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=2 audioQueuedMs=4636 briefRequested=false
+[PIPELINE:barge-in-test] Response #1 CANCELLED by barge-in — heard="" discarded="We have created Flexi Genie, which automates your online business. It builds fun..."
+[TIMING:barge-in-test] TURN END turn-release=1790159256762 text="No, I am not interested at all." sttMs=0
+[STT:barge-in-test] Transcript received: "No, I am not interested at all." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:barge-in-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:barge-in-test] TURN#1 turn-detected +1ms
+[TIMING:barge-in-test] TURN#1 stt-to-release=607ms (sttLag=n/ams)
+[LLM:barge-in-test] Sending to fake-llm: historyLength=4 roles=[system,assistant,user,user] streaming=true
+[TIMING:barge-in-test] TURN#1 llm-request +1ms
+[TIMING:barge-in-test] TURN#1 llm-first-token +16ms
+[TIMING:barge-in-test] TURN#1 tts-request +16ms
+[TIMING:barge-in-test] TURN#1 tts-first-chunk +16ms
+[TIMING:barge-in-test] TURN#1 audio-queued +16ms
+[PLAYBACK:barge-in-test] draining 377ms of queued audio before leaving SPEAKING (queued=227ms elapsed=0ms)
+[TIMING:barge-in-test] TURN#1 SUMMARY total=400ms turn-detected=1ms llm-request=1ms llm-first-token=16ms tts-request=16ms tts-first-chunk=16ms audio-queued=16ms
+[TIMING:barge-in-test] TURN#1
+speech-end=2026-09-23T10:27:36.156Z
+endpoint-evidence=2026-09-23T10:27:36.157Z (speech_final)
+turn-release=2026-09-23T10:27:36.762Z
+llm-request=2026-09-23T10:27:36.763Z
+llm-first-token=2026-09-23T10:27:36.778Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T10:27:36.778Z
+tts-first-audio=2026-09-23T10:27:36.778Z
+audio-queued=2026-09-23T10:27:36.778Z
+[TIMING:barge-in-test] TURN#1 DELTAS
+endpoint-to-release=605ms
+release-to-llm-request=1ms
+llm-to-first-token=15ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=622ms
+[PIPELINE:barge-in-test] Turn complete: assistant="Sure." llmMs=15 ttsMs=0
+[RESPONSE-LEN:barge-in-test] TURN#1 userChars=31 assistantChars=5 estTokens=2 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=227 briefRequested=false
+[PIPELINE:barge-in-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:barge-in-test] run() exiting — state=LISTENING aborted=true
+  [FAIL] a transport that reports NO energy keeps the transcript-only behaviour
+         timed out after 15000ms waiting for 3 replies (have 2, state=LISTENING)
+
+SECTION E — a barge-in that produces no turn never leaves the caller in silence
+[PIPELINE:barge-in-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:barge-in-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:barge-in-test] GREETING greeting-text-ready +0ms
+[TIMING:barge-in-test] GREETING tts-request +0ms
+[TIMING:barge-in-test] GREETING tts-first-chunk +0ms
+[TIMING:barge-in-test] GREETING audio-queued +0ms
+[PLAYBACK:barge-in-test] draining 4377ms of queued audio before leaving SPEAKING (queued=4227ms elapsed=0ms)
+[TIMING:barge-in-test] GREETING SUMMARY total=4390ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:barge-in-test] Greeting spoken: text="Hello Sakshi, this is Rohan calling from FlexiFunnels about the free AI workshop this Sunday." state=SPEAKING
+[PIPELINE:barge-in-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:barge-in-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:barge-in-test] TURN END turn-release=1790159275735 text="Yes, tell me." sttMs=0
+[STT:barge-in-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:barge-in-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:barge-in-test] TURN#0 turn-detected +0ms
+[TIMING:barge-in-test] TURN#0 stt-to-release=158ms (sttLag=n/ams)
+[LLM:barge-in-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:barge-in-test] TURN#0 llm-request +1ms
+[SPECULATE:barge-in-test] ADOPTED pre-opened request — llm-request is 159ms after the provider stream was opened (first token already in hand, 144ms ago) evidence-to-llm-open=0ms
+[TIMING:barge-in-test] TURN#0 llm-first-token +1ms
+[TIMING:barge-in-test] TURN#0 first-sentence-ready +1ms
+[TIMING:barge-in-test] TURN#0 tts-request +1ms
+[TIMING:barge-in-test] TURN#0 tts-first-chunk +1ms
+[TIMING:barge-in-test] TURN#0 audio-queued +1ms
+[PLAYBACK:barge-in-test] draining 4786ms of queued audio before leaving SPEAKING (queued=4636ms elapsed=0ms)
+[TIMING:barge-in-test] TURN#0 SUMMARY total=446ms turn-detected=0ms llm-request=1ms llm-first-token=1ms first-sentence-ready=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:barge-in-test] TURN#0
+speech-end=2026-09-23T10:27:55.577Z
+endpoint-evidence=2026-09-23T10:27:55.577Z (speech_final)
+turn-release=2026-09-23T10:27:55.735Z
+llm-request=2026-09-23T10:27:55.736Z
+llm-first-token=2026-09-23T10:27:55.736Z
+first-sentence-ready=2026-09-23T10:27:55.736Z
+tts-request=2026-09-23T10:27:55.736Z
+tts-first-audio=2026-09-23T10:27:55.736Z
+audio-queued=2026-09-23T10:27:55.736Z
+[TIMING:barge-in-test] TURN#0 DELTAS
+endpoint-to-release=158ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=0ms
+sentence-to-tts=0ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=159ms
+[PIPELINE:barge-in-test] Turn complete: assistant="We have created Flexi Genie, which automates your online business. It builds fun..." llmMs=15 ttsMs=0
+[RESPONSE-LEN:barge-in-test] TURN#0 userChars=13 assistantChars=103 estTokens=26 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=2 audioQueuedMs=4636 briefRequested=false
+[PIPELINE:barge-in-test] Response #1 CANCELLED by barge-in — heard="" discarded="We have created Flexi Genie, which automates your online business. It builds fun..."
+[PIPELINE:barge-in-test] barge-in produced no turn — RESUMING the unheard remainder (1/3): "We have created Flexi Genie, which automates your online business. It builds fun..."
+[TIMING:barge-in-test] RESUME tts-request +0ms
+[TIMING:barge-in-test] RESUME tts-first-chunk +1ms
+[TIMING:barge-in-test] RESUME audio-queued +1ms
+[PLAYBACK:barge-in-test] draining 4832ms of queued audio before leaving SPEAKING (queued=4682ms elapsed=0ms)
+[TIMING:barge-in-test] RESUME SUMMARY total=4835ms tts-request=0ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:barge-in-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:barge-in-test] run() exiting — state=LISTENING aborted=true
+  [FAIL] a barge-in with no transcript at all RESUMES the unheard remainder
+         timed out after 15000ms waiting for 3 replies (have 2, state=LISTENING)
+[PIPELINE:barge-in-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:barge-in-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:barge-in-test] GREETING greeting-text-ready +0ms
+[TIMING:barge-in-test] GREETING tts-request +1ms
+[TIMING:barge-in-test] GREETING tts-first-chunk +1ms
+[TIMING:barge-in-test] GREETING audio-queued +1ms
+[PLAYBACK:barge-in-test] draining 4377ms of queued audio before leaving SPEAKING (queued=4227ms elapsed=0ms)
+[TIMING:barge-in-test] GREETING SUMMARY total=4383ms greeting-text-ready=0ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:barge-in-test] Greeting spoken: text="Hello Sakshi, this is Rohan calling from FlexiFunnels about the free AI workshop this Sunday." state=SPEAKING
+[PIPELINE:barge-in-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:barge-in-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=1ms historyLength=3
+[TIMING:barge-in-test] TURN END turn-release=1790159295766 text="Yes, tell me." sttMs=0
+[STT:barge-in-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:barge-in-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:barge-in-test] TURN#0 turn-detected +1ms
+[TIMING:barge-in-test] TURN#0 stt-to-release=161ms (sttLag=n/ams)
+[LLM:barge-in-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:barge-in-test] TURN#0 llm-request +1ms
+[SPECULATE:barge-in-test] ADOPTED pre-opened request — llm-request is 160ms after the provider stream was opened (first token already in hand, 145ms ago) evidence-to-llm-open=1ms
+[TIMING:barge-in-test] TURN#0 llm-first-token +2ms
+[TIMING:barge-in-test] TURN#0 first-sentence-ready +2ms
+[TIMING:barge-in-test] TURN#0 tts-request +2ms
+[TIMING:barge-in-test] TURN#0 tts-first-chunk +2ms
+[TIMING:barge-in-test] TURN#0 audio-queued +2ms
+[PLAYBACK:barge-in-test] draining 4786ms of queued audio before leaving SPEAKING (queued=4636ms elapsed=0ms)
+[TURN:barge-in-test] backchannel ignored (not a barge-in): "umm" — 4605ms of reply still to play
+[TIMING:barge-in-test] TURN#0 SUMMARY total=4802ms turn-detected=1ms llm-request=1ms llm-first-token=2ms first-sentence-ready=2ms tts-request=2ms tts-first-chunk=2ms audio-queued=2ms
+[TIMING:barge-in-test] TURN#0
+speech-end=2026-09-23T10:28:15.606Z
+endpoint-evidence=2026-09-23T10:28:15.606Z (speech_final)
+turn-release=2026-09-23T10:28:15.766Z
+llm-request=2026-09-23T10:28:15.767Z
+llm-first-token=2026-09-23T10:28:15.768Z
+first-sentence-ready=2026-09-23T10:28:15.768Z
+tts-request=2026-09-23T10:28:15.768Z
+tts-first-audio=2026-09-23T10:28:15.768Z
+audio-queued=2026-09-23T10:28:15.768Z
+[TIMING:barge-in-test] TURN#0 DELTAS
+endpoint-to-release=160ms
+release-to-llm-request=1ms
+llm-to-first-token=1ms
+first-token-to-sentence=0ms
+sentence-to-tts=0ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=162ms
+[PIPELINE:barge-in-test] Turn complete: assistant="We have created Flexi Genie, which automates your online business. It builds fun..." llmMs=15 ttsMs=0
+[RESPONSE-LEN:barge-in-test] TURN#0 userChars=13 assistantChars=103 estTokens=26 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=2 audioQueuedMs=4636 briefRequested=false
+[PIPELINE:barge-in-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:barge-in-test] run() exiting — state=LISTENING aborted=true
+  [PASS] nothing heard at all still gets resumed rather than dropped
+
+SECTION F — a REAL interruption is untouched by all of the above
+[PIPELINE:barge-in-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:barge-in-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:barge-in-test] GREETING greeting-text-ready +0ms
+[TIMING:barge-in-test] GREETING tts-request +1ms
+[TIMING:barge-in-test] GREETING tts-first-chunk +1ms
+[TIMING:barge-in-test] GREETING audio-queued +1ms
+[PLAYBACK:barge-in-test] draining 4377ms of queued audio before leaving SPEAKING (queued=4227ms elapsed=0ms)
+[TIMING:barge-in-test] GREETING SUMMARY total=4380ms greeting-text-ready=0ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:barge-in-test] Greeting spoken: text="Hello Sakshi, this is Rohan calling from FlexiFunnels about the free AI workshop this Sunday." state=SPEAKING
+[PIPELINE:barge-in-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:barge-in-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:barge-in-test] TURN END turn-release=1790159305165 text="Yes, tell me." sttMs=0
+[STT:barge-in-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:barge-in-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:barge-in-test] TURN#0 turn-detected +0ms
+[TIMING:barge-in-test] TURN#0 stt-to-release=165ms (sttLag=n/ams)
+[LLM:barge-in-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:barge-in-test] TURN#0 llm-request +0ms
+[SPECULATE:barge-in-test] ADOPTED pre-opened request — llm-request is 165ms after the provider stream was opened (first token already in hand, 148ms ago) evidence-to-llm-open=0ms
+[TIMING:barge-in-test] TURN#0 llm-first-token +0ms
+[TIMING:barge-in-test] TURN#0 first-sentence-ready +0ms
+[TIMING:barge-in-test] TURN#0 tts-request +0ms
+[TIMING:barge-in-test] TURN#0 tts-first-chunk +0ms
+[TIMING:barge-in-test] TURN#0 audio-queued +0ms
+[PLAYBACK:barge-in-test] draining 4786ms of queued audio before leaving SPEAKING (queued=4636ms elapsed=0ms)
+[TURN:barge-in-test] barge-in ACCEPTED on transcript: "No, please do not call me again." — words=7 confidence=0.95 isFinal=true energyAgeMs=0 beganBeforeReply=false replyRemainingMs=4232 replyFullyQueued=true
+[TIMING:barge-in-test] TURN#0 SUMMARY total=405ms turn-detected=0ms llm-request=0ms llm-first-token=0ms first-sentence-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:barge-in-test] TURN#0
+speech-end=2026-09-23T10:28:25.000Z
+endpoint-evidence=2026-09-23T10:28:25.000Z (speech_final)
+turn-release=2026-09-23T10:28:25.165Z
+llm-request=2026-09-23T10:28:25.165Z
+llm-first-token=2026-09-23T10:28:25.165Z
+first-sentence-ready=2026-09-23T10:28:25.165Z
+tts-request=2026-09-23T10:28:25.165Z
+tts-first-audio=2026-09-23T10:28:25.165Z
+audio-queued=2026-09-23T10:28:25.165Z
+[TIMING:barge-in-test] TURN#0 DELTAS
+endpoint-to-release=165ms
+release-to-llm-request=0ms
+llm-to-first-token=0ms
+first-token-to-sentence=0ms
+sentence-to-tts=0ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=165ms
+[PIPELINE:barge-in-test] Turn complete: assistant="We have created Flexi Genie, which automates your online business. It builds fun..." llmMs=17 ttsMs=0
+[RESPONSE-LEN:barge-in-test] TURN#0 userChars=13 assistantChars=103 estTokens=26 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=2 audioQueuedMs=4636 briefRequested=false
+[PIPELINE:barge-in-test] Response #1 CANCELLED by barge-in — heard="" discarded="We have created Flexi Genie, which automates your online business. It builds fun..."
+[TIMING:barge-in-test] TURN END turn-release=1790159306179 text="No, please do not call me again." sttMs=0
+[STT:barge-in-test] Transcript received: "No, please do not call me again." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:barge-in-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:barge-in-test] TURN#1 turn-detected +0ms
+[TIMING:barge-in-test] TURN#1 stt-to-release=610ms (sttLag=n/ams)
+[LLM:barge-in-test] Sending to fake-llm: historyLength=4 roles=[system,assistant,user,user] streaming=true
+[TIMING:barge-in-test] TURN#1 llm-request +0ms
+[TIMING:barge-in-test] TURN#1 llm-first-token +15ms
+[TIMING:barge-in-test] TURN#1 tts-request +16ms
+[TIMING:barge-in-test] TURN#1 tts-first-chunk +16ms
+[TIMING:barge-in-test] TURN#1 audio-queued +16ms
+[PLAYBACK:barge-in-test] draining 1696ms of queued audio before leaving SPEAKING (queued=1546ms elapsed=0ms)
+[TIMING:barge-in-test] TURN#1 SUMMARY total=1715ms turn-detected=0ms llm-request=0ms llm-first-token=15ms tts-request=16ms tts-first-chunk=16ms audio-queued=16ms
+[TIMING:barge-in-test] TURN#1
+speech-end=2026-09-23T10:28:25.569Z
+endpoint-evidence=2026-09-23T10:28:25.570Z (speech_final)
+turn-release=2026-09-23T10:28:26.179Z
+llm-request=2026-09-23T10:28:26.179Z
+llm-first-token=2026-09-23T10:28:26.194Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T10:28:26.195Z
+tts-first-audio=2026-09-23T10:28:26.195Z
+audio-queued=2026-09-23T10:28:26.195Z
+[TIMING:barge-in-test] TURN#1 DELTAS
+endpoint-to-release=609ms
+release-to-llm-request=0ms
+llm-to-first-token=15ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=626ms
+[PIPELINE:barge-in-test] Turn complete: assistant="No problem, I will not call again." llmMs=14 ttsMs=0
+[RESPONSE-LEN:barge-in-test] TURN#1 userChars=32 assistantChars=34 estTokens=9 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1546 briefRequested=false
+[PIPELINE:barge-in-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:barge-in-test] run() exiting — state=LISTENING aborted=true
+  [FAIL] loud, confident, meaningful speech still interrupts and still wins
+         timed out after 15000ms waiting for 3 replies (have 2, state=LISTENING)
+[PIPELINE:barge-in-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:barge-in-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:barge-in-test] GREETING greeting-text-ready +0ms
+[TIMING:barge-in-test] GREETING tts-request +0ms
+[TIMING:barge-in-test] GREETING tts-first-chunk +0ms
+[TIMING:barge-in-test] GREETING audio-queued +0ms
+[PLAYBACK:barge-in-test] draining 4377ms of queued audio before leaving SPEAKING (queued=4227ms elapsed=0ms)
+[TIMING:barge-in-test] GREETING SUMMARY total=4377ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:barge-in-test] Greeting spoken: text="Hello Sakshi, this is Rohan calling from FlexiFunnels about the free AI workshop this Sunday." state=SPEAKING
+[PIPELINE:barge-in-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:barge-in-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:barge-in-test] TURN END turn-release=1790159325154 text="Yes, tell me." sttMs=0
+[STT:barge-in-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:barge-in-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:barge-in-test] TURN#0 turn-detected +1ms
+[TIMING:barge-in-test] TURN#0 stt-to-release=161ms (sttLag=n/ams)
+[LLM:barge-in-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:barge-in-test] TURN#0 llm-request +1ms
+[SPECULATE:barge-in-test] ADOPTED pre-opened request — llm-request is 161ms after the provider stream was opened (first token already in hand, 145ms ago) evidence-to-llm-open=0ms
+[TIMING:barge-in-test] TURN#0 llm-first-token +1ms
+[TIMING:barge-in-test] TURN#0 first-sentence-ready +2ms
+[TIMING:barge-in-test] TURN#0 tts-request +2ms
+[TIMING:barge-in-test] TURN#0 tts-first-chunk +2ms
+[TIMING:barge-in-test] TURN#0 audio-queued +2ms
+[PLAYBACK:barge-in-test] draining 14150ms of queued audio before leaving SPEAKING (queued=14000ms elapsed=0ms)
+[TURN:barge-in-test] backchannel ignored (not a barge-in): "okay" — 13665ms of reply still to play
+[TIMING:barge-in-test] TURN#0 SUMMARY total=14156ms turn-detected=1ms llm-request=1ms llm-first-token=1ms first-sentence-ready=2ms tts-request=2ms tts-first-chunk=2ms audio-queued=2ms
+[TIMING:barge-in-test] TURN#0
+speech-end=2026-09-23T10:28:44.994Z
+endpoint-evidence=2026-09-23T10:28:44.994Z (speech_final)
+turn-release=2026-09-23T10:28:45.154Z
+llm-request=2026-09-23T10:28:45.155Z
+llm-first-token=2026-09-23T10:28:45.155Z
+first-sentence-ready=2026-09-23T10:28:45.156Z
+tts-request=2026-09-23T10:28:45.156Z
+tts-first-audio=2026-09-23T10:28:45.156Z
+audio-queued=2026-09-23T10:28:45.156Z
+[TIMING:barge-in-test] TURN#0 DELTAS
+endpoint-to-release=160ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=1ms
+sentence-to-tts=0ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=162ms
+[PIPELINE:barge-in-test] Turn complete: assistant="We have created Flexi Genie, which automates your online business. It builds fun..." llmMs=16 ttsMs=0
+[RESPONSE-LEN:barge-in-test] TURN#0 userChars=13 assistantChars=311 estTokens=78 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=4 audioQueuedMs=14000 briefRequested=false
+[PIPELINE:barge-in-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:barge-in-test] run() exiting — state=LISTENING aborted=true
+  [PASS] a backchannel is still ignored, and is still not a barge-in
+
+SECTION J — FIX 1: backchannels over a long block on a BOUNDED (backpressured) transport
+[PIPELINE:barge-in-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:barge-in-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:barge-in-test] GREETING greeting-text-ready +0ms
+[TIMING:barge-in-test] GREETING tts-request +0ms
+[TIMING:barge-in-test] GREETING tts-first-chunk +0ms
+[TIMING:barge-in-test] GREETING audio-queued +0ms
+[PLAYBACK:barge-in-test] draining 734ms of queued audio before leaving SPEAKING (queued=4227ms elapsed=3643ms)
+[TIMING:barge-in-test] GREETING SUMMARY total=4381ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:barge-in-test] Greeting spoken: text="Hello Sakshi, this is Rohan calling from FlexiFunnels about the free AI workshop this Sunday." state=SPEAKING
+[PIPELINE:barge-in-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:barge-in-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:barge-in-test] TURN END turn-release=1790159343916 text="Yes, tell me." sttMs=0
+[STT:barge-in-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:barge-in-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:barge-in-test] TURN#0 turn-detected +0ms
+[TIMING:barge-in-test] TURN#0 stt-to-release=159ms (sttLag=n/ams)
+[LLM:barge-in-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:barge-in-test] TURN#0 llm-request +0ms
+[SPECULATE:barge-in-test] ADOPTED pre-opened request — llm-request is 159ms after the provider stream was opened (first token already in hand, 144ms ago) evidence-to-llm-open=0ms
+[TIMING:barge-in-test] TURN#0 llm-first-token +1ms
+[TIMING:barge-in-test] TURN#0 first-sentence-ready +1ms
+[TIMING:barge-in-test] TURN#0 tts-request +1ms
+[TIMING:barge-in-test] TURN#0 tts-first-chunk +1ms
+[TIMING:barge-in-test] TURN#0 audio-queued +1ms
+[TURN:barge-in-test] backchannel ignored (not a barge-in): "haan" — 1760ms of reply still to play
+[TURN:barge-in-test] backchannel ignored (not a barge-in): "haan" — 1509ms of reply still to play
+[PLAYBACK:barge-in-test] draining 739ms of queued audio before leaving SPEAKING (queued=12091ms elapsed=11502ms)
+[TIMING:barge-in-test] TURN#0 SUMMARY total=12257ms turn-detected=0ms llm-request=0ms llm-first-token=1ms first-sentence-ready=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:barge-in-test] TURN#0
+speech-end=2026-09-23T10:29:03.757Z
+endpoint-evidence=2026-09-23T10:29:03.757Z (speech_final)
+turn-release=2026-09-23T10:29:03.916Z
+llm-request=2026-09-23T10:29:03.916Z
+llm-first-token=2026-09-23T10:29:03.917Z
+first-sentence-ready=2026-09-23T10:29:03.917Z
+tts-request=2026-09-23T10:29:03.917Z
+tts-first-audio=2026-09-23T10:29:03.917Z
+audio-queued=2026-09-23T10:29:03.917Z
+[TIMING:barge-in-test] TURN#0 DELTAS
+endpoint-to-release=159ms
+release-to-llm-request=0ms
+llm-to-first-token=1ms
+first-token-to-sentence=0ms
+sentence-to-tts=0ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=160ms
+[PIPELINE:barge-in-test] Turn complete: assistant="We have created Flexi Genie now. It runs your whole business well. It builds all..." llmMs=15 ttsMs=0
+[RESPONSE-LEN:barge-in-test] TURN#0 userChars=13 assistantChars=269 estTokens=68 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=4 audioQueuedMs=12091 briefRequested=false
+[PIPELINE:barge-in-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:barge-in-test] run() exiting — state=LISTENING aborted=true
+  [PASS] J1 — "haan" over the block: no interruption, no request, no user turn, block intact
+[PIPELINE:barge-in-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:barge-in-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:barge-in-test] GREETING greeting-text-ready +0ms
+[TIMING:barge-in-test] GREETING tts-request +0ms
+[TIMING:barge-in-test] GREETING tts-first-chunk +0ms
+[TIMING:barge-in-test] GREETING audio-queued +0ms
+[PLAYBACK:barge-in-test] draining 737ms of queued audio before leaving SPEAKING (queued=4227ms elapsed=3640ms)
+[TIMING:barge-in-test] GREETING SUMMARY total=4390ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:barge-in-test] Greeting spoken: text="Hello Sakshi, this is Rohan calling from FlexiFunnels about the free AI workshop this Sunday." state=SPEAKING
+[PIPELINE:barge-in-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:barge-in-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:barge-in-test] TURN END turn-release=1790159360742 text="Yes, tell me." sttMs=0
+[STT:barge-in-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:barge-in-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:barge-in-test] TURN#0 turn-detected +0ms
+[TIMING:barge-in-test] TURN#0 stt-to-release=161ms (sttLag=n/ams)
+[LLM:barge-in-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:barge-in-test] TURN#0 llm-request +1ms
+[SPECULATE:barge-in-test] ADOPTED pre-opened request — llm-request is 162ms after the provider stream was opened (first token already in hand, 146ms ago) evidence-to-llm-open=0ms
+[TIMING:barge-in-test] TURN#0 llm-first-token +1ms
+[TIMING:barge-in-test] TURN#0 first-sentence-ready +1ms
+[TIMING:barge-in-test] TURN#0 tts-request +1ms
+[TIMING:barge-in-test] TURN#0 tts-first-chunk +1ms
+[TIMING:barge-in-test] TURN#0 audio-queued +1ms
+[TURN:barge-in-test] backchannel ignored (not a barge-in): "haan ji" — 1758ms of reply still to play
+[TURN:barge-in-test] backchannel ignored (not a barge-in): "haan ji" — 1502ms of reply still to play
+[PLAYBACK:barge-in-test] draining 739ms of queued audio before leaving SPEAKING (queued=12091ms elapsed=11502ms)
+[TIMING:barge-in-test] TURN#0 SUMMARY total=12256ms turn-detected=0ms llm-request=1ms llm-first-token=1ms first-sentence-ready=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:barge-in-test] TURN#0
+speech-end=2026-09-23T10:29:20.581Z
+endpoint-evidence=2026-09-23T10:29:20.581Z (speech_final)
+turn-release=2026-09-23T10:29:20.742Z
+llm-request=2026-09-23T10:29:20.743Z
+llm-first-token=2026-09-23T10:29:20.743Z
+first-sentence-ready=2026-09-23T10:29:20.743Z
+tts-request=2026-09-23T10:29:20.743Z
+tts-first-audio=2026-09-23T10:29:20.743Z
+audio-queued=2026-09-23T10:29:20.743Z
+[TIMING:barge-in-test] TURN#0 DELTAS
+endpoint-to-release=161ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=0ms
+sentence-to-tts=0ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=162ms
+[PIPELINE:barge-in-test] Turn complete: assistant="We have created Flexi Genie now. It runs your whole business well. It builds all..." llmMs=16 ttsMs=0
+[RESPONSE-LEN:barge-in-test] TURN#0 userChars=13 assistantChars=269 estTokens=68 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=4 audioQueuedMs=12091 briefRequested=false
+[PIPELINE:barge-in-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:barge-in-test] run() exiting — state=LISTENING aborted=true
+  [PASS] J1 — "haan ji" over the block: no interruption, no request, no user turn, block intact
+[PIPELINE:barge-in-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:barge-in-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:barge-in-test] GREETING greeting-text-ready +0ms
+[TIMING:barge-in-test] GREETING tts-request +0ms
+[TIMING:barge-in-test] GREETING tts-first-chunk +0ms
+[TIMING:barge-in-test] GREETING audio-queued +0ms
+[PLAYBACK:barge-in-test] draining 742ms of queued audio before leaving SPEAKING (queued=4227ms elapsed=3635ms)
+[TIMING:barge-in-test] GREETING SUMMARY total=4386ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:barge-in-test] Greeting spoken: text="Hello Sakshi, this is Rohan calling from FlexiFunnels about the free AI workshop this Sunday." state=SPEAKING
+[PIPELINE:barge-in-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:barge-in-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:barge-in-test] TURN END turn-release=1790159377560 text="Yes, tell me." sttMs=0
+[STT:barge-in-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:barge-in-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:barge-in-test] TURN#0 turn-detected +1ms
+[TIMING:barge-in-test] TURN#0 stt-to-release=159ms (sttLag=n/ams)
+[LLM:barge-in-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:barge-in-test] TURN#0 llm-request +1ms
+[SPECULATE:barge-in-test] ADOPTED pre-opened request — llm-request is 159ms after the provider stream was opened (first token already in hand, 144ms ago) evidence-to-llm-open=0ms
+[TIMING:barge-in-test] TURN#0 llm-first-token +1ms
+[TIMING:barge-in-test] TURN#0 first-sentence-ready +1ms
+[TIMING:barge-in-test] TURN#0 tts-request +2ms
+[TIMING:barge-in-test] TURN#0 tts-first-chunk +2ms
+[TIMING:barge-in-test] TURN#0 audio-queued +2ms
+[TURN:barge-in-test] backchannel ignored (not a barge-in): "okay" — 1757ms of reply still to play
+[TURN:barge-in-test] backchannel ignored (not a barge-in): "okay" — 1502ms of reply still to play
+[PLAYBACK:barge-in-test] draining 737ms of queued audio before leaving SPEAKING (queued=12091ms elapsed=11504ms)
+[TIMING:barge-in-test] TURN#0 SUMMARY total=12257ms turn-detected=1ms llm-request=1ms llm-first-token=1ms first-sentence-ready=1ms tts-request=2ms tts-first-chunk=2ms audio-queued=2ms
+[TIMING:barge-in-test] TURN#0
+speech-end=2026-09-23T10:29:37.402Z
+endpoint-evidence=2026-09-23T10:29:37.402Z (speech_final)
+turn-release=2026-09-23T10:29:37.560Z
+llm-request=2026-09-23T10:29:37.561Z
+llm-first-token=2026-09-23T10:29:37.561Z
+first-sentence-ready=2026-09-23T10:29:37.561Z
+tts-request=2026-09-23T10:29:37.562Z
+tts-first-audio=2026-09-23T10:29:37.562Z
+audio-queued=2026-09-23T10:29:37.562Z
+[TIMING:barge-in-test] TURN#0 DELTAS
+endpoint-to-release=158ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=0ms
+sentence-to-tts=1ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=160ms
+[PIPELINE:barge-in-test] Turn complete: assistant="We have created Flexi Genie now. It runs your whole business well. It builds all..." llmMs=15 ttsMs=0
+[RESPONSE-LEN:barge-in-test] TURN#0 userChars=13 assistantChars=269 estTokens=68 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=4 audioQueuedMs=12091 briefRequested=false
+[PIPELINE:barge-in-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:barge-in-test] run() exiting — state=LISTENING aborted=true
+  [PASS] J1 — "okay" over the block: no interruption, no request, no user turn, block intact
+[PIPELINE:barge-in-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:barge-in-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:barge-in-test] GREETING greeting-text-ready +0ms
+[TIMING:barge-in-test] GREETING tts-request +0ms
+[TIMING:barge-in-test] GREETING tts-first-chunk +0ms
+[TIMING:barge-in-test] GREETING audio-queued +0ms
+[PLAYBACK:barge-in-test] draining 746ms of queued audio before leaving SPEAKING (queued=4227ms elapsed=3631ms)
+[TIMING:barge-in-test] GREETING SUMMARY total=4381ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:barge-in-test] Greeting spoken: text="Hello Sakshi, this is Rohan calling from FlexiFunnels about the free AI workshop this Sunday." state=SPEAKING
+[PIPELINE:barge-in-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:barge-in-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:barge-in-test] TURN END turn-release=1790159394374 text="Yes, tell me." sttMs=0
+[STT:barge-in-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:barge-in-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:barge-in-test] TURN#0 turn-detected +1ms
+[TIMING:barge-in-test] TURN#0 stt-to-release=159ms (sttLag=n/ams)
+[LLM:barge-in-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:barge-in-test] TURN#0 llm-request +1ms
+[SPECULATE:barge-in-test] ADOPTED pre-opened request — llm-request is 159ms after the provider stream was opened (first token already in hand, 143ms ago) evidence-to-llm-open=0ms
+[TIMING:barge-in-test] TURN#0 llm-first-token +1ms
+[TIMING:barge-in-test] TURN#0 first-sentence-ready +2ms
+[TIMING:barge-in-test] TURN#0 tts-request +2ms
+[TIMING:barge-in-test] TURN#0 tts-first-chunk +2ms
+[TIMING:barge-in-test] TURN#0 audio-queued +2ms
+[TURN:barge-in-test] backchannel ignored (not a barge-in): "yeah" — 1757ms of reply still to play
+[TURN:barge-in-test] backchannel ignored (not a barge-in): "yeah" — 1501ms of reply still to play
+[PLAYBACK:barge-in-test] draining 751ms of queued audio before leaving SPEAKING (queued=12091ms elapsed=11490ms)
+[TIMING:barge-in-test] TURN#0 SUMMARY total=12250ms turn-detected=1ms llm-request=1ms llm-first-token=1ms first-sentence-ready=2ms tts-request=2ms tts-first-chunk=2ms audio-queued=2ms
+[TIMING:barge-in-test] TURN#0
+speech-end=2026-09-23T10:29:54.216Z
+endpoint-evidence=2026-09-23T10:29:54.216Z (speech_final)
+turn-release=2026-09-23T10:29:54.374Z
+llm-request=2026-09-23T10:29:54.375Z
+llm-first-token=2026-09-23T10:29:54.375Z
+first-sentence-ready=2026-09-23T10:29:54.376Z
+tts-request=2026-09-23T10:29:54.376Z
+tts-first-audio=2026-09-23T10:29:54.376Z
+audio-queued=2026-09-23T10:29:54.376Z
+[TIMING:barge-in-test] TURN#0 DELTAS
+endpoint-to-release=158ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=1ms
+sentence-to-tts=0ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=160ms
+[PIPELINE:barge-in-test] Turn complete: assistant="We have created Flexi Genie now. It runs your whole business well. It builds all..." llmMs=16 ttsMs=0
+[RESPONSE-LEN:barge-in-test] TURN#0 userChars=13 assistantChars=269 estTokens=68 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=4 audioQueuedMs=12091 briefRequested=false
+[PIPELINE:barge-in-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:barge-in-test] run() exiting — state=LISTENING aborted=true
+  [PASS] J1 — "yeah" over the block: no interruption, no request, no user turn, block intact
+[PIPELINE:barge-in-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:barge-in-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:barge-in-test] GREETING greeting-text-ready +0ms
+[TIMING:barge-in-test] GREETING tts-request +1ms
+[TIMING:barge-in-test] GREETING tts-first-chunk +1ms
+[TIMING:barge-in-test] GREETING audio-queued +1ms
+[PLAYBACK:barge-in-test] draining 737ms of queued audio before leaving SPEAKING (queued=4227ms elapsed=3640ms)
+[TIMING:barge-in-test] GREETING SUMMARY total=4393ms greeting-text-ready=0ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:barge-in-test] Greeting spoken: text="Hello Sakshi, this is Rohan calling from FlexiFunnels about the free AI workshop this Sunday." state=SPEAKING
+[PIPELINE:barge-in-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:barge-in-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=1ms historyLength=3
+[TIMING:barge-in-test] TURN END turn-release=1790159411210 text="Yes, tell me." sttMs=0
+[STT:barge-in-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:barge-in-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:barge-in-test] TURN#0 turn-detected +0ms
+[TIMING:barge-in-test] TURN#0 stt-to-release=161ms (sttLag=n/ams)
+[LLM:barge-in-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:barge-in-test] TURN#0 llm-request +1ms
+[SPECULATE:barge-in-test] ADOPTED pre-opened request — llm-request is 161ms after the provider stream was opened (first token already in hand, 146ms ago) evidence-to-llm-open=1ms
+[TIMING:barge-in-test] TURN#0 llm-first-token +1ms
+[TIMING:barge-in-test] TURN#0 first-sentence-ready +1ms
+[TIMING:barge-in-test] TURN#0 tts-request +1ms
+[TIMING:barge-in-test] TURN#0 tts-first-chunk +1ms
+[TIMING:barge-in-test] TURN#0 audio-queued +1ms
+[TURN:barge-in-test] backchannel ignored (not a barge-in): "hmm" — 1756ms of reply still to play
+[TURN:barge-in-test] backchannel ignored (not a barge-in): "hmm" — 1502ms of reply still to play
+[PLAYBACK:barge-in-test] draining 745ms of queued audio before leaving SPEAKING (queued=12091ms elapsed=11496ms)
+[TIMING:barge-in-test] TURN#0 SUMMARY total=12248ms turn-detected=0ms llm-request=1ms llm-first-token=1ms first-sentence-ready=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:barge-in-test] TURN#0
+speech-end=2026-09-23T10:30:11.049Z
+endpoint-evidence=2026-09-23T10:30:11.049Z (speech_final)
+turn-release=2026-09-23T10:30:11.210Z
+llm-request=2026-09-23T10:30:11.211Z
+llm-first-token=2026-09-23T10:30:11.211Z
+first-sentence-ready=2026-09-23T10:30:11.211Z
+tts-request=2026-09-23T10:30:11.211Z
+tts-first-audio=2026-09-23T10:30:11.211Z
+audio-queued=2026-09-23T10:30:11.211Z
+[TIMING:barge-in-test] TURN#0 DELTAS
+endpoint-to-release=161ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=0ms
+sentence-to-tts=0ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=162ms
+[PIPELINE:barge-in-test] Turn complete: assistant="We have created Flexi Genie now. It runs your whole business well. It builds all..." llmMs=15 ttsMs=0
+[RESPONSE-LEN:barge-in-test] TURN#0 userChars=13 assistantChars=269 estTokens=68 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=4 audioQueuedMs=12091 briefRequested=false
+[PIPELINE:barge-in-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:barge-in-test] run() exiting — state=LISTENING aborted=true
+  [PASS] J1 — "hmm" over the block: no interruption, no request, no user turn, block intact
+[PIPELINE:barge-in-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:barge-in-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:barge-in-test] GREETING greeting-text-ready +0ms
+[TIMING:barge-in-test] GREETING tts-request +0ms
+[TIMING:barge-in-test] GREETING tts-first-chunk +0ms
+[TIMING:barge-in-test] GREETING audio-queued +0ms
+[PLAYBACK:barge-in-test] draining 742ms of queued audio before leaving SPEAKING (queued=4227ms elapsed=3635ms)
+[TIMING:barge-in-test] GREETING SUMMARY total=4383ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:barge-in-test] Greeting spoken: text="Hello Sakshi, this is Rohan calling from FlexiFunnels about the free AI workshop this Sunday." state=SPEAKING
+[PIPELINE:barge-in-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:barge-in-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=1ms historyLength=3
+[TIMING:barge-in-test] TURN END turn-release=1790159428034 text="Yes, tell me." sttMs=0
+[STT:barge-in-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:barge-in-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:barge-in-test] TURN#0 turn-detected +0ms
+[TIMING:barge-in-test] TURN#0 stt-to-release=160ms (sttLag=n/ams)
+[LLM:barge-in-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:barge-in-test] TURN#0 llm-request +0ms
+[SPECULATE:barge-in-test] ADOPTED pre-opened request — llm-request is 159ms after the provider stream was opened (first token already in hand, 144ms ago) evidence-to-llm-open=1ms
+[TIMING:barge-in-test] TURN#0 llm-first-token +1ms
+[TIMING:barge-in-test] TURN#0 first-sentence-ready +1ms
+[TIMING:barge-in-test] TURN#0 tts-request +1ms
+[TIMING:barge-in-test] TURN#0 tts-first-chunk +1ms
+[TIMING:barge-in-test] TURN#0 audio-queued +1ms
+[TURN:barge-in-test] backchannel ignored (not a barge-in): "acha" — 1755ms of reply still to play
+[TURN:barge-in-test] backchannel ignored (not a barge-in): "acha" — 1501ms of reply still to play
+[PLAYBACK:barge-in-test] draining 741ms of queued audio before leaving SPEAKING (queued=12091ms elapsed=11500ms)
+[TIMING:barge-in-test] TURN#0 SUMMARY total=12256ms turn-detected=0ms llm-request=0ms llm-first-token=1ms first-sentence-ready=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:barge-in-test] TURN#0
+speech-end=2026-09-23T10:30:27.874Z
+endpoint-evidence=2026-09-23T10:30:27.874Z (speech_final)
+turn-release=2026-09-23T10:30:28.034Z
+llm-request=2026-09-23T10:30:28.034Z
+llm-first-token=2026-09-23T10:30:28.035Z
+first-sentence-ready=2026-09-23T10:30:28.035Z
+tts-request=2026-09-23T10:30:28.035Z
+tts-first-audio=2026-09-23T10:30:28.035Z
+audio-queued=2026-09-23T10:30:28.035Z
+[TIMING:barge-in-test] TURN#0 DELTAS
+endpoint-to-release=160ms
+release-to-llm-request=0ms
+llm-to-first-token=1ms
+first-token-to-sentence=0ms
+sentence-to-tts=0ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=161ms
+[PIPELINE:barge-in-test] Turn complete: assistant="We have created Flexi Genie now. It runs your whole business well. It builds all..." llmMs=15 ttsMs=0
+[RESPONSE-LEN:barge-in-test] TURN#0 userChars=13 assistantChars=269 estTokens=68 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=4 audioQueuedMs=12091 briefRequested=false
+[PIPELINE:barge-in-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:barge-in-test] run() exiting — state=LISTENING aborted=true
+  [PASS] J1 — "acha" over the block: no interruption, no request, no user turn, block intact
+[PIPELINE:barge-in-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:barge-in-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:barge-in-test] GREETING greeting-text-ready +0ms
+[TIMING:barge-in-test] GREETING tts-request +0ms
+[TIMING:barge-in-test] GREETING tts-first-chunk +0ms
+[TIMING:barge-in-test] GREETING audio-queued +0ms
+[PLAYBACK:barge-in-test] draining 750ms of queued audio before leaving SPEAKING (queued=4227ms elapsed=3627ms)
+[TIMING:barge-in-test] GREETING SUMMARY total=4393ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:barge-in-test] Greeting spoken: text="Hello Sakshi, this is Rohan calling from FlexiFunnels about the free AI workshop this Sunday." state=SPEAKING
+[PIPELINE:barge-in-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:barge-in-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:barge-in-test] TURN END turn-release=1790159444852 text="Yes, tell me." sttMs=0
+[STT:barge-in-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:barge-in-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:barge-in-test] TURN#0 turn-detected +0ms
+[TIMING:barge-in-test] TURN#0 stt-to-release=151ms (sttLag=n/ams)
+[LLM:barge-in-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:barge-in-test] TURN#0 llm-request +1ms
+[SPECULATE:barge-in-test] ADOPTED pre-opened request — llm-request is 152ms after the provider stream was opened (first token already in hand, 138ms ago) evidence-to-llm-open=0ms
+[TIMING:barge-in-test] TURN#0 llm-first-token +1ms
+[TIMING:barge-in-test] TURN#0 first-sentence-ready +1ms
+[TIMING:barge-in-test] TURN#0 tts-request +1ms
+[TIMING:barge-in-test] TURN#0 tts-first-chunk +1ms
+[TIMING:barge-in-test] TURN#0 audio-queued +1ms
+[TURN:barge-in-test] backchannel ignored (not a barge-in): "ji" — 1785ms of reply still to play
+[TURN:barge-in-test] backchannel ignored (not a barge-in): "ji" — 1531ms of reply still to play
+[PLAYBACK:barge-in-test] draining 749ms of queued audio before leaving SPEAKING (queued=12091ms elapsed=11492ms)
+[TIMING:barge-in-test] TURN#0 SUMMARY total=12245ms turn-detected=0ms llm-request=1ms llm-first-token=1ms first-sentence-ready=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:barge-in-test] TURN#0
+speech-end=2026-09-23T10:30:44.701Z
+endpoint-evidence=2026-09-23T10:30:44.701Z (speech_final)
+turn-release=2026-09-23T10:30:44.852Z
+llm-request=2026-09-23T10:30:44.853Z
+llm-first-token=2026-09-23T10:30:44.853Z
+first-sentence-ready=2026-09-23T10:30:44.853Z
+tts-request=2026-09-23T10:30:44.853Z
+tts-first-audio=2026-09-23T10:30:44.853Z
+audio-queued=2026-09-23T10:30:44.853Z
+[TIMING:barge-in-test] TURN#0 DELTAS
+endpoint-to-release=151ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=0ms
+sentence-to-tts=0ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=152ms
+[PIPELINE:barge-in-test] Turn complete: assistant="We have created Flexi Genie now. It runs your whole business well. It builds all..." llmMs=14 ttsMs=0
+[RESPONSE-LEN:barge-in-test] TURN#0 userChars=13 assistantChars=269 estTokens=68 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=4 audioQueuedMs=12091 briefRequested=false
+[PIPELINE:barge-in-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:barge-in-test] run() exiting — state=LISTENING aborted=true
+  [PASS] J1 — "ji" over the block: no interruption, no request, no user turn, block intact
+[PIPELINE:barge-in-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:barge-in-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:barge-in-test] GREETING greeting-text-ready +0ms
+[TIMING:barge-in-test] GREETING tts-request +0ms
+[TIMING:barge-in-test] GREETING tts-first-chunk +0ms
+[TIMING:barge-in-test] GREETING audio-queued +0ms
+[PLAYBACK:barge-in-test] draining 735ms of queued audio before leaving SPEAKING (queued=4227ms elapsed=3642ms)
+[TIMING:barge-in-test] GREETING SUMMARY total=4392ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:barge-in-test] Greeting spoken: text="Hello Sakshi, this is Rohan calling from FlexiFunnels about the free AI workshop this Sunday." state=SPEAKING
+[PIPELINE:barge-in-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:barge-in-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:barge-in-test] TURN END turn-release=1790159461682 text="Yes, tell me." sttMs=0
+[STT:barge-in-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:barge-in-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:barge-in-test] TURN#0 turn-detected +1ms
+[TIMING:barge-in-test] TURN#0 stt-to-release=162ms (sttLag=n/ams)
+[LLM:barge-in-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:barge-in-test] TURN#0 llm-request +1ms
+[SPECULATE:barge-in-test] ADOPTED pre-opened request — llm-request is 161ms after the provider stream was opened (first token already in hand, 145ms ago) evidence-to-llm-open=0ms
+[TIMING:barge-in-test] TURN#0 llm-first-token +1ms
+[TIMING:barge-in-test] TURN#0 first-sentence-ready +1ms
+[TIMING:barge-in-test] TURN#0 tts-request +1ms
+[TIMING:barge-in-test] TURN#0 tts-first-chunk +1ms
+[TIMING:barge-in-test] TURN#0 audio-queued +1ms
+[TURN:barge-in-test] backchannel ignored (not a barge-in): "right" — 1757ms of reply still to play
+[TURN:barge-in-test] backchannel ignored (not a barge-in): "right" — 1500ms of reply still to play
+[PLAYBACK:barge-in-test] draining 745ms of queued audio before leaving SPEAKING (queued=12091ms elapsed=11496ms)
+[TIMING:barge-in-test] TURN#0 SUMMARY total=12249ms turn-detected=1ms llm-request=1ms llm-first-token=1ms first-sentence-ready=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:barge-in-test] TURN#0
+speech-end=2026-09-23T10:31:01.521Z
+endpoint-evidence=2026-09-23T10:31:01.522Z (speech_final)
+turn-release=2026-09-23T10:31:01.682Z
+llm-request=2026-09-23T10:31:01.683Z
+llm-first-token=2026-09-23T10:31:01.683Z
+first-sentence-ready=2026-09-23T10:31:01.683Z
+tts-request=2026-09-23T10:31:01.683Z
+tts-first-audio=2026-09-23T10:31:01.683Z
+audio-queued=2026-09-23T10:31:01.683Z
+[TIMING:barge-in-test] TURN#0 DELTAS
+endpoint-to-release=160ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=0ms
+sentence-to-tts=0ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=162ms
+[PIPELINE:barge-in-test] Turn complete: assistant="We have created Flexi Genie now. It runs your whole business well. It builds all..." llmMs=16 ttsMs=0
+[RESPONSE-LEN:barge-in-test] TURN#0 userChars=13 assistantChars=269 estTokens=68 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=4 audioQueuedMs=12091 briefRequested=false
+[PIPELINE:barge-in-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:barge-in-test] run() exiting — state=LISTENING aborted=true
+  [PASS] J1 — "right" over the block: no interruption, no request, no user turn, block intact
+[PIPELINE:barge-in-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:barge-in-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:barge-in-test] GREETING greeting-text-ready +0ms
+[TIMING:barge-in-test] GREETING tts-request +0ms
+[TIMING:barge-in-test] GREETING tts-first-chunk +0ms
+[TIMING:barge-in-test] GREETING audio-queued +0ms
+[PLAYBACK:barge-in-test] draining 743ms of queued audio before leaving SPEAKING (queued=4227ms elapsed=3634ms)
+[TIMING:barge-in-test] GREETING SUMMARY total=4384ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:barge-in-test] Greeting spoken: text="Hello Sakshi, this is Rohan calling from FlexiFunnels about the free AI workshop this Sunday." state=SPEAKING
+[PIPELINE:barge-in-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:barge-in-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:barge-in-test] TURN END turn-release=1790159478523 text="Yes, tell me." sttMs=0
+[STT:barge-in-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:barge-in-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:barge-in-test] TURN#0 turn-detected +1ms
+[TIMING:barge-in-test] TURN#0 stt-to-release=160ms (sttLag=n/ams)
+[LLM:barge-in-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:barge-in-test] TURN#0 llm-request +1ms
+[SPECULATE:barge-in-test] ADOPTED pre-opened request — llm-request is 160ms after the provider stream was opened (first token already in hand, 144ms ago) evidence-to-llm-open=0ms
+[TIMING:barge-in-test] TURN#0 llm-first-token +1ms
+[TIMING:barge-in-test] TURN#0 first-sentence-ready +1ms
+[TIMING:barge-in-test] TURN#0 tts-request +1ms
+[TIMING:barge-in-test] TURN#0 tts-first-chunk +1ms
+[TIMING:barge-in-test] TURN#0 audio-queued +1ms
+[TURN:barge-in-test] backchannel ignored (not a barge-in): "Haanji." — 1766ms of reply still to play
+[TURN:barge-in-test] backchannel ignored (not a barge-in): "Haanji." — 1512ms of reply still to play
+[PLAYBACK:barge-in-test] draining 748ms of queued audio before leaving SPEAKING (queued=12091ms elapsed=11493ms)
+[TIMING:barge-in-test] TURN#0 SUMMARY total=12257ms turn-detected=1ms llm-request=1ms llm-first-token=1ms first-sentence-ready=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:barge-in-test] TURN#0
+speech-end=2026-09-23T10:31:18.364Z
+endpoint-evidence=2026-09-23T10:31:18.364Z (speech_final)
+turn-release=2026-09-23T10:31:18.523Z
+llm-request=2026-09-23T10:31:18.524Z
+llm-first-token=2026-09-23T10:31:18.524Z
+first-sentence-ready=2026-09-23T10:31:18.524Z
+tts-request=2026-09-23T10:31:18.524Z
+tts-first-audio=2026-09-23T10:31:18.524Z
+audio-queued=2026-09-23T10:31:18.524Z
+[TIMING:barge-in-test] TURN#0 DELTAS
+endpoint-to-release=159ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=0ms
+sentence-to-tts=0ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=160ms
+[PIPELINE:barge-in-test] Turn complete: assistant="We have created Flexi Genie now. It runs your whole business well. It builds all..." llmMs=16 ttsMs=0
+[RESPONSE-LEN:barge-in-test] TURN#0 userChars=13 assistantChars=269 estTokens=68 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=4 audioQueuedMs=12091 briefRequested=false
+[PIPELINE:barge-in-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:barge-in-test] run() exiting — state=LISTENING aborted=true
+  [PASS] J1 — "Haanji." over the block: no interruption, no request, no user turn, block intact
+[PIPELINE:barge-in-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:barge-in-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:barge-in-test] GREETING greeting-text-ready +0ms
+[TIMING:barge-in-test] GREETING tts-request +0ms
+[TIMING:barge-in-test] GREETING tts-first-chunk +0ms
+[TIMING:barge-in-test] GREETING audio-queued +1ms
+[PLAYBACK:barge-in-test] draining 739ms of queued audio before leaving SPEAKING (queued=4227ms elapsed=3638ms)
+[TIMING:barge-in-test] GREETING SUMMARY total=4390ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=1ms
+[PIPELINE:barge-in-test] Greeting spoken: text="Hello Sakshi, this is Rohan calling from FlexiFunnels about the free AI workshop this Sunday." state=SPEAKING
+[PIPELINE:barge-in-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:barge-in-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:barge-in-test] TURN END turn-release=1790159495347 text="Yes, tell me." sttMs=0
+[STT:barge-in-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:barge-in-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:barge-in-test] TURN#0 turn-detected +1ms
+[TIMING:barge-in-test] TURN#0 stt-to-release=160ms (sttLag=n/ams)
+[LLM:barge-in-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:barge-in-test] TURN#0 llm-request +1ms
+[SPECULATE:barge-in-test] ADOPTED pre-opened request — llm-request is 160ms after the provider stream was opened (first token already in hand, 144ms ago) evidence-to-llm-open=0ms
+[TIMING:barge-in-test] TURN#0 llm-first-token +1ms
+[TIMING:barge-in-test] TURN#0 first-sentence-ready +1ms
+[TIMING:barge-in-test] TURN#0 tts-request +1ms
+[TIMING:barge-in-test] TURN#0 tts-first-chunk +2ms
+[TIMING:barge-in-test] TURN#0 audio-queued +2ms
+[TURN:barge-in-test] backchannel ignored (not a barge-in): "haan ji" — 1760ms of reply still to play
+[TURN:barge-in-test] backchannel ignored (not a barge-in): "haan ji" — 1552ms of reply still to play
+[TURN:barge-in-test] backchannel ignored (not a barge-in): "okay" — 640ms of reply still to play
+[TURN:barge-in-test] backchannel ignored (not a barge-in): "okay" — 3524ms of reply still to play
+[TURN:barge-in-test] backchannel ignored (not a barge-in): "yeah" — 2616ms of reply still to play
+[TURN:barge-in-test] backchannel ignored (not a barge-in): "yeah" — 2410ms of reply still to play
+[TURN:barge-in-test] backchannel ignored (not a barge-in): "hmm okay" — 1500ms of reply still to play
+[TURN:barge-in-test] backchannel ignored (not a barge-in): "hmm okay" — 1293ms of reply still to play
+[TURN:barge-in-test] backchannel ignored (not a barge-in): "haan haan" — 3381ms of reply still to play
+[TURN:barge-in-test] backchannel ignored (not a barge-in): "haan haan" — 3173ms of reply still to play
+[PLAYBACK:barge-in-test] draining 739ms of queued audio before leaving SPEAKING (queued=12091ms elapsed=11502ms)
+[TIMING:barge-in-test] TURN#0 SUMMARY total=12254ms turn-detected=1ms llm-request=1ms llm-first-token=1ms first-sentence-ready=1ms tts-request=1ms tts-first-chunk=2ms audio-queued=2ms
+[TIMING:barge-in-test] TURN#0
+speech-end=2026-09-23T10:31:35.188Z
+endpoint-evidence=2026-09-23T10:31:35.188Z (speech_final)
+turn-release=2026-09-23T10:31:35.347Z
+llm-request=2026-09-23T10:31:35.348Z
+llm-first-token=2026-09-23T10:31:35.348Z
+first-sentence-ready=2026-09-23T10:31:35.348Z
+tts-request=2026-09-23T10:31:35.348Z
+tts-first-audio=2026-09-23T10:31:35.349Z
+audio-queued=2026-09-23T10:31:35.349Z
+[TIMING:barge-in-test] TURN#0 DELTAS
+endpoint-to-release=159ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=0ms
+sentence-to-tts=0ms
+tts-to-first-audio=1ms
+first-audio-to-queue=0ms
+speech-end-to-audio=161ms
+[PIPELINE:barge-in-test] Turn complete: assistant="We have created Flexi Genie now. It runs your whole business well. It builds all..." llmMs=16 ttsMs=0
+[RESPONSE-LEN:barge-in-test] TURN#0 userChars=13 assistantChars=269 estTokens=68 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=4 audioQueuedMs=12091 briefRequested=false
+[PIPELINE:barge-in-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:barge-in-test] run() exiting — state=LISTENING aborted=true
+  [PASS] J2 — STACKED backchannels across the block ('haan ji' … 'okay' … 'yeah'): block still intact, still one request
+[PIPELINE:barge-in-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:barge-in-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:barge-in-test] GREETING greeting-text-ready +0ms
+[TIMING:barge-in-test] GREETING tts-request +0ms
+[TIMING:barge-in-test] GREETING tts-first-chunk +0ms
+[TIMING:barge-in-test] GREETING audio-queued +0ms
+[PLAYBACK:barge-in-test] draining 738ms of queued audio before leaving SPEAKING (queued=4227ms elapsed=3639ms)
+[TIMING:barge-in-test] GREETING SUMMARY total=4393ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:barge-in-test] Greeting spoken: text="Hello Sakshi, this is Rohan calling from FlexiFunnels about the free AI workshop this Sunday." state=SPEAKING
+[PIPELINE:barge-in-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:barge-in-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=1ms historyLength=3
+[TIMING:barge-in-test] TURN END turn-release=1790159512186 text="Yes, tell me." sttMs=0
+[STT:barge-in-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:barge-in-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:barge-in-test] TURN#0 turn-detected +1ms
+[TIMING:barge-in-test] TURN#0 stt-to-release=160ms (sttLag=n/ams)
+[LLM:barge-in-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:barge-in-test] TURN#0 llm-request +1ms
+[SPECULATE:barge-in-test] ADOPTED pre-opened request — llm-request is 159ms after the provider stream was opened (first token already in hand, 144ms ago) evidence-to-llm-open=1ms
+[TIMING:barge-in-test] TURN#0 llm-first-token +1ms
+[TIMING:barge-in-test] TURN#0 first-sentence-ready +1ms
+[TIMING:barge-in-test] TURN#0 tts-request +2ms
+[TIMING:barge-in-test] TURN#0 tts-first-chunk +2ms
+[TIMING:barge-in-test] TURN#0 audio-queued +2ms
+[TURN:barge-in-test] barge-in ACCEPTED on transcript: "Wait, what about the price?" — words=5 confidence=0.95 isFinal=false energyAgeMs=0 beganBeforeReply=false replyRemainingMs=1756 replyFullyQueued=false
+[TIMING:barge-in-test] TURN#0 SUMMARY total=2409ms turn-detected=1ms llm-request=1ms llm-first-token=1ms first-sentence-ready=1ms tts-request=2ms tts-first-chunk=2ms audio-queued=2ms
+[TIMING:barge-in-test] TURN#0
+speech-end=2026-09-23T10:31:52.027Z
+endpoint-evidence=2026-09-23T10:31:52.027Z (speech_final)
+turn-release=2026-09-23T10:31:52.186Z
+llm-request=2026-09-23T10:31:52.187Z
+llm-first-token=2026-09-23T10:31:52.187Z
+first-sentence-ready=2026-09-23T10:31:52.187Z
+tts-request=2026-09-23T10:31:52.188Z
+tts-first-audio=2026-09-23T10:31:52.188Z
+audio-queued=2026-09-23T10:31:52.188Z
+[TIMING:barge-in-test] TURN#0 DELTAS
+endpoint-to-release=159ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=0ms
+sentence-to-tts=1ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=161ms
+[PIPELINE:barge-in-test] Turn complete: assistant="We have created Flexi Genie now. It runs your whole business well." llmMs=15 ttsMs=0
+[RESPONSE-LEN:barge-in-test] TURN#0 userChars=13 assistantChars=66 estTokens=17 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=3000 briefRequested=false
+[PIPELINE:barge-in-test] Response #1 CANCELLED by barge-in — heard="" discarded="We have created Flexi Genie now. It runs your whole business well."
+[TIMING:barge-in-test] TURN END turn-release=1790159514595 text="Wait, what about the price?" sttMs=158
+[STT:barge-in-test] Transcript received: "Wait, what about the price?" userSpeechMs=158 sttLagMs=n/a
+[TURN-RELEASE:barge-in-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:barge-in-test] TURN#1 turn-detected +1ms
+[TIMING:barge-in-test] TURN#1 stt-to-release=1005ms (sttLag=n/ams)
+[LLM:barge-in-test] Sending to fake-llm: historyLength=4 roles=[system,assistant,user,user] streaming=true
+[TIMING:barge-in-test] TURN#1 llm-request +1ms
+[TIMING:barge-in-test] TURN#1 llm-first-token +16ms
+[TIMING:barge-in-test] TURN#1 tts-request +16ms
+[TIMING:barge-in-test] TURN#1 tts-first-chunk +16ms
+[TIMING:barge-in-test] TURN#1 audio-queued +17ms
+[PLAYBACK:barge-in-test] draining 170ms of queued audio before leaving SPEAKING (queued=1136ms elapsed=1116ms)
+[TIMING:barge-in-test] TURN#1 SUMMARY total=1308ms turn-detected=1ms llm-request=1ms llm-first-token=16ms tts-request=16ms tts-first-chunk=16ms audio-queued=17ms
+[TIMING:barge-in-test] TURN#1
+speech-end=2026-09-23T10:31:53.591Z
+endpoint-evidence=2026-09-23T10:31:53.591Z (speech_final)
+turn-release=2026-09-23T10:31:54.595Z
+llm-request=2026-09-23T10:31:54.596Z
+llm-first-token=2026-09-23T10:31:54.611Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T10:31:54.611Z
+tts-first-audio=2026-09-23T10:31:54.611Z
+audio-queued=2026-09-23T10:31:54.612Z
+[TIMING:barge-in-test] TURN#1 DELTAS
+endpoint-to-release=1004ms
+release-to-llm-request=1ms
+llm-to-first-token=15ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=1ms
+speech-end-to-audio=1021ms
+[PIPELINE:barge-in-test] Turn complete: assistant="Sure, let me answer that." llmMs=15 ttsMs=0
+[RESPONSE-LEN:barge-in-test] TURN#1 userChars=27 assistantChars=25 estTokens=7 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1136 briefRequested=false
+[PIPELINE:barge-in-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:barge-in-test] run() exiting — state=LISTENING aborted=true
+  [FAIL] J3 — "Wait, what about the price?" over the same block is a REAL interruption: block cut, question answered
+         timed out after 15000ms waiting for 3 replies (have 2, state=LISTENING)
+[PIPELINE:barge-in-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:barge-in-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:barge-in-test] GREETING greeting-text-ready +0ms
+[TIMING:barge-in-test] GREETING tts-request +1ms
+[TIMING:barge-in-test] GREETING tts-first-chunk +1ms
+[TIMING:barge-in-test] GREETING audio-queued +1ms
+[PLAYBACK:barge-in-test] draining 734ms of queued audio before leaving SPEAKING (queued=4227ms elapsed=3643ms)
+[TIMING:barge-in-test] GREETING SUMMARY total=4380ms greeting-text-ready=0ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:barge-in-test] Greeting spoken: text="Hello Sakshi, this is Rohan calling from FlexiFunnels about the free AI workshop this Sunday." state=SPEAKING
+[PIPELINE:barge-in-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:barge-in-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=1ms historyLength=3
+[TIMING:barge-in-test] TURN END turn-release=1790159533192 text="Yes, tell me." sttMs=0
+[STT:barge-in-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:barge-in-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:barge-in-test] TURN#0 turn-detected +1ms
+[TIMING:barge-in-test] TURN#0 stt-to-release=159ms (sttLag=n/ams)
+[LLM:barge-in-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:barge-in-test] TURN#0 llm-request +1ms
+[SPECULATE:barge-in-test] ADOPTED pre-opened request — llm-request is 158ms after the provider stream was opened (first token already in hand, 143ms ago) evidence-to-llm-open=1ms
+[TIMING:barge-in-test] TURN#0 llm-first-token +1ms
+[TIMING:barge-in-test] TURN#0 first-sentence-ready +1ms
+[TIMING:barge-in-test] TURN#0 tts-request +2ms
+[TIMING:barge-in-test] TURN#0 tts-first-chunk +2ms
+[TIMING:barge-in-test] TURN#0 audio-queued +2ms
+[TURN:barge-in-test] barge-in ACCEPTED on transcript: "No, I have a question." — words=5 confidence=0.95 isFinal=false energyAgeMs=0 beganBeforeReply=false replyRemainingMs=1757 replyFullyQueued=false
+[TIMING:barge-in-test] TURN#0 SUMMARY total=2404ms turn-detected=1ms llm-request=1ms llm-first-token=1ms first-sentence-ready=1ms tts-request=2ms tts-first-chunk=2ms audio-queued=2ms
+[TIMING:barge-in-test] TURN#0
+speech-end=2026-09-23T10:32:13.034Z
+endpoint-evidence=2026-09-23T10:32:13.034Z (speech_final)
+turn-release=2026-09-23T10:32:13.192Z
+llm-request=2026-09-23T10:32:13.193Z
+llm-first-token=2026-09-23T10:32:13.193Z
+first-sentence-ready=2026-09-23T10:32:13.193Z
+tts-request=2026-09-23T10:32:13.194Z
+tts-first-audio=2026-09-23T10:32:13.194Z
+audio-queued=2026-09-23T10:32:13.194Z
+[TIMING:barge-in-test] TURN#0 DELTAS
+endpoint-to-release=158ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=0ms
+sentence-to-tts=1ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=160ms
+[PIPELINE:barge-in-test] Turn complete: assistant="We have created Flexi Genie now. It runs your whole business well." llmMs=15 ttsMs=0
+[RESPONSE-LEN:barge-in-test] TURN#0 userChars=13 assistantChars=66 estTokens=17 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=3000 briefRequested=false
+[PIPELINE:barge-in-test] Response #1 CANCELLED by barge-in — heard="" discarded="We have created Flexi Genie now. It runs your whole business well."
+[TIMING:barge-in-test] TURN END turn-release=1790159535596 text="No, I have a question." sttMs=158
+[STT:barge-in-test] Transcript received: "No, I have a question." userSpeechMs=158 sttLagMs=n/a
+[TURN-RELEASE:barge-in-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:barge-in-test] TURN#1 turn-detected +0ms
+[TIMING:barge-in-test] TURN#1 stt-to-release=1000ms (sttLag=n/ams)
+[LLM:barge-in-test] Sending to fake-llm: historyLength=4 roles=[system,assistant,user,user] streaming=true
+[TIMING:barge-in-test] TURN#1 llm-request +1ms
+[TIMING:barge-in-test] TURN#1 llm-first-token +16ms
+[TIMING:barge-in-test] TURN#1 tts-request +17ms
+[TIMING:barge-in-test] TURN#1 tts-first-chunk +17ms
+[TIMING:barge-in-test] TURN#1 audio-queued +17ms
+[PLAYBACK:barge-in-test] draining 167ms of queued audio before leaving SPEAKING (queued=1136ms elapsed=1119ms)
+[TIMING:barge-in-test] TURN#1 SUMMARY total=1312ms turn-detected=0ms llm-request=1ms llm-first-token=16ms tts-request=17ms tts-first-chunk=17ms audio-queued=17ms
+[TIMING:barge-in-test] TURN#1
+speech-end=2026-09-23T10:32:14.596Z
+endpoint-evidence=2026-09-23T10:32:14.596Z (speech_final)
+turn-release=2026-09-23T10:32:15.596Z
+llm-request=2026-09-23T10:32:15.597Z
+llm-first-token=2026-09-23T10:32:15.612Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T10:32:15.613Z
+tts-first-audio=2026-09-23T10:32:15.613Z
+audio-queued=2026-09-23T10:32:15.613Z
+[TIMING:barge-in-test] TURN#1 DELTAS
+endpoint-to-release=1000ms
+release-to-llm-request=1ms
+llm-to-first-token=15ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=1017ms
+[PIPELINE:barge-in-test] Turn complete: assistant="Sure, let me answer that." llmMs=15 ttsMs=0
+[RESPONSE-LEN:barge-in-test] TURN#1 userChars=22 assistantChars=25 estTokens=7 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1136 briefRequested=false
+[PIPELINE:barge-in-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:barge-in-test] run() exiting — state=LISTENING aborted=true
+  [FAIL] J3 — "No, I have a question." over the same block is a REAL interruption: block cut, question answered
+         timed out after 15000ms waiting for 3 replies (have 2, state=LISTENING)
+[PIPELINE:barge-in-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:barge-in-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:barge-in-test] GREETING greeting-text-ready +0ms
+[TIMING:barge-in-test] GREETING tts-request +0ms
+[TIMING:barge-in-test] GREETING tts-first-chunk +0ms
+[TIMING:barge-in-test] GREETING audio-queued +0ms
+[PLAYBACK:barge-in-test] draining 739ms of queued audio before leaving SPEAKING (queued=4227ms elapsed=3638ms)
+[TIMING:barge-in-test] GREETING SUMMARY total=4391ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:barge-in-test] Greeting spoken: text="Hello Sakshi, this is Rohan calling from FlexiFunnels about the free AI workshop this Sunday." state=SPEAKING
+[PIPELINE:barge-in-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:barge-in-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:barge-in-test] TURN END turn-release=1790159554172 text="Yes, tell me." sttMs=0
+[STT:barge-in-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:barge-in-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:barge-in-test] TURN#0 turn-detected +1ms
+[TIMING:barge-in-test] TURN#0 stt-to-release=159ms (sttLag=n/ams)
+[LLM:barge-in-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:barge-in-test] TURN#0 llm-request +1ms
+[SPECULATE:barge-in-test] ADOPTED pre-opened request — llm-request is 159ms after the provider stream was opened (first token already in hand, 144ms ago) evidence-to-llm-open=0ms
+[TIMING:barge-in-test] TURN#0 llm-first-token +1ms
+[TIMING:barge-in-test] TURN#0 first-sentence-ready +1ms
+[TIMING:barge-in-test] TURN#0 tts-request +1ms
+[TIMING:barge-in-test] TURN#0 tts-first-chunk +1ms
+[TIMING:barge-in-test] TURN#0 audio-queued +1ms
+[TURN:barge-in-test] barge-in ACCEPTED on transcript: "Actually, I wanted to ask about the price." — words=8 confidence=0.95 isFinal=false energyAgeMs=0 beganBeforeReply=false replyRemainingMs=1757 replyFullyQueued=false
+[TIMING:barge-in-test] TURN#0 SUMMARY total=2412ms turn-detected=1ms llm-request=1ms llm-first-token=1ms first-sentence-ready=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:barge-in-test] TURN#0
+speech-end=2026-09-23T10:32:34.014Z
+endpoint-evidence=2026-09-23T10:32:34.014Z (speech_final)
+turn-release=2026-09-23T10:32:34.172Z
+llm-request=2026-09-23T10:32:34.173Z
+llm-first-token=2026-09-23T10:32:34.173Z
+first-sentence-ready=2026-09-23T10:32:34.173Z
+tts-request=2026-09-23T10:32:34.173Z
+tts-first-audio=2026-09-23T10:32:34.173Z
+audio-queued=2026-09-23T10:32:34.173Z
+[TIMING:barge-in-test] TURN#0 DELTAS
+endpoint-to-release=158ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=0ms
+sentence-to-tts=0ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=159ms
+[PIPELINE:barge-in-test] Turn complete: assistant="We have created Flexi Genie now. It runs your whole business well." llmMs=15 ttsMs=0
+[RESPONSE-LEN:barge-in-test] TURN#0 userChars=13 assistantChars=66 estTokens=17 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=3000 briefRequested=false
+[PIPELINE:barge-in-test] Response #1 CANCELLED by barge-in — heard="" discarded="We have created Flexi Genie now. It runs your whole business well."
+[TIMING:barge-in-test] TURN END turn-release=1790159556584 text="Actually, I wanted to ask about the price." sttMs=162
+[STT:barge-in-test] Transcript received: "Actually, I wanted to ask about the price." userSpeechMs=162 sttLagMs=n/a
+[TURN-RELEASE:barge-in-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:barge-in-test] TURN#1 turn-detected +0ms
+[TIMING:barge-in-test] TURN#1 stt-to-release=1006ms (sttLag=n/ams)
+[LLM:barge-in-test] Sending to fake-llm: historyLength=4 roles=[system,assistant,user,user] streaming=true
+[TIMING:barge-in-test] TURN#1 llm-request +1ms
+[TIMING:barge-in-test] TURN#1 llm-first-token +15ms
+[TIMING:barge-in-test] TURN#1 tts-request +16ms
+[TIMING:barge-in-test] TURN#1 tts-first-chunk +16ms
+[TIMING:barge-in-test] TURN#1 audio-queued +16ms
+[PLAYBACK:barge-in-test] draining 175ms of queued audio before leaving SPEAKING (queued=1136ms elapsed=1111ms)
+[TIMING:barge-in-test] TURN#1 SUMMARY total=1318ms turn-detected=0ms llm-request=1ms llm-first-token=15ms tts-request=16ms tts-first-chunk=16ms audio-queued=16ms
+[TIMING:barge-in-test] TURN#1
+speech-end=2026-09-23T10:32:35.578Z
+endpoint-evidence=2026-09-23T10:32:35.578Z (speech_final)
+turn-release=2026-09-23T10:32:36.584Z
+llm-request=2026-09-23T10:32:36.585Z
+llm-first-token=2026-09-23T10:32:36.599Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T10:32:36.600Z
+tts-first-audio=2026-09-23T10:32:36.600Z
+audio-queued=2026-09-23T10:32:36.600Z
+[TIMING:barge-in-test] TURN#1 DELTAS
+endpoint-to-release=1006ms
+release-to-llm-request=1ms
+llm-to-first-token=14ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=1022ms
+[PIPELINE:barge-in-test] Turn complete: assistant="Sure, let me answer that." llmMs=14 ttsMs=0
+[RESPONSE-LEN:barge-in-test] TURN#1 userChars=42 assistantChars=25 estTokens=7 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1136 briefRequested=false
+[PIPELINE:barge-in-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:barge-in-test] run() exiting — state=LISTENING aborted=true
+  [FAIL] J3 — "Actually, I wanted to ask about the price." over the same block is a REAL interruption: block cut, question answered
+         timed out after 15000ms waiting for 3 replies (have 2, state=LISTENING)
+[PIPELINE:barge-in-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:barge-in-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:barge-in-test] GREETING greeting-text-ready +0ms
+[TIMING:barge-in-test] GREETING tts-request +0ms
+[TIMING:barge-in-test] GREETING tts-first-chunk +0ms
+[TIMING:barge-in-test] GREETING audio-queued +0ms
+[PLAYBACK:barge-in-test] draining 747ms of queued audio before leaving SPEAKING (queued=4227ms elapsed=3630ms)
+[TIMING:barge-in-test] GREETING SUMMARY total=4380ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:barge-in-test] Greeting spoken: text="Hello Sakshi, this is Rohan calling from FlexiFunnels about the free AI workshop this Sunday." state=SPEAKING
+[PIPELINE:barge-in-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:barge-in-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:barge-in-test] TURN END turn-release=1790159575125 text="Yes, tell me." sttMs=0
+[STT:barge-in-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:barge-in-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:barge-in-test] TURN#0 turn-detected +1ms
+[TIMING:barge-in-test] TURN#0 stt-to-release=156ms (sttLag=n/ams)
+[LLM:barge-in-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:barge-in-test] TURN#0 llm-request +1ms
+[SPECULATE:barge-in-test] ADOPTED pre-opened request — llm-request is 156ms after the provider stream was opened (first token already in hand, 141ms ago) evidence-to-llm-open=0ms
+[TIMING:barge-in-test] TURN#0 llm-first-token +1ms
+[TIMING:barge-in-test] TURN#0 first-sentence-ready +1ms
+[TIMING:barge-in-test] TURN#0 tts-request +1ms
+[TIMING:barge-in-test] TURN#0 tts-first-chunk +1ms
+[TIMING:barge-in-test] TURN#0 audio-queued +1ms
+[TURN:barge-in-test] barge-in ACCEPTED on transcript: "Stop for a second." — words=4 confidence=0.95 isFinal=false energyAgeMs=1 beganBeforeReply=false replyRemainingMs=1778 replyFullyQueued=false
+[TIMING:barge-in-test] TURN#0 SUMMARY total=2407ms turn-detected=1ms llm-request=1ms llm-first-token=1ms first-sentence-ready=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:barge-in-test] TURN#0
+speech-end=2026-09-23T10:32:54.970Z
+endpoint-evidence=2026-09-23T10:32:54.970Z (speech_final)
+turn-release=2026-09-23T10:32:55.125Z
+llm-request=2026-09-23T10:32:55.126Z
+llm-first-token=2026-09-23T10:32:55.126Z
+first-sentence-ready=2026-09-23T10:32:55.126Z
+tts-request=2026-09-23T10:32:55.126Z
+tts-first-audio=2026-09-23T10:32:55.126Z
+audio-queued=2026-09-23T10:32:55.126Z
+[TIMING:barge-in-test] TURN#0 DELTAS
+endpoint-to-release=155ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=0ms
+sentence-to-tts=0ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=156ms
+[PIPELINE:barge-in-test] Turn complete: assistant="We have created Flexi Genie now. It runs your whole business well." llmMs=15 ttsMs=0
+[RESPONSE-LEN:barge-in-test] TURN#0 userChars=13 assistantChars=66 estTokens=17 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=3000 briefRequested=false
+[PIPELINE:barge-in-test] Response #1 CANCELLED by barge-in — heard="" discarded="We have created Flexi Genie now. It runs your whole business well."
+[TIMING:barge-in-test] TURN END turn-release=1790159577532 text="Stop for a second." sttMs=153
+[STT:barge-in-test] Transcript received: "Stop for a second." userSpeechMs=153 sttLagMs=n/a
+[TURN-RELEASE:barge-in-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:barge-in-test] TURN#1 turn-detected +1ms
+[TIMING:barge-in-test] TURN#1 stt-to-release=1032ms (sttLag=n/ams)
+[LLM:barge-in-test] Sending to fake-llm: historyLength=4 roles=[system,assistant,user,user] streaming=true
+[TIMING:barge-in-test] TURN#1 llm-request +1ms
+[TIMING:barge-in-test] TURN#1 llm-first-token +23ms
+[TIMING:barge-in-test] TURN#1 tts-request +24ms
+[TIMING:barge-in-test] TURN#1 tts-first-chunk +24ms
+[TIMING:barge-in-test] TURN#1 audio-queued +24ms
+[PLAYBACK:barge-in-test] draining 163ms of queued audio before leaving SPEAKING (queued=1136ms elapsed=1123ms)
+[TIMING:barge-in-test] TURN#1 SUMMARY total=1313ms turn-detected=1ms llm-request=1ms llm-first-token=23ms tts-request=24ms tts-first-chunk=24ms audio-queued=24ms
+[TIMING:barge-in-test] TURN#1
+speech-end=2026-09-23T10:32:56.501Z
+endpoint-evidence=2026-09-23T10:32:56.501Z (speech_final)
+turn-release=2026-09-23T10:32:57.532Z
+llm-request=2026-09-23T10:32:57.533Z
+llm-first-token=2026-09-23T10:32:57.555Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T10:32:57.556Z
+tts-first-audio=2026-09-23T10:32:57.556Z
+audio-queued=2026-09-23T10:32:57.556Z
+[TIMING:barge-in-test] TURN#1 DELTAS
+endpoint-to-release=1031ms
+release-to-llm-request=1ms
+llm-to-first-token=22ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=1055ms
+[PIPELINE:barge-in-test] Turn complete: assistant="Sure, let me answer that." llmMs=22 ttsMs=0
+[RESPONSE-LEN:barge-in-test] TURN#1 userChars=18 assistantChars=25 estTokens=7 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1136 briefRequested=false
+[PIPELINE:barge-in-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:barge-in-test] run() exiting — state=LISTENING aborted=true
+  [FAIL] J3 — "Stop for a second." over the same block is a REAL interruption: block cut, question answered
+         timed out after 15000ms waiting for 3 replies (have 2, state=LISTENING)
+[PIPELINE:barge-in-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:barge-in-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:barge-in-test] GREETING greeting-text-ready +0ms
+[TIMING:barge-in-test] GREETING tts-request +1ms
+[TIMING:barge-in-test] GREETING tts-first-chunk +1ms
+[TIMING:barge-in-test] GREETING audio-queued +1ms
+[PLAYBACK:barge-in-test] draining 742ms of queued audio before leaving SPEAKING (queued=4227ms elapsed=3635ms)
+[TIMING:barge-in-test] GREETING SUMMARY total=4379ms greeting-text-ready=0ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:barge-in-test] Greeting spoken: text="Hello Sakshi, this is Rohan calling from FlexiFunnels about the free AI workshop this Sunday." state=SPEAKING
+[PIPELINE:barge-in-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:barge-in-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=1ms historyLength=3
+[TIMING:barge-in-test] TURN END turn-release=1790159596076 text="Yes, tell me." sttMs=0
+[STT:barge-in-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:barge-in-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:barge-in-test] TURN#0 turn-detected +0ms
+[TIMING:barge-in-test] TURN#0 stt-to-release=162ms (sttLag=n/ams)
+[LLM:barge-in-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:barge-in-test] TURN#0 llm-request +1ms
+[SPECULATE:barge-in-test] ADOPTED pre-opened request — llm-request is 162ms after the provider stream was opened (first token already in hand, 147ms ago) evidence-to-llm-open=1ms
+[TIMING:barge-in-test] TURN#0 llm-first-token +1ms
+[TIMING:barge-in-test] TURN#0 first-sentence-ready +1ms
+[TIMING:barge-in-test] TURN#0 tts-request +1ms
+[TIMING:barge-in-test] TURN#0 tts-first-chunk +1ms
+[TIMING:barge-in-test] TURN#0 audio-queued +1ms
+[TURN:barge-in-test] backchannel ignored (not a barge-in): "ok" — 1789ms of reply still to play
+[TURN:barge-in-test] barge-in ACCEPTED on transcript: "ok, but what is the price?" — words=6 confidence=0.95 isFinal=false energyAgeMs=0 beganBeforeReply=false replyRemainingMs=1628 replyFullyQueued=false
+[TIMING:barge-in-test] TURN#0 SUMMARY total=2406ms turn-detected=0ms llm-request=1ms llm-first-token=1ms first-sentence-ready=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:barge-in-test] TURN#0
+speech-end=2026-09-23T10:33:15.914Z
+endpoint-evidence=2026-09-23T10:33:15.914Z (speech_final)
+turn-release=2026-09-23T10:33:16.076Z
+llm-request=2026-09-23T10:33:16.077Z
+llm-first-token=2026-09-23T10:33:16.077Z
+first-sentence-ready=2026-09-23T10:33:16.077Z
+tts-request=2026-09-23T10:33:16.077Z
+tts-first-audio=2026-09-23T10:33:16.077Z
+audio-queued=2026-09-23T10:33:16.077Z
+[TIMING:barge-in-test] TURN#0 DELTAS
+endpoint-to-release=162ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=0ms
+sentence-to-tts=0ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=163ms
+[PIPELINE:barge-in-test] Turn complete: assistant="We have created Flexi Genie now. It runs your whole business well." llmMs=15 ttsMs=0
+[RESPONSE-LEN:barge-in-test] TURN#0 userChars=13 assistantChars=66 estTokens=17 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=3000 briefRequested=false
+[PIPELINE:barge-in-test] Response #1 CANCELLED by barge-in — heard="" discarded="We have created Flexi Genie now. It runs your whole business well."
+[TIMING:barge-in-test] TURN END turn-release=1790159598483 text="ok, but what is the price?" sttMs=100
+[STT:barge-in-test] Transcript received: "ok, but what is the price?" userSpeechMs=100 sttLagMs=n/a
+[TURN-RELEASE:barge-in-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:barge-in-test] TURN#1 turn-detected +0ms
+[TIMING:barge-in-test] TURN#1 stt-to-release=933ms (sttLag=n/ams)
+[LLM:barge-in-test] Sending to fake-llm: historyLength=4 roles=[system,assistant,user,user] streaming=true
+[TIMING:barge-in-test] TURN#1 llm-request +0ms
+[TIMING:barge-in-test] TURN#1 llm-first-token +15ms
+[TIMING:barge-in-test] TURN#1 tts-request +15ms
+[TIMING:barge-in-test] TURN#1 tts-first-chunk +15ms
+[TIMING:barge-in-test] TURN#1 audio-queued +15ms
+[PLAYBACK:barge-in-test] draining 164ms of queued audio before leaving SPEAKING (queued=500ms elapsed=486ms)
+[TIMING:barge-in-test] TURN#1 SUMMARY total=666ms turn-detected=0ms llm-request=0ms llm-first-token=15ms tts-request=15ms tts-first-chunk=15ms audio-queued=15ms
+[TIMING:barge-in-test] TURN#1
+speech-end=2026-09-23T10:33:17.550Z
+endpoint-evidence=2026-09-23T10:33:17.550Z (speech_final)
+turn-release=2026-09-23T10:33:18.483Z
+llm-request=2026-09-23T10:33:18.483Z
+llm-first-token=2026-09-23T10:33:18.498Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T10:33:18.498Z
+tts-first-audio=2026-09-23T10:33:18.498Z
+audio-queued=2026-09-23T10:33:18.498Z
+[TIMING:barge-in-test] TURN#1 DELTAS
+endpoint-to-release=933ms
+release-to-llm-request=0ms
+llm-to-first-token=15ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=948ms
+[PIPELINE:barge-in-test] Turn complete: assistant="It is free." llmMs=15 ttsMs=0
+[RESPONSE-LEN:barge-in-test] TURN#1 userChars=26 assistantChars=11 estTokens=3 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=500 briefRequested=false
+[PIPELINE:barge-in-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:barge-in-test] run() exiting — state=LISTENING aborted=true
+  [FAIL] J4 — 'ok, but what is the price?' (acknowledgement WITH content) still interrupts — the vocabulary is not widened
+         timed out after 15000ms waiting for 3 replies (have 2, state=LISTENING)
+[PIPELINE:barge-in-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:barge-in-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:barge-in-test] GREETING greeting-text-ready +0ms
+[TIMING:barge-in-test] GREETING tts-request +1ms
+[TIMING:barge-in-test] GREETING tts-first-chunk +1ms
+[TIMING:barge-in-test] GREETING audio-queued +1ms
+[PLAYBACK:barge-in-test] draining 743ms of queued audio before leaving SPEAKING (queued=4227ms elapsed=3634ms)
+[TIMING:barge-in-test] GREETING SUMMARY total=4393ms greeting-text-ready=0ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:barge-in-test] Greeting spoken: text="Hello Sakshi, this is Rohan calling from FlexiFunnels about the free AI workshop this Sunday." state=SPEAKING
+[PIPELINE:barge-in-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:barge-in-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:barge-in-test] TURN END turn-release=1790159617125 text="Yes, tell me." sttMs=0
+[STT:barge-in-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:barge-in-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:barge-in-test] TURN#0 turn-detected +0ms
+[TIMING:barge-in-test] TURN#0 stt-to-release=159ms (sttLag=n/ams)
+[LLM:barge-in-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:barge-in-test] TURN#0 llm-request +1ms
+[SPECULATE:barge-in-test] ADOPTED pre-opened request — llm-request is 160ms after the provider stream was opened (first token already in hand, 145ms ago) evidence-to-llm-open=0ms
+[TIMING:barge-in-test] TURN#0 llm-first-token +1ms
+[TIMING:barge-in-test] TURN#0 first-sentence-ready +1ms
+[TIMING:barge-in-test] TURN#0 tts-request +1ms
+[TIMING:barge-in-test] TURN#0 tts-first-chunk +1ms
+[TIMING:barge-in-test] TURN#0 audio-queued +1ms
+[TURN:barge-in-test] backchannel ignored (not a barge-in): "haan ji" — 1753ms of reply still to play
+[PIPELINE:barge-in-test] barge-in DECLINED — the caller is backchannelling, not interrupting
+[TURN:barge-in-test] backchannel ignored (not a barge-in): "haan ji" — 1592ms of reply still to play
+[PLAYBACK:barge-in-test] draining 738ms of queued audio before leaving SPEAKING (queued=12091ms elapsed=11503ms)
+[TIMING:barge-in-test] TURN#0 SUMMARY total=12250ms turn-detected=0ms llm-request=1ms llm-first-token=1ms first-sentence-ready=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:barge-in-test] TURN#0
+speech-end=2026-09-23T10:33:36.966Z
+endpoint-evidence=2026-09-23T10:33:36.966Z (speech_final)
+turn-release=2026-09-23T10:33:37.125Z
+llm-request=2026-09-23T10:33:37.126Z
+llm-first-token=2026-09-23T10:33:37.126Z
+first-sentence-ready=2026-09-23T10:33:37.126Z
+tts-request=2026-09-23T10:33:37.126Z
+tts-first-audio=2026-09-23T10:33:37.126Z
+audio-queued=2026-09-23T10:33:37.126Z
+[TIMING:barge-in-test] TURN#0 DELTAS
+endpoint-to-release=159ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=0ms
+sentence-to-tts=0ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=160ms
+[PIPELINE:barge-in-test] Turn complete: assistant="We have created Flexi Genie now. It runs your whole business well. It builds all..." llmMs=15 ttsMs=0
+[RESPONSE-LEN:barge-in-test] TURN#0 userChars=13 assistantChars=269 estTokens=68 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=4 audioQueuedMs=12091 briefRequested=false
+[PIPELINE:barge-in-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:barge-in-test] run() exiting — state=LISTENING aborted=true
+[PIPELINE:barge-in-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:barge-in-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:barge-in-test] GREETING greeting-text-ready +0ms
+[TIMING:barge-in-test] GREETING tts-request +0ms
+[TIMING:barge-in-test] GREETING tts-first-chunk +0ms
+[TIMING:barge-in-test] GREETING audio-queued +0ms
+[PLAYBACK:barge-in-test] draining 736ms of queued audio before leaving SPEAKING (queued=4227ms elapsed=3641ms)
+[TIMING:barge-in-test] GREETING SUMMARY total=4389ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:barge-in-test] Greeting spoken: text="Hello Sakshi, this is Rohan calling from FlexiFunnels about the free AI workshop this Sunday." state=SPEAKING
+[PIPELINE:barge-in-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:barge-in-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:barge-in-test] TURN END turn-release=1790159633956 text="Yes, tell me." sttMs=0
+[STT:barge-in-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:barge-in-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:barge-in-test] TURN#0 turn-detected +1ms
+[TIMING:barge-in-test] TURN#0 stt-to-release=159ms (sttLag=n/ams)
+[LLM:barge-in-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:barge-in-test] TURN#0 llm-request +1ms
+[SPECULATE:barge-in-test] ADOPTED pre-opened request — llm-request is 159ms after the provider stream was opened (first token already in hand, 144ms ago) evidence-to-llm-open=0ms
+[TIMING:barge-in-test] TURN#0 llm-first-token +1ms
+[TIMING:barge-in-test] TURN#0 first-sentence-ready +1ms
+[TIMING:barge-in-test] TURN#0 tts-request +1ms
+[TIMING:barge-in-test] TURN#0 tts-first-chunk +1ms
+[TIMING:barge-in-test] TURN#0 audio-queued +1ms
+  [PASS] J5 — the transport's ENERGY-ONLY fallback cannot cut the block while a recognised backchannel is in flight; with no transcript at all it still can
+[PIPELINE:barge-in-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:barge-in-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:barge-in-test] GREETING greeting-text-ready +0ms
+[TIMING:barge-in-test] GREETING tts-request +0ms
+[TIMING:barge-in-test] GREETING tts-first-chunk +1ms
+[TIMING:barge-in-test] GREETING audio-queued +1ms
+[TIMING:barge-in-test] TURN#0 SUMMARY total=2414ms turn-detected=1ms llm-request=1ms llm-first-token=1ms first-sentence-ready=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:barge-in-test] TURN#0
+speech-end=2026-09-23T10:33:53.798Z
+endpoint-evidence=2026-09-23T10:33:53.798Z (speech_final)
+turn-release=2026-09-23T10:33:53.956Z
+llm-request=2026-09-23T10:33:53.957Z
+llm-first-token=2026-09-23T10:33:53.957Z
+first-sentence-ready=2026-09-23T10:33:53.957Z
+tts-request=2026-09-23T10:33:53.957Z
+tts-first-audio=2026-09-23T10:33:53.957Z
+audio-queued=2026-09-23T10:33:53.957Z
+[TIMING:barge-in-test] TURN#0 DELTAS
+endpoint-to-release=158ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=0ms
+sentence-to-tts=0ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=159ms
+[PIPELINE:barge-in-test] Turn complete: assistant="We have created Flexi Genie now. It runs your whole business well." llmMs=15 ttsMs=0
+[RESPONSE-LEN:barge-in-test] TURN#0 userChars=13 assistantChars=66 estTokens=17 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=3000 briefRequested=false
+[PIPELINE:barge-in-test] Response #1 CANCELLED by barge-in — heard="" discarded="We have created Flexi Genie now. It runs your whole business well."
+[PIPELINE:barge-in-test] run() exiting — state=LISTENING aborted=true
+[PLAYBACK:barge-in-test] draining 745ms of queued audio before leaving SPEAKING (queued=4227ms elapsed=3632ms)
+[TIMING:barge-in-test] GREETING SUMMARY total=4379ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:barge-in-test] Greeting spoken: text="Hello Sakshi, this is Rohan calling from FlexiFunnels about the free AI workshop this Sunday." state=SPEAKING
+[PIPELINE:barge-in-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:barge-in-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:barge-in-test] TURN END turn-release=1790159640262 text="Yes, tell me." sttMs=0
+[STT:barge-in-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:barge-in-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:barge-in-test] TURN#0 turn-detected +0ms
+[TIMING:barge-in-test] TURN#0 stt-to-release=160ms (sttLag=n/ams)
+[LLM:barge-in-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:barge-in-test] TURN#0 llm-request +0ms
+[SPECULATE:barge-in-test] ADOPTED pre-opened request — llm-request is 160ms after the provider stream was opened (first token already in hand, 144ms ago) evidence-to-llm-open=0ms
+[TIMING:barge-in-test] TURN#0 llm-first-token +1ms
+[TIMING:barge-in-test] TURN#0 first-sentence-ready +1ms
+[TIMING:barge-in-test] TURN#0 tts-request +1ms
+[TIMING:barge-in-test] TURN#0 tts-first-chunk +1ms
+[TIMING:barge-in-test] TURN#0 audio-queued +1ms
+[PLAYBACK:barge-in-test] draining 751ms of queued audio before leaving SPEAKING (queued=13955ms elapsed=13354ms)
+[TIMING:barge-in-test] TURN#0 SUMMARY total=14121ms turn-detected=0ms llm-request=0ms llm-first-token=1ms first-sentence-ready=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:barge-in-test] TURN#0
+speech-end=2026-09-23T10:34:00.102Z
+endpoint-evidence=2026-09-23T10:34:00.102Z (speech_final)
+turn-release=2026-09-23T10:34:00.262Z
+llm-request=2026-09-23T10:34:00.262Z
+llm-first-token=2026-09-23T10:34:00.263Z
+first-sentence-ready=2026-09-23T10:34:00.263Z
+tts-request=2026-09-23T10:34:00.263Z
+tts-first-audio=2026-09-23T10:34:00.263Z
+audio-queued=2026-09-23T10:34:00.263Z
+[TIMING:barge-in-test] TURN#0 DELTAS
+endpoint-to-release=160ms
+release-to-llm-request=0ms
+llm-to-first-token=1ms
+first-token-to-sentence=0ms
+sentence-to-tts=0ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=161ms
+[PIPELINE:barge-in-test] Turn complete: assistant="We have created Flexi Genie now. It runs your whole business well. It builds all..." llmMs=16 ttsMs=0
+[RESPONSE-LEN:barge-in-test] TURN#0 userChars=13 assistantChars=311 estTokens=78 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=5 audioQueuedMs=13955 briefRequested=false
+[SPECULATE:barge-in-test] LLM request PRE-OPENED on speech_final evidence: text="Yes." evidence-to-llm-open=0ms historyLength=5
+[TIMING:barge-in-test] TURN END turn-release=1790159654542 text="Yes." sttMs=0
+[STT:barge-in-test] Transcript received: "Yes." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:barge-in-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:barge-in-test] TURN#1 turn-detected +0ms
+[TIMING:barge-in-test] TURN#1 stt-to-release=157ms (sttLag=n/ams)
+[LLM:barge-in-test] Sending to fake-llm: historyLength=5 roles=[system,assistant,user,assistant,user] streaming=true
+[TIMING:barge-in-test] TURN#1 llm-request +1ms
+[SPECULATE:barge-in-test] ADOPTED pre-opened request — llm-request is 157ms after the provider stream was opened (first token already in hand, 144ms ago) evidence-to-llm-open=0ms
+[TIMING:barge-in-test] TURN#1 llm-first-token +1ms
+[TIMING:barge-in-test] TURN#1 tts-request +1ms
+[TIMING:barge-in-test] TURN#1 tts-first-chunk +1ms
+[TIMING:barge-in-test] TURN#1 audio-queued +1ms
+[PLAYBACK:barge-in-test] draining 923ms of queued audio before leaving SPEAKING (queued=773ms elapsed=0ms)
+[TIMING:barge-in-test] TURN#1 SUMMARY total=940ms turn-detected=0ms llm-request=1ms llm-first-token=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:barge-in-test] TURN#1
+speech-end=2026-09-23T10:34:14.386Z
+endpoint-evidence=2026-09-23T10:34:14.386Z (speech_final)
+turn-release=2026-09-23T10:34:14.542Z
+llm-request=2026-09-23T10:34:14.543Z
+llm-first-token=2026-09-23T10:34:14.543Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T10:34:14.543Z
+tts-first-audio=2026-09-23T10:34:14.543Z
+audio-queued=2026-09-23T10:34:14.543Z
+[TIMING:barge-in-test] TURN#1 DELTAS
+endpoint-to-release=156ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=157ms
+[PIPELINE:barge-in-test] Turn complete: assistant="Noted, thank you." llmMs=13 ttsMs=0
+[RESPONSE-LEN:barge-in-test] TURN#1 userChars=4 assistantChars=17 estTokens=5 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=773 briefRequested=false
+[PIPELINE:barge-in-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:barge-in-test] run() exiting — state=LISTENING aborted=true
+[PIPELINE:barge-in-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:barge-in-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:barge-in-test] GREETING greeting-text-ready +0ms
+[TIMING:barge-in-test] GREETING tts-request +0ms
+[TIMING:barge-in-test] GREETING tts-first-chunk +0ms
+[TIMING:barge-in-test] GREETING audio-queued +0ms
+[PLAYBACK:barge-in-test] draining 746ms of queued audio before leaving SPEAKING (queued=4227ms elapsed=3631ms)
+[TIMING:barge-in-test] GREETING SUMMARY total=4390ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:barge-in-test] Greeting spoken: text="Hello Sakshi, this is Rohan calling from FlexiFunnels about the free AI workshop this Sunday." state=SPEAKING
+[PIPELINE:barge-in-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:barge-in-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:barge-in-test] TURN END turn-release=1790159660050 text="Yes, tell me." sttMs=0
+[STT:barge-in-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:barge-in-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:barge-in-test] TURN#0 turn-detected +0ms
+[TIMING:barge-in-test] TURN#0 stt-to-release=160ms (sttLag=n/ams)
+[LLM:barge-in-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:barge-in-test] TURN#0 llm-request +0ms
+[SPECULATE:barge-in-test] ADOPTED pre-opened request — llm-request is 160ms after the provider stream was opened (first token already in hand, 144ms ago) evidence-to-llm-open=0ms
+[TIMING:barge-in-test] TURN#0 llm-first-token +0ms
+[TIMING:barge-in-test] TURN#0 first-sentence-ready +1ms
+[TIMING:barge-in-test] TURN#0 tts-request +1ms
+[TIMING:barge-in-test] TURN#0 tts-first-chunk +1ms
+[TIMING:barge-in-test] TURN#0 audio-queued +1ms
+[PLAYBACK:barge-in-test] draining 744ms of queued audio before leaving SPEAKING (queued=13955ms elapsed=13361ms)
+[TIMING:barge-in-test] TURN#0 SUMMARY total=14119ms turn-detected=0ms llm-request=0ms llm-first-token=0ms first-sentence-ready=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:barge-in-test] TURN#0
+speech-end=2026-09-23T10:34:19.890Z
+endpoint-evidence=2026-09-23T10:34:19.890Z (speech_final)
+turn-release=2026-09-23T10:34:20.050Z
+llm-request=2026-09-23T10:34:20.050Z
+llm-first-token=2026-09-23T10:34:20.050Z
+first-sentence-ready=2026-09-23T10:34:20.051Z
+tts-request=2026-09-23T10:34:20.051Z
+tts-first-audio=2026-09-23T10:34:20.051Z
+audio-queued=2026-09-23T10:34:20.051Z
+[TIMING:barge-in-test] TURN#0 DELTAS
+endpoint-to-release=160ms
+release-to-llm-request=0ms
+llm-to-first-token=0ms
+first-token-to-sentence=1ms
+sentence-to-tts=0ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=161ms
+[PIPELINE:barge-in-test] Turn complete: assistant="We have created Flexi Genie now. It runs your whole business well. It builds all..." llmMs=16 ttsMs=0
+[RESPONSE-LEN:barge-in-test] TURN#0 userChars=13 assistantChars=311 estTokens=78 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=5 audioQueuedMs=13955 briefRequested=false
+[SPECULATE:barge-in-test] LLM request PRE-OPENED on speech_final evidence: text="No." evidence-to-llm-open=0ms historyLength=5
+[TIMING:barge-in-test] TURN END turn-release=1790159674344 text="No." sttMs=0
+[STT:barge-in-test] Transcript received: "No." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:barge-in-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:barge-in-test] TURN#1 turn-detected +0ms
+[TIMING:barge-in-test] TURN#1 stt-to-release=159ms (sttLag=n/ams)
+[LLM:barge-in-test] Sending to fake-llm: historyLength=5 roles=[system,assistant,user,assistant,user] streaming=true
+[TIMING:barge-in-test] TURN#1 llm-request +1ms
+[SPECULATE:barge-in-test] ADOPTED pre-opened request — llm-request is 160ms after the provider stream was opened (first token already in hand, 144ms ago) evidence-to-llm-open=0ms
+[TIMING:barge-in-test] TURN#1 llm-first-token +1ms
+[TIMING:barge-in-test] TURN#1 tts-request +1ms
+[TIMING:barge-in-test] TURN#1 tts-first-chunk +1ms
+[TIMING:barge-in-test] TURN#1 audio-queued +1ms
+[PLAYBACK:barge-in-test] draining 923ms of queued audio before leaving SPEAKING (queued=773ms elapsed=0ms)
+[TIMING:barge-in-test] TURN#1 SUMMARY total=938ms turn-detected=0ms llm-request=1ms llm-first-token=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:barge-in-test] TURN#1
+speech-end=2026-09-23T10:34:34.185Z
+endpoint-evidence=2026-09-23T10:34:34.185Z (speech_final)
+turn-release=2026-09-23T10:34:34.344Z
+llm-request=2026-09-23T10:34:34.345Z
+llm-first-token=2026-09-23T10:34:34.345Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T10:34:34.345Z
+tts-first-audio=2026-09-23T10:34:34.345Z
+audio-queued=2026-09-23T10:34:34.345Z
+[TIMING:barge-in-test] TURN#1 DELTAS
+endpoint-to-release=159ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=160ms
+[PIPELINE:barge-in-test] Turn complete: assistant="Noted, thank you." llmMs=16 ttsMs=0
+[RESPONSE-LEN:barge-in-test] TURN#1 userChars=3 assistantChars=17 estTokens=5 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=773 briefRequested=false
+[PIPELINE:barge-in-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:barge-in-test] run() exiting — state=LISTENING aborted=true
+  [PASS] J6 — after the block ENDS with the gate question, 'Yes.' and 'No.' are ordinary turns and are answered
+[PIPELINE:barge-in-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:barge-in-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:barge-in-test] GREETING greeting-text-ready +0ms
+[TIMING:barge-in-test] GREETING tts-request +0ms
+[TIMING:barge-in-test] GREETING tts-first-chunk +0ms
+[TIMING:barge-in-test] GREETING audio-queued +0ms
+[PLAYBACK:barge-in-test] draining 4377ms of queued audio before leaving SPEAKING (queued=4227ms elapsed=0ms)
+[TIMING:barge-in-test] GREETING SUMMARY total=4380ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:barge-in-test] Greeting spoken: text="Hello Sakshi, this is Rohan calling from FlexiFunnels about the free AI workshop this Sunday." state=SPEAKING
+[PIPELINE:barge-in-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:barge-in-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:barge-in-test] TURN END turn-release=1790159679874 text="Yes, tell me." sttMs=0
+[STT:barge-in-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:barge-in-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:barge-in-test] TURN#0 turn-detected +0ms
+[TIMING:barge-in-test] TURN#0 stt-to-release=160ms (sttLag=n/ams)
+[LLM:barge-in-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:barge-in-test] TURN#0 llm-request +0ms
+[SPECULATE:barge-in-test] ADOPTED pre-opened request — llm-request is 160ms after the provider stream was opened (first token already in hand, 145ms ago) evidence-to-llm-open=0ms
+[TIMING:barge-in-test] TURN#0 llm-first-token +1ms
+[TIMING:barge-in-test] TURN#0 first-sentence-ready +1ms
+[TIMING:barge-in-test] TURN#0 tts-request +1ms
+[TIMING:barge-in-test] TURN#0 tts-first-chunk +1ms
+[TIMING:barge-in-test] TURN#0 audio-queued +1ms
+[PLAYBACK:barge-in-test] draining 4786ms of queued audio before leaving SPEAKING (queued=4636ms elapsed=0ms)
+[TURN:barge-in-test] barge-in ACCEPTED on transcript: "okay" — words=1 confidence=0.95 isFinal=true energyAgeMs=0 beganBeforeReply=false replyRemainingMs=3700 replyFullyQueued=true
+[TIMING:barge-in-test] TURN#0 SUMMARY total=939ms turn-detected=0ms llm-request=0ms llm-first-token=1ms first-sentence-ready=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:barge-in-test] TURN#0
+speech-end=2026-09-23T10:34:39.714Z
+endpoint-evidence=2026-09-23T10:34:39.714Z (speech_final)
+turn-release=2026-09-23T10:34:39.874Z
+llm-request=2026-09-23T10:34:39.874Z
+llm-first-token=2026-09-23T10:34:39.875Z
+first-sentence-ready=2026-09-23T10:34:39.875Z
+tts-request=2026-09-23T10:34:39.875Z
+tts-first-audio=2026-09-23T10:34:39.875Z
+audio-queued=2026-09-23T10:34:39.875Z
+[TIMING:barge-in-test] TURN#0 DELTAS
+endpoint-to-release=160ms
+release-to-llm-request=0ms
+llm-to-first-token=1ms
+first-token-to-sentence=0ms
+sentence-to-tts=0ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=161ms
+[PIPELINE:barge-in-test] Turn complete: assistant="We have created Flexi Genie, which automates your online business. It builds fun..." llmMs=15 ttsMs=0
+[RESPONSE-LEN:barge-in-test] TURN#0 userChars=13 assistantChars=103 estTokens=26 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=2 audioQueuedMs=4636 briefRequested=false
+[PIPELINE:barge-in-test] Response #1 CANCELLED by barge-in — heard="" discarded="We have created Flexi Genie, which automates your online business. It builds fun..."
+[TIMING:barge-in-test] TURN END turn-release=1790159681116 text="okay" sttMs=0
+[STT:barge-in-test] Transcript received: "okay" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:barge-in-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:barge-in-test] TURN#1 turn-detected +1ms
+[TIMING:barge-in-test] TURN#1 stt-to-release=306ms (sttLag=n/ams)
+[LLM:barge-in-test] Sending to fake-llm: historyLength=4 roles=[system,assistant,user,user] streaming=true
+[TIMING:barge-in-test] TURN#1 llm-request +1ms
+[TIMING:barge-in-test] TURN#1 llm-first-token +16ms
+[TIMING:barge-in-test] TURN#1 tts-request +16ms
+[TIMING:barge-in-test] TURN#1 tts-first-chunk +16ms
+[TIMING:barge-in-test] TURN#1 audio-queued +16ms
+[PLAYBACK:barge-in-test] draining 377ms of queued audio before leaving SPEAKING (queued=227ms elapsed=0ms)
+[TIMING:barge-in-test] TURN#1 SUMMARY total=404ms turn-detected=1ms llm-request=1ms llm-first-token=16ms tts-request=16ms tts-first-chunk=16ms audio-queued=16ms
+[TIMING:barge-in-test] TURN#1
+speech-end=2026-09-23T10:34:40.811Z
+endpoint-evidence=2026-09-23T10:34:40.811Z (speech_final)
+turn-release=2026-09-23T10:34:41.116Z
+llm-request=2026-09-23T10:34:41.117Z
+llm-first-token=2026-09-23T10:34:41.132Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T10:34:41.132Z
+tts-first-audio=2026-09-23T10:34:41.132Z
+audio-queued=2026-09-23T10:34:41.132Z
+[TIMING:barge-in-test] TURN#1 DELTAS
+endpoint-to-release=305ms
+release-to-llm-request=1ms
+llm-to-first-token=15ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=321ms
+[PIPELINE:barge-in-test] Turn complete: assistant="Sure." llmMs=15 ttsMs=0
+[RESPONSE-LEN:barge-in-test] TURN#1 userChars=4 assistantChars=5 estTokens=2 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=227 briefRequested=false
+[PIPELINE:barge-in-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:barge-in-test] run() exiting — state=LISTENING aborted=true
+  [FAIL] J7 — the existing 4s rule is unchanged on an UNBOUNDED transport: a short reply with <4s left is still interrupted by 'okay'
+         timed out after 15000ms waiting for 3 replies (have 2, state=LISTENING)
+
+SECTION G — the voicemail phrase table (`voicemailPhraseIn`)
+  [PASS] machine and carrier language is recognised, and the matched phrase is reported
+  [PASS] punctuation and casing do not matter — the match is on words
+  [PASS] ordinary human speech is NOT a machine
+
+SECTION H — the agent does not speak to a machine, it hangs up
+[PIPELINE:barge-in-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:barge-in-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:barge-in-test] GREETING greeting-text-ready +0ms
+[TIMING:barge-in-test] GREETING tts-request +0ms
+[TIMING:barge-in-test] GREETING tts-first-chunk +0ms
+[TIMING:barge-in-test] GREETING audio-queued +0ms
+[PIPELINE:barge-in-test] VOICEMAIL DETECTED ("leave a message after") — stopping the agent and hanging up
+[TIMING:barge-in-test] GREETING SUMMARY total=1ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:barge-in-test] Greeting CUT SHORT — voicemail detected while it was playing
+[PIPELINE:barge-in-test] entering main loop — state=LISTENING aborted=true
+[PIPELINE:barge-in-test] run() exiting — state=LISTENING aborted=true
+  [PASS] a voicemail greeting stops the agent AND hangs the call up
+[PIPELINE:barge-in-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:barge-in-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:barge-in-test] GREETING greeting-text-ready +0ms
+[TIMING:barge-in-test] GREETING tts-request +0ms
+[TIMING:barge-in-test] GREETING tts-first-chunk +1ms
+[TIMING:barge-in-test] GREETING audio-queued +1ms
+[PIPELINE:barge-in-test] VOICEMAIL DETECTED ("leave a message after") — stopping the agent and hanging up
+[TIMING:barge-in-test] GREETING SUMMARY total=1ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:barge-in-test] Greeting CUT SHORT — voicemail detected while it was playing
+[PIPELINE:barge-in-test] entering main loop — state=LISTENING aborted=true
+[PIPELINE:barge-in-test] run() exiting — state=LISTENING aborted=true
+  [PASS] the machine's greeting IS recorded — it is what labels the call
+[PIPELINE:barge-in-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:barge-in-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:barge-in-test] GREETING greeting-text-ready +0ms
+[TIMING:barge-in-test] GREETING tts-request +0ms
+[TIMING:barge-in-test] GREETING tts-first-chunk +0ms
+[TIMING:barge-in-test] GREETING audio-queued +0ms
+[PIPELINE:barge-in-test] VOICEMAIL DETECTED ("is currently unavailable") — stopping the agent and hanging up
+[TIMING:barge-in-test] GREETING SUMMARY total=0ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:barge-in-test] Greeting CUT SHORT — voicemail detected while it was playing
+[PIPELINE:barge-in-test] entering main loop — state=LISTENING aborted=true
+[PIPELINE:barge-in-test] run() exiting — state=LISTENING aborted=true
+  [PASS] a voicemail greeting mid-way through our opening line cuts it off and ends the call
+[PIPELINE:barge-in-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:barge-in-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:barge-in-test] GREETING greeting-text-ready +0ms
+[TIMING:barge-in-test] GREETING tts-request +0ms
+[TIMING:barge-in-test] GREETING tts-first-chunk +0ms
+[TIMING:barge-in-test] GREETING audio-queued +0ms
+[PLAYBACK:barge-in-test] draining 4376ms of queued audio before leaving SPEAKING (queued=4227ms elapsed=1ms)
+[TIMING:barge-in-test] GREETING SUMMARY total=4391ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:barge-in-test] Greeting spoken: text="Hello Sakshi, this is Rohan calling from FlexiFunnels about the free AI workshop this Sunday." state=SPEAKING
+[PIPELINE:barge-in-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:barge-in-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me more." evidence-to-llm-open=1ms historyLength=3
+[TIMING:barge-in-test] TURN END turn-release=1790159705920 text="Yes, tell me more." sttMs=0
+[STT:barge-in-test] Transcript received: "Yes, tell me more." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:barge-in-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:barge-in-test] TURN#0 turn-detected +0ms
+[TIMING:barge-in-test] TURN#0 stt-to-release=152ms (sttLag=n/ams)
+[LANGUAGE:barge-in-test] call language LOCKED to en on the first meaningful utterance (basis=default-english confidence=0.75 hindiMarkers=0): "Yes, tell me more."
+[LLM:barge-in-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:barge-in-test] TURN#0 llm-request +1ms
+[SPECULATE:barge-in-test] ADOPTED pre-opened request — llm-request is 152ms after the provider stream was opened (first token already in hand, 138ms ago) evidence-to-llm-open=1ms
+[TIMING:barge-in-test] TURN#0 llm-first-token +1ms
+[TIMING:barge-in-test] TURN#0 tts-request +1ms
+[TIMING:barge-in-test] TURN#0 tts-first-chunk +1ms
+[TIMING:barge-in-test] TURN#0 audio-queued +1ms
+[PLAYBACK:barge-in-test] draining 2059ms of queued audio before leaving SPEAKING (queued=1909ms elapsed=0ms)
+[TIMING:barge-in-test] TURN#0 SUMMARY total=2070ms turn-detected=0ms llm-request=1ms llm-first-token=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:barge-in-test] TURN#0
+speech-end=2026-09-23T10:35:05.768Z
+endpoint-evidence=2026-09-23T10:35:05.768Z (speech_final)
+turn-release=2026-09-23T10:35:05.920Z
+llm-request=2026-09-23T10:35:05.921Z
+llm-first-token=2026-09-23T10:35:05.921Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T10:35:05.921Z
+tts-first-audio=2026-09-23T10:35:05.921Z
+audio-queued=2026-09-23T10:35:05.921Z
+[TIMING:barge-in-test] TURN#0 DELTAS
+endpoint-to-release=152ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=153ms
+[PIPELINE:barge-in-test] Turn complete: assistant="The workshop is free and runs this Sunday." llmMs=14 ttsMs=0
+[RESPONSE-LEN:barge-in-test] TURN#0 userChars=18 assistantChars=42 estTokens=11 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1909 briefRequested=false
+[SPECULATE:barge-in-test] LLM request PRE-OPENED on speech_final evidence: text="Okay, can you please leave a message on my voicemail as well?" evidence-to-llm-open=0ms historyLength=5
+[TIMING:barge-in-test] TURN END turn-release=1790159708634 text="Okay, can you please leave a message on my voicemail as well?" sttMs=0
+[STT:barge-in-test] Transcript received: "Okay, can you please leave a message on my voicemail as well?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:barge-in-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:barge-in-test] TURN#1 turn-detected +0ms
+[TIMING:barge-in-test] TURN#1 stt-to-release=613ms (sttLag=n/ams)
+[LLM:barge-in-test] Sending to fake-llm: historyLength=5 roles=[system,assistant,user,assistant,user] streaming=true
+[TIMING:barge-in-test] TURN#1 llm-request +1ms
+[SPECULATE:barge-in-test] ADOPTED pre-opened request — llm-request is 613ms after the provider stream was opened (first token already in hand, 598ms ago) evidence-to-llm-open=0ms
+[TIMING:barge-in-test] TURN#1 llm-first-token +1ms
+[TIMING:barge-in-test] TURN#1 tts-request +1ms
+[TIMING:barge-in-test] TURN#1 tts-first-chunk +1ms
+[TIMING:barge-in-test] TURN#1 audio-queued +1ms
+[PLAYBACK:barge-in-test] draining 1514ms of queued audio before leaving SPEAKING (queued=1364ms elapsed=0ms)
+[TIMING:barge-in-test] TURN#1 SUMMARY total=1518ms turn-detected=0ms llm-request=1ms llm-first-token=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:barge-in-test] TURN#1
+speech-end=2026-09-23T10:35:08.021Z
+endpoint-evidence=2026-09-23T10:35:08.022Z (speech_final)
+turn-release=2026-09-23T10:35:08.634Z
+llm-request=2026-09-23T10:35:08.635Z
+llm-first-token=2026-09-23T10:35:08.635Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T10:35:08.635Z
+tts-first-audio=2026-09-23T10:35:08.635Z
+audio-queued=2026-09-23T10:35:08.635Z
+[TIMING:barge-in-test] TURN#1 DELTAS
+endpoint-to-release=612ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=614ms
+[PIPELINE:barge-in-test] Turn complete: assistant="Sure, I will send the details." llmMs=15 ttsMs=0
+[RESPONSE-LEN:barge-in-test] TURN#1 userChars=61 assistantChars=30 estTokens=8 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1364 briefRequested=false
+[PIPELINE:barge-in-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:barge-in-test] run() exiting — state=LISTENING aborted=true
+  [PASS] a marker AFTER a real exchange can never silence a person
+
+SECTION I — the energy-only fallback fires only when STT is dead (`vobiz-media-bridge`)
+[vobiz-bridge:sess_energy_only] outbound audio listener registered
+[vobiz-bridge:sess_energy_only] bridge attached, socket.readyState=1
+[Vobiz] stream ready (streamId=stream_1)
+[vobiz-bridge:sess_energy_only] "start" event: streamId=stream_1 callId=call_1 mediaFormat=undefined, confirming call answered
+[vobiz-DIAG:sess_energy_only] start.tracks: raw=undefined isArray=false count=n/a values=[] — whole start payload={"streamId":"stream_1","callId":"call_1"}
+[Vobiz] greeting queued (600 frames, streamId=stream_1)
+[Vobiz] greeting pump started
+[vobiz-DIAG:sess_energy_only] media frame #1/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #2/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #3/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #4/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #5/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #6/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #7/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #8/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #9/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #10/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #11/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #12/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #13/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #14/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #15/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #16/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #17/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #18/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #19/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #20/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] first 20 media frames TALLY: INBOUND (caller)=20 — distinctTrackValues=1 (1 bucket of INBOUND = caller-only; MISSING/undefined = UNLABELLED, filter below is a no-op; any OUTBOUND/MIXED = SELF-ECHO ON THE WIRE)
+[vobiz-bridge:sess_energy_only] energy-only barge-in SUPPRESSED: 700ms of loud near-end energy with no transcript, but STT delivered a segment 1500ms ago — not the caller (queue=600 frames)
+[vobiz-bridge:sess_energy_only] socket "close" event, args=[]
+[vobiz-DIAG:sess_energy_only] WHOLE-CALL media track tally: INBOUND (caller)=40 — distinctTrackValues=1 framesForwardedToStt=40
+  [PASS] I1. STT alive: 800ms of loud energy with no transcript does NOT barge in, and the queued reply survives
+[vobiz-bridge:sess_energy_only] outbound audio listener registered
+[vobiz-bridge:sess_energy_only] bridge attached, socket.readyState=1
+[Vobiz] stream ready (streamId=stream_1)
+[vobiz-bridge:sess_energy_only] "start" event: streamId=stream_1 callId=call_1 mediaFormat=undefined, confirming call answered
+[vobiz-DIAG:sess_energy_only] start.tracks: raw=undefined isArray=false count=n/a values=[] — whole start payload={"streamId":"stream_1","callId":"call_1"}
+[Vobiz] greeting queued (600 frames, streamId=stream_1)
+[Vobiz] greeting pump started
+[vobiz-DIAG:sess_energy_only] media frame #1/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #2/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #3/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #4/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #5/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #6/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #7/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #8/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #9/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #10/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #11/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #12/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #13/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #14/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #15/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #16/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #17/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #18/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #19/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #20/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] first 20 media frames TALLY: INBOUND (caller)=20 — distinctTrackValues=1 (1 bucket of INBOUND = caller-only; MISSING/undefined = UNLABELLED, filter below is a no-op; any OUTBOUND/MIXED = SELF-ECHO ON THE WIRE)
+[vobiz-bridge:sess_energy_only] BARGE-IN: 700ms of sustained near-end speech over assistant audio, with no transcript (queue=600 frames)
+[vobiz-bridge:sess_energy_only] clearOutboundPlayback: dropped 600 queued frames, sending clearAudio (streamId=stream_1)
+[vobiz-bridge:sess_energy_only] clearOutboundPlayback: dropped 0 queued frames, sending clearAudio (streamId=stream_1)
+[vobiz-bridge:sess_energy_only] socket "close" event, args=[]
+[vobiz-DIAG:sess_energy_only] WHOLE-CALL media track tally: INBOUND (caller)=40 — distinctTrackValues=1 framesForwardedToStt=40
+  [PASS] I2. STT dead (no segment for longer than the unhealthy window): the fallback still barges in and clears the queue
+[vobiz-bridge:sess_energy_only] outbound audio listener registered
+[vobiz-bridge:sess_energy_only] bridge attached, socket.readyState=1
+[Vobiz] stream ready (streamId=stream_1)
+[vobiz-bridge:sess_energy_only] "start" event: streamId=stream_1 callId=call_1 mediaFormat=undefined, confirming call answered
+[vobiz-DIAG:sess_energy_only] start.tracks: raw=undefined isArray=false count=n/a values=[] — whole start payload={"streamId":"stream_1","callId":"call_1"}
+[Vobiz] greeting queued (600 frames, streamId=stream_1)
+[Vobiz] greeting pump started
+[vobiz-DIAG:sess_energy_only] media frame #1/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #2/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #3/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #4/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #5/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #6/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #7/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #8/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #9/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #10/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #11/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #12/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #13/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #14/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #15/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #16/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #17/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #18/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #19/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #20/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] first 20 media frames TALLY: INBOUND (caller)=20 — distinctTrackValues=1 (1 bucket of INBOUND = caller-only; MISSING/undefined = UNLABELLED, filter below is a no-op; any OUTBOUND/MIXED = SELF-ECHO ON THE WIRE)
+[vobiz-bridge:sess_energy_only] BARGE-IN: 700ms of sustained near-end speech over assistant audio, with no transcript (queue=600 frames)
+[vobiz-bridge:sess_energy_only] clearOutboundPlayback: dropped 600 queued frames, sending clearAudio (streamId=stream_1)
+[vobiz-bridge:sess_energy_only] clearOutboundPlayback: dropped 0 queued frames, sending clearAudio (streamId=stream_1)
+[vobiz-bridge:sess_energy_only] socket "close" event, args=[]
+[vobiz-DIAG:sess_energy_only] WHOLE-CALL media track tally: INBOUND (caller)=40 — distinctTrackValues=1 framesForwardedToStt=40
+  [PASS] I2b. STT never delivered anything on this call: previous behaviour is preserved (fallback fires)
+[vobiz-bridge:sess_energy_only] outbound audio listener registered
+[vobiz-bridge:sess_energy_only] bridge attached, socket.readyState=1
+[Vobiz] stream ready (streamId=stream_1)
+[vobiz-bridge:sess_energy_only] "start" event: streamId=stream_1 callId=call_1 mediaFormat=undefined, confirming call answered
+[vobiz-DIAG:sess_energy_only] start.tracks: raw=undefined isArray=false count=n/a values=[] — whole start payload={"streamId":"stream_1","callId":"call_1"}
+[Vobiz] greeting queued (600 frames, streamId=stream_1)
+[Vobiz] greeting pump started
+[vobiz-DIAG:sess_energy_only] media frame #1/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #2/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #3/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #4/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #5/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #6/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #7/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #8/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #9/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #10/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #11/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #12/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #13/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #14/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #15/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #16/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #17/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #18/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #19/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #20/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] first 20 media frames TALLY: INBOUND (caller)=20 — distinctTrackValues=1 (1 bucket of INBOUND = caller-only; MISSING/undefined = UNLABELLED, filter below is a no-op; any OUTBOUND/MIXED = SELF-ECHO ON THE WIRE)
+[vobiz-bridge:sess_energy_only] energy-only barge-in SUPPRESSED: 700ms of loud near-end energy with no transcript, but STT delivered a segment 1500ms ago — not the caller (queue=600 frames)
+[vobiz-bridge:sess_energy_only] clearOutboundPlayback: dropped 600 queued frames, sending clearAudio (streamId=stream_1)
+[vobiz-bridge:sess_energy_only] socket "close" event, args=[]
+[vobiz-DIAG:sess_energy_only] WHOLE-CALL media track tally: INBOUND (caller)=40 — distinctTrackValues=1 framesForwardedToStt=40
+  [PASS] I3. STT alive: the pipeline's transcript-confirmed barge-in still clears playback through the bridge
+[vobiz-bridge:sess_energy_only] outbound audio listener registered
+[vobiz-bridge:sess_energy_only] bridge attached, socket.readyState=1
+[Vobiz] stream ready (streamId=stream_1)
+[vobiz-bridge:sess_energy_only] "start" event: streamId=stream_1 callId=call_1 mediaFormat=undefined, confirming call answered
+[vobiz-DIAG:sess_energy_only] start.tracks: raw=undefined isArray=false count=n/a values=[] — whole start payload={"streamId":"stream_1","callId":"call_1"}
+[Vobiz] greeting queued (600 frames, streamId=stream_1)
+[Vobiz] greeting pump started
+[vobiz-DIAG:sess_energy_only] media frame #1/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #2/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #3/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #4/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #5/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #6/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #7/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #8/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #9/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #10/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #11/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #12/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #13/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #14/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #15/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #16/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #17/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #18/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #19/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #20/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] first 20 media frames TALLY: INBOUND (caller)=20 — distinctTrackValues=1 (1 bucket of INBOUND = caller-only; MISSING/undefined = UNLABELLED, filter below is a no-op; any OUTBOUND/MIXED = SELF-ECHO ON THE WIRE)
+[vobiz-bridge:sess_energy_only] BARGE-IN: 700ms of sustained near-end speech over assistant audio, with no transcript (queue=600 frames)
+[vobiz-bridge:sess_energy_only] clearOutboundPlayback: dropped 600 queued frames, sending clearAudio (streamId=stream_1)
+[vobiz-bridge:sess_energy_only] clearOutboundPlayback: dropped 0 queued frames, sending clearAudio (streamId=stream_1)
+[vobiz-bridge:sess_energy_only] socket "close" event, args=[]
+[vobiz-DIAG:sess_energy_only] WHOLE-CALL media track tally: INBOUND (caller)=90 — distinctTrackValues=1 framesForwardedToStt=90
+  [PASS] I4. STT dead: the fallback fires exactly once — the loud frames that follow do not barge in again
+[vobiz-bridge:sess_energy_only] outbound audio listener registered
+[vobiz-bridge:sess_energy_only] bridge attached, socket.readyState=1
+[Vobiz] stream ready (streamId=stream_1)
+[vobiz-bridge:sess_energy_only] "start" event: streamId=stream_1 callId=call_1 mediaFormat=undefined, confirming call answered
+[vobiz-DIAG:sess_energy_only] start.tracks: raw=undefined isArray=false count=n/a values=[] — whole start payload={"streamId":"stream_1","callId":"call_1"}
+[Vobiz] greeting queued (600 frames, streamId=stream_1)
+[Vobiz] greeting pump started
+[vobiz-DIAG:sess_energy_only] media frame #1/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #2/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #3/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #4/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #5/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #6/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #7/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #8/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #9/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #10/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #11/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #12/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #13/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #14/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #15/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #16/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #17/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #18/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #19/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #20/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] first 20 media frames TALLY: INBOUND (caller)=20 — distinctTrackValues=1 (1 bucket of INBOUND = caller-only; MISSING/undefined = UNLABELLED, filter below is a no-op; any OUTBOUND/MIXED = SELF-ECHO ON THE WIRE)
+[vobiz-bridge:sess_energy_only] outbound audio listener registered
+[vobiz-bridge:sess_energy_only] bridge attached, socket.readyState=1
+[Vobiz] stream ready (streamId=stream_1)
+[vobiz-bridge:sess_energy_only] "start" event: streamId=stream_1 callId=call_1 mediaFormat=undefined, confirming call answered
+[vobiz-DIAG:sess_energy_only] start.tracks: raw=undefined isArray=false count=n/a values=[] — whole start payload={"streamId":"stream_1","callId":"call_1"}
+[Vobiz] greeting queued (600 frames, streamId=stream_1)
+[Vobiz] greeting pump started
+[vobiz-DIAG:sess_energy_only] media frame #1/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #2/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #3/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #4/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #5/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #6/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #7/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #8/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #9/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #10/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #11/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #12/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #13/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #14/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #15/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #16/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #17/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #18/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #19/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] media frame #20/20: track="inbound" -> INBOUND (caller) | bytes=216(b64) | keys=[track,payload]
+[vobiz-DIAG:sess_energy_only] first 20 media frames TALLY: INBOUND (caller)=20 — distinctTrackValues=1 (1 bucket of INBOUND = caller-only; MISSING/undefined = UNLABELLED, filter below is a no-op; any OUTBOUND/MIXED = SELF-ECHO ON THE WIRE)
+[vobiz-bridge:sess_energy_only] socket "close" event, args=[]
+[vobiz-DIAG:sess_energy_only] WHOLE-CALL media track tally: INBOUND (caller)=30 — distinctTrackValues=1 framesForwardedToStt=30
+[vobiz-bridge:sess_energy_only] socket "close" event, args=[]
+[vobiz-DIAG:sess_energy_only] WHOLE-CALL media track tally: INBOUND (caller)=30 — distinctTrackValues=1 framesForwardedToStt=30
+  [PASS] I5. below the 700ms energy-only threshold nothing fires, alive or dead — the threshold is unchanged
+[PIPELINE:barge-in-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:barge-in-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:barge-in-test] GREETING greeting-text-ready +0ms
+[TIMING:barge-in-test] GREETING tts-request +0ms
+[TIMING:barge-in-test] GREETING tts-first-chunk +1ms
+[TIMING:barge-in-test] GREETING audio-queued +1ms
+[PLAYBACK:barge-in-test] draining 4377ms of queued audio before leaving SPEAKING (queued=4227ms elapsed=0ms)
+[TIMING:barge-in-test] GREETING SUMMARY total=4383ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:barge-in-test] Greeting spoken: text="Hello Sakshi, this is Rohan calling from FlexiFunnels about the free AI workshop this Sunday." state=SPEAKING
+[PIPELINE:barge-in-test] entering main loop — state=SPEAKING aborted=false
+[TIMING:barge-in-test] TURN END turn-release=1790159714579 text="I was wondering about the price." sttMs=68
+[STT:barge-in-test] Transcript received: "I was wondering about the price." userSpeechMs=68 sttLagMs=n/a
+[TURN-RELEASE:barge-in-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:barge-in-test] TURN#0 turn-detected +1ms
+[TIMING:barge-in-test] TURN#0 stt-to-release=4315ms (sttLag=n/ams)
+[LANGUAGE:barge-in-test] call language LOCKED to en on the first meaningful utterance (basis=default-english confidence=0.75 hindiMarkers=0): "I was wondering about the price."
+[LLM:barge-in-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:barge-in-test] TURN#0 llm-request +1ms
+[TIMING:barge-in-test] TURN#0 llm-first-token +15ms
+[TIMING:barge-in-test] TURN#0 tts-request +15ms
+[TIMING:barge-in-test] TURN#0 tts-first-chunk +15ms
+[TIMING:barge-in-test] TURN#0 audio-queued +15ms
+[PLAYBACK:barge-in-test] draining 2059ms of queued audio before leaving SPEAKING (queued=1909ms elapsed=0ms)
+[TIMING:barge-in-test] TURN#0 SUMMARY total=2084ms turn-detected=1ms llm-request=1ms llm-first-token=15ms tts-request=15ms tts-first-chunk=15ms audio-queued=15ms
+[TIMING:barge-in-test] TURN#0
+speech-end=2026-09-23T10:35:10.265Z
+endpoint-evidence=2026-09-23T10:35:10.265Z (speech_final)
+turn-release=2026-09-23T10:35:14.579Z
+llm-request=2026-09-23T10:35:14.580Z
+llm-first-token=2026-09-23T10:35:14.594Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T10:35:14.594Z
+tts-first-audio=2026-09-23T10:35:14.594Z
+audio-queued=2026-09-23T10:35:14.594Z
+[TIMING:barge-in-test] TURN#0 DELTAS
+endpoint-to-release=4314ms
+release-to-llm-request=1ms
+llm-to-first-token=14ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=4329ms
+[PIPELINE:barge-in-test] Turn complete: assistant="The workshop is free and runs this Sunday." llmMs=14 ttsMs=0
+[RESPONSE-LEN:barge-in-test] TURN#0 userChars=32 assistantChars=42 estTokens=11 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1909 briefRequested=false
+[PIPELINE:barge-in-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:barge-in-test] run() exiting — state=LISTENING aborted=true
+  [PASS] I6. the pipeline stamps STT evidence for interim AND final segments, and nothing else changes for them
+
+FAILED — 43 passed, 9 failed
+  - a transport that reports NO energy keeps the transcript-only behaviour
+  - a barge-in with no transcript at all RESUMES the unheard remainder
+  - loud, confident, meaningful speech still interrupts and still wins
+  - J3 — "Wait, what about the price?" over the same block is a REAL interruption: block cut, question answered
+  - J3 — "No, I have a question." over the same block is a REAL interruption: block cut, question answered
+  - J3 — "Actually, I wanted to ask about the price." over the same block is a REAL interruption: block cut, question answered
+  - J3 — "Stop for a second." over the same block is a REAL interruption: block cut, question answered
+  - J4 — 'ok, but what is the price?' (acknowledgement WITH content) still interrupts — the vocabulary is not widened
+  - J7 — the existing 4s rule is unchanged on an UNBOUNDED transport: a short reply with <4s left is still interrupted by 'okay'

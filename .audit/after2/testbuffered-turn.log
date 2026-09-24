@@ -1,0 +1,924 @@
+
+SECTION A — the two guards, on the real `drainPlayback`
+  [PASS] A1. `bufferedTurnText()` is read-only: it neither consumes nor clears the buffered turn
+  [PASS] A2. playback that has not started is NOT pollable — the early return still wins
+[PIPELINE:buffered-turn-guard] barge-in DECLINED — the fixed opening line is still playing
+[PLAYBACK:buffered-turn-guard] draining 1050ms of queued audio before leaving SPEAKING (queued=900ms elapsed=0ms)
+[PLAYBACK:buffered-turn-guard] a caller turn is already waiting — asking to cut the reply short to answer it: "Wait, how much does the whole thing cost me?"
+[PIPELINE:buffered-turn-guard] barge-in DECLINED — the fixed opening line is still playing
+[PIPELINE:buffered-turn-guard] barge-in DECLINED — the fixed opening line is still playing
+[PIPELINE:buffered-turn-guard] barge-in DECLINED — the fixed opening line is still playing
+[PIPELINE:buffered-turn-guard] barge-in DECLINED — the fixed opening line is still playing
+  [PASS] A3. a DECLINED barge-in means keep draining, not stop
+[PLAYBACK:buffered-turn-guard] draining 850ms of queued audio before leaving SPEAKING (queued=700ms elapsed=0ms)
+  [PASS] A4. with the flag OFF, a meaningful buffered turn changes nothing
+
+SECTION B — the behaviour, end to end through the real pipeline
+[PIPELINE:buffered-turn-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:buffered-turn-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:buffered-turn-test] GREETING greeting-text-ready +0ms
+[TIMING:buffered-turn-test] GREETING tts-request +3ms
+[TIMING:buffered-turn-test] GREETING tts-first-chunk +3ms
+[TIMING:buffered-turn-test] GREETING audio-queued +3ms
+[PLAYBACK:buffered-turn-test] draining 2467ms of queued audio before leaving SPEAKING (queued=2318ms elapsed=1ms)
+[TIMING:buffered-turn-test] GREETING SUMMARY total=2471ms greeting-text-ready=0ms tts-request=3ms tts-first-chunk=3ms audio-queued=3ms
+[PIPELINE:buffered-turn-test] Greeting spoken: text="Hello Priya, this is Ishita from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:buffered-turn-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:buffered-turn-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, please tell me." evidence-to-llm-open=5ms historyLength=3
+[TIMING:buffered-turn-test] TURN END turn-release=1790178298724 text="Yes, please tell me." sttMs=0
+[STT:buffered-turn-test] Transcript received: "Yes, please tell me." userSpeechMs=0 sttLagMs=0
+[TURN-RELEASE:buffered-turn-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:buffered-turn-test] TURN#0 turn-detected +1ms
+[TIMING:buffered-turn-test] TURN#0 stt-to-release=155ms (sttLag=0ms)
+[LANGUAGE:buffered-turn-test] call language LOCKED to en on the first meaningful utterance (basis=default-english confidence=0.75 hindiMarkers=0): "Yes, please tell me."
+[LLM:buffered-turn-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:buffered-turn-test] TURN#0 llm-request +3ms
+[SPECULATE:buffered-turn-test] ADOPTED pre-opened request — llm-request is 152ms after the provider stream was opened (first token not yet received) evidence-to-llm-open=5ms
+[TIMING:buffered-turn-test] TURN#0 llm-first-token +51ms
+[TIMING:buffered-turn-test] TURN#0 first-sentence-ready +52ms
+[TIMING:buffered-turn-test] TURN#0 tts-request +52ms
+[TIMING:buffered-turn-test] TURN#0 tts-first-chunk +52ms
+[TIMING:buffered-turn-test] TURN#0 audio-queued +52ms
+[PLAYBACK:buffered-turn-test] draining 15195ms of queued audio before leaving SPEAKING (queued=15046ms elapsed=1ms)
+[PLAYBACK:buffered-turn-test] a caller turn is already waiting — asking to cut the reply short to answer it: "Wait, how much does the whole thing cost me?"
+[TIMING:buffered-turn-test] TURN#0 SUMMARY total=573ms turn-detected=1ms llm-request=3ms llm-first-token=51ms first-sentence-ready=52ms tts-request=52ms tts-first-chunk=52ms audio-queued=52ms
+[TIMING:buffered-turn-test] TURN#0
+speech-end=2026-09-23T15:44:58.570Z
+endpoint-evidence=2026-09-23T15:44:58.570Z (speech_final)
+turn-release=2026-09-23T15:44:58.724Z
+llm-request=2026-09-23T15:44:58.727Z
+llm-first-token=2026-09-23T15:44:58.775Z
+first-sentence-ready=2026-09-23T15:44:58.776Z
+tts-request=2026-09-23T15:44:58.776Z
+tts-first-audio=2026-09-23T15:44:58.776Z
+audio-queued=2026-09-23T15:44:58.776Z
+[TIMING:buffered-turn-test] TURN#0 DELTAS
+endpoint-to-release=154ms
+release-to-llm-request=3ms
+llm-to-first-token=48ms
+first-token-to-sentence=1ms
+sentence-to-tts=0ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=206ms
+[PIPELINE:buffered-turn-test] Turn complete: assistant="I'm calling to personally invite you to a free live workshop we are hosting on S..." llmMs=200 ttsMs=0
+[RESPONSE-LEN:buffered-turn-test] TURN#0 userChars=20 assistantChars=333 estTokens=84 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=3 audioQueuedMs=15046 briefRequested=false
+[PIPELINE:buffered-turn-test] Response #1 CANCELLED by barge-in — heard="" discarded="I'm calling to personally invite you to a free live workshop we are hosting on S..."
+[TIMING:buffered-turn-test] TURN END turn-release=1790178299299 text="Wait, how much does the whole thing cost me?" sttMs=0
+[STT:buffered-turn-test] Transcript received: "Wait, how much does the whole thing cost me?" userSpeechMs=0 sttLagMs=200
+[TURN-RELEASE:buffered-turn-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:buffered-turn-test] TURN#1 turn-detected +0ms
+[TIMING:buffered-turn-test] TURN#1 stt-to-release=691ms (sttLag=200ms)
+[LLM:buffered-turn-test] Sending to fake-llm: historyLength=4 roles=[system,assistant,user,user] streaming=true
+[TIMING:buffered-turn-test] TURN#1 llm-request +0ms
+[TIMING:buffered-turn-test] TURN#1 llm-first-token +200ms
+[TIMING:buffered-turn-test] TURN#1 tts-request +200ms
+[TIMING:buffered-turn-test] TURN#1 tts-first-chunk +201ms
+[TIMING:buffered-turn-test] TURN#1 audio-queued +201ms
+[PLAYBACK:buffered-turn-test] draining 2059ms of queued audio before leaving SPEAKING (queued=1909ms elapsed=0ms)
+[TIMING:buffered-turn-test] TURN#1 SUMMARY total=2262ms turn-detected=0ms llm-request=0ms llm-first-token=200ms tts-request=200ms tts-first-chunk=201ms audio-queued=201ms
+[TIMING:buffered-turn-test] TURN#1
+speech-end=2026-09-23T15:44:58.608Z
+endpoint-evidence=2026-09-23T15:44:58.808Z (speech_final)
+turn-release=2026-09-23T15:44:59.299Z
+llm-request=2026-09-23T15:44:59.299Z
+llm-first-token=2026-09-23T15:44:59.499Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T15:44:59.499Z
+tts-first-audio=2026-09-23T15:44:59.500Z
+audio-queued=2026-09-23T15:44:59.500Z
+[TIMING:buffered-turn-test] TURN#1 DELTAS
+endpoint-to-release=491ms
+release-to-llm-request=0ms
+llm-to-first-token=200ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=1ms
+first-audio-to-queue=0ms
+speech-end-to-audio=892ms
+[PIPELINE:buffered-turn-test] Turn complete: assistant="The workshop is completely free of charge." llmMs=200 ttsMs=1
+[RESPONSE-LEN:buffered-turn-test] TURN#1 userChars=44 assistantChars=42 estTokens=11 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1909 briefRequested=false
+[PIPELINE:buffered-turn-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:buffered-turn-test] run() exiting — state=LISTENING aborted=true
+  [FAIL] B1. a meaningful buffered turn is answered without waiting out the block
+         timed out after 20000ms waiting for 3 replies (have 2, state=LISTENING)
+[PIPELINE:buffered-turn-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:buffered-turn-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:buffered-turn-test] GREETING greeting-text-ready +0ms
+[TIMING:buffered-turn-test] GREETING tts-request +1ms
+[TIMING:buffered-turn-test] GREETING tts-first-chunk +1ms
+[TIMING:buffered-turn-test] GREETING audio-queued +1ms
+[PLAYBACK:buffered-turn-test] draining 2467ms of queued audio before leaving SPEAKING (queued=2318ms elapsed=1ms)
+[TIMING:buffered-turn-test] GREETING SUMMARY total=2471ms greeting-text-ready=0ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:buffered-turn-test] Greeting spoken: text="Hello Priya, this is Ishita from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:buffered-turn-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:buffered-turn-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, please tell me." evidence-to-llm-open=5ms historyLength=3
+[TIMING:buffered-turn-test] TURN END turn-release=1790178321486 text="Yes, please tell me." sttMs=0
+[STT:buffered-turn-test] Transcript received: "Yes, please tell me." userSpeechMs=0 sttLagMs=0
+[TURN-RELEASE:buffered-turn-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:buffered-turn-test] TURN#0 turn-detected +1ms
+[TIMING:buffered-turn-test] TURN#0 stt-to-release=161ms (sttLag=0ms)
+[LANGUAGE:buffered-turn-test] call language LOCKED to en on the first meaningful utterance (basis=default-english confidence=0.75 hindiMarkers=0): "Yes, please tell me."
+[LLM:buffered-turn-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:buffered-turn-test] TURN#0 llm-request +2ms
+[SPECULATE:buffered-turn-test] ADOPTED pre-opened request — llm-request is 157ms after the provider stream was opened (first token not yet received) evidence-to-llm-open=5ms
+[TIMING:buffered-turn-test] TURN#0 llm-first-token +53ms
+[TIMING:buffered-turn-test] TURN#0 tts-request +54ms
+[TIMING:buffered-turn-test] TURN#0 tts-first-chunk +54ms
+[TIMING:buffered-turn-test] TURN#0 audio-queued +54ms
+[PLAYBACK:buffered-turn-test] draining 4105ms of queued audio before leaving SPEAKING (queued=3955ms elapsed=0ms)
+[TIMING:buffered-turn-test] TURN#0 SUMMARY total=4170ms turn-detected=1ms llm-request=2ms llm-first-token=53ms tts-request=54ms tts-first-chunk=54ms audio-queued=54ms
+[TIMING:buffered-turn-test] TURN#0
+speech-end=2026-09-23T15:45:21.326Z
+endpoint-evidence=2026-09-23T15:45:21.326Z (speech_final)
+turn-release=2026-09-23T15:45:21.486Z
+llm-request=2026-09-23T15:45:21.488Z
+llm-first-token=2026-09-23T15:45:21.539Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T15:45:21.540Z
+tts-first-audio=2026-09-23T15:45:21.540Z
+audio-queued=2026-09-23T15:45:21.540Z
+[TIMING:buffered-turn-test] TURN#0 DELTAS
+endpoint-to-release=160ms
+release-to-llm-request=2ms
+llm-to-first-token=51ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=214ms
+[PIPELINE:buffered-turn-test] Turn complete: assistant="We are hosting a free live workshop this Sunday morning, and it runs for about a..." llmMs=208 ttsMs=0
+[RESPONSE-LEN:buffered-turn-test] TURN#0 userChars=20 assistantChars=87 estTokens=22 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=3955 briefRequested=false
+[TIMING:buffered-turn-test] TURN END turn-release=1790178325658 text="Okay." sttMs=0
+[STT:buffered-turn-test] Transcript received: "Okay." userSpeechMs=0 sttLagMs=200
+[TURN-RELEASE:buffered-turn-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[PIPELINE:buffered-turn-test] pickup acknowledgement ignored (not a turn): "Okay." — the opening line is the answer to it
+[PIPELINE:buffered-turn-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:buffered-turn-test] run() exiting — state=LISTENING aborted=true
+  [PASS] B2. a buffered bare acknowledgement does NOT cut the block
+[PIPELINE:buffered-turn-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:buffered-turn-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:buffered-turn-test] GREETING greeting-text-ready +0ms
+[TIMING:buffered-turn-test] GREETING tts-request +0ms
+[TIMING:buffered-turn-test] GREETING tts-first-chunk +0ms
+[TIMING:buffered-turn-test] GREETING audio-queued +1ms
+[PLAYBACK:buffered-turn-test] draining 2468ms of queued audio before leaving SPEAKING (queued=2318ms elapsed=0ms)
+[TIMING:buffered-turn-test] GREETING SUMMARY total=2471ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=1ms
+[PIPELINE:buffered-turn-test] Greeting spoken: text="Hello Priya, this is Ishita from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:buffered-turn-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:buffered-turn-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, please tell me." evidence-to-llm-open=1ms historyLength=3
+[TIMING:buffered-turn-test] TURN END turn-release=1790178328337 text="Yes, please tell me." sttMs=0
+[STT:buffered-turn-test] Transcript received: "Yes, please tell me." userSpeechMs=0 sttLagMs=0
+[TURN-RELEASE:buffered-turn-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:buffered-turn-test] TURN#0 turn-detected +1ms
+[TIMING:buffered-turn-test] TURN#0 stt-to-release=162ms (sttLag=0ms)
+[LANGUAGE:buffered-turn-test] call language LOCKED to en on the first meaningful utterance (basis=default-english confidence=0.75 hindiMarkers=0): "Yes, please tell me."
+[LLM:buffered-turn-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:buffered-turn-test] TURN#0 llm-request +2ms
+[SPECULATE:buffered-turn-test] ADOPTED pre-opened request — llm-request is 162ms after the provider stream was opened (first token not yet received) evidence-to-llm-open=1ms
+[TIMING:buffered-turn-test] TURN#0 llm-first-token +48ms
+[TIMING:buffered-turn-test] TURN#0 tts-request +48ms
+[TIMING:buffered-turn-test] TURN#0 tts-first-chunk +49ms
+[TIMING:buffered-turn-test] TURN#0 audio-queued +49ms
+[PLAYBACK:buffered-turn-test] draining 4105ms of queued audio before leaving SPEAKING (queued=3955ms elapsed=0ms)
+[TIMING:buffered-turn-test] TURN#0 SUMMARY total=4166ms turn-detected=1ms llm-request=2ms llm-first-token=48ms tts-request=48ms tts-first-chunk=49ms audio-queued=49ms
+[TIMING:buffered-turn-test] TURN#0
+speech-end=2026-09-23T15:45:28.176Z
+endpoint-evidence=2026-09-23T15:45:28.176Z (speech_final)
+turn-release=2026-09-23T15:45:28.337Z
+llm-request=2026-09-23T15:45:28.339Z
+llm-first-token=2026-09-23T15:45:28.385Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T15:45:28.385Z
+tts-first-audio=2026-09-23T15:45:28.386Z
+audio-queued=2026-09-23T15:45:28.386Z
+[TIMING:buffered-turn-test] TURN#0 DELTAS
+endpoint-to-release=161ms
+release-to-llm-request=2ms
+llm-to-first-token=46ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=1ms
+first-audio-to-queue=0ms
+speech-end-to-audio=210ms
+[PIPELINE:buffered-turn-test] Turn complete: assistant="We are hosting a free live workshop this Sunday morning, and it runs for about a..." llmMs=208 ttsMs=0
+[RESPONSE-LEN:buffered-turn-test] TURN#0 userChars=20 assistantChars=87 estTokens=22 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=3955 briefRequested=false
+[TIMING:buffered-turn-test] TURN END turn-release=1790178332504 text="Hello?" sttMs=0
+[STT:buffered-turn-test] Transcript received: "Hello?" userSpeechMs=0 sttLagMs=200
+[TURN-RELEASE:buffered-turn-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[PIPELINE:buffered-turn-test] pickup acknowledgement ignored (not a turn): "Hello?" — the opening line is the answer to it
+[PIPELINE:buffered-turn-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:buffered-turn-test] run() exiting — state=LISTENING aborted=true
+  [PASS] B3. a buffered bare greeting does NOT cut the block
+[PIPELINE:buffered-turn-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:buffered-turn-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:buffered-turn-test] GREETING greeting-text-ready +0ms
+[TIMING:buffered-turn-test] GREETING tts-request +1ms
+[TIMING:buffered-turn-test] GREETING tts-first-chunk +1ms
+[TIMING:buffered-turn-test] GREETING audio-queued +1ms
+[PLAYBACK:buffered-turn-test] draining 2468ms of queued audio before leaving SPEAKING (queued=2318ms elapsed=0ms)
+[TIMING:buffered-turn-test] GREETING SUMMARY total=2480ms greeting-text-ready=0ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:buffered-turn-test] Greeting spoken: text="Hello Priya, this is Ishita from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:buffered-turn-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:buffered-turn-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, please tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:buffered-turn-test] TURN END turn-release=1790178335167 text="Yes, please tell me." sttMs=0
+[STT:buffered-turn-test] Transcript received: "Yes, please tell me." userSpeechMs=0 sttLagMs=0
+[TURN-RELEASE:buffered-turn-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:buffered-turn-test] TURN#0 turn-detected +0ms
+[TIMING:buffered-turn-test] TURN#0 stt-to-release=165ms (sttLag=0ms)
+[LANGUAGE:buffered-turn-test] call language LOCKED to en on the first meaningful utterance (basis=default-english confidence=0.75 hindiMarkers=0): "Yes, please tell me."
+[LLM:buffered-turn-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:buffered-turn-test] TURN#0 llm-request +0ms
+[SPECULATE:buffered-turn-test] ADOPTED pre-opened request — llm-request is 164ms after the provider stream was opened (first token not yet received) evidence-to-llm-open=0ms
+[TIMING:buffered-turn-test] TURN#0 llm-first-token +52ms
+[TIMING:buffered-turn-test] TURN#0 tts-request +52ms
+[TIMING:buffered-turn-test] TURN#0 tts-first-chunk +52ms
+[TIMING:buffered-turn-test] TURN#0 audio-queued +52ms
+[PLAYBACK:buffered-turn-test] draining 4105ms of queued audio before leaving SPEAKING (queued=3955ms elapsed=0ms)
+[TIMING:buffered-turn-test] TURN#0 SUMMARY total=4167ms turn-detected=0ms llm-request=0ms llm-first-token=52ms tts-request=52ms tts-first-chunk=52ms audio-queued=52ms
+[TIMING:buffered-turn-test] TURN#0
+speech-end=2026-09-23T15:45:35.002Z
+endpoint-evidence=2026-09-23T15:45:35.003Z (speech_final)
+turn-release=2026-09-23T15:45:35.167Z
+llm-request=2026-09-23T15:45:35.167Z
+llm-first-token=2026-09-23T15:45:35.219Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T15:45:35.219Z
+tts-first-audio=2026-09-23T15:45:35.219Z
+audio-queued=2026-09-23T15:45:35.219Z
+[TIMING:buffered-turn-test] TURN#0 DELTAS
+endpoint-to-release=164ms
+release-to-llm-request=0ms
+llm-to-first-token=52ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=217ms
+[PIPELINE:buffered-turn-test] Turn complete: assistant="We are hosting a free live workshop this Sunday morning, and it runs for about a..." llmMs=215 ttsMs=0
+[RESPONSE-LEN:buffered-turn-test] TURN#0 userChars=20 assistantChars=87 estTokens=22 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=3955 briefRequested=false
+[TIMING:buffered-turn-test] TURN END turn-release=1790178339335 text="Hello? Are you there?" sttMs=0
+[STT:buffered-turn-test] Transcript received: "Hello? Are you there?" userSpeechMs=0 sttLagMs=200
+[TURN-RELEASE:buffered-turn-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:buffered-turn-test] TURN#1 turn-detected +0ms
+[TIMING:buffered-turn-test] TURN#1 stt-to-release=4316ms (sttLag=200ms)
+[PIPELINE:buffered-turn-test] hearing check with nothing to resume (after a block) — acknowledging once: "Hey, can you hear me okay?"
+[TIMING:buffered-turn-test] ATTENTION tts-request +0ms
+[TIMING:buffered-turn-test] ATTENTION tts-first-chunk +0ms
+[TIMING:buffered-turn-test] ATTENTION audio-queued +0ms
+[PLAYBACK:buffered-turn-test] draining 1332ms of queued audio before leaving SPEAKING (queued=1182ms elapsed=0ms)
+[TIMING:buffered-turn-test] ATTENTION SUMMARY total=1342ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:buffered-turn-test] TURN#1 SUMMARY total=1346ms turn-detected=0ms
+[TIMING:buffered-turn-test] TURN#1
+speech-end=2026-09-23T15:45:35.019Z
+endpoint-evidence=2026-09-23T15:45:35.219Z (speech_final)
+turn-release=2026-09-23T15:45:39.335Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:buffered-turn-test] TURN#1 DELTAS
+endpoint-to-release=4116ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[PIPELINE:buffered-turn-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:buffered-turn-test] run() exiting — state=LISTENING aborted=true
+  [PASS] B3b. a buffered presence check ("Hello? Are you there?") does NOT cut the block
+[PIPELINE:buffered-turn-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:buffered-turn-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:buffered-turn-test] GREETING greeting-text-ready +0ms
+[TIMING:buffered-turn-test] GREETING tts-request +0ms
+[TIMING:buffered-turn-test] GREETING tts-first-chunk +0ms
+[TIMING:buffered-turn-test] GREETING audio-queued +0ms
+[PLAYBACK:buffered-turn-test] draining 2468ms of queued audio before leaving SPEAKING (queued=2318ms elapsed=0ms)
+[TIMING:buffered-turn-test] GREETING SUMMARY total=2468ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:buffered-turn-test] Greeting spoken: text="Hello Priya, this is Ishita from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:buffered-turn-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:buffered-turn-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, please tell me." evidence-to-llm-open=1ms historyLength=3
+[TIMING:buffered-turn-test] TURN END turn-release=1790178343367 text="Yes, please tell me." sttMs=0
+[STT:buffered-turn-test] Transcript received: "Yes, please tell me." userSpeechMs=0 sttLagMs=0
+[TURN-RELEASE:buffered-turn-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:buffered-turn-test] TURN#0 turn-detected +0ms
+[TIMING:buffered-turn-test] TURN#0 stt-to-release=155ms (sttLag=0ms)
+[LANGUAGE:buffered-turn-test] call language LOCKED to en on the first meaningful utterance (basis=default-english confidence=0.75 hindiMarkers=0): "Yes, please tell me."
+[LLM:buffered-turn-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:buffered-turn-test] TURN#0 llm-request +1ms
+[SPECULATE:buffered-turn-test] ADOPTED pre-opened request — llm-request is 155ms after the provider stream was opened (first token not yet received) evidence-to-llm-open=1ms
+[TIMING:buffered-turn-test] TURN#0 llm-first-token +49ms
+[TIMING:buffered-turn-test] TURN#0 first-sentence-ready +49ms
+[TIMING:buffered-turn-test] TURN#0 tts-request +49ms
+[TIMING:buffered-turn-test] TURN#0 tts-first-chunk +49ms
+[TIMING:buffered-turn-test] TURN#0 audio-queued +49ms
+[PLAYBACK:buffered-turn-test] draining 15195ms of queued audio before leaving SPEAKING (queued=15046ms elapsed=1ms)
+[PLAYBACK:buffered-turn-test] a caller turn is already waiting — asking to cut the reply short to answer it: "Hello? What is this about?"
+[TIMING:buffered-turn-test] TURN#0 SUMMARY total=302ms turn-detected=0ms llm-request=1ms llm-first-token=49ms first-sentence-ready=49ms tts-request=49ms tts-first-chunk=49ms audio-queued=49ms
+[TIMING:buffered-turn-test] TURN#0
+speech-end=2026-09-23T15:45:43.212Z
+endpoint-evidence=2026-09-23T15:45:43.212Z (speech_final)
+turn-release=2026-09-23T15:45:43.367Z
+llm-request=2026-09-23T15:45:43.368Z
+llm-first-token=2026-09-23T15:45:43.416Z
+first-sentence-ready=2026-09-23T15:45:43.416Z
+tts-request=2026-09-23T15:45:43.416Z
+tts-first-audio=2026-09-23T15:45:43.416Z
+audio-queued=2026-09-23T15:45:43.416Z
+[TIMING:buffered-turn-test] TURN#0 DELTAS
+endpoint-to-release=155ms
+release-to-llm-request=1ms
+llm-to-first-token=48ms
+first-token-to-sentence=0ms
+sentence-to-tts=0ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=204ms
+[PIPELINE:buffered-turn-test] Turn complete: assistant="I'm calling to personally invite you to a free live workshop we are hosting on S..." llmMs=203 ttsMs=0
+[RESPONSE-LEN:buffered-turn-test] TURN#0 userChars=20 assistantChars=333 estTokens=84 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=3 audioQueuedMs=15046 briefRequested=false
+[PIPELINE:buffered-turn-test] Response #1 CANCELLED by barge-in — heard="" discarded="I'm calling to personally invite you to a free live workshop we are hosting on S..."
+[TIMING:buffered-turn-test] TURN END turn-release=1790178343670 text="Hello? What is this about?" sttMs=0
+[STT:buffered-turn-test] Transcript received: "Hello? What is this about?" userSpeechMs=0 sttLagMs=200
+[TURN-RELEASE:buffered-turn-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:buffered-turn-test] TURN#1 turn-detected +0ms
+[TIMING:buffered-turn-test] TURN#1 stt-to-release=437ms (sttLag=200ms)
+[LLM:buffered-turn-test] Sending to fake-llm: historyLength=4 roles=[system,assistant,user,user] streaming=true
+[TIMING:buffered-turn-test] TURN#1 llm-request +0ms
+[TIMING:buffered-turn-test] TURN#1 llm-first-token +213ms
+[TIMING:buffered-turn-test] TURN#1 tts-request +213ms
+[TIMING:buffered-turn-test] TURN#1 tts-first-chunk +213ms
+[TIMING:buffered-turn-test] TURN#1 audio-queued +213ms
+[PLAYBACK:buffered-turn-test] draining 2059ms of queued audio before leaving SPEAKING (queued=1909ms elapsed=0ms)
+[TIMING:buffered-turn-test] TURN#1 SUMMARY total=2277ms turn-detected=0ms llm-request=0ms llm-first-token=213ms tts-request=213ms tts-first-chunk=213ms audio-queued=213ms
+[TIMING:buffered-turn-test] TURN#1
+speech-end=2026-09-23T15:45:43.233Z
+endpoint-evidence=2026-09-23T15:45:43.433Z (speech_final)
+turn-release=2026-09-23T15:45:43.670Z
+llm-request=2026-09-23T15:45:43.670Z
+llm-first-token=2026-09-23T15:45:43.883Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T15:45:43.883Z
+tts-first-audio=2026-09-23T15:45:43.883Z
+audio-queued=2026-09-23T15:45:43.883Z
+[TIMING:buffered-turn-test] TURN#1 DELTAS
+endpoint-to-release=237ms
+release-to-llm-request=0ms
+llm-to-first-token=213ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=650ms
+[PIPELINE:buffered-turn-test] Turn complete: assistant="The workshop is completely free of charge." llmMs=212 ttsMs=0
+[RESPONSE-LEN:buffered-turn-test] TURN#1 userChars=26 assistantChars=42 estTokens=11 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1909 briefRequested=false
+[PIPELINE:buffered-turn-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:buffered-turn-test] run() exiting — state=LISTENING aborted=true
+  [FAIL] B3c. ...but "Hello? What is this about?" is a real question and DOES cut it
+         timed out after 20000ms waiting for 3 replies (have 2, state=LISTENING)
+[PIPELINE:buffered-turn-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:buffered-turn-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:buffered-turn-test] GREETING greeting-text-ready +0ms
+[TIMING:buffered-turn-test] GREETING tts-request +0ms
+[TIMING:buffered-turn-test] GREETING tts-first-chunk +1ms
+[TIMING:buffered-turn-test] GREETING audio-queued +1ms
+[PLAYBACK:buffered-turn-test] draining 2468ms of queued audio before leaving SPEAKING (queued=2318ms elapsed=0ms)
+[TIMING:buffered-turn-test] GREETING SUMMARY total=2483ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:buffered-turn-test] Greeting spoken: text="Hello Priya, this is Ishita from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:buffered-turn-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:buffered-turn-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, please tell me." evidence-to-llm-open=1ms historyLength=3
+[TIMING:buffered-turn-test] TURN END turn-release=1790178366095 text="Yes, please tell me." sttMs=0
+[STT:buffered-turn-test] Transcript received: "Yes, please tell me." userSpeechMs=0 sttLagMs=0
+[TURN-RELEASE:buffered-turn-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:buffered-turn-test] TURN#0 turn-detected +0ms
+[TIMING:buffered-turn-test] TURN#0 stt-to-release=164ms (sttLag=0ms)
+[LANGUAGE:buffered-turn-test] call language LOCKED to en on the first meaningful utterance (basis=default-english confidence=0.75 hindiMarkers=0): "Yes, please tell me."
+[LLM:buffered-turn-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:buffered-turn-test] TURN#0 llm-request +1ms
+[SPECULATE:buffered-turn-test] ADOPTED pre-opened request — llm-request is 164ms after the provider stream was opened (first token not yet received) evidence-to-llm-open=1ms
+[TIMING:buffered-turn-test] TURN#0 llm-first-token +47ms
+[TIMING:buffered-turn-test] TURN#0 tts-request +47ms
+[TIMING:buffered-turn-test] TURN#0 tts-first-chunk +47ms
+[TIMING:buffered-turn-test] TURN#0 audio-queued +47ms
+[PLAYBACK:buffered-turn-test] draining 4105ms of queued audio before leaving SPEAKING (queued=3955ms elapsed=0ms)
+[TIMING:buffered-turn-test] TURN#0 SUMMARY total=4154ms turn-detected=0ms llm-request=1ms llm-first-token=47ms tts-request=47ms tts-first-chunk=47ms audio-queued=47ms
+[TIMING:buffered-turn-test] TURN#0
+speech-end=2026-09-23T15:46:05.931Z
+endpoint-evidence=2026-09-23T15:46:05.931Z (speech_final)
+turn-release=2026-09-23T15:46:06.095Z
+llm-request=2026-09-23T15:46:06.096Z
+llm-first-token=2026-09-23T15:46:06.142Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T15:46:06.142Z
+tts-first-audio=2026-09-23T15:46:06.142Z
+audio-queued=2026-09-23T15:46:06.142Z
+[TIMING:buffered-turn-test] TURN#0 DELTAS
+endpoint-to-release=164ms
+release-to-llm-request=1ms
+llm-to-first-token=46ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=211ms
+[PIPELINE:buffered-turn-test] Turn complete: assistant="We are hosting a free live workshop this Sunday morning, and it runs for about a..." llmMs=210 ttsMs=0
+[RESPONSE-LEN:buffered-turn-test] TURN#0 userChars=20 assistantChars=87 estTokens=22 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=3955 briefRequested=false
+[TIMING:buffered-turn-test] TURN END turn-release=1790178370249 text="Umm Hello? Are you there?" sttMs=159
+[STT:buffered-turn-test] Transcript received: "Umm Hello? Are you there?" userSpeechMs=159 sttLagMs=400
+[TURN-RELEASE:buffered-turn-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=2
+[TIMING:buffered-turn-test] TURN#1 turn-detected +1ms
+[TIMING:buffered-turn-test] TURN#1 stt-to-release=4333ms (sttLag=400ms)
+[LLM:buffered-turn-test] Sending to fake-llm: historyLength=5 roles=[system,assistant,user,assistant,user] streaming=true
+[TIMING:buffered-turn-test] TURN#1 llm-request +1ms
+[TIMING:buffered-turn-test] TURN#1 llm-first-token +212ms
+[TIMING:buffered-turn-test] TURN#1 tts-request +212ms
+[TIMING:buffered-turn-test] TURN#1 tts-first-chunk +212ms
+[TIMING:buffered-turn-test] TURN#1 audio-queued +212ms
+[PLAYBACK:buffered-turn-test] draining 2059ms of queued audio before leaving SPEAKING (queued=1909ms elapsed=0ms)
+[TIMING:buffered-turn-test] TURN#1 SUMMARY total=2278ms turn-detected=1ms llm-request=1ms llm-first-token=212ms tts-request=212ms tts-first-chunk=212ms audio-queued=212ms
+[TIMING:buffered-turn-test] TURN#1
+speech-end=2026-09-23T15:46:05.917Z
+endpoint-evidence=2026-09-23T15:46:06.317Z (speech_final)
+turn-release=2026-09-23T15:46:10.249Z
+llm-request=2026-09-23T15:46:10.250Z
+llm-first-token=2026-09-23T15:46:10.461Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T15:46:10.461Z
+tts-first-audio=2026-09-23T15:46:10.461Z
+audio-queued=2026-09-23T15:46:10.461Z
+[TIMING:buffered-turn-test] TURN#1 DELTAS
+endpoint-to-release=3932ms
+release-to-llm-request=1ms
+llm-to-first-token=211ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=4544ms
+[PIPELINE:buffered-turn-test] Turn complete: assistant="The workshop is completely free of charge." llmMs=211 ttsMs=0
+[RESPONSE-LEN:buffered-turn-test] TURN#1 userChars=25 assistantChars=42 estTokens=11 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1909 briefRequested=false
+[PIPELINE:buffered-turn-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:buffered-turn-test] run() exiting — state=LISTENING aborted=true
+  [PASS] B3d. a MERGED buffered turn ("Umm Hello? Are you there?") does NOT cut the block
+  [PASS] B3e. the floor decision, phrase by phrase, on the real predicate
+[PIPELINE:buffered-turn-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:buffered-turn-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:buffered-turn-test] GREETING greeting-text-ready +0ms
+[TIMING:buffered-turn-test] GREETING tts-request +0ms
+[TIMING:buffered-turn-test] GREETING tts-first-chunk +0ms
+[TIMING:buffered-turn-test] GREETING audio-queued +0ms
+[PLAYBACK:buffered-turn-test] draining 2468ms of queued audio before leaving SPEAKING (queued=2318ms elapsed=0ms)
+[TIMING:buffered-turn-test] GREETING SUMMARY total=2473ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:buffered-turn-test] Greeting spoken: text="Hello Priya, this is Ishita from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:buffered-turn-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:buffered-turn-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, please tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:buffered-turn-test] TURN END turn-release=1790178375208 text="Yes, please tell me." sttMs=0
+[STT:buffered-turn-test] Transcript received: "Yes, please tell me." userSpeechMs=0 sttLagMs=0
+[TURN-RELEASE:buffered-turn-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:buffered-turn-test] TURN#0 turn-detected +1ms
+[TIMING:buffered-turn-test] TURN#0 stt-to-release=159ms (sttLag=0ms)
+[LANGUAGE:buffered-turn-test] call language LOCKED to en on the first meaningful utterance (basis=default-english confidence=0.75 hindiMarkers=0): "Yes, please tell me."
+[LLM:buffered-turn-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:buffered-turn-test] TURN#0 llm-request +1ms
+[SPECULATE:buffered-turn-test] ADOPTED pre-opened request — llm-request is 159ms after the provider stream was opened (first token not yet received) evidence-to-llm-open=0ms
+[TIMING:buffered-turn-test] TURN#0 llm-first-token +51ms
+[TIMING:buffered-turn-test] TURN#0 first-sentence-ready +51ms
+[TIMING:buffered-turn-test] TURN#0 tts-request +51ms
+[TIMING:buffered-turn-test] TURN#0 tts-first-chunk +52ms
+[TIMING:buffered-turn-test] TURN#0 audio-queued +52ms
+[PLAYBACK:buffered-turn-test] draining 15196ms of queued audio before leaving SPEAKING (queued=15046ms elapsed=0ms)
+[PLAYBACK:buffered-turn-test] a caller turn is already waiting — asking to cut the reply short to answer it: "Umm I have a question about the workshop."
+[TIMING:buffered-turn-test] TURN#0 SUMMARY total=1077ms turn-detected=1ms llm-request=1ms llm-first-token=51ms first-sentence-ready=51ms tts-request=51ms tts-first-chunk=52ms audio-queued=52ms
+[TIMING:buffered-turn-test] TURN#0
+speech-end=2026-09-23T15:46:15.050Z
+endpoint-evidence=2026-09-23T15:46:15.050Z (speech_final)
+turn-release=2026-09-23T15:46:15.208Z
+llm-request=2026-09-23T15:46:15.209Z
+llm-first-token=2026-09-23T15:46:15.259Z
+first-sentence-ready=2026-09-23T15:46:15.259Z
+tts-request=2026-09-23T15:46:15.259Z
+tts-first-audio=2026-09-23T15:46:15.260Z
+audio-queued=2026-09-23T15:46:15.260Z
+[TIMING:buffered-turn-test] TURN#0 DELTAS
+endpoint-to-release=158ms
+release-to-llm-request=1ms
+llm-to-first-token=50ms
+first-token-to-sentence=0ms
+sentence-to-tts=0ms
+tts-to-first-audio=1ms
+first-audio-to-queue=0ms
+speech-end-to-audio=210ms
+[PIPELINE:buffered-turn-test] Turn complete: assistant="I'm calling to personally invite you to a free live workshop we are hosting on S..." llmMs=209 ttsMs=0
+[RESPONSE-LEN:buffered-turn-test] TURN#0 userChars=20 assistantChars=333 estTokens=84 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=3 audioQueuedMs=15046 briefRequested=false
+[PIPELINE:buffered-turn-test] Response #1 CANCELLED by barge-in — heard="" discarded="I'm calling to personally invite you to a free live workshop we are hosting on S..."
+[TIMING:buffered-turn-test] TURN END turn-release=1790178376286 text="Umm I have a question about the workshop." sttMs=157
+[STT:buffered-turn-test] Transcript received: "Umm I have a question about the workshop." userSpeechMs=157 sttLagMs=300
+[TURN-RELEASE:buffered-turn-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=2
+[TIMING:buffered-turn-test] TURN#1 turn-detected +1ms
+[TIMING:buffered-turn-test] TURN#1 stt-to-release=1169ms (sttLag=300ms)
+[LLM:buffered-turn-test] Sending to fake-llm: historyLength=4 roles=[system,assistant,user,user] streaming=true
+[TIMING:buffered-turn-test] TURN#1 llm-request +1ms
+[TIMING:buffered-turn-test] TURN#1 llm-first-token +214ms
+[TIMING:buffered-turn-test] TURN#1 tts-request +214ms
+[TIMING:buffered-turn-test] TURN#1 tts-first-chunk +214ms
+[TIMING:buffered-turn-test] TURN#1 audio-queued +214ms
+[PLAYBACK:buffered-turn-test] draining 2059ms of queued audio before leaving SPEAKING (queued=1909ms elapsed=0ms)
+[TIMING:buffered-turn-test] TURN#1 SUMMARY total=2279ms turn-detected=1ms llm-request=1ms llm-first-token=214ms tts-request=214ms tts-first-chunk=214ms audio-queued=214ms
+[TIMING:buffered-turn-test] TURN#1
+speech-end=2026-09-23T15:46:15.118Z
+endpoint-evidence=2026-09-23T15:46:15.418Z (speech_final)
+turn-release=2026-09-23T15:46:16.286Z
+llm-request=2026-09-23T15:46:16.287Z
+llm-first-token=2026-09-23T15:46:16.500Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T15:46:16.500Z
+tts-first-audio=2026-09-23T15:46:16.500Z
+audio-queued=2026-09-23T15:46:16.500Z
+[TIMING:buffered-turn-test] TURN#1 DELTAS
+endpoint-to-release=868ms
+release-to-llm-request=1ms
+llm-to-first-token=213ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=1382ms
+[PIPELINE:buffered-turn-test] Turn complete: assistant="The workshop is completely free of charge." llmMs=213 ttsMs=0
+[RESPONSE-LEN:buffered-turn-test] TURN#1 userChars=41 assistantChars=42 estTokens=11 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1909 briefRequested=false
+[PIPELINE:buffered-turn-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:buffered-turn-test] run() exiting — state=LISTENING aborted=true
+  [FAIL] B3f. a meaningful turn whose FIRST words are filler still interrupts
+         timed out after 20000ms waiting for 3 replies (have 2, state=LISTENING)
+[PIPELINE:buffered-turn-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:buffered-turn-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:buffered-turn-test] GREETING greeting-text-ready +0ms
+[TIMING:buffered-turn-test] GREETING tts-request +0ms
+[TIMING:buffered-turn-test] GREETING tts-first-chunk +0ms
+[TIMING:buffered-turn-test] GREETING audio-queued +0ms
+[PLAYBACK:buffered-turn-test] draining 2468ms of queued audio before leaving SPEAKING (queued=2318ms elapsed=0ms)
+[TIMING:buffered-turn-test] GREETING SUMMARY total=2475ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:buffered-turn-test] Greeting spoken: text="Hello Priya, this is Ishita from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:buffered-turn-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:buffered-turn-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, please tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:buffered-turn-test] TURN END turn-release=1790178398088 text="Yes, please tell me." sttMs=0
+[STT:buffered-turn-test] Transcript received: "Yes, please tell me." userSpeechMs=0 sttLagMs=0
+[TURN-RELEASE:buffered-turn-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:buffered-turn-test] TURN#0 turn-detected +0ms
+[TIMING:buffered-turn-test] TURN#0 stt-to-release=166ms (sttLag=0ms)
+[LANGUAGE:buffered-turn-test] call language LOCKED to en on the first meaningful utterance (basis=default-english confidence=0.75 hindiMarkers=0): "Yes, please tell me."
+[LLM:buffered-turn-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:buffered-turn-test] TURN#0 llm-request +1ms
+[SPECULATE:buffered-turn-test] ADOPTED pre-opened request — llm-request is 167ms after the provider stream was opened (first token not yet received) evidence-to-llm-open=0ms
+[TIMING:buffered-turn-test] TURN#0 llm-first-token +50ms
+[TIMING:buffered-turn-test] TURN#0 first-sentence-ready +50ms
+[TIMING:buffered-turn-test] TURN#0 tts-request +51ms
+[TIMING:buffered-turn-test] TURN#0 tts-first-chunk +51ms
+[TIMING:buffered-turn-test] TURN#0 audio-queued +51ms
+[PLAYBACK:buffered-turn-test] draining 15196ms of queued audio before leaving SPEAKING (queued=15046ms elapsed=0ms)
+[PLAYBACK:buffered-turn-test] a caller turn is already waiting — asking to cut the reply short to answer it: "Wait, how much does the whole thing cost me?"
+[TIMING:buffered-turn-test] TURN#0 SUMMARY total=568ms turn-detected=0ms llm-request=1ms llm-first-token=50ms first-sentence-ready=50ms tts-request=51ms tts-first-chunk=51ms audio-queued=51ms
+[TIMING:buffered-turn-test] TURN#0
+speech-end=2026-09-23T15:46:37.922Z
+endpoint-evidence=2026-09-23T15:46:37.922Z (speech_final)
+turn-release=2026-09-23T15:46:38.088Z
+llm-request=2026-09-23T15:46:38.089Z
+llm-first-token=2026-09-23T15:46:38.138Z
+first-sentence-ready=2026-09-23T15:46:38.138Z
+tts-request=2026-09-23T15:46:38.139Z
+tts-first-audio=2026-09-23T15:46:38.139Z
+audio-queued=2026-09-23T15:46:38.139Z
+[TIMING:buffered-turn-test] TURN#0 DELTAS
+endpoint-to-release=166ms
+release-to-llm-request=1ms
+llm-to-first-token=49ms
+first-token-to-sentence=0ms
+sentence-to-tts=1ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=217ms
+[PIPELINE:buffered-turn-test] Turn complete: assistant="I'm calling to personally invite you to a free live workshop we are hosting on S..." llmMs=216 ttsMs=0
+[RESPONSE-LEN:buffered-turn-test] TURN#0 userChars=20 assistantChars=333 estTokens=84 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=3 audioQueuedMs=15046 briefRequested=false
+[PIPELINE:buffered-turn-test] Response #1 CANCELLED by barge-in — heard="" discarded="I'm calling to personally invite you to a free live workshop we are hosting on S..."
+[TIMING:buffered-turn-test] TURN END turn-release=1790178398657 text="Wait, how much does the whole thing cost me?" sttMs=0
+[STT:buffered-turn-test] Transcript received: "Wait, how much does the whole thing cost me?" userSpeechMs=0 sttLagMs=200
+[TURN-RELEASE:buffered-turn-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:buffered-turn-test] TURN#1 turn-detected +0ms
+[TIMING:buffered-turn-test] TURN#1 stt-to-release=717ms (sttLag=200ms)
+[LLM:buffered-turn-test] Sending to fake-llm: historyLength=4 roles=[system,assistant,user,user] streaming=true
+[TIMING:buffered-turn-test] TURN#1 llm-request +0ms
+[TIMING:buffered-turn-test] TURN#1 llm-first-token +213ms
+[TIMING:buffered-turn-test] TURN#1 tts-request +213ms
+[TIMING:buffered-turn-test] TURN#1 tts-first-chunk +213ms
+[TIMING:buffered-turn-test] TURN#1 audio-queued +213ms
+[PLAYBACK:buffered-turn-test] draining 2059ms of queued audio before leaving SPEAKING (queued=1909ms elapsed=0ms)
+[TIMING:buffered-turn-test] TURN#1 SUMMARY total=2280ms turn-detected=0ms llm-request=0ms llm-first-token=213ms tts-request=213ms tts-first-chunk=213ms audio-queued=213ms
+[TIMING:buffered-turn-test] TURN#1
+speech-end=2026-09-23T15:46:37.940Z
+endpoint-evidence=2026-09-23T15:46:38.140Z (speech_final)
+turn-release=2026-09-23T15:46:38.657Z
+llm-request=2026-09-23T15:46:38.657Z
+llm-first-token=2026-09-23T15:46:38.870Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T15:46:38.870Z
+tts-first-audio=2026-09-23T15:46:38.870Z
+audio-queued=2026-09-23T15:46:38.870Z
+[TIMING:buffered-turn-test] TURN#1 DELTAS
+endpoint-to-release=517ms
+release-to-llm-request=0ms
+llm-to-first-token=213ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=930ms
+[PIPELINE:buffered-turn-test] Turn complete: assistant="The workshop is completely free of charge." llmMs=213 ttsMs=0
+[RESPONSE-LEN:buffered-turn-test] TURN#1 userChars=44 assistantChars=42 estTokens=11 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1909 briefRequested=false
+[PIPELINE:buffered-turn-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:buffered-turn-test] run() exiting — state=LISTENING aborted=true
+  [FAIL] B4. the assistant prefix is committed BEFORE the buffered caller turn
+         timed out after 20000ms waiting for 3 replies (have 2, state=LISTENING)
+[PIPELINE:buffered-turn-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:buffered-turn-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:buffered-turn-test] GREETING greeting-text-ready +0ms
+[TIMING:buffered-turn-test] GREETING tts-request +0ms
+[TIMING:buffered-turn-test] GREETING tts-first-chunk +0ms
+[TIMING:buffered-turn-test] GREETING audio-queued +1ms
+[PLAYBACK:buffered-turn-test] draining 2468ms of queued audio before leaving SPEAKING (queued=2318ms elapsed=0ms)
+[TIMING:buffered-turn-test] GREETING SUMMARY total=2482ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=1ms
+[PIPELINE:buffered-turn-test] Greeting spoken: text="Hello Priya, this is Ishita from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:buffered-turn-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:buffered-turn-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, please tell me." evidence-to-llm-open=1ms historyLength=3
+[TIMING:buffered-turn-test] TURN END turn-release=1790178420812 text="Yes, please tell me." sttMs=0
+[STT:buffered-turn-test] Transcript received: "Yes, please tell me." userSpeechMs=0 sttLagMs=0
+[TURN-RELEASE:buffered-turn-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:buffered-turn-test] TURN#0 turn-detected +0ms
+[TIMING:buffered-turn-test] TURN#0 stt-to-release=163ms (sttLag=0ms)
+[LANGUAGE:buffered-turn-test] call language LOCKED to en on the first meaningful utterance (basis=default-english confidence=0.75 hindiMarkers=0): "Yes, please tell me."
+[LLM:buffered-turn-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:buffered-turn-test] TURN#0 llm-request +0ms
+[SPECULATE:buffered-turn-test] ADOPTED pre-opened request — llm-request is 162ms after the provider stream was opened (first token not yet received) evidence-to-llm-open=1ms
+[TIMING:buffered-turn-test] TURN#0 llm-first-token +39ms
+[TIMING:buffered-turn-test] TURN#0 first-sentence-ready +40ms
+[TIMING:buffered-turn-test] TURN#0 tts-request +40ms
+[TIMING:buffered-turn-test] TURN#0 tts-first-chunk +40ms
+[TIMING:buffered-turn-test] TURN#0 audio-queued +40ms
+[PLAYBACK:buffered-turn-test] draining 15196ms of queued audio before leaving SPEAKING (queued=15046ms elapsed=0ms)
+[PLAYBACK:buffered-turn-test] a caller turn is already waiting — asking to cut the reply short to answer it: "Wait, how much does the whole thing cost me?"
+[TIMING:buffered-turn-test] TURN#0 SUMMARY total=541ms turn-detected=0ms llm-request=0ms llm-first-token=39ms first-sentence-ready=40ms tts-request=40ms tts-first-chunk=40ms audio-queued=40ms
+[TIMING:buffered-turn-test] TURN#0
+speech-end=2026-09-23T15:47:00.649Z
+endpoint-evidence=2026-09-23T15:47:00.649Z (speech_final)
+turn-release=2026-09-23T15:47:00.812Z
+llm-request=2026-09-23T15:47:00.812Z
+llm-first-token=2026-09-23T15:47:00.851Z
+first-sentence-ready=2026-09-23T15:47:00.852Z
+tts-request=2026-09-23T15:47:00.852Z
+tts-first-audio=2026-09-23T15:47:00.852Z
+audio-queued=2026-09-23T15:47:00.852Z
+[TIMING:buffered-turn-test] TURN#0 DELTAS
+endpoint-to-release=163ms
+release-to-llm-request=0ms
+llm-to-first-token=39ms
+first-token-to-sentence=1ms
+sentence-to-tts=0ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=203ms
+[PIPELINE:buffered-turn-test] Turn complete: assistant="I'm calling to personally invite you to a free live workshop we are hosting on S..." llmMs=201 ttsMs=0
+[RESPONSE-LEN:buffered-turn-test] TURN#0 userChars=20 assistantChars=333 estTokens=84 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=3 audioQueuedMs=15046 briefRequested=false
+[PIPELINE:buffered-turn-test] Response #1 CANCELLED by barge-in — heard="" discarded="I'm calling to personally invite you to a free live workshop we are hosting on S..."
+[TIMING:buffered-turn-test] TURN END turn-release=1790178421353 text="Wait, how much does the whole thing cost me?" sttMs=0
+[STT:buffered-turn-test] Transcript received: "Wait, how much does the whole thing cost me?" userSpeechMs=0 sttLagMs=200
+[TURN-RELEASE:buffered-turn-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:buffered-turn-test] TURN#1 turn-detected +1ms
+[TIMING:buffered-turn-test] TURN#1 stt-to-release=695ms (sttLag=200ms)
+[LLM:buffered-turn-test] Sending to fake-llm: historyLength=4 roles=[system,assistant,user,user] streaming=true
+[TIMING:buffered-turn-test] TURN#1 llm-request +1ms
+[TIMING:buffered-turn-test] TURN#1 llm-first-token +201ms
+[TIMING:buffered-turn-test] TURN#1 tts-request +202ms
+[TIMING:buffered-turn-test] TURN#1 tts-first-chunk +202ms
+[TIMING:buffered-turn-test] TURN#1 audio-queued +202ms
+[PLAYBACK:buffered-turn-test] draining 2059ms of queued audio before leaving SPEAKING (queued=1909ms elapsed=0ms)
+[TIMING:buffered-turn-test] TURN#1 SUMMARY total=2263ms turn-detected=1ms llm-request=1ms llm-first-token=201ms tts-request=202ms tts-first-chunk=202ms audio-queued=202ms
+[TIMING:buffered-turn-test] TURN#1
+speech-end=2026-09-23T15:47:00.659Z
+endpoint-evidence=2026-09-23T15:47:00.859Z (speech_final)
+turn-release=2026-09-23T15:47:01.353Z
+llm-request=2026-09-23T15:47:01.354Z
+llm-first-token=2026-09-23T15:47:01.554Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T15:47:01.555Z
+tts-first-audio=2026-09-23T15:47:01.555Z
+audio-queued=2026-09-23T15:47:01.555Z
+[TIMING:buffered-turn-test] TURN#1 DELTAS
+endpoint-to-release=494ms
+release-to-llm-request=1ms
+llm-to-first-token=200ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=896ms
+[PIPELINE:buffered-turn-test] Turn complete: assistant="The workshop is completely free of charge." llmMs=200 ttsMs=0
+[RESPONSE-LEN:buffered-turn-test] TURN#1 userChars=44 assistantChars=42 estTokens=11 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1909 briefRequested=false
+[PIPELINE:buffered-turn-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:buffered-turn-test] run() exiting — state=LISTENING aborted=true
+  [FAIL] B5. the call stays up and the conversation carries on afterwards
+         timed out after 20000ms waiting for 3 replies (have 2, state=LISTENING)
+
+SECTION C — the registration invariants, against the REAL v4 gate
+  [PASS] C1. the cut prefix really is a prefix, and really lacks the gate anchor
+  [PASS] C2. a prefix that never reached the gate must NOT settle as a confirmation
+  [PASS] C3. a prefix that DID reach the gate still settles as FINAL_YES
+  [PASS] C4. the gate survives a cut that lands AFTER it, mid-confirmation
+
+SECTION D — a REPEATED hello behind a playing block demands attention (the thinking-gap case)
+[PIPELINE:buffered-turn-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:buffered-turn-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:buffered-turn-test] GREETING greeting-text-ready +1ms
+[TIMING:buffered-turn-test] GREETING tts-request +1ms
+[TIMING:buffered-turn-test] GREETING tts-first-chunk +1ms
+[TIMING:buffered-turn-test] GREETING audio-queued +1ms
+[PLAYBACK:buffered-turn-test] draining 2468ms of queued audio before leaving SPEAKING (queued=2318ms elapsed=0ms)
+[TIMING:buffered-turn-test] GREETING SUMMARY total=2480ms greeting-text-ready=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:buffered-turn-test] Greeting spoken: text="Hello Priya, this is Ishita from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:buffered-turn-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:buffered-turn-test] LLM request PRE-OPENED on speech_final evidence: text="Hello." evidence-to-llm-open=0ms historyLength=3
+[TIMING:buffered-turn-test] TURN END turn-release=1790178443554 text="Hello." sttMs=0
+[STT:buffered-turn-test] Transcript received: "Hello." userSpeechMs=0 sttLagMs=0
+[TURN-RELEASE:buffered-turn-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[SPECULATE:buffered-turn-test] pre-opened LLM request ABANDONED (pickup acknowledgement — no reply is generated) text="Hello." openMs=150 firstToken=not yet
+[PIPELINE:buffered-turn-test] pickup acknowledgement ignored (not a turn): "Hello." — the opening line is the answer to it
+[PIPELINE:buffered-turn-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:buffered-turn-test] run() exiting — state=LISTENING aborted=true
+  [FAIL] D1 (spec B4). "Hello." answered by a long block, then a buffered "Hello?" — the block is CUT through the existing barge-in and the hearing question is asked at once
+         timed out after 20000ms waiting for: the reply to "Hello." to start playing
+[PIPELINE:buffered-turn-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:buffered-turn-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:buffered-turn-test] GREETING greeting-text-ready +0ms
+[TIMING:buffered-turn-test] GREETING tts-request +0ms
+[TIMING:buffered-turn-test] GREETING tts-first-chunk +0ms
+[TIMING:buffered-turn-test] GREETING audio-queued +0ms
+[PLAYBACK:buffered-turn-test] draining 2468ms of queued audio before leaving SPEAKING (queued=2318ms elapsed=0ms)
+[TIMING:buffered-turn-test] GREETING SUMMARY total=2474ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:buffered-turn-test] Greeting spoken: text="Hello Priya, this is Ishita from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:buffered-turn-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:buffered-turn-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, please tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:buffered-turn-test] TURN END turn-release=1790178466074 text="Yes, please tell me." sttMs=0
+[STT:buffered-turn-test] Transcript received: "Yes, please tell me." userSpeechMs=0 sttLagMs=0
+[TURN-RELEASE:buffered-turn-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:buffered-turn-test] TURN#0 turn-detected +0ms
+[TIMING:buffered-turn-test] TURN#0 stt-to-release=160ms (sttLag=0ms)
+[LANGUAGE:buffered-turn-test] call language LOCKED to en on the first meaningful utterance (basis=default-english confidence=0.75 hindiMarkers=0): "Yes, please tell me."
+[LLM:buffered-turn-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:buffered-turn-test] TURN#0 llm-request +1ms
+[SPECULATE:buffered-turn-test] ADOPTED pre-opened request — llm-request is 161ms after the provider stream was opened (first token not yet received) evidence-to-llm-open=0ms
+[TIMING:buffered-turn-test] TURN#0 llm-first-token +49ms
+[TIMING:buffered-turn-test] TURN#0 first-sentence-ready +49ms
+[TIMING:buffered-turn-test] TURN#0 tts-request +49ms
+[TIMING:buffered-turn-test] TURN#0 tts-first-chunk +49ms
+[TIMING:buffered-turn-test] TURN#0 audio-queued +49ms
+[PLAYBACK:buffered-turn-test] draining 15195ms of queued audio before leaving SPEAKING (queued=15046ms elapsed=1ms)
+[PLAYBACK:buffered-turn-test] the caller is repeating a hello to get our attention — cutting the reply to answer it: "Hello? Hello?"
+[TIMING:buffered-turn-test] TURN#0 SUMMARY total=309ms turn-detected=0ms llm-request=1ms llm-first-token=49ms first-sentence-ready=49ms tts-request=49ms tts-first-chunk=49ms audio-queued=49ms
+[TIMING:buffered-turn-test] TURN#0
+speech-end=2026-09-23T15:47:45.914Z
+endpoint-evidence=2026-09-23T15:47:45.914Z (speech_final)
+turn-release=2026-09-23T15:47:46.074Z
+llm-request=2026-09-23T15:47:46.075Z
+llm-first-token=2026-09-23T15:47:46.123Z
+first-sentence-ready=2026-09-23T15:47:46.123Z
+tts-request=2026-09-23T15:47:46.123Z
+tts-first-audio=2026-09-23T15:47:46.123Z
+audio-queued=2026-09-23T15:47:46.123Z
+[TIMING:buffered-turn-test] TURN#0 DELTAS
+endpoint-to-release=160ms
+release-to-llm-request=1ms
+llm-to-first-token=48ms
+first-token-to-sentence=0ms
+sentence-to-tts=0ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=209ms
+[PIPELINE:buffered-turn-test] Turn complete: assistant="I'm calling to personally invite you to a free live workshop we are hosting on S..." llmMs=209 ttsMs=0
+[RESPONSE-LEN:buffered-turn-test] TURN#0 userChars=20 assistantChars=333 estTokens=84 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=3 audioQueuedMs=15046 briefRequested=false
+[PIPELINE:buffered-turn-test] Response #1 CANCELLED by barge-in — heard="" discarded="I'm calling to personally invite you to a free live workshop we are hosting on S..."
+[TIMING:buffered-turn-test] TURN END turn-release=1790178466384 text="Hello? Hello?" sttMs=0
+[STT:buffered-turn-test] Transcript received: "Hello? Hello?" userSpeechMs=0 sttLagMs=200
+[TURN-RELEASE:buffered-turn-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[PIPELINE:buffered-turn-test] pickup acknowledgement ignored (not a turn): "Hello? Hello?" — the opening line is the answer to it
+[PIPELINE:buffered-turn-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:buffered-turn-test] run() exiting — state=LISTENING aborted=true
+  [FAIL] D2 (spec B5). a buffered "Hello? Hello?" after a SUBSTANTIVE turn also cuts the block and enters the hearing flow
+         timed out after 20000ms waiting for 3 replies (have 1, state=LISTENING)
+[PIPELINE:buffered-turn-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:buffered-turn-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:buffered-turn-test] GREETING greeting-text-ready +0ms
+[TIMING:buffered-turn-test] GREETING tts-request +0ms
+[TIMING:buffered-turn-test] GREETING tts-first-chunk +0ms
+[TIMING:buffered-turn-test] GREETING audio-queued +0ms
+[PLAYBACK:buffered-turn-test] draining 2468ms of queued audio before leaving SPEAKING (queued=2318ms elapsed=0ms)
+[TIMING:buffered-turn-test] GREETING SUMMARY total=2469ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:buffered-turn-test] Greeting spoken: text="Hello Priya, this is Ishita from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:buffered-turn-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:buffered-turn-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, please tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:buffered-turn-test] TURN END turn-release=1790178488815 text="Yes, please tell me." sttMs=0
+[STT:buffered-turn-test] Transcript received: "Yes, please tell me." userSpeechMs=0 sttLagMs=0
+[TURN-RELEASE:buffered-turn-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:buffered-turn-test] TURN#0 turn-detected +0ms
+[TIMING:buffered-turn-test] TURN#0 stt-to-release=159ms (sttLag=0ms)
+[LANGUAGE:buffered-turn-test] call language LOCKED to en on the first meaningful utterance (basis=default-english confidence=0.75 hindiMarkers=0): "Yes, please tell me."
+[LLM:buffered-turn-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:buffered-turn-test] TURN#0 llm-request +0ms
+[SPECULATE:buffered-turn-test] ADOPTED pre-opened request — llm-request is 159ms after the provider stream was opened (first token not yet received) evidence-to-llm-open=0ms
+[TIMING:buffered-turn-test] TURN#0 llm-first-token +48ms
+[TIMING:buffered-turn-test] TURN#0 tts-request +48ms
+[TIMING:buffered-turn-test] TURN#0 tts-first-chunk +48ms
+[TIMING:buffered-turn-test] TURN#0 audio-queued +48ms
+[PLAYBACK:buffered-turn-test] draining 4105ms of queued audio before leaving SPEAKING (queued=3955ms elapsed=0ms)
+[TIMING:buffered-turn-test] TURN#0 SUMMARY total=4158ms turn-detected=0ms llm-request=0ms llm-first-token=48ms tts-request=48ms tts-first-chunk=48ms audio-queued=48ms
+[TIMING:buffered-turn-test] TURN#0
+speech-end=2026-09-23T15:48:08.656Z
+endpoint-evidence=2026-09-23T15:48:08.656Z (speech_final)
+turn-release=2026-09-23T15:48:08.815Z
+llm-request=2026-09-23T15:48:08.815Z
+llm-first-token=2026-09-23T15:48:08.863Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T15:48:08.863Z
+tts-first-audio=2026-09-23T15:48:08.863Z
+audio-queued=2026-09-23T15:48:08.863Z
+[TIMING:buffered-turn-test] TURN#0 DELTAS
+endpoint-to-release=159ms
+release-to-llm-request=0ms
+llm-to-first-token=48ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=207ms
+[PIPELINE:buffered-turn-test] Turn complete: assistant="We are hosting a free live workshop this Sunday morning, and it runs for about a..." llmMs=207 ttsMs=0
+[RESPONSE-LEN:buffered-turn-test] TURN#0 userChars=20 assistantChars=87 estTokens=22 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=3955 briefRequested=false
+[TIMING:buffered-turn-test] TURN END turn-release=1790178492973 text="Hello?" sttMs=0
+[STT:buffered-turn-test] Transcript received: "Hello?" userSpeechMs=0 sttLagMs=200
+[TURN-RELEASE:buffered-turn-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[PIPELINE:buffered-turn-test] pickup acknowledgement ignored (not a turn): "Hello?" — the opening line is the answer to it
+[PIPELINE:buffered-turn-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:buffered-turn-test] run() exiting — state=LISTENING aborted=true
+  [PASS] D3 (spec B6). a buffered SINGLE "Hello?" after a substantive turn still does NOT cut the block (B3, restated beside D1/D2)
+  [PASS] D4. the repeated-greeting predicate, asserted on both sides — presence questions and hesitation merges are NOT it
+[PIPELINE:buffered-turn-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:buffered-turn-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:buffered-turn-test] GREETING greeting-text-ready +0ms
+[TIMING:buffered-turn-test] GREETING tts-request +1ms
+[TIMING:buffered-turn-test] GREETING tts-first-chunk +1ms
+[TIMING:buffered-turn-test] GREETING audio-queued +1ms
+[PLAYBACK:buffered-turn-test] draining 2468ms of queued audio before leaving SPEAKING (queued=2318ms elapsed=0ms)
+[TIMING:buffered-turn-test] GREETING SUMMARY total=2484ms greeting-text-ready=0ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:buffered-turn-test] Greeting spoken: text="Hello Priya, this is Ishita from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:buffered-turn-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:buffered-turn-test] LLM request PRE-OPENED on speech_final evidence: text="Hello." evidence-to-llm-open=0ms historyLength=3
+[TIMING:buffered-turn-test] TURN END turn-release=1790178495637 text="Hello." sttMs=0
+[STT:buffered-turn-test] Transcript received: "Hello." userSpeechMs=0 sttLagMs=0
+[TURN-RELEASE:buffered-turn-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[SPECULATE:buffered-turn-test] pre-opened LLM request ABANDONED (pickup acknowledgement — no reply is generated) text="Hello." openMs=159 firstToken=not yet
+[PIPELINE:buffered-turn-test] pickup acknowledgement ignored (not a turn): "Hello." — the opening line is the answer to it
+[PIPELINE:buffered-turn-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:buffered-turn-test] run() exiting — state=LISTENING aborted=true
+  [FAIL] D5. after the attention cut, "Yes, continue from where you stopped." resumes the HELD remainder — no generation, nothing restarted
+         timed out after 20000ms waiting for: the reply to "Hello." to start playing
+[PIPELINE:buffered-turn-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:buffered-turn-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:buffered-turn-test] GREETING greeting-text-ready +0ms
+[TIMING:buffered-turn-test] GREETING tts-request +0ms
+[TIMING:buffered-turn-test] GREETING tts-first-chunk +1ms
+[TIMING:buffered-turn-test] GREETING audio-queued +1ms
+[PLAYBACK:buffered-turn-test] draining 2468ms of queued audio before leaving SPEAKING (queued=2318ms elapsed=0ms)
+[TIMING:buffered-turn-test] GREETING SUMMARY total=2481ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:buffered-turn-test] Greeting spoken: text="Hello Priya, this is Ishita from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:buffered-turn-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:buffered-turn-test] LLM request PRE-OPENED on speech_final evidence: text="Hello." evidence-to-llm-open=0ms historyLength=3
+[TIMING:buffered-turn-test] TURN END turn-release=1790178518142 text="Hello." sttMs=0
+[STT:buffered-turn-test] Transcript received: "Hello." userSpeechMs=0 sttLagMs=0
+[TURN-RELEASE:buffered-turn-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[SPECULATE:buffered-turn-test] pre-opened LLM request ABANDONED (pickup acknowledgement — no reply is generated) text="Hello." openMs=164 firstToken=not yet
+[PIPELINE:buffered-turn-test] pickup acknowledgement ignored (not a turn): "Hello." — the opening line is the answer to it
+[PIPELINE:buffered-turn-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:buffered-turn-test] run() exiting — state=LISTENING aborted=true
+  [FAIL] D6. after the attention cut, "Start from the beginning." replays the FULL original block — no generation
+         timed out after 20000ms waiting for: the reply to "Hello." to start playing
+
+15 passed, 9 failed
+
+Failed:
+  - B1. a meaningful buffered turn is answered without waiting out the block
+  - B3c. ...but "Hello? What is this about?" is a real question and DOES cut it
+  - B3f. a meaningful turn whose FIRST words are filler still interrupts
+  - B4. the assistant prefix is committed BEFORE the buffered caller turn
+  - B5. the call stays up and the conversation carries on afterwards
+  - D1 (spec B4). "Hello." answered by a long block, then a buffered "Hello?" — the block is CUT through the existing barge-in and the hearing question is asked at once
+  - D2 (spec B5). a buffered "Hello? Hello?" after a SUBSTANTIVE turn also cuts the block and enters the hearing flow
+  - D5. after the attention cut, "Yes, continue from where you stopped." resumes the HELD remainder — no generation, nothing restarted
+  - D6. after the attention cut, "Start from the beginning." replays the FULL original block — no generation

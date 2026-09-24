@@ -1,0 +1,2170 @@
+
+SECTION A — an interrupted block stays in the history (TEST 1, TEST 5)
+[PIPELINE:continuity-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:continuity-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:continuity-test] GREETING greeting-text-ready +0ms
+[TIMING:continuity-test] GREETING tts-request +2ms
+[TIMING:continuity-test] GREETING tts-first-chunk +3ms
+[TIMING:continuity-test] GREETING audio-queued +3ms
+[PLAYBACK:continuity-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:continuity-test] GREETING SUMMARY total=2335ms greeting-text-ready=0ms tts-request=2ms tts-first-chunk=3ms audio-queued=3ms
+[PIPELINE:continuity-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:continuity-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:continuity-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=5ms historyLength=3
+[TIMING:continuity-test] TURN END turn-release=1790220202099 text="Yes, tell me." sttMs=0
+[STT:continuity-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:continuity-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:continuity-test] TURN#0 turn-detected +1ms
+[TIMING:continuity-test] TURN#0 stt-to-release=156ms (sttLag=n/ams)
+[LLM:continuity-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:continuity-test] TURN#0 llm-request +6ms
+[SPECULATE:continuity-test] ADOPTED pre-opened request — llm-request is 156ms after the provider stream was opened (first token already in hand, 134ms ago) evidence-to-llm-open=5ms
+[TIMING:continuity-test] TURN#0 llm-first-token +7ms
+[TIMING:continuity-test] TURN#0 first-sentence-ready +8ms
+[TIMING:continuity-test] TURN#0 tts-request +8ms
+[TIMING:continuity-test] TURN#0 tts-first-chunk +8ms
+[TIMING:continuity-test] TURN#0 audio-queued +8ms
+[PLAYBACK:continuity-test] draining 12013ms of queued audio before leaving SPEAKING (queued=11864ms elapsed=1ms)
+[TURN:continuity-test] barge-in ACCEPTED on transcript: "hello" — words=1 confidence=0.95 isFinal=true energyAgeMs=n/a beganBeforeReply=false replyRemainingMs=10927 replyFullyQueued=true
+[TIMING:continuity-test] TURN#0 SUMMARY total=948ms turn-detected=1ms llm-request=6ms llm-first-token=7ms first-sentence-ready=8ms tts-request=8ms tts-first-chunk=8ms audio-queued=8ms
+[TIMING:continuity-test] TURN#0
+speech-end=2026-09-24T03:23:21.944Z
+endpoint-evidence=2026-09-24T03:23:21.944Z (speech_final)
+turn-release=2026-09-24T03:23:22.099Z
+llm-request=2026-09-24T03:23:22.105Z
+llm-first-token=2026-09-24T03:23:22.106Z
+first-sentence-ready=2026-09-24T03:23:22.107Z
+tts-request=2026-09-24T03:23:22.107Z
+tts-first-audio=2026-09-24T03:23:22.107Z
+audio-queued=2026-09-24T03:23:22.107Z
+[TIMING:continuity-test] TURN#0 DELTAS
+endpoint-to-release=155ms
+release-to-llm-request=6ms
+llm-to-first-token=1ms
+first-token-to-sentence=1ms
+sentence-to-tts=0ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=163ms
+[PIPELINE:continuity-test] Turn complete: assistant="Actually, I am calling you with a very interesting invitation. We have created F..." llmMs=22 ttsMs=0
+[RESPONSE-LEN:continuity-test] TURN#0 userChars=13 assistantChars=263 estTokens=66 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=3 audioQueuedMs=11864 briefRequested=false
+[PIPELINE:continuity-test] Response #1 CANCELLED by barge-in — heard="" discarded="Actually, I am calling you with a very interesting invitation. We have created F..."
+[TIMING:continuity-test] TURN END turn-release=1790220203347 text="hello" sttMs=0
+[STT:continuity-test] Transcript received: "hello" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:continuity-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:continuity-test] TURN#1 turn-detected +0ms
+[TIMING:continuity-test] TURN#1 stt-to-release=303ms (sttLag=n/ams)
+[PIPELINE:continuity-test] attention check — acknowledging once: "Hey, can you hear me okay?"
+[TIMING:continuity-test] ATTENTION tts-request +0ms
+[TIMING:continuity-test] ATTENTION tts-first-chunk +0ms
+[TIMING:continuity-test] ATTENTION audio-queued +0ms
+[PLAYBACK:continuity-test] draining 1332ms of queued audio before leaving SPEAKING (queued=1182ms elapsed=0ms)
+[TIMING:continuity-test] ATTENTION SUMMARY total=1334ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:continuity-test] TURN#1 SUMMARY total=1342ms turn-detected=0ms
+[TIMING:continuity-test] TURN#1
+speech-end=2026-09-24T03:23:23.044Z
+endpoint-evidence=2026-09-24T03:23:23.045Z (speech_final)
+turn-release=2026-09-24T03:23:23.347Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:continuity-test] TURN#1 DELTAS
+endpoint-to-release=302ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[PIPELINE:continuity-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:continuity-test] run() exiting — state=LISTENING aborted=true
+  [FAIL] TEST 1 — "hello" over the middle of a block does not erase the block from history
+         timed out after 15000ms waiting for 3 replies (have 2, state=LISTENING)
+[PIPELINE:continuity-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:continuity-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:continuity-test] GREETING greeting-text-ready +0ms
+[TIMING:continuity-test] GREETING tts-request +2ms
+[TIMING:continuity-test] GREETING tts-first-chunk +2ms
+[TIMING:continuity-test] GREETING audio-queued +2ms
+[PLAYBACK:continuity-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:continuity-test] GREETING SUMMARY total=2334ms greeting-text-ready=0ms tts-request=2ms tts-first-chunk=2ms audio-queued=2ms
+[PIPELINE:continuity-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:continuity-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:continuity-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=4ms historyLength=3
+[TIMING:continuity-test] TURN END turn-release=1790220220584 text="Yes, tell me." sttMs=0
+[STT:continuity-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:continuity-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:continuity-test] TURN#0 turn-detected +0ms
+[TIMING:continuity-test] TURN#0 stt-to-release=159ms (sttLag=n/ams)
+[LLM:continuity-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:continuity-test] TURN#0 llm-request +1ms
+[SPECULATE:continuity-test] ADOPTED pre-opened request — llm-request is 156ms after the provider stream was opened (first token already in hand, 145ms ago) evidence-to-llm-open=4ms
+[TIMING:continuity-test] TURN#0 llm-first-token +2ms
+[TIMING:continuity-test] TURN#0 first-sentence-ready +2ms
+[TIMING:continuity-test] TURN#0 tts-request +2ms
+[TIMING:continuity-test] TURN#0 tts-first-chunk +3ms
+[TIMING:continuity-test] TURN#0 audio-queued +3ms
+[PLAYBACK:continuity-test] draining 12014ms of queued audio before leaving SPEAKING (queued=11864ms elapsed=0ms)
+[TURN:continuity-test] barge-in ACCEPTED on transcript: "hello" — words=1 confidence=0.95 isFinal=true energyAgeMs=n/a beganBeforeReply=false replyRemainingMs=11130 replyFullyQueued=true
+[TIMING:continuity-test] TURN#0 SUMMARY total=738ms turn-detected=0ms llm-request=1ms llm-first-token=2ms first-sentence-ready=2ms tts-request=2ms tts-first-chunk=3ms audio-queued=3ms
+[TIMING:continuity-test] TURN#0
+speech-end=2026-09-24T03:23:40.425Z
+endpoint-evidence=2026-09-24T03:23:40.425Z (speech_final)
+turn-release=2026-09-24T03:23:40.584Z
+llm-request=2026-09-24T03:23:40.585Z
+llm-first-token=2026-09-24T03:23:40.586Z
+first-sentence-ready=2026-09-24T03:23:40.586Z
+tts-request=2026-09-24T03:23:40.586Z
+tts-first-audio=2026-09-24T03:23:40.587Z
+audio-queued=2026-09-24T03:23:40.587Z
+[TIMING:continuity-test] TURN#0 DELTAS
+endpoint-to-release=159ms
+release-to-llm-request=1ms
+llm-to-first-token=1ms
+first-token-to-sentence=0ms
+sentence-to-tts=0ms
+tts-to-first-audio=1ms
+first-audio-to-queue=0ms
+speech-end-to-audio=162ms
+[PIPELINE:continuity-test] Turn complete: assistant="Actually, I am calling you with a very interesting invitation. We have created F..." llmMs=11 ttsMs=0
+[RESPONSE-LEN:continuity-test] TURN#0 userChars=13 assistantChars=263 estTokens=66 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=3 audioQueuedMs=11864 briefRequested=false
+[PIPELINE:continuity-test] Response #1 CANCELLED by barge-in — heard="" discarded="Actually, I am calling you with a very interesting invitation. We have created F..."
+[TIMING:continuity-test] TURN END turn-release=1790220221624 text="hello" sttMs=0
+[STT:continuity-test] Transcript received: "hello" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:continuity-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:continuity-test] TURN#1 turn-detected +1ms
+[TIMING:continuity-test] TURN#1 stt-to-release=304ms (sttLag=n/ams)
+[PIPELINE:continuity-test] attention check — acknowledging once: "Hey, can you hear me okay?"
+[TIMING:continuity-test] ATTENTION tts-request +0ms
+[TIMING:continuity-test] ATTENTION tts-first-chunk +0ms
+[TIMING:continuity-test] ATTENTION audio-queued +0ms
+[PLAYBACK:continuity-test] draining 1332ms of queued audio before leaving SPEAKING (queued=1182ms elapsed=0ms)
+[TIMING:continuity-test] ATTENTION SUMMARY total=1336ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:continuity-test] TURN#1 SUMMARY total=1341ms turn-detected=1ms
+[TIMING:continuity-test] TURN#1
+speech-end=2026-09-24T03:23:41.321Z
+endpoint-evidence=2026-09-24T03:23:41.322Z (speech_final)
+turn-release=2026-09-24T03:23:41.624Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:continuity-test] TURN#1 DELTAS
+endpoint-to-release=302ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[PIPELINE:continuity-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:continuity-test] run() exiting — state=LISTENING aborted=true
+  [PASS] TEST 1b — only the part that PLAYED is committed, never the queued remainder
+[PIPELINE:continuity-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:continuity-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:continuity-test] GREETING greeting-text-ready +0ms
+[TIMING:continuity-test] GREETING tts-request +0ms
+[TIMING:continuity-test] GREETING tts-first-chunk +0ms
+[TIMING:continuity-test] GREETING audio-queued +0ms
+[PLAYBACK:continuity-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:continuity-test] GREETING SUMMARY total=2342ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:continuity-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:continuity-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:continuity-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:continuity-test] TURN END turn-release=1790220225516 text="Yes, tell me." sttMs=0
+[STT:continuity-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:continuity-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:continuity-test] TURN#0 turn-detected +1ms
+[TIMING:continuity-test] TURN#0 stt-to-release=160ms (sttLag=n/ams)
+[LLM:continuity-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:continuity-test] TURN#0 llm-request +1ms
+[SPECULATE:continuity-test] ADOPTED pre-opened request — llm-request is 160ms after the provider stream was opened (first token already in hand, 145ms ago) evidence-to-llm-open=0ms
+[TIMING:continuity-test] TURN#0 llm-first-token +1ms
+[TIMING:continuity-test] TURN#0 tts-request +2ms
+[TIMING:continuity-test] TURN#0 tts-first-chunk +2ms
+[TIMING:continuity-test] TURN#0 audio-queued +2ms
+[PLAYBACK:continuity-test] draining 3423ms of queued audio before leaving SPEAKING (queued=3273ms elapsed=0ms)
+[TURN:continuity-test] barge-in ACCEPTED on transcript: "okay" — words=1 confidence=0.95 isFinal=true energyAgeMs=n/a beganBeforeReply=false replyRemainingMs=2333 replyFullyQueued=true
+[TIMING:continuity-test] TURN#0 SUMMARY total=943ms turn-detected=1ms llm-request=1ms llm-first-token=1ms tts-request=2ms tts-first-chunk=2ms audio-queued=2ms
+[TIMING:continuity-test] TURN#0
+speech-end=2026-09-24T03:23:45.357Z
+endpoint-evidence=2026-09-24T03:23:45.357Z (speech_final)
+turn-release=2026-09-24T03:23:45.516Z
+llm-request=2026-09-24T03:23:45.517Z
+llm-first-token=2026-09-24T03:23:45.517Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-24T03:23:45.518Z
+tts-first-audio=2026-09-24T03:23:45.518Z
+audio-queued=2026-09-24T03:23:45.518Z
+[TIMING:continuity-test] TURN#0 DELTAS
+endpoint-to-release=159ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=161ms
+[PIPELINE:continuity-test] Turn complete: assistant="We have created Flexi Genie, which automates your whole online business." llmMs=15 ttsMs=0
+[RESPONSE-LEN:continuity-test] TURN#0 userChars=13 assistantChars=72 estTokens=18 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=3273 briefRequested=false
+[PIPELINE:continuity-test] Response #1 CANCELLED by barge-in — heard="" discarded="We have created Flexi Genie, which automates your whole online business."
+[TIMING:continuity-test] TURN END turn-release=1790220226761 text="okay" sttMs=0
+[STT:continuity-test] Transcript received: "okay" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:continuity-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:continuity-test] TURN#1 turn-detected +1ms
+[TIMING:continuity-test] TURN#1 stt-to-release=304ms (sttLag=n/ams)
+[LLM:continuity-test] Sending to fake-llm: historyLength=4 roles=[system,assistant,user,user] streaming=true
+[TIMING:continuity-test] TURN#1 llm-request +2ms
+[TIMING:continuity-test] TURN#1 llm-first-token +16ms
+[TIMING:continuity-test] TURN#1 tts-request +17ms
+[TIMING:continuity-test] TURN#1 tts-first-chunk +17ms
+[TIMING:continuity-test] TURN#1 audio-queued +17ms
+[PLAYBACK:continuity-test] draining 377ms of queued audio before leaving SPEAKING (queued=227ms elapsed=0ms)
+[TIMING:continuity-test] TURN#1 SUMMARY total=400ms turn-detected=1ms llm-request=2ms llm-first-token=16ms tts-request=17ms tts-first-chunk=17ms audio-queued=17ms
+[TIMING:continuity-test] TURN#1
+speech-end=2026-09-24T03:23:46.458Z
+endpoint-evidence=2026-09-24T03:23:46.459Z (speech_final)
+turn-release=2026-09-24T03:23:46.761Z
+llm-request=2026-09-24T03:23:46.763Z
+llm-first-token=2026-09-24T03:23:46.777Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-24T03:23:46.778Z
+tts-first-audio=2026-09-24T03:23:46.778Z
+audio-queued=2026-09-24T03:23:46.778Z
+[TIMING:continuity-test] TURN#1 DELTAS
+endpoint-to-release=302ms
+release-to-llm-request=2ms
+llm-to-first-token=14ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=320ms
+[PIPELINE:continuity-test] Turn complete: assistant="Sure." llmMs=14 ttsMs=0
+[RESPONSE-LEN:continuity-test] TURN#1 userChars=4 assistantChars=5 estTokens=2 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=227 briefRequested=false
+[PIPELINE:continuity-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:continuity-test] run() exiting — state=LISTENING aborted=true
+  [FAIL] TEST 5 — "okay" never resets script progress
+         after "okay" what the caller already heard must still be in history, got ["Hi Sakshi, this is Rohan from Team FlexiFunnels.","Sure."]
+[PIPELINE:continuity-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:continuity-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:continuity-test] GREETING greeting-text-ready +0ms
+[TIMING:continuity-test] GREETING tts-request +0ms
+[TIMING:continuity-test] GREETING tts-first-chunk +0ms
+[TIMING:continuity-test] GREETING audio-queued +0ms
+[PLAYBACK:continuity-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:continuity-test] GREETING SUMMARY total=2336ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:continuity-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:continuity-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:continuity-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:continuity-test] TURN END turn-release=1790220229733 text="Yes, tell me." sttMs=0
+[STT:continuity-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:continuity-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:continuity-test] TURN#0 turn-detected +1ms
+[TIMING:continuity-test] TURN#0 stt-to-release=160ms (sttLag=n/ams)
+[LLM:continuity-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:continuity-test] TURN#0 llm-request +1ms
+[SPECULATE:continuity-test] ADOPTED pre-opened request — llm-request is 160ms after the provider stream was opened (first token already in hand, 144ms ago) evidence-to-llm-open=0ms
+[TIMING:continuity-test] TURN#0 llm-first-token +1ms
+[TIMING:continuity-test] TURN#0 tts-request +2ms
+[TIMING:continuity-test] TURN#0 tts-first-chunk +2ms
+[TIMING:continuity-test] TURN#0 audio-queued +2ms
+[PLAYBACK:continuity-test] draining 3423ms of queued audio before leaving SPEAKING (queued=3273ms elapsed=0ms)
+[TURN:continuity-test] barge-in ACCEPTED on transcript: "hi" — words=1 confidence=0.95 isFinal=true energyAgeMs=n/a beganBeforeReply=false replyRemainingMs=2333 replyFullyQueued=true
+[TIMING:continuity-test] TURN#0 SUMMARY total=943ms turn-detected=1ms llm-request=1ms llm-first-token=1ms tts-request=2ms tts-first-chunk=2ms audio-queued=2ms
+[TIMING:continuity-test] TURN#0
+speech-end=2026-09-24T03:23:49.574Z
+endpoint-evidence=2026-09-24T03:23:49.574Z (speech_final)
+turn-release=2026-09-24T03:23:49.733Z
+llm-request=2026-09-24T03:23:49.734Z
+llm-first-token=2026-09-24T03:23:49.734Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-24T03:23:49.735Z
+tts-first-audio=2026-09-24T03:23:49.735Z
+audio-queued=2026-09-24T03:23:49.735Z
+[TIMING:continuity-test] TURN#0 DELTAS
+endpoint-to-release=159ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=161ms
+[PIPELINE:continuity-test] Turn complete: assistant="We have created Flexi Genie, which automates your whole online business." llmMs=16 ttsMs=0
+[RESPONSE-LEN:continuity-test] TURN#0 userChars=13 assistantChars=72 estTokens=18 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=3273 briefRequested=false
+[PIPELINE:continuity-test] Response #1 CANCELLED by barge-in — heard="" discarded="We have created Flexi Genie, which automates your whole online business."
+[TIMING:continuity-test] TURN END turn-release=1790220230979 text="hi" sttMs=0
+[STT:continuity-test] Transcript received: "hi" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:continuity-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:continuity-test] TURN#1 turn-detected +1ms
+[TIMING:continuity-test] TURN#1 stt-to-release=305ms (sttLag=n/ams)
+[PIPELINE:continuity-test] attention check — acknowledging once: "Hey, can you hear me okay?"
+[TIMING:continuity-test] ATTENTION tts-request +0ms
+[TIMING:continuity-test] ATTENTION tts-first-chunk +0ms
+[TIMING:continuity-test] ATTENTION audio-queued +0ms
+[PLAYBACK:continuity-test] draining 1332ms of queued audio before leaving SPEAKING (queued=1182ms elapsed=0ms)
+[TIMING:continuity-test] ATTENTION SUMMARY total=1337ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:continuity-test] TURN#1 SUMMARY total=1338ms turn-detected=1ms
+[TIMING:continuity-test] TURN#1
+speech-end=2026-09-24T03:23:50.675Z
+endpoint-evidence=2026-09-24T03:23:50.676Z (speech_final)
+turn-release=2026-09-24T03:23:50.979Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:continuity-test] TURN#1 DELTAS
+endpoint-to-release=303ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[PIPELINE:continuity-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:continuity-test] run() exiting — state=LISTENING aborted=true
+  [FAIL] TEST 5 — "hi" never resets script progress
+         after "hi" what the caller already heard must still be in history, got ["Hi Sakshi, this is Rohan from Team FlexiFunnels.","Hey, can you hear me okay?"]
+[PIPELINE:continuity-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:continuity-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:continuity-test] GREETING greeting-text-ready +0ms
+[TIMING:continuity-test] GREETING tts-request +1ms
+[TIMING:continuity-test] GREETING tts-first-chunk +1ms
+[TIMING:continuity-test] GREETING audio-queued +1ms
+[PLAYBACK:continuity-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:continuity-test] GREETING SUMMARY total=2332ms greeting-text-ready=0ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:continuity-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:continuity-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:continuity-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:continuity-test] TURN END turn-release=1790220234840 text="Yes, tell me." sttMs=0
+[STT:continuity-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:continuity-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:continuity-test] TURN#0 turn-detected +1ms
+[TIMING:continuity-test] TURN#0 stt-to-release=160ms (sttLag=n/ams)
+[LLM:continuity-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:continuity-test] TURN#0 llm-request +1ms
+[SPECULATE:continuity-test] ADOPTED pre-opened request — llm-request is 160ms after the provider stream was opened (first token already in hand, 144ms ago) evidence-to-llm-open=0ms
+[TIMING:continuity-test] TURN#0 llm-first-token +1ms
+[TIMING:continuity-test] TURN#0 tts-request +1ms
+[TIMING:continuity-test] TURN#0 tts-first-chunk +1ms
+[TIMING:continuity-test] TURN#0 audio-queued +1ms
+[PLAYBACK:continuity-test] draining 3423ms of queued audio before leaving SPEAKING (queued=3273ms elapsed=0ms)
+[TURN:continuity-test] barge-in ACCEPTED on transcript: "hello" — words=1 confidence=0.95 isFinal=true energyAgeMs=n/a beganBeforeReply=false replyRemainingMs=2336 replyFullyQueued=true
+[TIMING:continuity-test] TURN#0 SUMMARY total=939ms turn-detected=1ms llm-request=1ms llm-first-token=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:continuity-test] TURN#0
+speech-end=2026-09-24T03:23:54.681Z
+endpoint-evidence=2026-09-24T03:23:54.681Z (speech_final)
+turn-release=2026-09-24T03:23:54.840Z
+llm-request=2026-09-24T03:23:54.841Z
+llm-first-token=2026-09-24T03:23:54.841Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-24T03:23:54.841Z
+tts-first-audio=2026-09-24T03:23:54.841Z
+audio-queued=2026-09-24T03:23:54.841Z
+[TIMING:continuity-test] TURN#0 DELTAS
+endpoint-to-release=159ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=160ms
+[PIPELINE:continuity-test] Turn complete: assistant="We have created Flexi Genie, which automates your whole online business." llmMs=16 ttsMs=0
+[RESPONSE-LEN:continuity-test] TURN#0 userChars=13 assistantChars=72 estTokens=18 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=3273 briefRequested=false
+[PIPELINE:continuity-test] Response #1 CANCELLED by barge-in — heard="" discarded="We have created Flexi Genie, which automates your whole online business."
+[TIMING:continuity-test] TURN END turn-release=1790220236095 text="hello" sttMs=0
+[STT:continuity-test] Transcript received: "hello" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:continuity-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:continuity-test] TURN#1 turn-detected +0ms
+[TIMING:continuity-test] TURN#1 stt-to-release=317ms (sttLag=n/ams)
+[PIPELINE:continuity-test] attention check — acknowledging once: "Hey, can you hear me okay?"
+[TIMING:continuity-test] ATTENTION tts-request +0ms
+[TIMING:continuity-test] ATTENTION tts-first-chunk +0ms
+[TIMING:continuity-test] ATTENTION audio-queued +0ms
+[PLAYBACK:continuity-test] draining 1332ms of queued audio before leaving SPEAKING (queued=1182ms elapsed=0ms)
+[TIMING:continuity-test] ATTENTION SUMMARY total=1332ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:continuity-test] TURN#1 SUMMARY total=1332ms turn-detected=0ms
+[TIMING:continuity-test] TURN#1
+speech-end=2026-09-24T03:23:55.778Z
+endpoint-evidence=2026-09-24T03:23:55.778Z (speech_final)
+turn-release=2026-09-24T03:23:56.095Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:continuity-test] TURN#1 DELTAS
+endpoint-to-release=317ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[PIPELINE:continuity-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:continuity-test] run() exiting — state=LISTENING aborted=true
+  [FAIL] TEST 5 — "hello" never resets script progress
+         after "hello" what the caller already heard must still be in history, got ["Hi Sakshi, this is Rohan from Team FlexiFunnels.","Hey, can you hear me okay?"]
+[PIPELINE:continuity-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:continuity-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:continuity-test] GREETING greeting-text-ready +0ms
+[TIMING:continuity-test] GREETING tts-request +0ms
+[TIMING:continuity-test] GREETING tts-first-chunk +0ms
+[TIMING:continuity-test] GREETING audio-queued +0ms
+[PLAYBACK:continuity-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:continuity-test] GREETING SUMMARY total=2338ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:continuity-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:continuity-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:continuity-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:continuity-test] TURN END turn-release=1790220239976 text="Yes, tell me." sttMs=0
+[STT:continuity-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:continuity-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:continuity-test] TURN#0 turn-detected +1ms
+[TIMING:continuity-test] TURN#0 stt-to-release=164ms (sttLag=n/ams)
+[LLM:continuity-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:continuity-test] TURN#0 llm-request +2ms
+[SPECULATE:continuity-test] ADOPTED pre-opened request — llm-request is 165ms after the provider stream was opened (first token already in hand, 150ms ago) evidence-to-llm-open=0ms
+[TIMING:continuity-test] TURN#0 llm-first-token +2ms
+[TIMING:continuity-test] TURN#0 tts-request +2ms
+[TIMING:continuity-test] TURN#0 tts-first-chunk +2ms
+[TIMING:continuity-test] TURN#0 audio-queued +2ms
+[PLAYBACK:continuity-test] draining 3423ms of queued audio before leaving SPEAKING (queued=3273ms elapsed=0ms)
+[TURN:continuity-test] barge-in ACCEPTED on transcript: "haan" — words=1 confidence=0.95 isFinal=true energyAgeMs=n/a beganBeforeReply=false replyRemainingMs=2368 replyFullyQueued=true
+[TIMING:continuity-test] TURN#0 SUMMARY total=908ms turn-detected=1ms llm-request=2ms llm-first-token=2ms tts-request=2ms tts-first-chunk=2ms audio-queued=2ms
+[TIMING:continuity-test] TURN#0
+speech-end=2026-09-24T03:23:59.813Z
+endpoint-evidence=2026-09-24T03:23:59.813Z (speech_final)
+turn-release=2026-09-24T03:23:59.976Z
+llm-request=2026-09-24T03:23:59.978Z
+llm-first-token=2026-09-24T03:23:59.978Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-24T03:23:59.978Z
+tts-first-audio=2026-09-24T03:23:59.978Z
+audio-queued=2026-09-24T03:23:59.978Z
+[TIMING:continuity-test] TURN#0 DELTAS
+endpoint-to-release=163ms
+release-to-llm-request=2ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=165ms
+[PIPELINE:continuity-test] Turn complete: assistant="We have created Flexi Genie, which automates your whole online business." llmMs=15 ttsMs=0
+[RESPONSE-LEN:continuity-test] TURN#0 userChars=13 assistantChars=72 estTokens=18 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=3273 briefRequested=false
+[PIPELINE:continuity-test] Response #1 CANCELLED by barge-in — heard="" discarded="We have created Flexi Genie, which automates your whole online business."
+[TIMING:continuity-test] TURN END turn-release=1790220241191 text="haan" sttMs=0
+[STT:continuity-test] Transcript received: "haan" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:continuity-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:continuity-test] TURN#1 turn-detected +0ms
+[TIMING:continuity-test] TURN#1 stt-to-release=308ms (sttLag=n/ams)
+[LANGUAGE:continuity-test] per-turn detection hi IGNORED — a no-floor utterance (basis=roman-markers); active language stays en: "haan"
+[LLM:continuity-test] Sending to fake-llm: historyLength=4 roles=[system,assistant,user,user] streaming=true
+[TIMING:continuity-test] TURN#1 llm-request +0ms
+[TIMING:continuity-test] TURN#1 llm-first-token +13ms
+[TIMING:continuity-test] TURN#1 tts-request +13ms
+[TIMING:continuity-test] TURN#1 tts-first-chunk +13ms
+[TIMING:continuity-test] TURN#1 audio-queued +13ms
+[PLAYBACK:continuity-test] draining 377ms of queued audio before leaving SPEAKING (queued=227ms elapsed=0ms)
+[TIMING:continuity-test] TURN#1 SUMMARY total=395ms turn-detected=0ms llm-request=0ms llm-first-token=13ms tts-request=13ms tts-first-chunk=13ms audio-queued=13ms
+[TIMING:continuity-test] TURN#1
+speech-end=2026-09-24T03:24:00.883Z
+endpoint-evidence=2026-09-24T03:24:00.884Z (speech_final)
+turn-release=2026-09-24T03:24:01.191Z
+llm-request=2026-09-24T03:24:01.191Z
+llm-first-token=2026-09-24T03:24:01.204Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-24T03:24:01.204Z
+tts-first-audio=2026-09-24T03:24:01.204Z
+audio-queued=2026-09-24T03:24:01.204Z
+[TIMING:continuity-test] TURN#1 DELTAS
+endpoint-to-release=307ms
+release-to-llm-request=0ms
+llm-to-first-token=13ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=321ms
+[PIPELINE:continuity-test] Turn complete: assistant="Sure." llmMs=13 ttsMs=0
+[RESPONSE-LEN:continuity-test] TURN#1 userChars=4 assistantChars=5 estTokens=2 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=227 briefRequested=false
+[PIPELINE:continuity-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:continuity-test] run() exiting — state=LISTENING aborted=true
+  [FAIL] TEST 5 — "haan" never resets script progress
+         after "haan" what the caller already heard must still be in history, got ["Hi Sakshi, this is Rohan from Team FlexiFunnels.","Sure."]
+[PIPELINE:continuity-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:continuity-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:continuity-test] GREETING greeting-text-ready +0ms
+[TIMING:continuity-test] GREETING tts-request +1ms
+[TIMING:continuity-test] GREETING tts-first-chunk +1ms
+[TIMING:continuity-test] GREETING audio-queued +1ms
+[PLAYBACK:continuity-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:continuity-test] GREETING SUMMARY total=2338ms greeting-text-ready=0ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:continuity-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:continuity-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:continuity-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:continuity-test] TURN END turn-release=1790220244125 text="Yes, tell me." sttMs=0
+[STT:continuity-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:continuity-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:continuity-test] TURN#0 turn-detected +0ms
+[TIMING:continuity-test] TURN#0 stt-to-release=155ms (sttLag=n/ams)
+[LLM:continuity-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:continuity-test] TURN#0 llm-request +1ms
+[SPECULATE:continuity-test] ADOPTED pre-opened request — llm-request is 156ms after the provider stream was opened (first token already in hand, 132ms ago) evidence-to-llm-open=0ms
+[TIMING:continuity-test] TURN#0 llm-first-token +1ms
+[TIMING:continuity-test] TURN#0 tts-request +1ms
+[TIMING:continuity-test] TURN#0 tts-first-chunk +1ms
+[TIMING:continuity-test] TURN#0 audio-queued +1ms
+[PLAYBACK:continuity-test] draining 3423ms of queued audio before leaving SPEAKING (queued=3273ms elapsed=0ms)
+[TURN:continuity-test] barge-in ACCEPTED on transcript: "hello hello" — words=2 confidence=0.95 isFinal=true energyAgeMs=n/a beganBeforeReply=false replyRemainingMs=2359 replyFullyQueued=true
+[TIMING:continuity-test] TURN#0 SUMMARY total=915ms turn-detected=0ms llm-request=1ms llm-first-token=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:continuity-test] TURN#0
+speech-end=2026-09-24T03:24:03.970Z
+endpoint-evidence=2026-09-24T03:24:03.970Z (speech_final)
+turn-release=2026-09-24T03:24:04.125Z
+llm-request=2026-09-24T03:24:04.126Z
+llm-first-token=2026-09-24T03:24:04.126Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-24T03:24:04.126Z
+tts-first-audio=2026-09-24T03:24:04.126Z
+audio-queued=2026-09-24T03:24:04.126Z
+[TIMING:continuity-test] TURN#0 DELTAS
+endpoint-to-release=155ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=156ms
+[PIPELINE:continuity-test] Turn complete: assistant="We have created Flexi Genie, which automates your whole online business." llmMs=24 ttsMs=0
+[RESPONSE-LEN:continuity-test] TURN#0 userChars=13 assistantChars=72 estTokens=18 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=3273 briefRequested=false
+[PIPELINE:continuity-test] Response #1 CANCELLED by barge-in — heard="" discarded="We have created Flexi Genie, which automates your whole online business."
+[TIMING:continuity-test] TURN END turn-release=1790220245340 text="hello hello" sttMs=0
+[STT:continuity-test] Transcript received: "hello hello" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:continuity-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:continuity-test] TURN#1 turn-detected +0ms
+[TIMING:continuity-test] TURN#1 stt-to-release=300ms (sttLag=n/ams)
+[PIPELINE:continuity-test] attention check — acknowledging once: "Hey, can you hear me okay?"
+[TIMING:continuity-test] ATTENTION tts-request +0ms
+[TIMING:continuity-test] ATTENTION tts-first-chunk +0ms
+[TIMING:continuity-test] ATTENTION audio-queued +0ms
+[PLAYBACK:continuity-test] draining 1332ms of queued audio before leaving SPEAKING (queued=1182ms elapsed=0ms)
+[TIMING:continuity-test] ATTENTION SUMMARY total=1346ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:continuity-test] TURN#1 SUMMARY total=1347ms turn-detected=0ms
+[TIMING:continuity-test] TURN#1
+speech-end=2026-09-24T03:24:05.040Z
+endpoint-evidence=2026-09-24T03:24:05.040Z (speech_final)
+turn-release=2026-09-24T03:24:05.340Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:continuity-test] TURN#1 DELTAS
+endpoint-to-release=300ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[PIPELINE:continuity-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:continuity-test] run() exiting — state=LISTENING aborted=true
+  [FAIL] TEST 5 — "hello hello" never resets script progress
+         after "hello hello" what the caller already heard must still be in history, got ["Hi Sakshi, this is Rohan from Team FlexiFunnels.","Hey, can you hear me okay?"]
+
+SECTION B — a contextual question does not rewind the script (TEST 2)
+[PIPELINE:continuity-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:continuity-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:continuity-test] GREETING greeting-text-ready +0ms
+[TIMING:continuity-test] GREETING tts-request +0ms
+[TIMING:continuity-test] GREETING tts-first-chunk +0ms
+[TIMING:continuity-test] GREETING audio-queued +0ms
+[PLAYBACK:continuity-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:continuity-test] GREETING SUMMARY total=2334ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:continuity-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:continuity-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:continuity-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:continuity-test] TURN END turn-release=1790220249191 text="Yes, tell me." sttMs=0
+[STT:continuity-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:continuity-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:continuity-test] TURN#0 turn-detected +0ms
+[TIMING:continuity-test] TURN#0 stt-to-release=152ms (sttLag=n/ams)
+[LLM:continuity-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:continuity-test] TURN#0 llm-request +1ms
+[SPECULATE:continuity-test] ADOPTED pre-opened request — llm-request is 153ms after the provider stream was opened (first token already in hand, 135ms ago) evidence-to-llm-open=0ms
+[TIMING:continuity-test] TURN#0 llm-first-token +1ms
+[TIMING:continuity-test] TURN#0 tts-request +1ms
+[TIMING:continuity-test] TURN#0 tts-first-chunk +1ms
+[TIMING:continuity-test] TURN#0 audio-queued +1ms
+[PLAYBACK:continuity-test] draining 3559ms of queued audio before leaving SPEAKING (queued=3409ms elapsed=0ms)
+[TIMING:continuity-test] TURN#0 SUMMARY total=3566ms turn-detected=0ms llm-request=1ms llm-first-token=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:continuity-test] TURN#0
+speech-end=2026-09-24T03:24:09.039Z
+endpoint-evidence=2026-09-24T03:24:09.039Z (speech_final)
+turn-release=2026-09-24T03:24:09.191Z
+llm-request=2026-09-24T03:24:09.192Z
+llm-first-token=2026-09-24T03:24:09.192Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-24T03:24:09.192Z
+tts-first-audio=2026-09-24T03:24:09.192Z
+audio-queued=2026-09-24T03:24:09.192Z
+[TIMING:continuity-test] TURN#0 DELTAS
+endpoint-to-release=152ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=153ms
+[PIPELINE:continuity-test] Turn complete: assistant="We have created Flexi Genie, which helps you automate your online business." llmMs=18 ttsMs=0
+[RESPONSE-LEN:continuity-test] TURN#0 userChars=13 assistantChars=75 estTokens=19 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=3409 briefRequested=false
+[SPECULATE:continuity-test] LLM request PRE-OPENED on speech_final evidence: text="Wait, what exactly does it do?" evidence-to-llm-open=0ms historyLength=5
+[TIMING:continuity-test] TURN END turn-release=1790220252954 text="Wait, what exactly does it do?" sttMs=0
+[STT:continuity-test] Transcript received: "Wait, what exactly does it do?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:continuity-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:continuity-test] TURN#1 turn-detected +0ms
+[TIMING:continuity-test] TURN#1 stt-to-release=165ms (sttLag=n/ams)
+[LANGUAGE:continuity-test] call language LOCKED to en on the first meaningful utterance (basis=default-english confidence=0.75 hindiMarkers=0): "Wait, what exactly does it do?"
+[LLM:continuity-test] Sending to fake-llm: historyLength=5 roles=[system,assistant,user,assistant,user] streaming=true
+[TIMING:continuity-test] TURN#1 llm-request +1ms
+[SPECULATE:continuity-test] ADOPTED pre-opened request — llm-request is 165ms after the provider stream was opened (first token already in hand, 150ms ago) evidence-to-llm-open=0ms
+[TIMING:continuity-test] TURN#1 llm-first-token +1ms
+[TIMING:continuity-test] TURN#1 tts-request +1ms
+[TIMING:continuity-test] TURN#1 tts-first-chunk +1ms
+[TIMING:continuity-test] TURN#1 audio-queued +1ms
+[PLAYBACK:continuity-test] draining 2877ms of queued audio before leaving SPEAKING (queued=2727ms elapsed=0ms)
+[TIMING:continuity-test] TURN#1 SUMMARY total=2886ms turn-detected=0ms llm-request=1ms llm-first-token=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:continuity-test] TURN#1
+speech-end=2026-09-24T03:24:12.789Z
+endpoint-evidence=2026-09-24T03:24:12.790Z (speech_final)
+turn-release=2026-09-24T03:24:12.954Z
+llm-request=2026-09-24T03:24:12.955Z
+llm-first-token=2026-09-24T03:24:12.955Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-24T03:24:12.955Z
+tts-first-audio=2026-09-24T03:24:12.955Z
+audio-queued=2026-09-24T03:24:12.955Z
+[TIMING:continuity-test] TURN#1 DELTAS
+endpoint-to-release=164ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=166ms
+[PIPELINE:continuity-test] Turn complete: assistant="It builds funnels, pages and emails from plain instructions." llmMs=15 ttsMs=0
+[RESPONSE-LEN:continuity-test] TURN#1 userChars=30 assistantChars=60 estTokens=15 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=2727 briefRequested=false
+[PIPELINE:continuity-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:continuity-test] run() exiting — state=LISTENING aborted=true
+  [PASS] TEST 2 — the answer to a mid-script question is built on top of what was already said
+
+SECTION C — one current response, not a backlog (TEST 3, TEST 4)
+[PIPELINE:continuity-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:continuity-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:continuity-test] GREETING greeting-text-ready +0ms
+[TIMING:continuity-test] GREETING tts-request +0ms
+[TIMING:continuity-test] GREETING tts-first-chunk +0ms
+[TIMING:continuity-test] GREETING audio-queued +0ms
+[PLAYBACK:continuity-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:continuity-test] GREETING SUMMARY total=2333ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:continuity-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:continuity-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:continuity-test] LLM request PRE-OPENED on speech_final evidence: text="What does it do?" evidence-to-llm-open=1ms historyLength=3
+[TIMING:continuity-test] TURN END turn-release=1790220258372 text="What does it do?" sttMs=0
+[STT:continuity-test] Transcript received: "What does it do?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:continuity-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:continuity-test] TURN#0 turn-detected +0ms
+[TIMING:continuity-test] TURN#0 stt-to-release=163ms (sttLag=n/ams)
+[LANGUAGE:continuity-test] call language LOCKED to en on the first meaningful utterance (basis=default-english confidence=0.75 hindiMarkers=0): "What does it do?"
+[LLM:continuity-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:continuity-test] TURN#0 llm-request +1ms
+[SPECULATE:continuity-test] ADOPTED pre-opened request — llm-request is 163ms after the provider stream was opened (first token not yet received) evidence-to-llm-open=1ms
+[TIMING:continuity-test] TURN#0 llm-first-token +1051ms
+[PIPELINE:continuity-test] reply SUPERSEDED before it was spoken — the caller has already said something newer (signal=superseded_buffered supersederTakesFloor=true charsGenerated=45)
+[TIMING:continuity-test] TURN#0 SUMMARY total=1053ms turn-detected=0ms llm-request=1ms llm-first-token=1051ms
+[TIMING:continuity-test] TURN#0
+speech-end=2026-09-24T03:24:18.209Z
+endpoint-evidence=2026-09-24T03:24:18.209Z (speech_final)
+turn-release=2026-09-24T03:24:18.372Z
+llm-request=2026-09-24T03:24:18.373Z
+llm-first-token=2026-09-24T03:24:19.423Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:continuity-test] TURN#0 DELTAS
+endpoint-to-release=163ms
+release-to-llm-request=1ms
+llm-to-first-token=1050ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[PIPELINE:continuity-test] Turn complete: assistant="STALE — this answers the first question only." llmMs=1213 ttsMs=undefined
+[RESPONSE-LEN:continuity-test] TURN#0 userChars=16 assistantChars=45 estTokens=12 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=0 audioQueuedMs=2182 briefRequested=false
+[PIPELINE:continuity-test] Response #1 CANCELLED by barge-in — heard="" discarded="STALE — this answers the first question only."
+[TIMING:continuity-test] TURN END turn-release=1790220259425 text="Actually, I mean can it build a website?" sttMs=0
+[STT:continuity-test] Transcript received: "Actually, I mean can it build a website?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:continuity-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:continuity-test] TURN#1 turn-detected +0ms
+[TIMING:continuity-test] TURN#1 stt-to-release=705ms (sttLag=n/ams)
+[LLM:continuity-test] Sending to fake-llm: historyLength=4 roles=[system,assistant,user,user] streaming=true
+[TIMING:continuity-test] TURN#1 llm-request +0ms
+[TIMING:continuity-test] TURN#1 llm-first-token +1200ms
+[TIMING:continuity-test] TURN#1 tts-request +1201ms
+[TIMING:continuity-test] TURN#1 tts-first-chunk +1201ms
+[TIMING:continuity-test] TURN#1 audio-queued +1201ms
+[PLAYBACK:continuity-test] draining 2059ms of queued audio before leaving SPEAKING (queued=1909ms elapsed=0ms)
+[TIMING:continuity-test] TURN#1 SUMMARY total=3262ms turn-detected=0ms llm-request=0ms llm-first-token=1200ms tts-request=1201ms tts-first-chunk=1201ms audio-queued=1201ms
+[TIMING:continuity-test] TURN#1
+speech-end=2026-09-24T03:24:18.720Z
+endpoint-evidence=2026-09-24T03:24:18.720Z (speech_final)
+turn-release=2026-09-24T03:24:19.425Z
+llm-request=2026-09-24T03:24:19.425Z
+llm-first-token=2026-09-24T03:24:20.625Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-24T03:24:20.626Z
+tts-first-audio=2026-09-24T03:24:20.626Z
+audio-queued=2026-09-24T03:24:20.626Z
+[TIMING:continuity-test] TURN#1 DELTAS
+endpoint-to-release=705ms
+release-to-llm-request=0ms
+llm-to-first-token=1200ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=1906ms
+[PIPELINE:continuity-test] Turn complete: assistant="It can build a whole website for you, yes." llmMs=1200 ttsMs=0
+[RESPONSE-LEN:continuity-test] TURN#1 userChars=40 assistantChars=42 estTokens=11 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1909 briefRequested=false
+[PIPELINE:continuity-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:continuity-test] run() exiting — state=LISTENING aborted=true
+  [PASS] TEST 3 — a clarification arriving before the agent speaks produces ONE answer
+[PIPELINE:continuity-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:continuity-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:continuity-test] GREETING greeting-text-ready +0ms
+[TIMING:continuity-test] GREETING tts-request +0ms
+[TIMING:continuity-test] GREETING tts-first-chunk +0ms
+[TIMING:continuity-test] GREETING audio-queued +0ms
+[PLAYBACK:continuity-test] draining 2331ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=1ms)
+[TIMING:continuity-test] GREETING SUMMARY total=2344ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:continuity-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:continuity-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:continuity-test] LLM request PRE-OPENED on speech_final evidence: text="What does it do?" evidence-to-llm-open=0ms historyLength=3
+[TIMING:continuity-test] TURN END turn-release=1790220265503 text="What does it do?" sttMs=0
+[STT:continuity-test] Transcript received: "What does it do?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:continuity-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:continuity-test] TURN#0 turn-detected +1ms
+[TIMING:continuity-test] TURN#0 stt-to-release=165ms (sttLag=n/ams)
+[LANGUAGE:continuity-test] call language LOCKED to en on the first meaningful utterance (basis=default-english confidence=0.75 hindiMarkers=0): "What does it do?"
+[LLM:continuity-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:continuity-test] TURN#0 llm-request +1ms
+[SPECULATE:continuity-test] ADOPTED pre-opened request — llm-request is 165ms after the provider stream was opened (first token not yet received) evidence-to-llm-open=0ms
+[TIMING:continuity-test] TURN#0 llm-first-token +1051ms
+[PIPELINE:continuity-test] reply SUPERSEDED before it was spoken — the caller has already said something newer (signal=superseded_buffered supersederTakesFloor=true charsGenerated=13)
+[TIMING:continuity-test] TURN#0 SUMMARY total=1052ms turn-detected=1ms llm-request=1ms llm-first-token=1051ms
+[TIMING:continuity-test] TURN#0
+speech-end=2026-09-24T03:24:25.339Z
+endpoint-evidence=2026-09-24T03:24:25.339Z (speech_final)
+turn-release=2026-09-24T03:24:25.503Z
+llm-request=2026-09-24T03:24:25.504Z
+llm-first-token=2026-09-24T03:24:26.554Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:continuity-test] TURN#0 DELTAS
+endpoint-to-release=164ms
+release-to-llm-request=1ms
+llm-to-first-token=1050ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[PIPELINE:continuity-test] Turn complete: assistant="STALE ANSWER." llmMs=1215 ttsMs=undefined
+[RESPONSE-LEN:continuity-test] TURN#0 userChars=16 assistantChars=13 estTokens=4 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=0 audioQueuedMs=2182 briefRequested=false
+[PIPELINE:continuity-test] Response #1 CANCELLED by barge-in — heard="" discarded="STALE ANSWER."
+[TIMING:continuity-test] TURN END turn-release=1790220266555 text="Actually, I mean can it build a website? No, I mean can it automate my business?" sttMs=0
+[STT:continuity-test] Transcript received: "Actually, I mean can it build a website? No, I mean can it automate my business?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:continuity-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=2
+[TIMING:continuity-test] TURN#1 turn-detected +0ms
+[TIMING:continuity-test] TURN#1 stt-to-release=401ms (sttLag=n/ams)
+[LLM:continuity-test] Sending to fake-llm: historyLength=4 roles=[system,assistant,user,user] streaming=true
+[TIMING:continuity-test] TURN#1 llm-request +0ms
+[TIMING:continuity-test] TURN#1 llm-first-token +1215ms
+[TIMING:continuity-test] TURN#1 tts-request +1215ms
+[TIMING:continuity-test] TURN#1 tts-first-chunk +1215ms
+[TIMING:continuity-test] TURN#1 audio-queued +1215ms
+[PLAYBACK:continuity-test] draining 2105ms of queued audio before leaving SPEAKING (queued=1955ms elapsed=0ms)
+[TIMING:continuity-test] TURN#1 SUMMARY total=3331ms turn-detected=0ms llm-request=0ms llm-first-token=1215ms tts-request=1215ms tts-first-chunk=1215ms audio-queued=1215ms
+[TIMING:continuity-test] TURN#1
+speech-end=2026-09-24T03:24:26.154Z
+endpoint-evidence=2026-09-24T03:24:26.154Z (speech_final)
+turn-release=2026-09-24T03:24:26.555Z
+llm-request=2026-09-24T03:24:26.555Z
+llm-first-token=2026-09-24T03:24:27.770Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-24T03:24:27.770Z
+tts-first-audio=2026-09-24T03:24:27.770Z
+audio-queued=2026-09-24T03:24:27.770Z
+[TIMING:continuity-test] TURN#1 DELTAS
+endpoint-to-release=401ms
+release-to-llm-request=0ms
+llm-to-first-token=1215ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=1616ms
+[PIPELINE:continuity-test] Turn complete: assistant="Yes, it automates your business end to end." llmMs=1215 ttsMs=0
+[RESPONSE-LEN:continuity-test] TURN#1 userChars=80 assistantChars=43 estTokens=11 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1955 briefRequested=false
+[PIPELINE:continuity-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:continuity-test] run() exiting — state=LISTENING aborted=true
+  [PASS] TEST 4 — a correction wins, and its context comes with it
+
+SECTION D — the history window holds a whole call
+  [PASS] the opening line is still in the LLM window after ten exchanges
+  [PASS] the window is still a window — it does not grow without bound
+
+SECTION E — the registration gate, unchanged (TEST 6, TEST 7)
+  [PASS] TEST 6 — "Yes" to the greeting is NOT a registration
+  [PASS] TEST 6b — "Yes" to a courtesy question is NOT a registration
+  [PASS] TEST 7 — "Yes" to the commitment question still registers, exactly as before
+  [PASS] TEST 7b — an interrupted gate question the caller HEARD still counts
+  [PASS] a transcript whose last turn is the caller's is never a final answer
+
+SECTION F — the caller RESUMES SPEAKING before the reply is spoken
+[PIPELINE:continuity-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:continuity-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:continuity-test] GREETING greeting-text-ready +0ms
+[TIMING:continuity-test] GREETING tts-request +0ms
+[TIMING:continuity-test] GREETING tts-first-chunk +0ms
+[TIMING:continuity-test] GREETING audio-queued +0ms
+[PLAYBACK:continuity-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:continuity-test] GREETING SUMMARY total=2341ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:continuity-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:continuity-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:continuity-test] LLM request PRE-OPENED on speech_final evidence: text="I just saw Saurabh sir's ad on Instagram." evidence-to-llm-open=0ms historyLength=3
+[TIMING:continuity-test] TURN END turn-release=1790220273185 text="I just saw Saurabh sir's ad on Instagram." sttMs=0
+[STT:continuity-test] Transcript received: "I just saw Saurabh sir's ad on Instagram." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:continuity-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:continuity-test] TURN#0 turn-detected +0ms
+[TIMING:continuity-test] TURN#0 stt-to-release=612ms (sttLag=n/ams)
+[LANGUAGE:continuity-test] call language LOCKED to en on the first meaningful utterance (basis=default-english confidence=0.75 hindiMarkers=0): "I just saw Saurabh sir's ad on Instagram."
+[LLM:continuity-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:continuity-test] TURN#0 llm-request +0ms
+[SPECULATE:continuity-test] ADOPTED pre-opened request — llm-request is 612ms after the provider stream was opened (first token not yet received) evidence-to-llm-open=0ms
+[TIMING:continuity-test] TURN#0 llm-first-token +600ms
+[PIPELINE:continuity-test] reply SUPERSEDED before it was spoken — the caller has already said something newer (signal=superseded_pending supersederTakesFloor=true charsGenerated=63)
+[TIMING:continuity-test] TURN#0 SUMMARY total=600ms turn-detected=0ms llm-request=0ms llm-first-token=600ms
+[TIMING:continuity-test] TURN#0
+speech-end=2026-09-24T03:24:32.573Z
+endpoint-evidence=2026-09-24T03:24:32.573Z (speech_final)
+turn-release=2026-09-24T03:24:33.185Z
+llm-request=2026-09-24T03:24:33.185Z
+llm-first-token=2026-09-24T03:24:33.785Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:continuity-test] TURN#0 DELTAS
+endpoint-to-release=612ms
+release-to-llm-request=0ms
+llm-to-first-token=600ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[PIPELINE:continuity-test] Turn complete: assistant="STALE — answers only the ad, not the question that followed it." llmMs=1212 ttsMs=undefined
+[RESPONSE-LEN:continuity-test] TURN#0 userChars=41 assistantChars=63 estTokens=16 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=0 audioQueuedMs=2182 briefRequested=false
+[PIPELINE:continuity-test] Response #1 CANCELLED by barge-in — heard="" discarded="STALE — answers only the ad, not the question that followed it."
+[TIMING:continuity-test] TURN END turn-release=1790220275301 text="I wanted to know whether this is related to FlexiFunnels and what exactly is the session about?" sttMs=1214
+[STT:continuity-test] Transcript received: "I wanted to know whether this is related to FlexiFunnels and what exactly is the..." userSpeechMs=1214 sttLagMs=n/a
+[TURN-RELEASE:continuity-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=2
+[TIMING:continuity-test] TURN#1 turn-detected +0ms
+[TIMING:continuity-test] TURN#1 stt-to-release=604ms (sttLag=n/ams)
+[LLM:continuity-test] Sending to fake-llm: historyLength=4 roles=[system,assistant,user,user] streaming=true
+[TIMING:continuity-test] TURN#1 llm-request +0ms
+[TIMING:continuity-test] TURN#1 llm-first-token +1216ms
+[TIMING:continuity-test] TURN#1 tts-request +1216ms
+[TIMING:continuity-test] TURN#1 tts-first-chunk +1216ms
+[TIMING:continuity-test] TURN#1 audio-queued +1216ms
+[PLAYBACK:continuity-test] draining 4196ms of queued audio before leaving SPEAKING (queued=4045ms elapsed=0ms)
+[TIMING:continuity-test] TURN#1 SUMMARY total=5416ms turn-detected=0ms llm-request=0ms llm-first-token=1216ms tts-request=1216ms tts-first-chunk=1216ms audio-queued=1216ms
+[TIMING:continuity-test] TURN#1
+speech-end=2026-09-24T03:24:34.697Z
+endpoint-evidence=2026-09-24T03:24:34.697Z (speech_final)
+turn-release=2026-09-24T03:24:35.301Z
+llm-request=2026-09-24T03:24:35.301Z
+llm-first-token=2026-09-24T03:24:36.517Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-24T03:24:36.517Z
+tts-first-audio=2026-09-24T03:24:36.517Z
+audio-queued=2026-09-24T03:24:36.517Z
+[TIMING:continuity-test] TURN#1 DELTAS
+endpoint-to-release=604ms
+release-to-llm-request=0ms
+llm-to-first-token=1216ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=1820ms
+[PIPELINE:continuity-test] Turn complete: assistant="Yes, it is from FlexiFunnels, and the session shows how Flexi Genie builds your ..." llmMs=1216 ttsMs=0
+[RESPONSE-LEN:continuity-test] TURN#1 userChars=95 assistantChars=89 estTokens=23 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=4045 briefRequested=false
+[PIPELINE:continuity-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:continuity-test] run() exiting — state=LISTENING aborted=true
+  [PASS] A — three related utterances become ONE context and ONE answer
+[PIPELINE:continuity-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:continuity-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:continuity-test] GREETING greeting-text-ready +0ms
+[TIMING:continuity-test] GREETING tts-request +1ms
+[TIMING:continuity-test] GREETING tts-first-chunk +1ms
+[TIMING:continuity-test] GREETING audio-queued +1ms
+[PLAYBACK:continuity-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:continuity-test] GREETING SUMMARY total=2331ms greeting-text-ready=0ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:continuity-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:continuity-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:continuity-test] LLM request PRE-OPENED on speech_final evidence: text="Is there any fee?" evidence-to-llm-open=0ms historyLength=3
+[TIMING:continuity-test] TURN END turn-release=1790220283641 text="Is there any fee?" sttMs=0
+[STT:continuity-test] Transcript received: "Is there any fee?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:continuity-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:continuity-test] TURN#0 turn-detected +1ms
+[TIMING:continuity-test] TURN#0 stt-to-release=161ms (sttLag=n/ams)
+[LANGUAGE:continuity-test] call language LOCKED to en on the first meaningful utterance (basis=default-english confidence=0.75 hindiMarkers=0): "Is there any fee?"
+[LLM:continuity-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:continuity-test] TURN#0 llm-request +1ms
+[SPECULATE:continuity-test] ADOPTED pre-opened request — llm-request is 161ms after the provider stream was opened (first token not yet received) evidence-to-llm-open=0ms
+[TIMING:continuity-test] TURN#0 llm-first-token +1043ms
+[PIPELINE:continuity-test] reply SUPERSEDED before it was spoken — the caller has already said something newer (signal=superseded_pending supersederTakesFloor=true charsGenerated=9)
+[TIMING:continuity-test] TURN#0 SUMMARY total=1043ms turn-detected=1ms llm-request=1ms llm-first-token=1043ms
+[TIMING:continuity-test] TURN#0
+speech-end=2026-09-24T03:24:43.481Z
+endpoint-evidence=2026-09-24T03:24:43.481Z (speech_final)
+turn-release=2026-09-24T03:24:43.641Z
+llm-request=2026-09-24T03:24:43.642Z
+llm-first-token=2026-09-24T03:24:44.684Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:continuity-test] TURN#0 DELTAS
+endpoint-to-release=160ms
+release-to-llm-request=1ms
+llm-to-first-token=1042ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[PIPELINE:continuity-test] Turn complete: assistant="OBSOLETE." llmMs=1203 ttsMs=undefined
+[RESPONSE-LEN:continuity-test] TURN#0 userChars=17 assistantChars=9 estTokens=3 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=0 audioQueuedMs=2182 briefRequested=false
+[PIPELINE:continuity-test] Response #1 CANCELLED by barge-in — heard="" discarded="OBSOLETE."
+[TIMING:continuity-test] TURN END turn-release=1790220285849 text="Actually I mean what is the price of the session?" sttMs=1201
+[STT:continuity-test] Transcript received: "Actually I mean what is the price of the session?" userSpeechMs=1201 sttLagMs=n/a
+[TURN-RELEASE:continuity-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=2
+[TIMING:continuity-test] TURN#1 turn-detected +1ms
+[TIMING:continuity-test] TURN#1 stt-to-release=253ms (sttLag=n/ams)
+[LLM:continuity-test] Sending to fake-llm: historyLength=4 roles=[system,assistant,user,user] streaming=true
+[TIMING:continuity-test] TURN#1 llm-request +1ms
+[TIMING:continuity-test] TURN#1 llm-first-token +1202ms
+[TIMING:continuity-test] TURN#1 tts-request +1202ms
+[TIMING:continuity-test] TURN#1 tts-first-chunk +1202ms
+[TIMING:continuity-test] TURN#1 audio-queued +1202ms
+[PLAYBACK:continuity-test] draining 1468ms of queued audio before leaving SPEAKING (queued=1318ms elapsed=0ms)
+[TIMING:continuity-test] TURN#1 SUMMARY total=2683ms turn-detected=1ms llm-request=1ms llm-first-token=1202ms tts-request=1202ms tts-first-chunk=1202ms audio-queued=1202ms
+[TIMING:continuity-test] TURN#1
+speech-end=2026-09-24T03:24:45.597Z
+endpoint-evidence=2026-09-24T03:24:45.598Z (speech_final)
+turn-release=2026-09-24T03:24:45.849Z
+llm-request=2026-09-24T03:24:45.850Z
+llm-first-token=2026-09-24T03:24:47.051Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-24T03:24:47.051Z
+tts-first-audio=2026-09-24T03:24:47.051Z
+audio-queued=2026-09-24T03:24:47.051Z
+[TIMING:continuity-test] TURN#1 DELTAS
+endpoint-to-release=251ms
+release-to-llm-request=1ms
+llm-to-first-token=1201ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=1454ms
+[PIPELINE:continuity-test] Turn complete: assistant="It is fifteen hundred rupees." llmMs=1201 ttsMs=0
+[RESPONSE-LEN:continuity-test] TURN#1 userChars=49 assistantChars=29 estTokens=8 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1318 briefRequested=false
+[PIPELINE:continuity-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:continuity-test] run() exiting — state=LISTENING aborted=true
+  [PASS] B — a newer utterance supersedes the obsolete pending reply
+[PIPELINE:continuity-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:continuity-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:continuity-test] GREETING greeting-text-ready +0ms
+[TIMING:continuity-test] GREETING tts-request +0ms
+[TIMING:continuity-test] GREETING tts-first-chunk +0ms
+[TIMING:continuity-test] GREETING audio-queued +0ms
+[PLAYBACK:continuity-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:continuity-test] GREETING SUMMARY total=2341ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:continuity-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:continuity-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:continuity-test] LLM request PRE-OPENED on speech_final evidence: text="Tell me about it." evidence-to-llm-open=1ms historyLength=3
+[TIMING:continuity-test] TURN END turn-release=1790220291481 text="Tell me about it." sttMs=0
+[STT:continuity-test] Transcript received: "Tell me about it." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:continuity-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:continuity-test] TURN#0 turn-detected +0ms
+[TIMING:continuity-test] TURN#0 stt-to-release=160ms (sttLag=n/ams)
+[LANGUAGE:continuity-test] call language LOCKED to en on the first meaningful utterance (basis=default-english confidence=0.75 hindiMarkers=0): "Tell me about it."
+[LLM:continuity-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:continuity-test] TURN#0 llm-request +1ms
+[SPECULATE:continuity-test] ADOPTED pre-opened request — llm-request is 160ms after the provider stream was opened (first token already in hand, 96ms ago) evidence-to-llm-open=1ms
+[TIMING:continuity-test] TURN#0 llm-first-token +1ms
+[TIMING:continuity-test] TURN#0 first-sentence-ready +1ms
+[TIMING:continuity-test] TURN#0 tts-request +1ms
+[TIMING:continuity-test] TURN#0 tts-first-chunk +1ms
+[TIMING:continuity-test] TURN#0 audio-queued +1ms
+[PLAYBACK:continuity-test] draining 12013ms of queued audio before leaving SPEAKING (queued=11864ms elapsed=1ms)
+[TIMING:continuity-test] TURN#0 SUMMARY total=12028ms turn-detected=0ms llm-request=1ms llm-first-token=1ms first-sentence-ready=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:continuity-test] TURN#0
+speech-end=2026-09-24T03:24:51.321Z
+endpoint-evidence=2026-09-24T03:24:51.321Z (speech_final)
+turn-release=2026-09-24T03:24:51.481Z
+llm-request=2026-09-24T03:24:51.482Z
+llm-first-token=2026-09-24T03:24:51.482Z
+first-sentence-ready=2026-09-24T03:24:51.482Z
+tts-request=2026-09-24T03:24:51.482Z
+tts-first-audio=2026-09-24T03:24:51.482Z
+audio-queued=2026-09-24T03:24:51.482Z
+[TIMING:continuity-test] TURN#0 DELTAS
+endpoint-to-release=160ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=0ms
+sentence-to-tts=0ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=161ms
+[PIPELINE:continuity-test] Turn complete: assistant="Actually, I am calling you with a very interesting invitation. We have created F..." llmMs=64 ttsMs=0
+[RESPONSE-LEN:continuity-test] TURN#0 userChars=17 assistantChars=263 estTokens=66 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=3 audioQueuedMs=11864 briefRequested=false
+[SPECULATE:continuity-test] LLM request PRE-OPENED on speech_final evidence: text="I have a question." evidence-to-llm-open=0ms historyLength=5
+[TIMING:continuity-test] TURN END turn-release=1790220303668 text="I have a question." sttMs=0
+[STT:continuity-test] Transcript received: "I have a question." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:continuity-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:continuity-test] TURN#1 turn-detected +0ms
+[TIMING:continuity-test] TURN#1 stt-to-release=158ms (sttLag=n/ams)
+[LLM:continuity-test] Sending to fake-llm: historyLength=5 roles=[system,assistant,user,assistant,user] streaming=true
+[TIMING:continuity-test] TURN#1 llm-request +0ms
+[SPECULATE:continuity-test] ADOPTED pre-opened request — llm-request is 158ms after the provider stream was opened (first token already in hand, 95ms ago) evidence-to-llm-open=0ms
+[TIMING:continuity-test] TURN#1 llm-first-token +0ms
+[TIMING:continuity-test] TURN#1 tts-request +0ms
+[TIMING:continuity-test] TURN#1 tts-first-chunk +0ms
+[TIMING:continuity-test] TURN#1 audio-queued +0ms
+[PLAYBACK:continuity-test] draining 832ms of queued audio before leaving SPEAKING (queued=682ms elapsed=0ms)
+[TIMING:continuity-test] TURN#1 SUMMARY total=838ms turn-detected=0ms llm-request=0ms llm-first-token=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:continuity-test] TURN#1
+speech-end=2026-09-24T03:25:03.510Z
+endpoint-evidence=2026-09-24T03:25:03.510Z (speech_final)
+turn-release=2026-09-24T03:25:03.668Z
+llm-request=2026-09-24T03:25:03.668Z
+llm-first-token=2026-09-24T03:25:03.668Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-24T03:25:03.668Z
+tts-first-audio=2026-09-24T03:25:03.668Z
+audio-queued=2026-09-24T03:25:03.668Z
+[TIMING:continuity-test] TURN#1 DELTAS
+endpoint-to-release=158ms
+release-to-llm-request=0ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=158ms
+[PIPELINE:continuity-test] Turn complete: assistant="Sure, ask away." llmMs=63 ttsMs=0
+[RESPONSE-LEN:continuity-test] TURN#1 userChars=18 assistantChars=15 estTokens=4 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=682 briefRequested=false
+[PIPELINE:continuity-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:continuity-test] run() exiting — state=LISTENING aborted=true
+  [PASS] C — an answer the caller already heard is never spoken twice
+[PIPELINE:continuity-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:continuity-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:continuity-test] GREETING greeting-text-ready +0ms
+[TIMING:continuity-test] GREETING tts-request +0ms
+[TIMING:continuity-test] GREETING tts-first-chunk +0ms
+[TIMING:continuity-test] GREETING audio-queued +0ms
+[PLAYBACK:continuity-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:continuity-test] GREETING SUMMARY total=2338ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:continuity-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:continuity-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:continuity-test] LLM request PRE-OPENED on speech_final evidence: text="When is the session?" evidence-to-llm-open=0ms historyLength=3
+[TIMING:continuity-test] TURN END turn-release=1790220307045 text="When is the session?" sttMs=0
+[STT:continuity-test] Transcript received: "When is the session?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:continuity-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:continuity-test] TURN#0 turn-detected +0ms
+[TIMING:continuity-test] TURN#0 stt-to-release=158ms (sttLag=n/ams)
+[LANGUAGE:continuity-test] call language LOCKED to en on the first meaningful utterance (basis=default-english confidence=0.75 hindiMarkers=0): "When is the session?"
+[LLM:continuity-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:continuity-test] TURN#0 llm-request +1ms
+[SPECULATE:continuity-test] ADOPTED pre-opened request — llm-request is 158ms after the provider stream was opened (first token not yet received) evidence-to-llm-open=0ms
+[TIMING:continuity-test] TURN#0 llm-first-token +1051ms
+[TIMING:continuity-test] TURN#0 tts-request +1051ms
+[TIMING:continuity-test] TURN#0 tts-first-chunk +1052ms
+[TIMING:continuity-test] TURN#0 audio-queued +1052ms
+[PLAYBACK:continuity-test] draining 1786ms of queued audio before leaving SPEAKING (queued=1636ms elapsed=0ms)
+[TURN:continuity-test] barge-in ACCEPTED on transcript: "Hello." — words=1 confidence=0.95 isFinal=true energyAgeMs=n/a beganBeforeReply=false replyRemainingMs=1337 replyFullyQueued=true
+[TIMING:continuity-test] TURN#0 SUMMARY total=1357ms turn-detected=0ms llm-request=1ms llm-first-token=1051ms tts-request=1051ms tts-first-chunk=1052ms audio-queued=1052ms
+[TIMING:continuity-test] TURN#0
+speech-end=2026-09-24T03:25:06.887Z
+endpoint-evidence=2026-09-24T03:25:06.888Z (speech_final)
+turn-release=2026-09-24T03:25:07.045Z
+llm-request=2026-09-24T03:25:07.046Z
+llm-first-token=2026-09-24T03:25:08.096Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-24T03:25:08.096Z
+tts-first-audio=2026-09-24T03:25:08.097Z
+audio-queued=2026-09-24T03:25:08.097Z
+[TIMING:continuity-test] TURN#0 DELTAS
+endpoint-to-release=157ms
+release-to-llm-request=1ms
+llm-to-first-token=1050ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=1ms
+first-audio-to-queue=0ms
+speech-end-to-audio=1210ms
+[PIPELINE:continuity-test] Turn complete: assistant="The session is this Sunday at 11 am." llmMs=1208 ttsMs=1
+[RESPONSE-LEN:continuity-test] TURN#0 userChars=20 assistantChars=36 estTokens=9 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1636 briefRequested=false
+[PIPELINE:continuity-test] Response #1 CANCELLED by barge-in — heard="" discarded="The session is this Sunday at 11 am."
+[TIMING:continuity-test] TURN END turn-release=1790220310210 text="Hello." sttMs=0
+[STT:continuity-test] Transcript received: "Hello." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:continuity-test] stt=fake-stt reason=chunk_grace_cap_reached readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:continuity-test] TURN#1 turn-detected +0ms
+[TIMING:continuity-test] TURN#1 stt-to-release=1814ms (sttLag=n/ams)
+[PIPELINE:continuity-test] attention check — acknowledging once: "Hey, can you hear me okay?"
+[TIMING:continuity-test] ATTENTION tts-request +0ms
+[TIMING:continuity-test] ATTENTION tts-first-chunk +1ms
+[TIMING:continuity-test] ATTENTION audio-queued +1ms
+[PLAYBACK:continuity-test] draining 1332ms of queued audio before leaving SPEAKING (queued=1182ms elapsed=0ms)
+[TIMING:continuity-test] ATTENTION SUMMARY total=1340ms tts-request=0ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:continuity-test] TURN#1 SUMMARY total=1340ms turn-detected=0ms
+[TIMING:continuity-test] TURN#1
+speech-end=2026-09-24T03:25:08.396Z
+endpoint-evidence=NOT DIRECTLY MEASURABLE
+turn-release=2026-09-24T03:25:10.210Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:continuity-test] TURN#1 DELTAS
+endpoint-to-release=NOT DIRECTLY MEASURABLE
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[PIPELINE:continuity-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:continuity-test] run() exiting — state=LISTENING aborted=true
+  [PASS] D — "Hello." while the agent is thinking does not cancel or restart anything
+[PIPELINE:continuity-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:continuity-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:continuity-test] GREETING greeting-text-ready +0ms
+[TIMING:continuity-test] GREETING tts-request +0ms
+[TIMING:continuity-test] GREETING tts-first-chunk +0ms
+[TIMING:continuity-test] GREETING audio-queued +0ms
+[PLAYBACK:continuity-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:continuity-test] GREETING SUMMARY total=2335ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:continuity-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:continuity-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:continuity-test] LLM request PRE-OPENED on speech_final evidence: text="When is the session?" evidence-to-llm-open=1ms historyLength=3
+[TIMING:continuity-test] TURN END turn-release=1790220314490 text="When is the session?" sttMs=0
+[STT:continuity-test] Transcript received: "When is the session?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:continuity-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:continuity-test] TURN#0 turn-detected +0ms
+[TIMING:continuity-test] TURN#0 stt-to-release=151ms (sttLag=n/ams)
+[LANGUAGE:continuity-test] call language LOCKED to en on the first meaningful utterance (basis=default-english confidence=0.75 hindiMarkers=0): "When is the session?"
+[LLM:continuity-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:continuity-test] TURN#0 llm-request +0ms
+[SPECULATE:continuity-test] ADOPTED pre-opened request — llm-request is 150ms after the provider stream was opened (first token not yet received) evidence-to-llm-open=1ms
+[TIMING:continuity-test] TURN#0 llm-first-token +1066ms
+[TIMING:continuity-test] TURN#0 tts-request +1066ms
+[TIMING:continuity-test] TURN#0 tts-first-chunk +1066ms
+[TIMING:continuity-test] TURN#0 audio-queued +1066ms
+[PLAYBACK:continuity-test] draining 1786ms of queued audio before leaving SPEAKING (queued=1636ms elapsed=0ms)
+[TURN:continuity-test] barge-in ACCEPTED on transcript: "Hi." — words=1 confidence=0.95 isFinal=true energyAgeMs=n/a beganBeforeReply=false replyRemainingMs=1337 replyFullyQueued=true
+[TIMING:continuity-test] TURN#0 SUMMARY total=1366ms turn-detected=0ms llm-request=0ms llm-first-token=1066ms tts-request=1066ms tts-first-chunk=1066ms audio-queued=1066ms
+[TIMING:continuity-test] TURN#0
+speech-end=2026-09-24T03:25:14.339Z
+endpoint-evidence=2026-09-24T03:25:14.339Z (speech_final)
+turn-release=2026-09-24T03:25:14.490Z
+llm-request=2026-09-24T03:25:14.490Z
+llm-first-token=2026-09-24T03:25:15.556Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-24T03:25:15.556Z
+tts-first-audio=2026-09-24T03:25:15.556Z
+audio-queued=2026-09-24T03:25:15.556Z
+[TIMING:continuity-test] TURN#0 DELTAS
+endpoint-to-release=151ms
+release-to-llm-request=0ms
+llm-to-first-token=1066ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=1217ms
+[PIPELINE:continuity-test] Turn complete: assistant="The session is this Sunday at 11 am." llmMs=1215 ttsMs=0
+[RESPONSE-LEN:continuity-test] TURN#0 userChars=20 assistantChars=36 estTokens=9 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1636 briefRequested=false
+[PIPELINE:continuity-test] Response #1 CANCELLED by barge-in — heard="" discarded="The session is this Sunday at 11 am."
+[TIMING:continuity-test] TURN END turn-release=1790220317657 text="Hi." sttMs=0
+[STT:continuity-test] Transcript received: "Hi." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:continuity-test] stt=fake-stt reason=chunk_grace_cap_reached readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:continuity-test] TURN#1 turn-detected +0ms
+[TIMING:continuity-test] TURN#1 stt-to-release=1802ms (sttLag=n/ams)
+[PIPELINE:continuity-test] attention check — acknowledging once: "Hey, can you hear me okay?"
+[TIMING:continuity-test] ATTENTION tts-request +0ms
+[TIMING:continuity-test] ATTENTION tts-first-chunk +0ms
+[TIMING:continuity-test] ATTENTION audio-queued +0ms
+[PLAYBACK:continuity-test] draining 1332ms of queued audio before leaving SPEAKING (queued=1182ms elapsed=0ms)
+[TIMING:continuity-test] ATTENTION SUMMARY total=1335ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:continuity-test] TURN#1 SUMMARY total=1335ms turn-detected=0ms
+[TIMING:continuity-test] TURN#1
+speech-end=2026-09-24T03:25:15.855Z
+endpoint-evidence=NOT DIRECTLY MEASURABLE
+turn-release=2026-09-24T03:25:17.657Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:continuity-test] TURN#1 DELTAS
+endpoint-to-release=NOT DIRECTLY MEASURABLE
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[PIPELINE:continuity-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:continuity-test] run() exiting — state=LISTENING aborted=true
+  [PASS] D — "Hi." while the agent is thinking does not cancel or restart anything
+[PIPELINE:continuity-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:continuity-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:continuity-test] GREETING greeting-text-ready +0ms
+[TIMING:continuity-test] GREETING tts-request +0ms
+[TIMING:continuity-test] GREETING tts-first-chunk +0ms
+[TIMING:continuity-test] GREETING audio-queued +0ms
+[PLAYBACK:continuity-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:continuity-test] GREETING SUMMARY total=2334ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:continuity-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:continuity-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:continuity-test] LLM request PRE-OPENED on speech_final evidence: text="When is the session?" evidence-to-llm-open=0ms historyLength=3
+[TIMING:continuity-test] TURN END turn-release=1790220321956 text="When is the session?" sttMs=0
+[STT:continuity-test] Transcript received: "When is the session?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:continuity-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:continuity-test] TURN#0 turn-detected +0ms
+[TIMING:continuity-test] TURN#0 stt-to-release=166ms (sttLag=n/ams)
+[LANGUAGE:continuity-test] call language LOCKED to en on the first meaningful utterance (basis=default-english confidence=0.75 hindiMarkers=0): "When is the session?"
+[LLM:continuity-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:continuity-test] TURN#0 llm-request +0ms
+[SPECULATE:continuity-test] ADOPTED pre-opened request — llm-request is 166ms after the provider stream was opened (first token not yet received) evidence-to-llm-open=0ms
+[TIMING:continuity-test] TURN#0 llm-first-token +1035ms
+[TIMING:continuity-test] TURN#0 tts-request +1036ms
+[TIMING:continuity-test] TURN#0 tts-first-chunk +1036ms
+[TIMING:continuity-test] TURN#0 audio-queued +1036ms
+[PLAYBACK:continuity-test] draining 1786ms of queued audio before leaving SPEAKING (queued=1636ms elapsed=0ms)
+[TURN:continuity-test] barge-in ACCEPTED on transcript: "Okay." — words=1 confidence=0.95 isFinal=true energyAgeMs=n/a beganBeforeReply=false replyRemainingMs=1337 replyFullyQueued=true
+[TIMING:continuity-test] TURN#0 SUMMARY total=1335ms turn-detected=0ms llm-request=0ms llm-first-token=1035ms tts-request=1036ms tts-first-chunk=1036ms audio-queued=1036ms
+[TIMING:continuity-test] TURN#0
+speech-end=2026-09-24T03:25:21.790Z
+endpoint-evidence=2026-09-24T03:25:21.790Z (speech_final)
+turn-release=2026-09-24T03:25:21.956Z
+llm-request=2026-09-24T03:25:21.956Z
+llm-first-token=2026-09-24T03:25:22.991Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-24T03:25:22.992Z
+tts-first-audio=2026-09-24T03:25:22.992Z
+audio-queued=2026-09-24T03:25:22.992Z
+[TIMING:continuity-test] TURN#0 DELTAS
+endpoint-to-release=166ms
+release-to-llm-request=0ms
+llm-to-first-token=1035ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=1202ms
+[PIPELINE:continuity-test] Turn complete: assistant="The session is this Sunday at 11 am." llmMs=1201 ttsMs=0
+[RESPONSE-LEN:continuity-test] TURN#0 userChars=20 assistantChars=36 estTokens=9 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1636 briefRequested=false
+[PIPELINE:continuity-test] Response #1 CANCELLED by barge-in — heard="" discarded="The session is this Sunday at 11 am."
+[TIMING:continuity-test] TURN END turn-release=1790220325108 text="Okay." sttMs=0
+[STT:continuity-test] Transcript received: "Okay." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:continuity-test] stt=fake-stt reason=chunk_grace_cap_reached readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:continuity-test] TURN#1 turn-detected +0ms
+[TIMING:continuity-test] TURN#1 stt-to-release=1817ms (sttLag=n/ams)
+[LLM:continuity-test] Sending to fake-llm: historyLength=4 roles=[system,assistant,user,user] streaming=true
+[TIMING:continuity-test] TURN#1 llm-request +0ms
+[TIMING:continuity-test] TURN#1 llm-first-token +1214ms
+[TIMING:continuity-test] TURN#1 tts-request +1215ms
+[TIMING:continuity-test] TURN#1 tts-first-chunk +1215ms
+[TIMING:continuity-test] TURN#1 audio-queued +1215ms
+[PLAYBACK:continuity-test] draining 1059ms of queued audio before leaving SPEAKING (queued=909ms elapsed=0ms)
+[TIMING:continuity-test] TURN#1 SUMMARY total=2281ms turn-detected=0ms llm-request=0ms llm-first-token=1214ms tts-request=1215ms tts-first-chunk=1215ms audio-queued=1215ms
+[TIMING:continuity-test] TURN#1
+speech-end=2026-09-24T03:25:23.291Z
+endpoint-evidence=NOT DIRECTLY MEASURABLE
+turn-release=2026-09-24T03:25:25.108Z
+llm-request=2026-09-24T03:25:25.108Z
+llm-first-token=2026-09-24T03:25:26.322Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-24T03:25:26.323Z
+tts-first-audio=2026-09-24T03:25:26.323Z
+audio-queued=2026-09-24T03:25:26.323Z
+[TIMING:continuity-test] TURN#1 DELTAS
+endpoint-to-release=NOT DIRECTLY MEASURABLE
+release-to-llm-request=0ms
+llm-to-first-token=1214ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=3032ms
+[PIPELINE:continuity-test] Turn complete: assistant="SHOULD-NOT-BE-NEEDED" llmMs=1214 ttsMs=0
+[RESPONSE-LEN:continuity-test] TURN#1 userChars=5 assistantChars=20 estTokens=5 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=909 briefRequested=false
+[PIPELINE:continuity-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:continuity-test] run() exiting — state=LISTENING aborted=true
+  [PASS] D — "Okay." while the agent is thinking does not cancel or restart anything
+[PIPELINE:continuity-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:continuity-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:continuity-test] GREETING greeting-text-ready +0ms
+[TIMING:continuity-test] GREETING tts-request +0ms
+[TIMING:continuity-test] GREETING tts-first-chunk +0ms
+[TIMING:continuity-test] GREETING audio-queued +0ms
+[PLAYBACK:continuity-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:continuity-test] GREETING SUMMARY total=2332ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:continuity-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:continuity-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:continuity-test] LLM request PRE-OPENED on speech_final evidence: text="When is the session?" evidence-to-llm-open=0ms historyLength=3
+[TIMING:continuity-test] TURN END turn-release=1790220330338 text="When is the session?" sttMs=0
+[STT:continuity-test] Transcript received: "When is the session?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:continuity-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:continuity-test] TURN#0 turn-detected +0ms
+[TIMING:continuity-test] TURN#0 stt-to-release=150ms (sttLag=n/ams)
+[LANGUAGE:continuity-test] call language LOCKED to en on the first meaningful utterance (basis=default-english confidence=0.75 hindiMarkers=0): "When is the session?"
+[LLM:continuity-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:continuity-test] TURN#0 llm-request +1ms
+[SPECULATE:continuity-test] ADOPTED pre-opened request — llm-request is 151ms after the provider stream was opened (first token not yet received) evidence-to-llm-open=0ms
+[TIMING:continuity-test] TURN#0 llm-first-token +1065ms
+[TIMING:continuity-test] TURN#0 tts-request +1066ms
+[TIMING:continuity-test] TURN#0 tts-first-chunk +1066ms
+[TIMING:continuity-test] TURN#0 audio-queued +1066ms
+[PLAYBACK:continuity-test] draining 1786ms of queued audio before leaving SPEAKING (queued=1636ms elapsed=0ms)
+[TURN:continuity-test] barge-in ACCEPTED on transcript: "Haan." — words=1 confidence=0.95 isFinal=true energyAgeMs=n/a beganBeforeReply=false replyRemainingMs=1351 replyFullyQueued=true
+[TIMING:continuity-test] TURN#0 SUMMARY total=1352ms turn-detected=0ms llm-request=1ms llm-first-token=1065ms tts-request=1066ms tts-first-chunk=1066ms audio-queued=1066ms
+[TIMING:continuity-test] TURN#0
+speech-end=2026-09-24T03:25:30.188Z
+endpoint-evidence=2026-09-24T03:25:30.188Z (speech_final)
+turn-release=2026-09-24T03:25:30.338Z
+llm-request=2026-09-24T03:25:30.339Z
+llm-first-token=2026-09-24T03:25:31.403Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-24T03:25:31.404Z
+tts-first-audio=2026-09-24T03:25:31.404Z
+audio-queued=2026-09-24T03:25:31.404Z
+[TIMING:continuity-test] TURN#0 DELTAS
+endpoint-to-release=150ms
+release-to-llm-request=1ms
+llm-to-first-token=1064ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=1216ms
+[PIPELINE:continuity-test] Turn complete: assistant="The session is this Sunday at 11 am." llmMs=1215 ttsMs=0
+[RESPONSE-LEN:continuity-test] TURN#0 userChars=20 assistantChars=36 estTokens=9 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1636 briefRequested=false
+[PIPELINE:continuity-test] Response #1 CANCELLED by barge-in — heard="" discarded="The session is this Sunday at 11 am."
+[TIMING:continuity-test] TURN END turn-release=1790220333512 text="Haan." sttMs=0
+[STT:continuity-test] Transcript received: "Haan." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:continuity-test] stt=fake-stt reason=chunk_grace_cap_reached readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:continuity-test] TURN#1 turn-detected +0ms
+[TIMING:continuity-test] TURN#1 stt-to-release=1823ms (sttLag=n/ams)
+[LLM:continuity-test] Sending to fake-llm: historyLength=4 roles=[system,assistant,user,user] streaming=true
+[TIMING:continuity-test] TURN#1 llm-request +1ms
+[TIMING:continuity-test] TURN#1 llm-first-token +1200ms
+[TIMING:continuity-test] TURN#1 tts-request +1200ms
+[TIMING:continuity-test] TURN#1 tts-first-chunk +1200ms
+[TIMING:continuity-test] TURN#1 audio-queued +1200ms
+[PLAYBACK:continuity-test] draining 1059ms of queued audio before leaving SPEAKING (queued=909ms elapsed=0ms)
+[TIMING:continuity-test] TURN#1 SUMMARY total=2271ms turn-detected=0ms llm-request=1ms llm-first-token=1200ms tts-request=1200ms tts-first-chunk=1200ms audio-queued=1200ms
+[TIMING:continuity-test] TURN#1
+speech-end=2026-09-24T03:25:31.689Z
+endpoint-evidence=NOT DIRECTLY MEASURABLE
+turn-release=2026-09-24T03:25:33.512Z
+llm-request=2026-09-24T03:25:33.513Z
+llm-first-token=2026-09-24T03:25:34.712Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-24T03:25:34.712Z
+tts-first-audio=2026-09-24T03:25:34.712Z
+audio-queued=2026-09-24T03:25:34.712Z
+[TIMING:continuity-test] TURN#1 DELTAS
+endpoint-to-release=NOT DIRECTLY MEASURABLE
+release-to-llm-request=1ms
+llm-to-first-token=1199ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=3023ms
+[PIPELINE:continuity-test] Turn complete: assistant="SHOULD-NOT-BE-NEEDED" llmMs=1199 ttsMs=0
+[RESPONSE-LEN:continuity-test] TURN#1 userChars=5 assistantChars=20 estTokens=5 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=909 briefRequested=false
+[PIPELINE:continuity-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:continuity-test] run() exiting — state=LISTENING aborted=true
+  [PASS] D — "Haan." while the agent is thinking does not cancel or restart anything
+[PIPELINE:continuity-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:continuity-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:continuity-test] GREETING greeting-text-ready +0ms
+[TIMING:continuity-test] GREETING tts-request +0ms
+[TIMING:continuity-test] GREETING tts-first-chunk +0ms
+[TIMING:continuity-test] GREETING audio-queued +0ms
+[PLAYBACK:continuity-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:continuity-test] GREETING SUMMARY total=2333ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:continuity-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:continuity-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:continuity-test] LLM request PRE-OPENED on speech_final evidence: text="Tell me about it." evidence-to-llm-open=0ms historyLength=3
+[TIMING:continuity-test] TURN END turn-release=1790220338802 text="Tell me about it." sttMs=0
+[STT:continuity-test] Transcript received: "Tell me about it." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:continuity-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:continuity-test] TURN#0 turn-detected +0ms
+[TIMING:continuity-test] TURN#0 stt-to-release=165ms (sttLag=n/ams)
+[LANGUAGE:continuity-test] call language LOCKED to en on the first meaningful utterance (basis=default-english confidence=0.75 hindiMarkers=0): "Tell me about it."
+[LLM:continuity-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:continuity-test] TURN#0 llm-request +1ms
+[SPECULATE:continuity-test] ADOPTED pre-opened request — llm-request is 166ms after the provider stream was opened (first token not yet received) evidence-to-llm-open=0ms
+[TIMING:continuity-test] TURN#0 llm-first-token +1049ms
+[TIMING:continuity-test] TURN#0 first-sentence-ready +1049ms
+[TIMING:continuity-test] TURN#0 tts-request +1049ms
+[TIMING:continuity-test] TURN#0 tts-first-chunk +1049ms
+[TIMING:continuity-test] TURN#0 audio-queued +1049ms
+[PLAYBACK:continuity-test] draining 12013ms of queued audio before leaving SPEAKING (queued=11864ms elapsed=1ms)
+[TIMING:continuity-test] TURN#0 SUMMARY total=13065ms turn-detected=0ms llm-request=1ms llm-first-token=1049ms first-sentence-ready=1049ms tts-request=1049ms tts-first-chunk=1049ms audio-queued=1049ms
+[TIMING:continuity-test] TURN#0
+speech-end=2026-09-24T03:25:38.637Z
+endpoint-evidence=2026-09-24T03:25:38.637Z (speech_final)
+turn-release=2026-09-24T03:25:38.802Z
+llm-request=2026-09-24T03:25:38.803Z
+llm-first-token=2026-09-24T03:25:39.851Z
+first-sentence-ready=2026-09-24T03:25:39.851Z
+tts-request=2026-09-24T03:25:39.851Z
+tts-first-audio=2026-09-24T03:25:39.851Z
+audio-queued=2026-09-24T03:25:39.851Z
+[TIMING:continuity-test] TURN#0 DELTAS
+endpoint-to-release=165ms
+release-to-llm-request=1ms
+llm-to-first-token=1048ms
+first-token-to-sentence=0ms
+sentence-to-tts=0ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=1214ms
+[PIPELINE:continuity-test] Turn complete: assistant="Actually, I am calling you with a very interesting invitation. We have created F..." llmMs=1214 ttsMs=0
+[RESPONSE-LEN:continuity-test] TURN#0 userChars=17 assistantChars=263 estTokens=66 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=3 audioQueuedMs=11864 briefRequested=false
+[SPECULATE:continuity-test] LLM request PRE-OPENED on speech_final evidence: text="Is it hard to use?" evidence-to-llm-open=0ms historyLength=5
+[TIMING:continuity-test] TURN END turn-release=1790220352084 text="Is it hard to use?" sttMs=0
+[STT:continuity-test] Transcript received: "Is it hard to use?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:continuity-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:continuity-test] TURN#1 turn-detected +1ms
+[TIMING:continuity-test] TURN#1 stt-to-release=161ms (sttLag=n/ams)
+[LLM:continuity-test] Sending to fake-llm: historyLength=5 roles=[system,assistant,user,assistant,user] streaming=true
+[TIMING:continuity-test] TURN#1 llm-request +1ms
+[SPECULATE:continuity-test] ADOPTED pre-opened request — llm-request is 161ms after the provider stream was opened (first token not yet received) evidence-to-llm-open=0ms
+[TIMING:continuity-test] TURN#1 llm-first-token +1045ms
+[PIPELINE:continuity-test] reply SUPERSEDED before it was spoken — the caller has already said something newer (signal=superseded_pending supersederTakesFloor=true charsGenerated=6)
+[TIMING:continuity-test] TURN#1 SUMMARY total=1046ms turn-detected=1ms llm-request=1ms llm-first-token=1045ms
+[TIMING:continuity-test] TURN#1
+speech-end=2026-09-24T03:25:51.924Z
+endpoint-evidence=2026-09-24T03:25:51.924Z (speech_final)
+turn-release=2026-09-24T03:25:52.084Z
+llm-request=2026-09-24T03:25:52.085Z
+llm-first-token=2026-09-24T03:25:53.129Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:continuity-test] TURN#1 DELTAS
+endpoint-to-release=160ms
+release-to-llm-request=1ms
+llm-to-first-token=1044ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[PIPELINE:continuity-test] Turn complete: assistant="STALE." llmMs=1205 ttsMs=undefined
+[RESPONSE-LEN:continuity-test] TURN#1 userChars=18 assistantChars=6 estTokens=2 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=0 audioQueuedMs=11864 briefRequested=false
+[PIPELINE:continuity-test] Response #2 CANCELLED by barge-in — heard="" discarded="STALE."
+[TIMING:continuity-test] TURN END turn-release=1790220354285 text="I mean do I need to know coding for it?" sttMs=1201
+[STT:continuity-test] Transcript received: "I mean do I need to know coding for it?" userSpeechMs=1201 sttLagMs=n/a
+[TURN-RELEASE:continuity-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=2
+[TIMING:continuity-test] TURN#2 turn-detected +0ms
+[TIMING:continuity-test] TURN#2 stt-to-release=251ms (sttLag=n/ams)
+[LLM:continuity-test] Sending to fake-llm: historyLength=6 roles=[system,assistant,user,assistant,user,user] streaming=true
+[TIMING:continuity-test] TURN#2 llm-request +0ms
+[TIMING:continuity-test] TURN#2 llm-first-token +1208ms
+[TIMING:continuity-test] TURN#2 tts-request +1209ms
+[TIMING:continuity-test] TURN#2 tts-first-chunk +1209ms
+[TIMING:continuity-test] TURN#2 audio-queued +1209ms
+[PLAYBACK:continuity-test] draining 3105ms of queued audio before leaving SPEAKING (queued=2955ms elapsed=0ms)
+[TIMING:continuity-test] TURN#2 SUMMARY total=4318ms turn-detected=0ms llm-request=0ms llm-first-token=1208ms tts-request=1209ms tts-first-chunk=1209ms audio-queued=1209ms
+[TIMING:continuity-test] TURN#2
+speech-end=2026-09-24T03:25:54.034Z
+endpoint-evidence=2026-09-24T03:25:54.034Z (speech_final)
+turn-release=2026-09-24T03:25:54.285Z
+llm-request=2026-09-24T03:25:54.285Z
+llm-first-token=2026-09-24T03:25:55.493Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-24T03:25:55.494Z
+tts-first-audio=2026-09-24T03:25:55.494Z
+audio-queued=2026-09-24T03:25:55.494Z
+[TIMING:continuity-test] TURN#2 DELTAS
+endpoint-to-release=251ms
+release-to-llm-request=0ms
+llm-to-first-token=1208ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=1460ms
+[PIPELINE:continuity-test] Turn complete: assistant="No coding needed, and as I was saying, it writes your emails too." llmMs=1208 ttsMs=0
+[RESPONSE-LEN:continuity-test] TURN#2 userChars=39 assistantChars=65 estTokens=17 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=2955 briefRequested=false
+[PIPELINE:continuity-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:continuity-test] run() exiting — state=LISTENING aborted=true
+  [PASS] E — after a supersession the agent resumes from where it was, not from the top
+[PIPELINE:continuity-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:continuity-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:continuity-test] GREETING greeting-text-ready +1ms
+[TIMING:continuity-test] GREETING tts-request +1ms
+[TIMING:continuity-test] GREETING tts-first-chunk +1ms
+[TIMING:continuity-test] GREETING audio-queued +1ms
+[PLAYBACK:continuity-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:continuity-test] GREETING SUMMARY total=2345ms greeting-text-ready=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:continuity-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:continuity-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:continuity-test] LLM request PRE-OPENED on speech_final evidence: text="Okay tell me more." evidence-to-llm-open=48ms historyLength=3
+[TIMING:continuity-test] TURN END turn-release=1790220361536 text="Okay tell me more." sttMs=0
+[STT:continuity-test] Transcript received: "Okay tell me more." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:continuity-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:continuity-test] TURN#0 turn-detected +0ms
+[TIMING:continuity-test] TURN#0 stt-to-release=152ms (sttLag=n/ams)
+[LANGUAGE:continuity-test] call language LOCKED to en on the first meaningful utterance (basis=default-english confidence=0.75 hindiMarkers=0): "Okay tell me more."
+[LLM:continuity-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:continuity-test] TURN#0 llm-request +1ms
+[SPECULATE:continuity-test] ADOPTED pre-opened request — llm-request is 105ms after the provider stream was opened (first token not yet received) evidence-to-llm-open=48ms
+[TIMING:continuity-test] TURN#0 llm-first-token +1096ms
+[PIPELINE:continuity-test] reply SUPERSEDED before it was spoken — the caller has already said something newer (signal=superseded_pending supersederTakesFloor=true charsGenerated=57)
+[TIMING:continuity-test] TURN#0 SUMMARY total=1096ms turn-detected=0ms llm-request=1ms llm-first-token=1096ms
+[TIMING:continuity-test] TURN#0
+speech-end=2026-09-24T03:26:01.384Z
+endpoint-evidence=2026-09-24T03:26:01.384Z (speech_final)
+turn-release=2026-09-24T03:26:01.536Z
+llm-request=2026-09-24T03:26:01.537Z
+llm-first-token=2026-09-24T03:26:02.632Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:continuity-test] TURN#0 DELTAS
+endpoint-to-release=152ms
+release-to-llm-request=1ms
+llm-to-first-token=1095ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[PIPELINE:continuity-test] Turn complete: assistant="SCRIPTED CONTINUATION — answers nothing the caller asked." llmMs=1200 ttsMs=undefined
+[RESPONSE-LEN:continuity-test] TURN#0 userChars=18 assistantChars=57 estTokens=15 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=0 audioQueuedMs=2182 briefRequested=false
+[PIPELINE:continuity-test] Response #1 CANCELLED by barge-in — heard="" discarded="SCRIPTED CONTINUATION — answers nothing the caller asked."
+[TIMING:continuity-test] TURN END turn-release=1790220363764 text="Actually is there any fee and how long is it?" sttMs=1200
+[STT:continuity-test] Transcript received: "Actually is there any fee and how long is it?" userSpeechMs=1200 sttLagMs=n/a
+[TURN-RELEASE:continuity-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=2
+[TIMING:continuity-test] TURN#1 turn-detected +0ms
+[TIMING:continuity-test] TURN#1 stt-to-release=266ms (sttLag=n/ams)
+[LLM:continuity-test] Sending to fake-llm: historyLength=4 roles=[system,assistant,user,user] streaming=true
+[TIMING:continuity-test] TURN#1 llm-request +0ms
+[TIMING:continuity-test] TURN#1 llm-first-token +1215ms
+[TIMING:continuity-test] TURN#1 tts-request +1215ms
+[TIMING:continuity-test] TURN#1 tts-first-chunk +1215ms
+[TIMING:continuity-test] TURN#1 audio-queued +1215ms
+[PLAYBACK:continuity-test] draining 2059ms of queued audio before leaving SPEAKING (queued=1909ms elapsed=0ms)
+[TIMING:continuity-test] TURN#1 SUMMARY total=3278ms turn-detected=0ms llm-request=0ms llm-first-token=1215ms tts-request=1215ms tts-first-chunk=1215ms audio-queued=1215ms
+[TIMING:continuity-test] TURN#1
+speech-end=2026-09-24T03:26:03.498Z
+endpoint-evidence=2026-09-24T03:26:03.498Z (speech_final)
+turn-release=2026-09-24T03:26:03.764Z
+llm-request=2026-09-24T03:26:03.764Z
+llm-first-token=2026-09-24T03:26:04.979Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-24T03:26:04.979Z
+tts-first-audio=2026-09-24T03:26:04.979Z
+audio-queued=2026-09-24T03:26:04.979Z
+[TIMING:continuity-test] TURN#1 DELTAS
+endpoint-to-release=266ms
+release-to-llm-request=0ms
+llm-to-first-token=1215ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=1481ms
+[PIPELINE:continuity-test] Turn complete: assistant="It is free, and it runs for about an hour." llmMs=1215 ttsMs=0
+[RESPONSE-LEN:continuity-test] TURN#1 userChars=45 assistantChars=42 estTokens=11 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1909 briefRequested=false
+[PIPELINE:continuity-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:continuity-test] run() exiting — state=LISTENING aborted=true
+  [PASS] F — a contextual question is answered, not talked over by the scripted line
+
+SECTION G — the protected systems, asserted unchanged
+  [PASS] G — FINAL_YES and FINAL_NO still read the same way
+  [PASS] H — the Google Sheets FINAL_YES gate is the same decision
+[PIPELINE:continuity-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:continuity-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:continuity-test] GREETING greeting-text-ready +0ms
+[TIMING:continuity-test] GREETING tts-request +0ms
+[TIMING:continuity-test] GREETING tts-first-chunk +0ms
+[TIMING:continuity-test] GREETING audio-queued +0ms
+[PLAYBACK:continuity-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:continuity-test] GREETING SUMMARY total=2332ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:continuity-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:continuity-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:continuity-test] LLM request PRE-OPENED on speech_final evidence: text="What is it about?" evidence-to-llm-open=0ms historyLength=3
+[TIMING:continuity-test] TURN END turn-release=1790220370161 text="What is it about?" sttMs=0
+[STT:continuity-test] Transcript received: "What is it about?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:continuity-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:continuity-test] TURN#0 turn-detected +1ms
+[TIMING:continuity-test] TURN#0 stt-to-release=165ms (sttLag=n/ams)
+[LANGUAGE:continuity-test] call language LOCKED to en on the first meaningful utterance (basis=default-english confidence=0.75 hindiMarkers=0): "What is it about?"
+[LLM:continuity-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:continuity-test] TURN#0 llm-request +1ms
+[SPECULATE:continuity-test] ADOPTED pre-opened request — llm-request is 165ms after the provider stream was opened (first token not yet received) evidence-to-llm-open=0ms
+[TIMING:continuity-test] TURN#0 llm-first-token +1048ms
+[PIPELINE:continuity-test] reply SUPERSEDED before it was spoken — the caller has already said something newer (signal=superseded_pending supersederTakesFloor=true charsGenerated=10)
+[TIMING:continuity-test] TURN#0 SUMMARY total=1049ms turn-detected=1ms llm-request=1ms llm-first-token=1048ms
+[TIMING:continuity-test] TURN#0
+speech-end=2026-09-24T03:26:09.997Z
+endpoint-evidence=2026-09-24T03:26:09.997Z (speech_final)
+turn-release=2026-09-24T03:26:10.161Z
+llm-request=2026-09-24T03:26:10.162Z
+llm-first-token=2026-09-24T03:26:11.209Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:continuity-test] TURN#0 DELTAS
+endpoint-to-release=164ms
+release-to-llm-request=1ms
+llm-to-first-token=1047ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[PIPELINE:continuity-test] Turn complete: assistant="STALE ONE." llmMs=1212 ttsMs=undefined
+[RESPONSE-LEN:continuity-test] TURN#0 userChars=17 assistantChars=10 estTokens=3 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=0 audioQueuedMs=2182 briefRequested=false
+[PIPELINE:continuity-test] Response #1 CANCELLED by barge-in — heard="" discarded="STALE ONE."
+[TIMING:continuity-test] TURN END turn-release=1790220372264 text="I mean what is the session about exactly?" sttMs=1200
+[STT:continuity-test] Transcript received: "I mean what is the session about exactly?" userSpeechMs=1200 sttLagMs=n/a
+[TURN-RELEASE:continuity-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[1] graceResets=[1@endpointed_final] marker=none finals=2
+[TIMING:continuity-test] TURN#1 turn-detected +1ms
+[TIMING:continuity-test] TURN#1 stt-to-release=153ms (sttLag=n/ams)
+[LLM:continuity-test] Sending to fake-llm: historyLength=4 roles=[system,assistant,user,user] streaming=true
+[TIMING:continuity-test] TURN#1 llm-request +1ms
+[TIMING:continuity-test] TURN#1 llm-first-token +1206ms
+[TIMING:continuity-test] TURN#1 tts-request +1206ms
+[TIMING:continuity-test] TURN#1 tts-first-chunk +1206ms
+[TIMING:continuity-test] TURN#1 audio-queued +1206ms
+[PLAYBACK:continuity-test] draining 649ms of queued audio before leaving SPEAKING (queued=500ms elapsed=1ms)
+[TIMING:continuity-test] TURN#1 SUMMARY total=1867ms turn-detected=1ms llm-request=1ms llm-first-token=1206ms tts-request=1206ms tts-first-chunk=1206ms audio-queued=1206ms
+[TIMING:continuity-test] TURN#1
+speech-end=2026-09-24T03:26:12.112Z
+endpoint-evidence=2026-09-24T03:26:12.112Z (speech_final)
+turn-release=2026-09-24T03:26:12.264Z
+llm-request=2026-09-24T03:26:12.265Z
+llm-first-token=2026-09-24T03:26:13.470Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-24T03:26:13.470Z
+tts-first-audio=2026-09-24T03:26:13.470Z
+audio-queued=2026-09-24T03:26:13.470Z
+[TIMING:continuity-test] TURN#1 DELTAS
+endpoint-to-release=152ms
+release-to-llm-request=1ms
+llm-to-first-token=1205ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=1358ms
+[PIPELINE:continuity-test] Turn complete: assistant="ANSWER ONE." llmMs=1204 ttsMs=0
+[RESPONSE-LEN:continuity-test] TURN#1 userChars=41 assistantChars=11 estTokens=3 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=500 briefRequested=false
+[SPECULATE:continuity-test] LLM request PRE-OPENED on speech_final evidence: text="And who is it for?" evidence-to-llm-open=0ms historyLength=6
+[TIMING:continuity-test] TURN END turn-release=1790220374327 text="And who is it for?" sttMs=0
+[STT:continuity-test] Transcript received: "And who is it for?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:continuity-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:continuity-test] TURN#2 turn-detected +0ms
+[TIMING:continuity-test] TURN#2 stt-to-release=164ms (sttLag=n/ams)
+[LLM:continuity-test] Sending to fake-llm: historyLength=6 roles=[system,assistant,user,user,assistant,user] streaming=true
+[TIMING:continuity-test] TURN#2 llm-request +0ms
+[SPECULATE:continuity-test] ADOPTED pre-opened request — llm-request is 164ms after the provider stream was opened (first token not yet received) evidence-to-llm-open=0ms
+[TIMING:continuity-test] TURN#2 llm-first-token +1047ms
+[TIMING:continuity-test] TURN#2 tts-request +1048ms
+[TIMING:continuity-test] TURN#2 tts-first-chunk +1048ms
+[TIMING:continuity-test] TURN#2 audio-queued +1048ms
+[PLAYBACK:continuity-test] draining 650ms of queued audio before leaving SPEAKING (queued=500ms elapsed=0ms)
+[TIMING:continuity-test] TURN#2 SUMMARY total=1701ms turn-detected=0ms llm-request=0ms llm-first-token=1047ms tts-request=1048ms tts-first-chunk=1048ms audio-queued=1048ms
+[TIMING:continuity-test] TURN#2
+speech-end=2026-09-24T03:26:14.163Z
+endpoint-evidence=2026-09-24T03:26:14.163Z (speech_final)
+turn-release=2026-09-24T03:26:14.327Z
+llm-request=2026-09-24T03:26:14.327Z
+llm-first-token=2026-09-24T03:26:15.374Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-24T03:26:15.375Z
+tts-first-audio=2026-09-24T03:26:15.375Z
+audio-queued=2026-09-24T03:26:15.375Z
+[TIMING:continuity-test] TURN#2 DELTAS
+endpoint-to-release=164ms
+release-to-llm-request=0ms
+llm-to-first-token=1047ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=1212ms
+[PIPELINE:continuity-test] Turn complete: assistant="ANSWER TWO." llmMs=1211 ttsMs=0
+[RESPONSE-LEN:continuity-test] TURN#2 userChars=18 assistantChars=11 estTokens=3 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=500 briefRequested=false
+[PIPELINE:continuity-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:continuity-test] run() exiting — state=LISTENING aborted=true
+  [PASS] I — a supersession never strands the call: the agent keeps answering
+
+SECTION F — the caller's PICKUP ACKNOWLEDGEMENT is not a turn (FIX A)
+[PIPELINE:continuity-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:continuity-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:continuity-test] GREETING greeting-text-ready +0ms
+[TIMING:continuity-test] GREETING tts-request +0ms
+[TIMING:continuity-test] GREETING tts-first-chunk +0ms
+[TIMING:continuity-test] GREETING audio-queued +0ms
+[PLAYBACK:continuity-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:continuity-test] GREETING SUMMARY total=2335ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:continuity-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:continuity-test] entering main loop — state=SPEAKING aborted=false
+[TIMING:continuity-test] TURN END turn-release=1790220378398 text="Hello" sttMs=0
+[STT:continuity-test] Transcript received: "Hello" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:continuity-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[PIPELINE:continuity-test] pickup acknowledgement ignored (not a turn): "Hello" — the opening line is the answer to it
+[PIPELINE:continuity-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:continuity-test] run() exiting — state=LISTENING aborted=true
+  [PASS] F1 — a bare "Hello" as the caller picks up is not a conversational turn
+[PIPELINE:continuity-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:continuity-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:continuity-test] GREETING greeting-text-ready +0ms
+[TIMING:continuity-test] GREETING tts-request +0ms
+[TIMING:continuity-test] GREETING tts-first-chunk +0ms
+[TIMING:continuity-test] GREETING audio-queued +1ms
+[PLAYBACK:continuity-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:continuity-test] GREETING SUMMARY total=2346ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=1ms
+[PIPELINE:continuity-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:continuity-test] entering main loop — state=SPEAKING aborted=false
+[TIMING:continuity-test] TURN END turn-release=1790220381061 text="Hello" sttMs=0
+[STT:continuity-test] Transcript received: "Hello" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:continuity-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[PIPELINE:continuity-test] pickup acknowledgement ignored (not a turn): "Hello" — the opening line is the answer to it
+[PIPELINE:continuity-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:continuity-test] run() exiting — state=LISTENING aborted=true
+  [PASS] F2 — a "Hello" landing while the opening line is PLAYING leaves the opening exactly once
+[PIPELINE:continuity-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:continuity-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:continuity-test] GREETING greeting-text-ready +0ms
+[TIMING:continuity-test] GREETING tts-request +0ms
+[TIMING:continuity-test] GREETING tts-first-chunk +0ms
+[TIMING:continuity-test] GREETING audio-queued +0ms
+[PLAYBACK:continuity-test] draining 2331ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=1ms)
+[TIMING:continuity-test] GREETING SUMMARY total=2339ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:continuity-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:continuity-test] entering main loop — state=SPEAKING aborted=false
+[TIMING:continuity-test] TURN END turn-release=1790220383723 text="Hello" sttMs=0
+[STT:continuity-test] Transcript received: "Hello" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:continuity-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[PIPELINE:continuity-test] pickup acknowledgement ignored (not a turn): "Hello" — the opening line is the answer to it
+[PIPELINE:continuity-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:continuity-test] run() exiting — state=LISTENING aborted=true
+  [PASS] F3 — "Hello" on pickup is dropped: no request, no reply, no history
+[PIPELINE:continuity-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:continuity-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:continuity-test] GREETING greeting-text-ready +0ms
+[TIMING:continuity-test] GREETING tts-request +0ms
+[TIMING:continuity-test] GREETING tts-first-chunk +0ms
+[TIMING:continuity-test] GREETING audio-queued +0ms
+[PLAYBACK:continuity-test] draining 2331ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=1ms)
+[TIMING:continuity-test] GREETING SUMMARY total=2331ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:continuity-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:continuity-test] entering main loop — state=SPEAKING aborted=false
+[TIMING:continuity-test] TURN END turn-release=1790220386389 text="hello hello" sttMs=0
+[STT:continuity-test] Transcript received: "hello hello" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:continuity-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[PIPELINE:continuity-test] pickup acknowledgement ignored (not a turn): "hello hello" — the opening line is the answer to it
+[PIPELINE:continuity-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:continuity-test] run() exiting — state=LISTENING aborted=true
+  [PASS] F3 — "hello hello" on pickup is dropped: no request, no reply, no history
+[PIPELINE:continuity-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:continuity-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:continuity-test] GREETING greeting-text-ready +0ms
+[TIMING:continuity-test] GREETING tts-request +0ms
+[TIMING:continuity-test] GREETING tts-first-chunk +0ms
+[TIMING:continuity-test] GREETING audio-queued +0ms
+[PLAYBACK:continuity-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:continuity-test] GREETING SUMMARY total=2333ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:continuity-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:continuity-test] entering main loop — state=SPEAKING aborted=false
+[TIMING:continuity-test] TURN END turn-release=1790220389059 text="Hi" sttMs=0
+[STT:continuity-test] Transcript received: "Hi" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:continuity-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[PIPELINE:continuity-test] pickup acknowledgement ignored (not a turn): "Hi" — the opening line is the answer to it
+[PIPELINE:continuity-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:continuity-test] run() exiting — state=LISTENING aborted=true
+  [PASS] F3 — "Hi" on pickup is dropped: no request, no reply, no history
+[PIPELINE:continuity-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:continuity-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:continuity-test] GREETING greeting-text-ready +0ms
+[TIMING:continuity-test] GREETING tts-request +0ms
+[TIMING:continuity-test] GREETING tts-first-chunk +1ms
+[TIMING:continuity-test] GREETING audio-queued +1ms
+[PLAYBACK:continuity-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:continuity-test] GREETING SUMMARY total=2332ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:continuity-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:continuity-test] entering main loop — state=SPEAKING aborted=false
+[TIMING:continuity-test] TURN END turn-release=1790220391725 text="Haan." sttMs=0
+[STT:continuity-test] Transcript received: "Haan." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:continuity-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[PIPELINE:continuity-test] pickup acknowledgement ignored (not a turn): "Haan." — the opening line is the answer to it
+[PIPELINE:continuity-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:continuity-test] run() exiting — state=LISTENING aborted=true
+  [PASS] F3 — "Haan." on pickup is dropped: no request, no reply, no history
+[PIPELINE:continuity-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:continuity-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:continuity-test] GREETING greeting-text-ready +0ms
+[TIMING:continuity-test] GREETING tts-request +0ms
+[TIMING:continuity-test] GREETING tts-first-chunk +0ms
+[TIMING:continuity-test] GREETING audio-queued +0ms
+[PLAYBACK:continuity-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:continuity-test] GREETING SUMMARY total=2341ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:continuity-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:continuity-test] entering main loop — state=SPEAKING aborted=false
+[TIMING:continuity-test] TURN END turn-release=1790220394391 text="Okay." sttMs=0
+[STT:continuity-test] Transcript received: "Okay." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:continuity-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[PIPELINE:continuity-test] pickup acknowledgement ignored (not a turn): "Okay." — the opening line is the answer to it
+[PIPELINE:continuity-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:continuity-test] run() exiting — state=LISTENING aborted=true
+  [PASS] F3 — "Okay." on pickup is dropped: no request, no reply, no history
+[PIPELINE:continuity-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:continuity-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:continuity-test] GREETING greeting-text-ready +0ms
+[TIMING:continuity-test] GREETING tts-request +0ms
+[TIMING:continuity-test] GREETING tts-first-chunk +0ms
+[TIMING:continuity-test] GREETING audio-queued +0ms
+[PLAYBACK:continuity-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:continuity-test] GREETING SUMMARY total=2332ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:continuity-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:continuity-test] entering main loop — state=SPEAKING aborted=false
+[TIMING:continuity-test] TURN END turn-release=1790220397075 text="Ji haan" sttMs=0
+[STT:continuity-test] Transcript received: "Ji haan" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:continuity-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[PIPELINE:continuity-test] pickup acknowledgement ignored (not a turn): "Ji haan" — the opening line is the answer to it
+[PIPELINE:continuity-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:continuity-test] run() exiting — state=LISTENING aborted=true
+  [PASS] F3 — "Ji haan" on pickup is dropped: no request, no reply, no history
+[PIPELINE:continuity-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:continuity-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:continuity-test] GREETING greeting-text-ready +0ms
+[TIMING:continuity-test] GREETING tts-request +0ms
+[TIMING:continuity-test] GREETING tts-first-chunk +0ms
+[TIMING:continuity-test] GREETING audio-queued +0ms
+[PLAYBACK:continuity-test] draining 2329ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=3ms)
+[TIMING:continuity-test] GREETING SUMMARY total=2334ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:continuity-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:continuity-test] entering main loop — state=SPEAKING aborted=false
+[TIMING:continuity-test] TURN END turn-release=1790220399759 text="नमस्ते" sttMs=0
+[STT:continuity-test] Transcript received: "नमस्ते" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:continuity-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[PIPELINE:continuity-test] pickup acknowledgement ignored (not a turn): "नमस्ते" — the opening line is the answer to it
+[PIPELINE:continuity-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:continuity-test] run() exiting — state=LISTENING aborted=true
+  [PASS] F3 — "नमस्ते" on pickup is dropped: no request, no reply, no history
+[PIPELINE:continuity-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:continuity-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:continuity-test] GREETING greeting-text-ready +0ms
+[TIMING:continuity-test] GREETING tts-request +0ms
+[TIMING:continuity-test] GREETING tts-first-chunk +1ms
+[TIMING:continuity-test] GREETING audio-queued +1ms
+[PLAYBACK:continuity-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:continuity-test] GREETING SUMMARY total=2342ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:continuity-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:continuity-test] entering main loop — state=SPEAKING aborted=false
+[TIMING:continuity-test] TURN END turn-release=1790220402505 text="Hello? Who is this?" sttMs=0
+[STT:continuity-test] Transcript received: "Hello? Who is this?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:continuity-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:continuity-test] TURN#0 turn-detected +0ms
+[TIMING:continuity-test] TURN#0 stt-to-release=2341ms (sttLag=n/ams)
+[LANGUAGE:continuity-test] call language LOCKED to en on the first meaningful utterance (basis=default-english confidence=0.75 hindiMarkers=0): "Hello? Who is this?"
+[LLM:continuity-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:continuity-test] TURN#0 llm-request +0ms
+[TIMING:continuity-test] TURN#0 llm-first-token +17ms
+[TIMING:continuity-test] TURN#0 tts-request +17ms
+[TIMING:continuity-test] TURN#0 tts-first-chunk +18ms
+[TIMING:continuity-test] TURN#0 audio-queued +18ms
+[PLAYBACK:continuity-test] draining 2196ms of queued audio before leaving SPEAKING (queued=2046ms elapsed=0ms)
+[TIMING:continuity-test] TURN#0 SUMMARY total=2217ms turn-detected=0ms llm-request=0ms llm-first-token=17ms tts-request=17ms tts-first-chunk=18ms audio-queued=18ms
+[TIMING:continuity-test] TURN#0
+speech-end=2026-09-24T03:26:40.164Z
+endpoint-evidence=2026-09-24T03:26:40.164Z (speech_final)
+turn-release=2026-09-24T03:26:42.505Z
+llm-request=2026-09-24T03:26:42.505Z
+llm-first-token=2026-09-24T03:26:42.522Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-24T03:26:42.522Z
+tts-first-audio=2026-09-24T03:26:42.523Z
+audio-queued=2026-09-24T03:26:42.523Z
+[TIMING:continuity-test] TURN#0 DELTAS
+endpoint-to-release=2341ms
+release-to-llm-request=0ms
+llm-to-first-token=17ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=1ms
+first-audio-to-queue=0ms
+speech-end-to-audio=2359ms
+[PIPELINE:continuity-test] Turn complete: assistant="It is about the free AI workshop this Sunday." llmMs=16 ttsMs=0
+[RESPONSE-LEN:continuity-test] TURN#0 userChars=19 assistantChars=45 estTokens=12 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=2046 briefRequested=false
+[PIPELINE:continuity-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:continuity-test] run() exiting — state=LISTENING aborted=true
+  [PASS] F4 — "Hello? Who is this?" during the opening IS a real turn and is answered after it
+[PIPELINE:continuity-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:continuity-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:continuity-test] GREETING greeting-text-ready +0ms
+[TIMING:continuity-test] GREETING tts-request +0ms
+[TIMING:continuity-test] GREETING tts-first-chunk +0ms
+[TIMING:continuity-test] GREETING audio-queued +0ms
+[PLAYBACK:continuity-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:continuity-test] GREETING SUMMARY total=2343ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:continuity-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:continuity-test] entering main loop — state=SPEAKING aborted=false
+[TIMING:continuity-test] TURN END turn-release=1790220407088 text="Hello" sttMs=0
+[STT:continuity-test] Transcript received: "Hello" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:continuity-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[PIPELINE:continuity-test] pickup acknowledgement ignored (not a turn): "Hello" — the opening line is the answer to it
+[SPECULATE:continuity-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:continuity-test] TURN END turn-release=1790220407576 text="Yes, tell me." sttMs=0
+[STT:continuity-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:continuity-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:continuity-test] TURN#0 turn-detected +0ms
+[TIMING:continuity-test] TURN#0 stt-to-release=156ms (sttLag=n/ams)
+[LLM:continuity-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:continuity-test] TURN#0 llm-request +1ms
+[SPECULATE:continuity-test] ADOPTED pre-opened request — llm-request is 157ms after the provider stream was opened (first token already in hand, 140ms ago) evidence-to-llm-open=0ms
+[TIMING:continuity-test] TURN#0 llm-first-token +1ms
+[TIMING:continuity-test] TURN#0 tts-request +1ms
+[TIMING:continuity-test] TURN#0 tts-first-chunk +1ms
+[TIMING:continuity-test] TURN#0 audio-queued +1ms
+[PLAYBACK:continuity-test] draining 1150ms of queued audio before leaving SPEAKING (queued=1000ms elapsed=0ms)
+[TIMING:continuity-test] TURN#0 SUMMARY total=1162ms turn-detected=0ms llm-request=1ms llm-first-token=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:continuity-test] TURN#0
+speech-end=2026-09-24T03:26:47.420Z
+endpoint-evidence=2026-09-24T03:26:47.420Z (speech_final)
+turn-release=2026-09-24T03:26:47.576Z
+llm-request=2026-09-24T03:26:47.577Z
+llm-first-token=2026-09-24T03:26:47.577Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-24T03:26:47.577Z
+tts-first-audio=2026-09-24T03:26:47.577Z
+audio-queued=2026-09-24T03:26:47.577Z
+[TIMING:continuity-test] TURN#0 DELTAS
+endpoint-to-release=156ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=157ms
+[PIPELINE:continuity-test] Turn complete: assistant="Sure, let me tell you." llmMs=17 ttsMs=0
+[RESPONSE-LEN:continuity-test] TURN#0 userChars=13 assistantChars=22 estTokens=6 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1000 briefRequested=false
+[PIPELINE:continuity-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:continuity-test] run() exiting — state=LISTENING aborted=true
+  [PASS] F5 — the allowance is spent once: the caller's real first answer is answered normally
+[PIPELINE:continuity-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:continuity-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:continuity-test] GREETING greeting-text-ready +0ms
+[TIMING:continuity-test] GREETING tts-request +0ms
+[TIMING:continuity-test] GREETING tts-first-chunk +0ms
+[TIMING:continuity-test] GREETING audio-queued +0ms
+[PLAYBACK:continuity-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:continuity-test] GREETING SUMMARY total=2332ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:continuity-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:continuity-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:continuity-test] LLM request PRE-OPENED on speech_final evidence: text="hello" evidence-to-llm-open=0ms historyLength=3
+[TIMING:continuity-test] TURN END turn-release=1790220411427 text="hello" sttMs=0
+[STT:continuity-test] Transcript received: "hello" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:continuity-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:continuity-test] TURN#0 turn-detected +1ms
+[TIMING:continuity-test] TURN#0 stt-to-release=308ms (sttLag=n/ams)
+[LLM:continuity-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:continuity-test] TURN#0 llm-request +1ms
+[SPECULATE:continuity-test] ADOPTED pre-opened request — llm-request is 308ms after the provider stream was opened (first token already in hand, 293ms ago) evidence-to-llm-open=0ms
+[TIMING:continuity-test] TURN#0 llm-first-token +2ms
+[TIMING:continuity-test] TURN#0 tts-request +2ms
+[TIMING:continuity-test] TURN#0 tts-first-chunk +2ms
+[TIMING:continuity-test] TURN#0 audio-queued +2ms
+[PLAYBACK:continuity-test] draining 832ms of queued audio before leaving SPEAKING (queued=682ms elapsed=0ms)
+[TIMING:continuity-test] TURN#0 SUMMARY total=837ms turn-detected=1ms llm-request=1ms llm-first-token=2ms tts-request=2ms tts-first-chunk=2ms audio-queued=2ms
+[TIMING:continuity-test] TURN#0
+speech-end=2026-09-24T03:26:51.120Z
+endpoint-evidence=2026-09-24T03:26:51.120Z (speech_final)
+turn-release=2026-09-24T03:26:51.427Z
+llm-request=2026-09-24T03:26:51.428Z
+llm-first-token=2026-09-24T03:26:51.429Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-24T03:26:51.429Z
+tts-first-audio=2026-09-24T03:26:51.429Z
+audio-queued=2026-09-24T03:26:51.429Z
+[TIMING:continuity-test] TURN#0 DELTAS
+endpoint-to-release=307ms
+release-to-llm-request=1ms
+llm-to-first-token=1ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=309ms
+[PIPELINE:continuity-test] Turn complete: assistant="Yes, I am here." llmMs=15 ttsMs=0
+[RESPONSE-LEN:continuity-test] TURN#0 userChars=5 assistantChars=15 estTokens=4 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=682 briefRequested=false
+[PIPELINE:continuity-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:continuity-test] run() exiting — state=LISTENING aborted=true
+  [PASS] F6 — a bare "hello" AFTER the opening has finished keeps exactly today's behaviour
+[PIPELINE:continuity-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:continuity-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:continuity-test] GREETING greeting-text-ready +0ms
+[TIMING:continuity-test] GREETING tts-request +0ms
+[TIMING:continuity-test] GREETING tts-first-chunk +0ms
+[TIMING:continuity-test] GREETING audio-queued +0ms
+[PLAYBACK:continuity-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:continuity-test] GREETING SUMMARY total=2337ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:continuity-test] Greeting spoken: text="Hi Sakshi, this is Rohan from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:continuity-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:continuity-test] LLM request PRE-OPENED on speech_final evidence: text="When is the session?" evidence-to-llm-open=0ms historyLength=3
+[TIMING:continuity-test] TURN END turn-release=1790220414811 text="When is the session?" sttMs=0
+[STT:continuity-test] Transcript received: "When is the session?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:continuity-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:continuity-test] TURN#0 turn-detected +0ms
+[TIMING:continuity-test] TURN#0 stt-to-release=161ms (sttLag=n/ams)
+[LANGUAGE:continuity-test] call language LOCKED to en on the first meaningful utterance (basis=default-english confidence=0.75 hindiMarkers=0): "When is the session?"
+[LLM:continuity-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:continuity-test] TURN#0 llm-request +0ms
+[SPECULATE:continuity-test] ADOPTED pre-opened request — llm-request is 161ms after the provider stream was opened (first token already in hand, 145ms ago) evidence-to-llm-open=0ms
+[TIMING:continuity-test] TURN#0 llm-first-token +1ms
+[TIMING:continuity-test] TURN#0 tts-request +1ms
+[TIMING:continuity-test] TURN#0 tts-first-chunk +1ms
+[TIMING:continuity-test] TURN#0 audio-queued +1ms
+[PLAYBACK:continuity-test] draining 1377ms of queued audio before leaving SPEAKING (queued=1227ms elapsed=0ms)
+[TIMING:continuity-test] TURN#0 SUMMARY total=1388ms turn-detected=0ms llm-request=0ms llm-first-token=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:continuity-test] TURN#0
+speech-end=2026-09-24T03:26:54.650Z
+endpoint-evidence=2026-09-24T03:26:54.650Z (speech_final)
+turn-release=2026-09-24T03:26:54.811Z
+llm-request=2026-09-24T03:26:54.811Z
+llm-first-token=2026-09-24T03:26:54.812Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-24T03:26:54.812Z
+tts-first-audio=2026-09-24T03:26:54.812Z
+audio-queued=2026-09-24T03:26:54.812Z
+[TIMING:continuity-test] TURN#0 DELTAS
+endpoint-to-release=161ms
+release-to-llm-request=0ms
+llm-to-first-token=1ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=162ms
+[PIPELINE:continuity-test] Turn complete: assistant="It is this Sunday at 11 am." llmMs=16 ttsMs=0
+[RESPONSE-LEN:continuity-test] TURN#0 userChars=20 assistantChars=27 estTokens=7 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1227 briefRequested=false
+[SPECULATE:continuity-test] LLM request PRE-OPENED on speech_final evidence: text="Is there any fee?" evidence-to-llm-open=0ms historyLength=5
+[TIMING:continuity-test] TURN END turn-release=1790220416397 text="Is there any fee?" sttMs=0
+[STT:continuity-test] Transcript received: "Is there any fee?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:continuity-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:continuity-test] TURN#1 turn-detected +0ms
+[TIMING:continuity-test] TURN#1 stt-to-release=166ms (sttLag=n/ams)
+[LLM:continuity-test] Sending to fake-llm: historyLength=5 roles=[system,assistant,user,assistant,user] streaming=true
+[TIMING:continuity-test] TURN#1 llm-request +0ms
+[SPECULATE:continuity-test] ADOPTED pre-opened request — llm-request is 166ms after the provider stream was opened (first token already in hand, 145ms ago) evidence-to-llm-open=0ms
+[TIMING:continuity-test] TURN#1 llm-first-token +0ms
+[TIMING:continuity-test] TURN#1 tts-request +1ms
+[TIMING:continuity-test] TURN#1 tts-first-chunk +1ms
+[TIMING:continuity-test] TURN#1 audio-queued +1ms
+[PLAYBACK:continuity-test] draining 650ms of queued audio before leaving SPEAKING (queued=500ms elapsed=0ms)
+[TIMING:continuity-test] TURN#1 SUMMARY total=656ms turn-detected=0ms llm-request=0ms llm-first-token=0ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:continuity-test] TURN#1
+speech-end=2026-09-24T03:26:56.231Z
+endpoint-evidence=2026-09-24T03:26:56.231Z (speech_final)
+turn-release=2026-09-24T03:26:56.397Z
+llm-request=2026-09-24T03:26:56.397Z
+llm-first-token=2026-09-24T03:26:56.397Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-24T03:26:56.398Z
+tts-first-audio=2026-09-24T03:26:56.398Z
+audio-queued=2026-09-24T03:26:56.398Z
+[TIMING:continuity-test] TURN#1 DELTAS
+endpoint-to-release=166ms
+release-to-llm-request=0ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=167ms
+[PIPELINE:continuity-test] Turn complete: assistant="It is free." llmMs=21 ttsMs=0
+[RESPONSE-LEN:continuity-test] TURN#1 userChars=17 assistantChars=11 estTokens=3 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=500 briefRequested=false
+[PIPELINE:continuity-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:continuity-test] run() exiting — state=LISTENING aborted=true
+  [PASS] F7 — a quiet opening: the first real turn is the call it always was
+
+FAILURES — 36 passed, 6 failed
+No telephony, TTS, STT, LLM, database or Google request was made.
+  - TEST 1 — "hello" over the middle of a block does not erase the block from history
+  - TEST 5 — "okay" never resets script progress
+  - TEST 5 — "hi" never resets script progress
+  - TEST 5 — "hello" never resets script progress
+  - TEST 5 — "haan" never resets script progress
+  - TEST 5 — "hello hello" never resets script progress

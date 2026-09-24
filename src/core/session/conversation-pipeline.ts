@@ -1458,6 +1458,57 @@ const VOICEMAIL_TRANSCRIPT_CAP = 400;
  * applies while the assistant is SPEAKING — every segment that arrives
  * while it is LISTENING or THINKING feeds the turn detector completely
  * ungated, exactly as before.
+ *
+ * ---------------- KNOWN AND ACCEPTED LIMITATION ----------------
+ *
+ * SOFT CALLER SPEECH OVER A PLAYING REPLY IS DISCARDED, and there is
+ * no signal at this layer that can recover it without re-opening the
+ * false interruption this gate exists to stop. Stated here rather
+ * than left to be rediscovered:
+ *
+ *   WHAT HAPPENS. A caller who speaks QUIETLY over the assistant
+ *   produces words from the STT and no loud near-end run from the
+ *   transport, so `lastCallerEnergyAt` is stale, this returns false,
+ *   and the segment is dropped without a barge-in and without
+ *   reaching the turn detector. Their interruption is not acted on
+ *   until the reply ends — at which point they are still talking and
+ *   everything from there is their turn as usual, so nothing is lost
+ *   permanently; what is lost is the interruption.
+ *
+ *   WHY IT IS NOT SIMPLY FIXED. Every candidate signal was checked
+ *   against the question "does this separate a quiet CALLER from a
+ *   television, a second person in the room, or unrelated room
+ *   speech?", and none of them does:
+ *
+ *     - the transport's soft threshold (`speechThreshold` /
+ *       `noteCallerSpeech`) is DELIBERATELY permissive — it is the
+ *       liveness signal that stops the campaign watchdog hanging up
+ *       on a soft-spoken caller — and `vad-segmenter.ts` says in as
+ *       many words that it cannot tell the caller from the room.
+ *       Admitting it here is the banned change with a different name.
+ *     - `segment.confidence` is already the second filter here, and
+ *       it measures the same acoustic quality the energy gate does:
+ *       quiet near-end speech and distant background speech both
+ *       score low, so it cannot separate them.
+ *     - there is no per-speaker signal to fall back on. The leg
+ *       carries ONE mixed mono channel (measured: `INBOUND
+ *       (caller)=7116, distinctTrackValues=1`), and `TranscriptSegment`
+ *       carries no speaker, channel or diarization field.
+ *     - `isSelfEcho` below separates OUR audio from everything else,
+ *       which is a different question and already answered.
+ *
+ *   WHAT WOULD BE WORSE. Feeding uncorroborated speech to the
+ *   detector, or lowering either threshold, restores the reported
+ *   "a background voice interrupts it and it goes quiet" behaviour —
+ *   a television cutting the assistant off mid-sentence for nobody.
+ *   A missed quiet interruption costs the rest of one reply; a false
+ *   one costs the reply, the LLM/TTS stream, the whole outbound
+ *   queue, and re-speaks the block the caller had already heard.
+ *
+ *   Read-only audit 2026-09-23 (H7). Closing this needs a signal
+ *   that does not exist at this layer — near/far discrimination or
+ *   speaker identity from the transport or the STT — not a rule
+ *   here.
  */
 const BARGE_IN_ENERGY_WINDOW_MS = 2_000;
 /**
@@ -2783,9 +2834,19 @@ export class ConversationPipeline {
         // call `suspected_voicemail` rather than an ordinary silent
         // call. But no reply is generated and nothing is spoken, so the
         // machine costs no language-model request, no synthesis and no
-        // script. The call then ends on the existing silence watchdog
-        // once the recording stops talking — no hangup logic is added
-        // to the pipeline, exactly as before.
+        // script.
+        //
+        // AND THIS IS THE SAFETY NET, NOT THE USUAL ROUTE. The comment
+        // here used to say the call then ends on the silence watchdog
+        // and that no hangup logic exists in the pipeline. Neither has
+        // been true since `hangUpOnVoicemail`: detection fires on the
+        // STT listener, records the machine's words itself and calls
+        // `host.end` at once, so the line is released immediately
+        // rather than held open. `end` is not awaited, so a turn the
+        // detector had already released can still reach this branch
+        // before the loop is aborted — which is exactly what this is
+        // for, and why it records rather than dropping (read-only
+        // audit 2026-09-23, L2).
         if (this.voicemailDetected) {
           this.abandonSpeculation("voicemail — no reply is generated");
           // PHASE 1.3 — a recording is not a caller, so this can never
@@ -3717,7 +3778,27 @@ export class ConversationPipeline {
       // A bare "haan ji"/"ji"/"Hi." — an answer or a pickup, not a
       // hearing problem. The contextual path (and the classifier) see
       // it exactly as today.
-      this.hearingLinesWithoutProgress = 0;
+      //
+      // ── AND IT IS NOT PROGRESS EITHER ────────────────────────────
+      //
+      // The counter used to be RESET here. The contract it keeps is
+      // stated at `MAX_HEARING_LINES_WITHOUT_PROGRESS`: it is reset
+      // "by any turn that is not answered with a fixed line — i.e. by
+      // the caller contributing something meaningful". Nothing
+      // meaningful reaches this line. Every turn that does was already
+      // taken by the real-contribution branch at the top of this
+      // method, which resets the counter and is untouched; what is
+      // left here is a turn `isCheck` accepted as a presence check and
+      // that merely failed to QUALIFY for an acknowledgement — a
+      // single bare "Hello." out of a clear sky.
+      //
+      // Resetting on that let an alternating pattern run forever: one
+      // non-qualifying "Hello." cleared the counter, the next
+      // qualifying check spent a line, and the cap was never reached
+      // (audit M8). Leaving it alone is the whole change — the
+      // counter is not incremented here either, because no fixed line
+      // is spoken on this path, and the cap and its value are
+      // untouched.
       return false;
     }
     // Episode open, nothing held: the caller came back.
@@ -3965,6 +4046,40 @@ export class ConversationPipeline {
   // ---------------------------------------------------------------
   // The scripted closing after a confirmed registration
   // ---------------------------------------------------------------
+
+  /**
+   * ADDITIVE, READ-ONLY. Did the person on this line say they are NOT
+   * the person we called?
+   *
+   * Reports the identity gate's own `denied` verdict — the state
+   * `handleIdentityGate` already sets from `classifyIdentityAnswer`
+   * and never leaves — and nothing else. No new state, no new counter,
+   * no timer, no threshold: one existing field, projected.
+   *
+   * IT EXISTS BECAUSE THE GATE'S VERDICT STOPPED AT THE GATE. Shutting
+   * the gate keeps the IDENTITY question from being reopened, and that
+   * is all it ever did. Everything the campaign does with a finished
+   * call — the stored outcome, the contact disposition, the retry
+   * decision, the registrations sheet and the early hangup — is read
+   * back out of the TRANSCRIPT by `classifyOutcome`, which cannot see
+   * this verdict and whose own wrong-number table is deliberately
+   * narrower than the identity classifier's denials. So a denial the
+   * gate understood perfectly ("No.", "Nahi, main Sakshi nahi hoon")
+   * followed by a later generic "Haan" at the commitment question
+   * settled `confirmed_at_gate` / FINAL_YES — a sheet row, a closed
+   * contact and an early hangup, for somebody who had just said they
+   * were not the person (reproduced through the real classifier,
+   * 2026-09-23).
+   *
+   * Read by the campaign layer through the manager, contained at the
+   * call site exactly as `lastActivityAt` and `getTranscript` are, so a
+   * manager or a session without it behaves exactly as before. The
+   * pipeline decides nothing downstream with it — it only reports what
+   * its own gate already concluded.
+   */
+  identityDenied(): boolean {
+    return this.identityState === "denied";
+  }
 
   /**
    * ADDITIVE. The campaign layer has established that this call's
@@ -4947,6 +5062,41 @@ export class ConversationPipeline {
     return this.currentResponseId;
   }
 
+  /**
+   * The generic fallback greeting, or nothing, for a reply the model
+   * produced but the pipeline refuses to speak (prompt echo — see
+   * `isContaminatedOutput`).
+   *
+   * WHY THIS IS A ROUTING DECISION AND NOT A NEW LINE. "Hey! How can
+   * I help you today?" is an INBOUND assistant's opening. On a
+   * campaign call it is wrong three times over: the agent has
+   * already introduced itself and said why it called, the campaign
+   * is outbound so there is nothing the caller rang up about, and it
+   * hands the floor to them in the middle of an approved script. It
+   * is reachable there — `contaminated` is evaluated on the
+   * streaming path, which is the path both configured providers
+   * take (audit M5).
+   *
+   * The campaign-aware behaviour for a generation that cannot be
+   * used ALREADY EXISTS and is one branch away: an empty generation
+   * is not spoken, not committed, and not replaced by a placeholder
+   * (see the `empty_response` branch in the main loop — "no
+   * placeholder, no apology, no fallback line"). A contaminated
+   * generation is the same thing: output the pipeline will not put
+   * in the agent's mouth. So on a campaign call it takes that path,
+   * and the caller's turn stays unanswered until the silence window
+   * or a held position picks the call back up.
+   *
+   * Every non-campaign session — the lab, the dashboard demo, the
+   * inbound scenarios the line was written for — keeps it verbatim.
+   * No new copy, no change to the pickup greeting, and nothing about
+   * `isContaminatedOutput` or the retry moves.
+   */
+  private contaminationFallbackFor(): string {
+    if (this.record.request.campaign !== undefined) return "";
+    return fallbackGreeting(this.record.memory.currentLanguage);
+  }
+
   /** True if `responseId` was cancelled by a barge-in while in flight. */
   private isResponseCancelled(responseId: number): boolean {
     return this.cancelledResponseId === responseId;
@@ -5591,6 +5741,51 @@ export class ConversationPipeline {
               `[TURN:${this.record.id}] backchannel ignored (not a barge-in): "${segment.text.trim()}" — ${Math.round(this.remainingSpeechMs())}ms of reply still to play`,
             );
             continue;
+          }
+          // ── THE SAME UTTERANCE, ONE EVENT LATER ────────────────────
+          //
+          // `spokeOverTheAssistant` is false the moment `drainPlayback`
+          // leaves SPEAKING — and a Deepgram final lands 0.4-1.7s after
+          // the words (`endpointing=400`, `utterance_end_ms=1000`), so
+          // the final of an "okay" absorbed as a backchannel routinely
+          // arrives AFTER the reply has finished playing. The branch
+          // above therefore did not see it, the line below cleared the
+          // one piece of state that remembered the absorption, and the
+          // utterance the pipeline had deliberately decided was NOT a
+          // contribution was fed to the turn detector — becoming a user
+          // turn, a language-model request and a signal the outcome
+          // classifier reads (audit M12).
+          //
+          // `backchannelInFlight` is that existing decision, and it is
+          // already scoped exactly right: it is set only by the branch
+          // above, only while the assistant was speaking, only for an
+          // utterance with no content of its own — and `enterSpeaking`
+          // clears it per reply so it can never carry into the next one.
+          // The only thing missing was reading it before it is thrown
+          // away.
+          //
+          // NARROW BY THE SAME VOCABULARY, NOT A NEW ONE. It absorbs
+          // the FINAL that closes that utterance, and only while the
+          // whole utterance is still nothing but an acknowledgement:
+          // `isBareAcknowledgement` is the same predicate the branch
+          // above used, over the same pending-plus-this-segment text.
+          // A caller who carries on — "ok, but what is the price?" —
+          // fails it on the segment that carries the content and is
+          // handled exactly as it is today. No timer, no threshold, no
+          // new state.
+          if (this.backchannelInFlight && segment.isFinal) {
+            const pending = this.record.turnDetector.getPendingTurnText();
+            const utterance =
+              pending.length > 0 ? `${pending} ${segment.text}` : segment.text;
+            if (isBareAcknowledgement(utterance)) {
+              this.backchannelInFlight = false;
+              this.record.liveUserTranscript = "";
+              // eslint-disable-next-line no-console
+              console.log(
+                `[TURN:${this.record.id}] absorbed backchannel's late final ignored (it was already judged not a contribution): "${segment.text.trim()}"`,
+              );
+              continue;
+            }
           }
           this.backchannelInFlight = false;
 
@@ -6548,11 +6743,14 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
       if (turn.role === "user") {
 
           // Marked as well as language-hinted. History has no "this one
-          // is now" signal of its own, and a barge-in leaves two user
-          // turns in a row with no assistant turn between them (the
-          // interrupted reply is never committed) — which is exactly
-          // when a reply comes back continuing the previous topic
-          // instead of answering what was just asked.
+          // is now" signal of its own, and a barge-in leaves the model
+          // looking at a turn of its own that stops mid-thought — or,
+          // when nothing of the reply had reached the caller, at two
+          // user turns in a row with no assistant turn between them
+          // (only the part that was HEARD is committed; see
+          // `cancelledHeardText`). Either shape is exactly when a reply
+          // comes back continuing the previous topic instead of
+          // answering what was just asked.
           turn.content = `${currentTurnNote()}\n${hint}\n${turn.content}`;
 
           break;
@@ -6733,12 +6931,12 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
           } else {
             // eslint-disable-next-line no-console
             console.warn(`[LLM:${sid}] Retry also contaminated — using fallback`);
-            spokenContent = fallbackGreeting(this.record.memory.currentLanguage);
+            spokenContent = this.contaminationFallbackFor();
           }
         } catch {
           // eslint-disable-next-line no-console
           console.warn(`[LLM:${sid}] Retry failed — using fallback`);
-          spokenContent = fallbackGreeting(this.record.memory.currentLanguage);
+          spokenContent = this.contaminationFallbackFor();
         }
       }
 
@@ -7042,7 +7240,7 @@ await this.drainPlayback(speakingSignal, true);
       console.warn(
         `[LLM:${this.record.id}] Streaming output contaminated (prompt echo) — suppressing remainder of turn, using fallback`,
       );
-      const fallback = fallbackGreeting(this.record.memory.currentLanguage);
+      const fallback = this.contaminationFallbackFor();
       if (!(speakingSignal?.aborted ?? false)) {
         speakingSignal ??= this.enterSpeaking();
         if (!speakingSignal.aborted) {

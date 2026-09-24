@@ -1,0 +1,413 @@
+
+A. THE PICKUP HELLO, DELIVERED LATE — the reported defect
+[PIPELINE:pickup-window-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:pickup-window-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:pickup-window-test] GREETING greeting-text-ready +0ms
+[TIMING:pickup-window-test] GREETING tts-request +2ms
+[TIMING:pickup-window-test] GREETING tts-first-chunk +3ms
+[TIMING:pickup-window-test] GREETING audio-queued +3ms
+[PLAYBACK:pickup-window-test] draining 1513ms of queued audio before leaving SPEAKING (queued=1364ms elapsed=1ms)
+[TIMING:pickup-window-test] GREETING SUMMARY total=1519ms greeting-text-ready=0ms tts-request=2ms tts-first-chunk=3ms audio-queued=3ms
+[PIPELINE:pickup-window-test] Greeting spoken: text="Hi, am I speaking with Sakshi?" state=SPEAKING
+[PIPELINE:pickup-window-test] entering main loop — state=SPEAKING aborted=false
+[TIMING:pickup-window-test] TURN END turn-release=1790158490155 text="Hello." sttMs=0
+[STT:pickup-window-test] Transcript received: "Hello." userSpeechMs=0 sttLagMs=700
+[TURN-RELEASE:pickup-window-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[PIPELINE:pickup-window-test] pickup acknowledgement ignored (not a turn): "Hello." — the opening line is the answer to it
+[PIPELINE:pickup-window-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:pickup-window-test] run() exiting — state=LISTENING aborted=true
+  [PASS] A1. REPRODUCTION: 'Hello' spoken over the opening, delivered after it finished, is still the pickup
+[PIPELINE:pickup-window-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:pickup-window-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:pickup-window-test] GREETING greeting-text-ready +0ms
+[TIMING:pickup-window-test] GREETING tts-request +1ms
+[TIMING:pickup-window-test] GREETING tts-first-chunk +1ms
+[TIMING:pickup-window-test] GREETING audio-queued +2ms
+[PLAYBACK:pickup-window-test] draining 1514ms of queued audio before leaving SPEAKING (queued=1364ms elapsed=0ms)
+[TIMING:pickup-window-test] GREETING SUMMARY total=1515ms greeting-text-ready=0ms tts-request=1ms tts-first-chunk=1ms audio-queued=2ms
+[PIPELINE:pickup-window-test] Greeting spoken: text="Hi, am I speaking with Sakshi?" state=SPEAKING
+[PIPELINE:pickup-window-test] entering main loop — state=SPEAKING aborted=false
+[TIMING:pickup-window-test] TURN END turn-release=1790158494850 text="Hello." sttMs=0
+[STT:pickup-window-test] Transcript received: "Hello." userSpeechMs=0 sttLagMs=680
+[TURN-RELEASE:pickup-window-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[PIPELINE:pickup-window-test] pickup acknowledgement ignored (not a turn): "Hello." — the opening line is the answer to it
+[TIMING:pickup-window-test] TURN END turn-release=1790158497358 text="Yes." sttMs=0
+[STT:pickup-window-test] Transcript received: "Yes." userSpeechMs=0 sttLagMs=0
+[TURN-RELEASE:pickup-window-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:pickup-window-test] TURN#0 turn-detected +1ms
+[TIMING:pickup-window-test] TURN#0 stt-to-release=159ms (sttLag=0ms)
+[PIPELINE:pickup-window-test] identity gate — "Yes." reads as CONFIRMED
+[LLM:pickup-window-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:pickup-window-test] TURN#0 llm-request +5ms
+[TIMING:pickup-window-test] TURN#0 llm-first-token +16ms
+[TIMING:pickup-window-test] TURN#0 first-sentence-ready +17ms
+[TIMING:pickup-window-test] TURN#0 tts-request +17ms
+[TIMING:pickup-window-test] TURN#0 tts-first-chunk +17ms
+[TIMING:pickup-window-test] TURN#0 audio-queued +17ms
+[PLAYBACK:pickup-window-test] draining 5514ms of queued audio before leaving SPEAKING (queued=5364ms elapsed=0ms)
+[TIMING:pickup-window-test] TURN#0 SUMMARY total=5541ms turn-detected=1ms llm-request=5ms llm-first-token=16ms first-sentence-ready=17ms tts-request=17ms tts-first-chunk=17ms audio-queued=17ms
+[TIMING:pickup-window-test] TURN#0
+speech-end=2026-09-23T10:14:57.200Z
+endpoint-evidence=2026-09-23T10:14:57.201Z (speech_final)
+turn-release=2026-09-23T10:14:57.358Z
+llm-request=2026-09-23T10:14:57.363Z
+llm-first-token=2026-09-23T10:14:57.374Z
+first-sentence-ready=2026-09-23T10:14:57.375Z
+tts-request=2026-09-23T10:14:57.375Z
+tts-first-audio=2026-09-23T10:14:57.375Z
+audio-queued=2026-09-23T10:14:57.375Z
+[TIMING:pickup-window-test] TURN#0 DELTAS
+endpoint-to-release=157ms
+release-to-llm-request=5ms
+llm-to-first-token=11ms
+first-token-to-sentence=1ms
+sentence-to-tts=0ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=175ms
+[PIPELINE:pickup-window-test] Turn complete: assistant="I'm calling to invite you to a free live workshop this Sunday at 11 AM. Have you..." llmMs=10 ttsMs=0
+[RESPONSE-LEN:pickup-window-test] TURN#0 userChars=4 assistantChars=119 estTokens=30 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=2 audioQueuedMs=5364 briefRequested=false
+[PIPELINE:pickup-window-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:pickup-window-test] run() exiting — state=LISTENING aborted=true
+  [PASS] A2. it is CONSUMED ONCE: not committed, not replayed, and the real answer still confirms
+[PIPELINE:pickup-window-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:pickup-window-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:pickup-window-test] GREETING greeting-text-ready +0ms
+[TIMING:pickup-window-test] GREETING tts-request +0ms
+[TIMING:pickup-window-test] GREETING tts-first-chunk +0ms
+[TIMING:pickup-window-test] GREETING audio-queued +1ms
+[PLAYBACK:pickup-window-test] draining 1514ms of queued audio before leaving SPEAKING (queued=1364ms elapsed=0ms)
+[TIMING:pickup-window-test] GREETING SUMMARY total=1519ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=1ms
+[PIPELINE:pickup-window-test] Greeting spoken: text="Hi, am I speaking with Sakshi?" state=SPEAKING
+[PIPELINE:pickup-window-test] entering main loop — state=SPEAKING aborted=false
+[TIMING:pickup-window-test] TURN END turn-release=1790158504452 text="Hello." sttMs=0
+[STT:pickup-window-test] Transcript received: "Hello." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:pickup-window-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[PIPELINE:pickup-window-test] pickup acknowledgement ignored (not a turn): "Hello." — the opening line is the answer to it
+[PIPELINE:pickup-window-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:pickup-window-test] run() exiting — state=LISTENING aborted=true
+  [PASS] A3. B — 'Hello' spoken AND delivered while the opening is still playing (unchanged behaviour)
+[PIPELINE:pickup-window-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:pickup-window-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:pickup-window-test] GREETING greeting-text-ready +0ms
+[TIMING:pickup-window-test] GREETING tts-request +0ms
+[TIMING:pickup-window-test] GREETING tts-first-chunk +0ms
+[TIMING:pickup-window-test] GREETING audio-queued +0ms
+[PLAYBACK:pickup-window-test] draining 1514ms of queued audio before leaving SPEAKING (queued=1364ms elapsed=0ms)
+[TIMING:pickup-window-test] GREETING SUMMARY total=1528ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:pickup-window-test] Greeting spoken: text="Hi, am I speaking with Sakshi?" state=SPEAKING
+[PIPELINE:pickup-window-test] entering main loop — state=SPEAKING aborted=false
+[TIMING:pickup-window-test] TURN END turn-release=1790158508332 text="Hello." sttMs=0
+[STT:pickup-window-test] Transcript received: "Hello." userSpeechMs=0 sttLagMs=680
+[TURN-RELEASE:pickup-window-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[PIPELINE:pickup-window-test] pickup acknowledgement ignored (not a turn): "Hello." — the opening line is the answer to it
+[PIPELINE:pickup-window-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:pickup-window-test] run() exiting — state=LISTENING aborted=true
+  [PASS] A4. the late pickup cannot produce a SECOND identity question of any kind
+
+B. THE OTHER SIDE OF THE WINDOW — a real turn stays a real turn
+[PIPELINE:pickup-window-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:pickup-window-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:pickup-window-test] GREETING greeting-text-ready +0ms
+[TIMING:pickup-window-test] GREETING tts-request +0ms
+[TIMING:pickup-window-test] GREETING tts-first-chunk +1ms
+[TIMING:pickup-window-test] GREETING audio-queued +1ms
+[PLAYBACK:pickup-window-test] draining 1514ms of queued audio before leaving SPEAKING (queued=1364ms elapsed=0ms)
+[TIMING:pickup-window-test] GREETING SUMMARY total=1515ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:pickup-window-test] Greeting spoken: text="Hi, am I speaking with Sakshi?" state=SPEAKING
+[PIPELINE:pickup-window-test] entering main loop — state=SPEAKING aborted=false
+[TIMING:pickup-window-test] TURN END turn-release=1790158513483 text="Hello?" sttMs=0
+[STT:pickup-window-test] Transcript received: "Hello?" userSpeechMs=0 sttLagMs=0
+[TURN-RELEASE:pickup-window-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:pickup-window-test] TURN#0 turn-detected +1ms
+[TIMING:pickup-window-test] TURN#0 stt-to-release=161ms (sttLag=0ms)
+[PIPELINE:pickup-window-test] identity gate — "Hello?" reads as UNCLEAR
+[PIPELINE:pickup-window-test] identity gate — no clear answer; asking again (1/2)
+[TIMING:pickup-window-test] ATTENTION tts-request +2ms
+[TIMING:pickup-window-test] ATTENTION tts-first-chunk +2ms
+[TIMING:pickup-window-test] ATTENTION audio-queued +2ms
+[PLAYBACK:pickup-window-test] draining 1695ms of queued audio before leaving SPEAKING (queued=1546ms elapsed=1ms)
+[TIMING:pickup-window-test] ATTENTION SUMMARY total=1704ms tts-request=2ms tts-first-chunk=2ms audio-queued=2ms
+[TIMING:pickup-window-test] TURN#0 SUMMARY total=1710ms turn-detected=1ms
+[TIMING:pickup-window-test] TURN#0
+speech-end=2026-09-23T10:15:13.323Z
+endpoint-evidence=2026-09-23T10:15:13.323Z (speech_final)
+turn-release=2026-09-23T10:15:13.483Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:pickup-window-test] TURN#0 DELTAS
+endpoint-to-release=160ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[PIPELINE:pickup-window-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:pickup-window-test] run() exiting — state=LISTENING aborted=true
+  [PASS] B1. C — 'Hello?' SPOKEN after the opening is NOT the pickup: it is unclear and the question is put again
+[PIPELINE:pickup-window-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:pickup-window-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:pickup-window-test] GREETING greeting-text-ready +0ms
+[TIMING:pickup-window-test] GREETING tts-request +1ms
+[TIMING:pickup-window-test] GREETING tts-first-chunk +1ms
+[TIMING:pickup-window-test] GREETING audio-queued +1ms
+[PLAYBACK:pickup-window-test] draining 1514ms of queued audio before leaving SPEAKING (queued=1364ms elapsed=0ms)
+[TIMING:pickup-window-test] GREETING SUMMARY total=1515ms greeting-text-ready=0ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:pickup-window-test] Greeting spoken: text="Hi, am I speaking with Sakshi?" state=SPEAKING
+[PIPELINE:pickup-window-test] entering main loop — state=SPEAKING aborted=false
+[TIMING:pickup-window-test] TURN END turn-release=1790158518178 text="Yes, this is Sakshi." sttMs=0
+[STT:pickup-window-test] Transcript received: "Yes, this is Sakshi." userSpeechMs=0 sttLagMs=0
+[TURN-RELEASE:pickup-window-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:pickup-window-test] TURN#0 turn-detected +0ms
+[TIMING:pickup-window-test] TURN#0 stt-to-release=160ms (sttLag=0ms)
+[LANGUAGE:pickup-window-test] call language LOCKED to en on the first meaningful utterance (basis=default-english confidence=0.75 hindiMarkers=0): "Yes, this is Sakshi."
+[PIPELINE:pickup-window-test] identity gate — "Yes, this is Sakshi." reads as CONFIRMED
+[LLM:pickup-window-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:pickup-window-test] TURN#0 llm-request +2ms
+[TIMING:pickup-window-test] TURN#0 llm-first-token +4ms
+[TIMING:pickup-window-test] TURN#0 first-sentence-ready +4ms
+[TIMING:pickup-window-test] TURN#0 tts-request +4ms
+[TIMING:pickup-window-test] TURN#0 tts-first-chunk +5ms
+[TIMING:pickup-window-test] TURN#0 audio-queued +5ms
+[PLAYBACK:pickup-window-test] draining 5514ms of queued audio before leaving SPEAKING (queued=5364ms elapsed=0ms)
+[TIMING:pickup-window-test] TURN#0 SUMMARY total=5526ms turn-detected=0ms llm-request=2ms llm-first-token=4ms first-sentence-ready=4ms tts-request=4ms tts-first-chunk=5ms audio-queued=5ms
+[TIMING:pickup-window-test] TURN#0
+speech-end=2026-09-23T10:15:18.018Z
+endpoint-evidence=2026-09-23T10:15:18.018Z (speech_final)
+turn-release=2026-09-23T10:15:18.178Z
+llm-request=2026-09-23T10:15:18.180Z
+llm-first-token=2026-09-23T10:15:18.182Z
+first-sentence-ready=2026-09-23T10:15:18.182Z
+tts-request=2026-09-23T10:15:18.182Z
+tts-first-audio=2026-09-23T10:15:18.183Z
+audio-queued=2026-09-23T10:15:18.183Z
+[TIMING:pickup-window-test] TURN#0 DELTAS
+endpoint-to-release=160ms
+release-to-llm-request=2ms
+llm-to-first-token=2ms
+first-token-to-sentence=0ms
+sentence-to-tts=0ms
+tts-to-first-audio=1ms
+first-audio-to-queue=0ms
+speech-end-to-audio=165ms
+[PIPELINE:pickup-window-test] Turn complete: assistant="I'm calling to invite you to a free live workshop this Sunday at 11 AM. Have you..." llmMs=1 ttsMs=1
+[RESPONSE-LEN:pickup-window-test] TURN#0 userChars=20 assistantChars=119 estTokens=30 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=2 audioQueuedMs=5364 briefRequested=false
+[PIPELINE:pickup-window-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:pickup-window-test] run() exiting — state=LISTENING aborted=true
+  [PASS] B2. D — a real identity answer after the opening is unchanged: it confirms and the model runs once
+[PIPELINE:pickup-window-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:pickup-window-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:pickup-window-test] GREETING greeting-text-ready +0ms
+[TIMING:pickup-window-test] GREETING tts-request +0ms
+[TIMING:pickup-window-test] GREETING tts-first-chunk +0ms
+[TIMING:pickup-window-test] GREETING audio-queued +0ms
+[PLAYBACK:pickup-window-test] draining 1514ms of queued audio before leaving SPEAKING (queued=1364ms elapsed=0ms)
+[TIMING:pickup-window-test] GREETING SUMMARY total=1515ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:pickup-window-test] Greeting spoken: text="Hi, am I speaking with Sakshi?" state=SPEAKING
+[PIPELINE:pickup-window-test] entering main loop — state=SPEAKING aborted=false
+[TIMING:pickup-window-test] TURN END turn-release=1790158525585 text="Yes." sttMs=0
+[STT:pickup-window-test] Transcript received: "Yes." userSpeechMs=0 sttLagMs=680
+[TURN-RELEASE:pickup-window-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:pickup-window-test] TURN#0 turn-detected +1ms
+[TIMING:pickup-window-test] TURN#0 stt-to-release=840ms (sttLag=680ms)
+[PIPELINE:pickup-window-test] identity gate — "Yes." reads as CONFIRMED
+[LLM:pickup-window-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:pickup-window-test] TURN#0 llm-request +1ms
+[TIMING:pickup-window-test] TURN#0 llm-first-token +15ms
+[TIMING:pickup-window-test] TURN#0 first-sentence-ready +16ms
+[TIMING:pickup-window-test] TURN#0 tts-request +16ms
+[TIMING:pickup-window-test] TURN#0 tts-first-chunk +16ms
+[TIMING:pickup-window-test] TURN#0 audio-queued +16ms
+[PLAYBACK:pickup-window-test] draining 5514ms of queued audio before leaving SPEAKING (queued=5364ms elapsed=0ms)
+[TIMING:pickup-window-test] TURN#0 SUMMARY total=5536ms turn-detected=1ms llm-request=1ms llm-first-token=15ms first-sentence-ready=16ms tts-request=16ms tts-first-chunk=16ms audio-queued=16ms
+[TIMING:pickup-window-test] TURN#0
+speech-end=2026-09-23T10:15:24.746Z
+endpoint-evidence=2026-09-23T10:15:25.426Z (speech_final)
+turn-release=2026-09-23T10:15:25.585Z
+llm-request=2026-09-23T10:15:25.586Z
+llm-first-token=2026-09-23T10:15:25.600Z
+first-sentence-ready=2026-09-23T10:15:25.601Z
+tts-request=2026-09-23T10:15:25.601Z
+tts-first-audio=2026-09-23T10:15:25.601Z
+audio-queued=2026-09-23T10:15:25.601Z
+[TIMING:pickup-window-test] TURN#0 DELTAS
+endpoint-to-release=159ms
+release-to-llm-request=1ms
+llm-to-first-token=14ms
+first-token-to-sentence=1ms
+sentence-to-tts=0ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=855ms
+[PIPELINE:pickup-window-test] Turn complete: assistant="I'm calling to invite you to a free live workshop this Sunday at 11 AM. Have you..." llmMs=13 ttsMs=0
+[RESPONSE-LEN:pickup-window-test] TURN#0 userChars=4 assistantChars=119 estTokens=30 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=2 audioQueuedMs=5364 briefRequested=false
+[PIPELINE:pickup-window-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:pickup-window-test] run() exiting — state=LISTENING aborted=true
+  [PASS] B3. an answer SPOKEN over the opening is still an answer, not a pickup
+[PIPELINE:pickup-window-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:pickup-window-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:pickup-window-test] GREETING greeting-text-ready +0ms
+[TIMING:pickup-window-test] GREETING tts-request +0ms
+[TIMING:pickup-window-test] GREETING tts-first-chunk +0ms
+[TIMING:pickup-window-test] GREETING audio-queued +0ms
+[PLAYBACK:pickup-window-test] draining 1513ms of queued audio before leaving SPEAKING (queued=1364ms elapsed=1ms)
+[TIMING:pickup-window-test] GREETING SUMMARY total=1517ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:pickup-window-test] Greeting spoken: text="Hi, am I speaking with Sakshi?" state=SPEAKING
+[PIPELINE:pickup-window-test] entering main loop — state=SPEAKING aborted=false
+[TIMING:pickup-window-test] TURN END turn-release=1790158532990 text="Hello? Who is this?" sttMs=0
+[STT:pickup-window-test] Transcript received: "Hello? Who is this?" userSpeechMs=0 sttLagMs=680
+[TURN-RELEASE:pickup-window-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:pickup-window-test] TURN#0 turn-detected +1ms
+[TIMING:pickup-window-test] TURN#0 stt-to-release=840ms (sttLag=680ms)
+[LANGUAGE:pickup-window-test] call language LOCKED to en on the first meaningful utterance (basis=default-english confidence=0.75 hindiMarkers=0): "Hello? Who is this?"
+[PIPELINE:pickup-window-test] identity gate — "Hello? Who is this?" reads as UNCLEAR
+[PIPELINE:pickup-window-test] identity gate — no clear answer; asking again (1/2)
+[TIMING:pickup-window-test] ATTENTION tts-request +0ms
+[TIMING:pickup-window-test] ATTENTION tts-first-chunk +0ms
+[TIMING:pickup-window-test] ATTENTION audio-queued +0ms
+[PLAYBACK:pickup-window-test] draining 1695ms of queued audio before leaving SPEAKING (queued=1546ms elapsed=1ms)
+[TIMING:pickup-window-test] ATTENTION SUMMARY total=1697ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:pickup-window-test] TURN#0 SUMMARY total=1698ms turn-detected=1ms
+[TIMING:pickup-window-test] TURN#0
+speech-end=2026-09-23T10:15:32.151Z
+endpoint-evidence=2026-09-23T10:15:32.831Z (speech_final)
+turn-release=2026-09-23T10:15:32.990Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:pickup-window-test] TURN#0 DELTAS
+endpoint-to-release=159ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[PIPELINE:pickup-window-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:pickup-window-test] run() exiting — state=LISTENING aborted=true
+  [PASS] B4. 'Hello? Who is this?' over the opening is not a pickup: it carries a real question
+[PIPELINE:pickup-window-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:pickup-window-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:pickup-window-test] GREETING greeting-text-ready +0ms
+[TIMING:pickup-window-test] GREETING tts-request +1ms
+[TIMING:pickup-window-test] GREETING tts-first-chunk +1ms
+[TIMING:pickup-window-test] GREETING audio-queued +1ms
+[PLAYBACK:pickup-window-test] draining 1514ms of queued audio before leaving SPEAKING (queued=1364ms elapsed=0ms)
+[TIMING:pickup-window-test] GREETING SUMMARY total=1528ms greeting-text-ready=0ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:pickup-window-test] Greeting spoken: text="Hi, am I speaking with Sakshi?" state=SPEAKING
+[PIPELINE:pickup-window-test] entering main loop — state=SPEAKING aborted=false
+[TIMING:pickup-window-test] TURN END turn-release=1790158537689 text="Hello." sttMs=0
+[STT:pickup-window-test] Transcript received: "Hello." userSpeechMs=0 sttLagMs=40
+[TURN-RELEASE:pickup-window-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:pickup-window-test] TURN#0 turn-detected +1ms
+[TIMING:pickup-window-test] TURN#0 stt-to-release=202ms (sttLag=40ms)
+[PIPELINE:pickup-window-test] identity gate — "Hello." reads as UNCLEAR
+[PIPELINE:pickup-window-test] identity gate — no clear answer; asking again (1/2)
+[TIMING:pickup-window-test] ATTENTION tts-request +0ms
+[TIMING:pickup-window-test] ATTENTION tts-first-chunk +0ms
+[TIMING:pickup-window-test] ATTENTION audio-queued +0ms
+[PLAYBACK:pickup-window-test] draining 1696ms of queued audio before leaving SPEAKING (queued=1546ms elapsed=0ms)
+[TIMING:pickup-window-test] ATTENTION SUMMARY total=1710ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:pickup-window-test] TURN#0 SUMMARY total=1711ms turn-detected=1ms
+[TIMING:pickup-window-test] TURN#0
+speech-end=2026-09-23T10:15:37.488Z
+endpoint-evidence=2026-09-23T10:15:37.528Z (speech_final)
+turn-release=2026-09-23T10:15:37.689Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:pickup-window-test] TURN#0 DELTAS
+endpoint-to-release=161ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[PIPELINE:pickup-window-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:pickup-window-test] run() exiting — state=LISTENING aborted=true
+  [PASS] B5. a hello that STRADDLES the end of the opening is left to the ordinary path
+
+C. F — THE CONSUMED GREETING CANNOT COME BACK
+[PIPELINE:pickup-window-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:pickup-window-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:pickup-window-test] GREETING greeting-text-ready +0ms
+[TIMING:pickup-window-test] GREETING tts-request +0ms
+[TIMING:pickup-window-test] GREETING tts-first-chunk +1ms
+[TIMING:pickup-window-test] GREETING audio-queued +1ms
+[PLAYBACK:pickup-window-test] draining 1514ms of queued audio before leaving SPEAKING (queued=1364ms elapsed=0ms)
+[TIMING:pickup-window-test] GREETING SUMMARY total=1526ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:pickup-window-test] Greeting spoken: text="Hi, am I speaking with Sakshi?" state=SPEAKING
+[PIPELINE:pickup-window-test] entering main loop — state=SPEAKING aborted=false
+[TIMING:pickup-window-test] TURN END turn-release=1790158542397 text="Hello." sttMs=0
+[STT:pickup-window-test] Transcript received: "Hello." userSpeechMs=0 sttLagMs=780
+[TURN-RELEASE:pickup-window-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[PIPELINE:pickup-window-test] pickup acknowledgement ignored (not a turn): "Hello." — the opening line is the answer to it
+[TIMING:pickup-window-test] TURN END turn-release=1790158544895 text="Hello?" sttMs=0
+[STT:pickup-window-test] Transcript received: "Hello?" userSpeechMs=0 sttLagMs=0
+[TURN-RELEASE:pickup-window-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:pickup-window-test] TURN#0 turn-detected +1ms
+[TIMING:pickup-window-test] TURN#0 stt-to-release=151ms (sttLag=0ms)
+[PIPELINE:pickup-window-test] identity gate — "Hello?" reads as UNCLEAR
+[PIPELINE:pickup-window-test] identity gate — no clear answer; asking again (1/2)
+[TIMING:pickup-window-test] ATTENTION tts-request +0ms
+[TIMING:pickup-window-test] ATTENTION tts-first-chunk +0ms
+[TIMING:pickup-window-test] ATTENTION audio-queued +0ms
+[PLAYBACK:pickup-window-test] draining 1696ms of queued audio before leaving SPEAKING (queued=1546ms elapsed=0ms)
+[TIMING:pickup-window-test] ATTENTION SUMMARY total=1702ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:pickup-window-test] TURN#0 SUMMARY total=1703ms turn-detected=1ms
+[TIMING:pickup-window-test] TURN#0
+speech-end=2026-09-23T10:15:44.745Z
+endpoint-evidence=2026-09-23T10:15:44.745Z (speech_final)
+turn-release=2026-09-23T10:15:44.895Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:pickup-window-test] TURN#0 DELTAS
+endpoint-to-release=150ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[PIPELINE:pickup-window-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:pickup-window-test] run() exiting — state=LISTENING aborted=true
+  [PASS] C1. a late pickup followed by a genuine 'Hello?' drops ONE and answers the other
+[PIPELINE:pickup-window-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:pickup-window-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:pickup-window-test] GREETING greeting-text-ready +0ms
+[TIMING:pickup-window-test] GREETING tts-request +0ms
+[TIMING:pickup-window-test] GREETING tts-first-chunk +0ms
+[TIMING:pickup-window-test] GREETING audio-queued +0ms
+[PLAYBACK:pickup-window-test] draining 1514ms of queued audio before leaving SPEAKING (queued=1364ms elapsed=0ms)
+[TIMING:pickup-window-test] GREETING SUMMARY total=1536ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:pickup-window-test] Greeting spoken: text="Hi, am I speaking with Sakshi?" state=SPEAKING
+[PIPELINE:pickup-window-test] entering main loop — state=SPEAKING aborted=false
+[TIMING:pickup-window-test] TURN END turn-release=1790158549618 text="Hello." sttMs=0
+[STT:pickup-window-test] Transcript received: "Hello." userSpeechMs=0 sttLagMs=720
+[TURN-RELEASE:pickup-window-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[PIPELINE:pickup-window-test] pickup acknowledgement ignored (not a turn): "Hello." — the opening line is the answer to it
+[PIPELINE:pickup-window-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:pickup-window-test] run() exiting — state=LISTENING aborted=true
+  [PASS] C2. the late pickup is not re-delivered by the silence/retry path
+
+11 passed

@@ -156,6 +156,13 @@ function startHarness(input: {
   readonly openingLine: string;
   readonly replies: readonly string[];
   readonly replyDelayMs?: number;
+  /**
+   * ADDITIVE, defaults to TRUE — every existing case in this file
+   * runs a campaign session exactly as it always did. `false` builds
+   * the same session with NO campaign context, which is what section
+   * M exercises for the contamination fallback (audit M5).
+   */
+  readonly campaign?: boolean;
 }): Harness {
   const requests: Array<readonly ConversationTurn[]> = [];
   const syntheses: Synthesis[] = [];
@@ -244,17 +251,21 @@ function startHarness(input: {
       direction: CallDirection.OUTBOUND,
       providerStack: stack,
       destinationNumber: "+910000000000",
-      campaign: {
-        campaignId: "test",
-        campaignType: "registration",
-        scriptId: "test",
-        scriptVersion: "v1",
-        scriptHash: "test",
-        agent: { gender: "male", name: "Rohan" },
-        customer: { name: "Sakshi" },
-        openingLine: input.openingLine,
-        systemPromptAppendix: "TEST APPENDIX",
-      },
+      ...(input.campaign === false
+        ? {}
+        : {
+            campaign: {
+              campaignId: "test",
+              campaignType: "registration",
+              scriptId: "test",
+              scriptVersion: "v1",
+              scriptHash: "test",
+              agent: { gender: "male" as const, name: "Rohan" },
+              customer: { name: "Sakshi" },
+              openingLine: input.openingLine,
+              systemPromptAppendix: "TEST APPENDIX",
+            },
+          }),
     },
     stack,
   );
@@ -626,6 +637,192 @@ await test('9 — "Okay" over the block, then real silence: the block finishes A
     await h.stop();
   }
 });
+
+// ═════════════════════════════════════════════════════════════════
+section("M — RECOVERY CONTENT IS WHAT WAS ACTUALLY DELIVERED");
+// ═════════════════════════════════════════════════════════════════
+//
+// Four findings from the conversational-flow audit, all of them about
+// the same seam: what the pipeline is allowed to say to a caller when
+// it picks a cut-off reply back up.
+//
+//   M2  a reply SUPERSEDED before a word of it was spoken became
+//       `heldScriptRemainder` / `heldScriptFull`, and was then spoken
+//       later as recovery content.
+//   M4  the remainder was derived by TEXT-MATCHING `assistantText`
+//       against the heard prefix. Those two strings are produced by
+//       running `formatForSpeech` over different groupings, and it is
+//       ANCHORED AT THE START of whatever it is given — so a sentence
+//       that opens with a filler is rewritten when formatted alone and
+//       left alone when formatted mid-reply. The match then fails and
+//       the tail is dropped in silence.
+//   M5  the generic inbound fallback greeting ("Hey! How can I help
+//       you today?") was spoken mid-campaign when the model echoed the
+//       prompt.
+//   M12 a backchannel absorbed while the assistant was speaking came
+//       back as a semantic turn when its Deepgram final landed after
+//       playback had drained.
+
+const M_OPEN = "Hi Sakshi, this is Rohan from Team FlexiFunnels.";
+
+/** Did the agent ever synthesize this text (or any text containing it)? */
+const everSaid = (h: Harness, needle: string): boolean =>
+  h.syntheses.some((s) => s.text.includes(needle));
+
+// ── M2 AND M4 ARE INVESTIGATED HERE AND DELIBERATELY NOT FIXED ────
+//
+// M4 — the remainder of a cut-off reply used to be derived as
+// `unspokenTail(assistantText, heardText)`, a TEXT MATCH between two
+// strings `formatForSpeech` produced over different groupings. It is
+// anchored at the start of whatever it is given, so a sentence opening
+// with a filler is rewritten when formatted alone (as it is spoken) and
+// left alone inside the whole reply (as it is stored). The comparison
+// then fails and the tail is reported as empty. That input/output fact
+// is pinned deterministically in `test:resume-accuracy` section R.
+//
+// The obvious repair — keep the queued utterances that were not heard,
+// so both sides are the same strings — CONFLICTS with an established
+// fix and was reverted. `test:resume-accuracy` C1 ("a held remainder
+// beginning mid-sentence is not re-capitalised") pins the remainder as
+// a SLICE OF `assistantText`; the queued utterances are the
+// per-sentence formatted form, which capitalises a piece that begins
+// mid-sentence. The two encode opposite answers to "what is the
+// canonical text of a reply" — the whole-formatted form that history,
+// the classifier and the sheet read, or the per-piece form TTS was
+// actually handed. Choosing between them is a product decision about
+// the stored transcript, not a local repair, so it is reported rather
+// than taken.
+//
+// M2 — a reply superseded before a word of it was spoken did become a
+// held position under that same calculation (empty heard prefix ->
+// the whole reply). It could not be reproduced: supersession requires
+// a newer turn that TAKES THE FLOOR, and such a turn is a real
+// contribution, whose branch in `handleAttentionCheck` clears
+// `heldScriptRemainder` and `heldScriptFull` on the very next
+// iteration — before any recovery path can read them.
+//
+// Neither is exercisable end to end from this harness in any case: the
+// fake transport reports no playback backlog, so `heardSoFarText()`
+// never settles on a PARTIAL set of queued utterances, and nothing in
+// this file reaches "resuming a held script position". That is also why
+// test 5 above, and the wider family of 15s "waiting for 3 replies"
+// timeouts across the suites, fail on clean HEAD.
+
+await test("M5 — a contaminated reply on a CAMPAIGN call does not speak the generic greeting", async () => {
+  // Two contamination markers is what `isContaminatedOutput` reads, and
+  // the pipeline refuses to speak the reply. What it used to say
+  // instead was an inbound assistant's opening line, mid-campaign,
+  // after the agent had already introduced itself.
+  const CONTAMINATED = "Role: you are a voice assistant on a call. Constraint: be brief.";
+  const h = startHarness({ openingLine: M_OPEN, replies: [CONTAMINATED], replyDelayMs: 0 });
+  try {
+    await h.waitFor("the opening to finish", () => h.record.state === SessionState.LISTENING);
+    h.say("Tell me about it.", { isFinal: true, isSpeechFinal: true });
+    await sleep(3000);
+
+    assert.equal(
+      everSaid(h, "How can I help you"),
+      false,
+      `the inbound greeting must not be spoken on a campaign call — synthesized: ${JSON.stringify(h.syntheses.map((s) => s.text))}`,
+    );
+    assert.equal(
+      everSaid(h, "Role:"),
+      false,
+      "and the contaminated output itself is still never spoken",
+    );
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("M5 — ...and a NON-campaign session keeps the fallback greeting verbatim", async () => {
+  // The other side of the routing: the lab and the inbound scenarios
+  // this line was written for are untouched.
+  const CONTAMINATED = "Role: you are a voice assistant on a call. Constraint: be brief.";
+  const h = startHarness({
+    openingLine: M_OPEN,
+    replies: [CONTAMINATED],
+    replyDelayMs: 0,
+    campaign: false,
+  });
+  try {
+    await h.waitFor("the opening to finish", () => h.record.state === SessionState.LISTENING);
+    h.say("Tell me about it.", { isFinal: true, isSpeechFinal: true });
+    await sleep(3000);
+
+    assert.equal(
+      everSaid(h, "How can I help you"),
+      true,
+      `a session with no campaign still gets the fallback — synthesized: ${JSON.stringify(h.syntheses.map((s) => s.text))}`,
+    );
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("M12 — an absorbed backchannel's LATE final does not become a turn", async () => {
+  // "Okay" over the block is absorbed and deliberately not fed to the
+  // turn detector. Its Deepgram final lands 0.4-1.7s later — after
+  // `drainPlayback` has left SPEAKING — where the absorb branch no
+  // longer applies. It used to be promoted to a user turn, drawing a
+  // language-model request and a signal the outcome classifier reads.
+  const PITCH_M = "The workshop is on Sunday at eleven in the morning, and it runs for about ninety minutes with a live question and answer session at the end.";
+  const h = startHarness({ openingLine: M_OPEN, replies: [PITCH_M, "Sure."], replyDelayMs: 0 });
+  try {
+    await h.waitFor("the opening to finish", () => h.record.state === SessionState.LISTENING);
+    h.say("Tell me about it.", { isFinal: true, isSpeechFinal: true });
+    await h.waitFor("the block to start playing", () => h.syntheses.some((s) => s.text.includes("Sunday")), 15000);
+
+    const requestsBefore = h.requests.length;
+    // The interim is absorbed while the assistant is speaking...
+    h.say("Okay", { isFinal: false });
+    // ...and the FINAL arrives after the block has drained.
+    await h.waitFor("the block to drain", () => h.record.state === SessionState.LISTENING, 15000);
+    h.say("Okay", { isFinal: true, isSpeechFinal: true });
+    await sleep(2500);
+
+    assert.equal(
+      h.requests.length,
+      requestsBefore,
+      "the absorbed acknowledgement must not open a language-model request",
+    );
+    assert.equal(
+      h.history().some((t) => t.role === "user" && t.content.trim().toLowerCase() === "okay"),
+      false,
+      `and it must not be committed as a user turn — history: ${JSON.stringify(h.history().map((t) => `${t.role}:${t.content.slice(0, 30)}`))}`,
+    );
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("M12 — ...but an acknowledgement WITH content is still a real turn", async () => {
+  // The narrowness of M12, from the other side. The absorb only ever
+  // applies while the whole utterance is nothing but an
+  // acknowledgement; the moment the caller adds content it is theirs.
+  const PITCH_M = "The workshop is on Sunday at eleven in the morning, and it runs for about ninety minutes with a live question and answer session at the end.";
+  const h = startHarness({ openingLine: M_OPEN, replies: [PITCH_M, "It is free."], replyDelayMs: 0 });
+  try {
+    await h.waitFor("the opening to finish", () => h.record.state === SessionState.LISTENING);
+    h.say("Tell me about it.", { isFinal: true, isSpeechFinal: true });
+    await h.waitFor("the block to start playing", () => h.syntheses.some((s) => s.text.includes("Sunday")), 15000);
+
+    const requestsBefore = h.requests.length;
+    h.say("Okay", { isFinal: false });
+    await h.waitFor("the block to drain", () => h.record.state === SessionState.LISTENING, 15000);
+    h.say("Okay, but is it free?", { isFinal: true, isSpeechFinal: true });
+
+    await h.waitFor(
+      "the question to reach the model",
+      () => h.requests.length > requestsBefore,
+      15000,
+    );
+    assert.ok(h.requests.length > requestsBefore, "a question with content still reaches the model");
+  } finally {
+    await h.stop();
+  }
+});
+
 
 console.log(`\n${passed} passed, ${failures.length} failed`);
 if (failures.length > 0) {

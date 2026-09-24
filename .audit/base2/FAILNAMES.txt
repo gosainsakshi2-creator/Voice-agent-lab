@@ -1,0 +1,21 @@
+"Achha, mujhe workshop ke baare mei..." while SPEAKING — interrupts the block and is answered by the model
+"Okay, but I have a question about ..." while SPEAKING — interrupts the block and is answered by the model
+10 — the reported sequence: "Okay" (absorbed) then "Hello?" -> acknowledged, block carries on, no false recovery
+5 — "Hello?" while SPEAKING: acknowledged, then the held remainder is resumed and NO "are you there?" is spoken
+B1. a meaningful buffered turn is answered without waiting out the block
+B3c. ...but "Hello? What is this about?" is a real question and DOES cut it
+B3f. a meaningful turn whose FIRST words are filler still interrupts
+B4. the assistant prefix is committed BEFORE the buffered caller turn
+B5. the call stays up and the conversation carries on afterwards
+B7 — attention-check turns spend ZERO requests: acknowledgement, hearing confirmation and resume all stay off the model; the next real question reaches it once
+B8 — barge-in is untouched: an interruption mid-reply cancels playback exactly as before, and the interrupting turn takes the normal (committed-first) path
+D1 (spec B4). "Hello." answered by a long block, then a buffered "Hello?" — the block is CUT through the existing barge-in and the hearing question is asked at once
+D2 (spec B5). a buffered "Hello? Hello?" after a SUBSTANTIVE turn also cuts the block and enters the hearing flow
+D5. after the attention cut, "Yes, continue from where you stopped." resumes the HELD remainder — no generation, nothing restarted
+D6. after the attention cut, "Start from the beginning." replays the FULL original block — no generation
+TEST 1 — "hello" over the middle of a block does not erase the block from history
+TEST 5 — "haan" never resets script progress
+TEST 5 — "hello hello" never resets script progress
+TEST 5 — "hello" never resets script progress
+TEST 5 — "hi" never resets script progress
+TEST 5 — "okay" never resets script progress

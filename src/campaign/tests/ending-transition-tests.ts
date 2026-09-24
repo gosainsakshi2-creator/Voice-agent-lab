@@ -399,6 +399,50 @@ await test("A2. VOICEMAIL — the pipeline's OWN host.end route also ends cleanl
   }
 });
 
+await test("A3. the machine's greeting is recorded EXACTLY once, whichever route records it", async () => {
+  // TWO SITES CAN RECORD IT. `hangUpOnVoicemail` records the phrase
+  // itself, because it ends the call before the turn detector would
+  // have released anything and an empty transcript files the call as an
+  // ordinary silent one; the main loop's voicemail branch records a
+  // turn that WAS released, for the same reason. `host.end` is not
+  // awaited, so which of them runs is a race — and both running is a
+  // transcript with the machine's words in it twice, which the outcome
+  // classifier reads signal-per-phrase.
+  //
+  // HONEST ABOUT WHAT THIS IS: a regression net, not a reproduction.
+  // On this harness the hangup wins the race every time and the phrase
+  // is recorded once, so this passes today; what it pins is the
+  // invariant, so a change that lets both sites fire is caught here
+  // rather than in the stored transcripts (read-only audit
+  // 2026-09-23, L3).
+  let ended = 0;
+  let harness: Harness | undefined;
+  const h = startHarness({
+    onEndFromPipeline: () => {
+      ended += 1;
+      harness?.endLikeTheManager();
+    },
+  });
+  harness = h;
+  try {
+    await greetingDone(h);
+    h.say("Please leave a message after the tone.");
+    await h.waitFor("the pipeline to end its own call", () => ended > 0);
+    await sleep(600);
+
+    const machineTurns = h.record.memory
+      .history()
+      .filter((turn) => turn.role === "user" && turn.content.includes("leave a message"));
+    assert.equal(
+      machineTurns.length,
+      1,
+      `the machine's words belong in the transcript once: ${JSON.stringify(machineTurns.map((x) => x.content))}`,
+    );
+  } finally {
+    await h.stop();
+  }
+});
+
 console.log(`\n${"═".repeat(60)}`);
 console.log(`${passed} passed, ${failures.length} failed`);
 if (failures.length > 0) {

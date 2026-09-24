@@ -1,0 +1,685 @@
+
+A. THE LIVE READING — HELD AFTER THE CONFIRMATION, RELEASED BY THE PERSON
+  [PASS] A1. the confirmation has been spoken and the person has not answered: FINAL_YES is read but the closing response is awaited
+  [PASS] A2. the registration is read as confirmed from the person's yes, before the agent has replied
+  [PASS] A3. the person's closing word, answered by the goodbye, releases the hangup
+  [PASS] A4. ...and while the goodbye is still being spoken nothing fires
+  [PASS] A5. the AGENT cannot release the hold on the person's behalf
+  [PASS] A6. a question after the confirmation is held by the EXISTING guard, and the person's closing then releases it
+  [PASS] A7. a retraction after the confirmation still flips the verdict — nothing about the classifier moved
+  [PASS] A8. every non-registration ending is untouched: FINAL_NO, undecided, empty
+  [PASS] A10. `closingDelivered`: true only when the agent's LATEST turn is a delivered sign-off
+  [PASS] A9. the hangup and the sheet still cannot disagree
+
+B. THE CLOSING VOCABULARY BOUNDARY
+  [PASS] B1. a bare closing pleasantry is recognised, in English, Hinglish and Devanagari
+  [PASS] B2. anything with content of its own is NOT a closing — it belongs to the language model
+  [PASS] B3. no negation is ever a closing — a refusal or a retraction must reach the model
+  [PASS] B4. a long sentence is not a pleasantry, and a question mark is disqualifying
+
+C. THE PIPELINE — ONE FIXED GOODBYE, WITHOUT THE LANGUAGE MODEL
+[PIPELINE:closing-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:closing-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:closing-test] GREETING greeting-text-ready +0ms
+[TIMING:closing-test] GREETING tts-request +2ms
+[TIMING:closing-test] GREETING tts-first-chunk +2ms
+[TIMING:closing-test] GREETING audio-queued +3ms
+[PLAYBACK:closing-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:closing-test] GREETING SUMMARY total=2336ms greeting-text-ready=0ms tts-request=2ms tts-first-chunk=2ms audio-queued=3ms
+[PIPELINE:closing-test] Greeting spoken: text="Hi Priya, this is Ishita from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:closing-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:closing-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=6ms historyLength=3
+[TIMING:closing-test] TURN END turn-release=1790178873611 text="Yes, tell me." sttMs=0
+[STT:closing-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:closing-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:closing-test] TURN#0 turn-detected +1ms
+[TIMING:closing-test] TURN#0 stt-to-release=158ms (sttLag=n/ams)
+[LLM:closing-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:closing-test] TURN#0 llm-request +4ms
+[SPECULATE:closing-test] ADOPTED pre-opened request — llm-request is 154ms after the provider stream was opened (first token already in hand, 134ms ago) evidence-to-llm-open=6ms
+[TIMING:closing-test] TURN#0 llm-first-token +6ms
+[TIMING:closing-test] TURN#0 tts-request +8ms
+[TIMING:closing-test] TURN#0 tts-first-chunk +8ms
+[TIMING:closing-test] TURN#0 audio-queued +8ms
+[PLAYBACK:closing-test] draining 2605ms of queued audio before leaving SPEAKING (queued=2455ms elapsed=0ms)
+[TIMING:closing-test] TURN#0 SUMMARY total=2625ms turn-detected=1ms llm-request=4ms llm-first-token=6ms tts-request=8ms tts-first-chunk=8ms audio-queued=8ms
+[TIMING:closing-test] TURN#0
+speech-end=2026-09-23T15:54:33.454Z
+endpoint-evidence=2026-09-23T15:54:33.455Z (speech_final)
+turn-release=2026-09-23T15:54:33.611Z
+llm-request=2026-09-23T15:54:33.615Z
+llm-first-token=2026-09-23T15:54:33.617Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T15:54:33.619Z
+tts-first-audio=2026-09-23T15:54:33.619Z
+audio-queued=2026-09-23T15:54:33.619Z
+[TIMING:closing-test] TURN#0 DELTAS
+endpoint-to-release=156ms
+release-to-llm-request=4ms
+llm-to-first-token=2ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=165ms
+[PIPELINE:closing-test] Turn complete: assistant="So Priya, would you like me to reserve your free seat?" llmMs=20 ttsMs=0
+[RESPONSE-LEN:closing-test] TURN#0 userChars=13 assistantChars=54 estTokens=14 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=2455 briefRequested=false
+[SPECULATE:closing-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, please." evidence-to-llm-open=0ms historyLength=5
+[TIMING:closing-test] TURN END turn-release=1790178876394 text="Yes, please." sttMs=0
+[STT:closing-test] Transcript received: "Yes, please." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:closing-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:closing-test] TURN#1 turn-detected +0ms
+[TIMING:closing-test] TURN#1 stt-to-release=154ms (sttLag=n/ams)
+[LLM:closing-test] Sending to fake-llm: historyLength=5 roles=[system,assistant,user,assistant,user] streaming=true
+[TIMING:closing-test] TURN#1 llm-request +1ms
+[SPECULATE:closing-test] ADOPTED pre-opened request — llm-request is 155ms after the provider stream was opened (first token already in hand, 144ms ago) evidence-to-llm-open=0ms
+[TIMING:closing-test] TURN#1 llm-first-token +1ms
+[TIMING:closing-test] TURN#1 first-sentence-ready +1ms
+[TIMING:closing-test] TURN#1 tts-request +1ms
+[TIMING:closing-test] TURN#1 tts-first-chunk +2ms
+[TIMING:closing-test] TURN#1 audio-queued +2ms
+[PLAYBACK:closing-test] draining 3059ms of queued audio before leaving SPEAKING (queued=2909ms elapsed=0ms)
+[TIMING:closing-test] TURN#1 SUMMARY total=3066ms turn-detected=0ms llm-request=1ms llm-first-token=1ms first-sentence-ready=1ms tts-request=1ms tts-first-chunk=2ms audio-queued=2ms
+[TIMING:closing-test] TURN#1
+speech-end=2026-09-23T15:54:36.240Z
+endpoint-evidence=2026-09-23T15:54:36.240Z (speech_final)
+turn-release=2026-09-23T15:54:36.394Z
+llm-request=2026-09-23T15:54:36.395Z
+llm-first-token=2026-09-23T15:54:36.395Z
+first-sentence-ready=2026-09-23T15:54:36.395Z
+tts-request=2026-09-23T15:54:36.395Z
+tts-first-audio=2026-09-23T15:54:36.396Z
+audio-queued=2026-09-23T15:54:36.396Z
+[TIMING:closing-test] TURN#1 DELTAS
+endpoint-to-release=154ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=0ms
+sentence-to-tts=0ms
+tts-to-first-audio=1ms
+first-audio-to-queue=0ms
+speech-end-to-audio=156ms
+[PIPELINE:closing-test] Turn complete: assistant="Perfect, I'll get your free seat reserved. Hope to see you there!" llmMs=11 ttsMs=0
+[RESPONSE-LEN:closing-test] TURN#1 userChars=12 assistantChars=65 estTokens=17 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=2 audioQueuedMs=2909 briefRequested=false
+[PIPELINE:closing-test] scripted closing ARMED — a bare closing acknowledgement will be answered with the fixed goodbye
+[TIMING:closing-test] TURN END turn-release=1790178879652 text="Okay, thank you." sttMs=0
+[STT:closing-test] Transcript received: "Okay, thank you." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:closing-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:closing-test] TURN#2 turn-detected +0ms
+[TIMING:closing-test] TURN#2 stt-to-release=159ms (sttLag=n/ams)
+[PIPELINE:closing-test] closing acknowledgement "Okay, thank you." after a confirmed registration — speaking the fixed goodbye: "Thank you. Have a great day. Bye!"
+[TIMING:closing-test] CLOSING tts-request +0ms
+[TIMING:closing-test] CLOSING tts-first-chunk +0ms
+[TIMING:closing-test] CLOSING audio-queued +0ms
+[PLAYBACK:closing-test] draining 1650ms of queued audio before leaving SPEAKING (queued=1500ms elapsed=0ms)
+[TIMING:closing-test] CLOSING SUMMARY total=1653ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:closing-test] TURN#2 SUMMARY total=1655ms turn-detected=0ms
+[TIMING:closing-test] TURN#2
+speech-end=2026-09-23T15:54:39.493Z
+endpoint-evidence=2026-09-23T15:54:39.493Z (speech_final)
+turn-release=2026-09-23T15:54:39.652Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:closing-test] TURN#2 DELTAS
+endpoint-to-release=159ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[PIPELINE:closing-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:closing-test] run() exiting — state=LISTENING aborted=true
+  [PASS] C1. armed, a bare 'Okay, thank you.' is answered with the fixed goodbye and NO language-model request
+[PIPELINE:closing-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:closing-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:closing-test] GREETING greeting-text-ready +0ms
+[TIMING:closing-test] GREETING tts-request +0ms
+[TIMING:closing-test] GREETING tts-first-chunk +0ms
+[TIMING:closing-test] GREETING audio-queued +0ms
+[PLAYBACK:closing-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:closing-test] GREETING SUMMARY total=2345ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:closing-test] Greeting spoken: text="Hi Priya, this is Ishita from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:closing-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:closing-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, tell me." evidence-to-llm-open=0ms historyLength=3
+[TIMING:closing-test] TURN END turn-release=1790178883849 text="Yes, tell me." sttMs=0
+[STT:closing-test] Transcript received: "Yes, tell me." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:closing-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:closing-test] TURN#0 turn-detected +0ms
+[TIMING:closing-test] TURN#0 stt-to-release=159ms (sttLag=n/ams)
+[LLM:closing-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:closing-test] TURN#0 llm-request +1ms
+[SPECULATE:closing-test] ADOPTED pre-opened request — llm-request is 160ms after the provider stream was opened (first token already in hand, 144ms ago) evidence-to-llm-open=0ms
+[TIMING:closing-test] TURN#0 llm-first-token +1ms
+[TIMING:closing-test] TURN#0 tts-request +2ms
+[TIMING:closing-test] TURN#0 tts-first-chunk +2ms
+[TIMING:closing-test] TURN#0 audio-queued +2ms
+[PLAYBACK:closing-test] draining 2605ms of queued audio before leaving SPEAKING (queued=2455ms elapsed=0ms)
+[TIMING:closing-test] TURN#0 SUMMARY total=2614ms turn-detected=0ms llm-request=1ms llm-first-token=1ms tts-request=2ms tts-first-chunk=2ms audio-queued=2ms
+[TIMING:closing-test] TURN#0
+speech-end=2026-09-23T15:54:43.690Z
+endpoint-evidence=2026-09-23T15:54:43.690Z (speech_final)
+turn-release=2026-09-23T15:54:43.849Z
+llm-request=2026-09-23T15:54:43.850Z
+llm-first-token=2026-09-23T15:54:43.850Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T15:54:43.851Z
+tts-first-audio=2026-09-23T15:54:43.851Z
+audio-queued=2026-09-23T15:54:43.851Z
+[TIMING:closing-test] TURN#0 DELTAS
+endpoint-to-release=159ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=161ms
+[PIPELINE:closing-test] Turn complete: assistant="So Priya, would you like me to reserve your free seat?" llmMs=16 ttsMs=0
+[RESPONSE-LEN:closing-test] TURN#0 userChars=13 assistantChars=54 estTokens=14 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=2455 briefRequested=false
+[SPECULATE:closing-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, please." evidence-to-llm-open=0ms historyLength=5
+[TIMING:closing-test] TURN END turn-release=1790178886655 text="Yes, please." sttMs=0
+[STT:closing-test] Transcript received: "Yes, please." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:closing-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:closing-test] TURN#1 turn-detected +1ms
+[TIMING:closing-test] TURN#1 stt-to-release=162ms (sttLag=n/ams)
+[LLM:closing-test] Sending to fake-llm: historyLength=5 roles=[system,assistant,user,assistant,user] streaming=true
+[TIMING:closing-test] TURN#1 llm-request +1ms
+[SPECULATE:closing-test] ADOPTED pre-opened request — llm-request is 162ms after the provider stream was opened (first token already in hand, 146ms ago) evidence-to-llm-open=0ms
+[TIMING:closing-test] TURN#1 llm-first-token +1ms
+[TIMING:closing-test] TURN#1 first-sentence-ready +2ms
+[TIMING:closing-test] TURN#1 tts-request +2ms
+[TIMING:closing-test] TURN#1 tts-first-chunk +2ms
+[TIMING:closing-test] TURN#1 audio-queued +2ms
+[PLAYBACK:closing-test] draining 3058ms of queued audio before leaving SPEAKING (queued=2909ms elapsed=1ms)
+[TIMING:closing-test] TURN#1 SUMMARY total=3075ms turn-detected=1ms llm-request=1ms llm-first-token=1ms first-sentence-ready=2ms tts-request=2ms tts-first-chunk=2ms audio-queued=2ms
+[TIMING:closing-test] TURN#1
+speech-end=2026-09-23T15:54:46.494Z
+endpoint-evidence=2026-09-23T15:54:46.494Z (speech_final)
+turn-release=2026-09-23T15:54:46.655Z
+llm-request=2026-09-23T15:54:46.656Z
+llm-first-token=2026-09-23T15:54:46.656Z
+first-sentence-ready=2026-09-23T15:54:46.657Z
+tts-request=2026-09-23T15:54:46.657Z
+tts-first-audio=2026-09-23T15:54:46.657Z
+audio-queued=2026-09-23T15:54:46.657Z
+[TIMING:closing-test] TURN#1 DELTAS
+endpoint-to-release=161ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=1ms
+sentence-to-tts=0ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=163ms
+[PIPELINE:closing-test] Turn complete: assistant="Perfect, I'll get your free seat reserved. Hope to see you there!" llmMs=16 ttsMs=0
+[RESPONSE-LEN:closing-test] TURN#1 userChars=12 assistantChars=65 estTokens=17 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=2 audioQueuedMs=2909 briefRequested=false
+[PIPELINE:closing-test] scripted closing ARMED — a bare closing acknowledgement will be answered with the fixed goodbye
+[SPECULATE:closing-test] LLM request PRE-OPENED on speech_final evidence: text="What time does it start?" evidence-to-llm-open=1ms historyLength=7
+[TIMING:closing-test] TURN END turn-release=1790178889906 text="What time does it start?" sttMs=0
+[STT:closing-test] Transcript received: "What time does it start?" userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:closing-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:closing-test] TURN#2 turn-detected +0ms
+[TIMING:closing-test] TURN#2 stt-to-release=160ms (sttLag=n/ams)
+[LANGUAGE:closing-test] call language LOCKED to en on the first meaningful utterance (basis=default-english confidence=0.75 hindiMarkers=0): "What time does it start?"
+[LLM:closing-test] Sending to fake-llm: historyLength=7 roles=[system,assistant,user,assistant,user,assistant,user] streaming=true
+[TIMING:closing-test] TURN#2 llm-request +1ms
+[SPECULATE:closing-test] ADOPTED pre-opened request — llm-request is 160ms after the provider stream was opened (first token already in hand, 145ms ago) evidence-to-llm-open=1ms
+[TIMING:closing-test] TURN#2 llm-first-token +1ms
+[TIMING:closing-test] TURN#2 tts-request +1ms
+[TIMING:closing-test] TURN#2 tts-first-chunk +1ms
+[TIMING:closing-test] TURN#2 audio-queued +1ms
+[PLAYBACK:closing-test] draining 3877ms of queued audio before leaving SPEAKING (queued=3727ms elapsed=0ms)
+[TIMING:closing-test] TURN#2 SUMMARY total=3881ms turn-detected=0ms llm-request=1ms llm-first-token=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:closing-test] TURN#2
+speech-end=2026-09-23T15:54:49.746Z
+endpoint-evidence=2026-09-23T15:54:49.746Z (speech_final)
+turn-release=2026-09-23T15:54:49.906Z
+llm-request=2026-09-23T15:54:49.907Z
+llm-first-token=2026-09-23T15:54:49.907Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T15:54:49.907Z
+tts-first-audio=2026-09-23T15:54:49.907Z
+audio-queued=2026-09-23T15:54:49.907Z
+[TIMING:closing-test] TURN#2 DELTAS
+endpoint-to-release=160ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=161ms
+[PIPELINE:closing-test] Turn complete: assistant="It runs ten to twelve in the morning and one to three in the afternoon, both day..." llmMs=15 ttsMs=0
+[RESPONSE-LEN:closing-test] TURN#2 userChars=24 assistantChars=82 estTokens=21 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=3727 briefRequested=false
+[TIMING:closing-test] TURN END turn-release=1790178893970 text="Great, thanks." sttMs=0
+[STT:closing-test] Transcript received: "Great, thanks." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:closing-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:closing-test] TURN#3 turn-detected +0ms
+[TIMING:closing-test] TURN#3 stt-to-release=151ms (sttLag=n/ams)
+[PIPELINE:closing-test] closing acknowledgement "Great, thanks." after a confirmed registration — speaking the fixed goodbye: "Thank you. Have a great day. Bye!"
+[TIMING:closing-test] CLOSING tts-request +1ms
+[TIMING:closing-test] CLOSING tts-first-chunk +1ms
+[TIMING:closing-test] CLOSING audio-queued +1ms
+[PLAYBACK:closing-test] draining 1650ms of queued audio before leaving SPEAKING (queued=1500ms elapsed=0ms)
+[TIMING:closing-test] CLOSING SUMMARY total=1651ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:closing-test] TURN#3 SUMMARY total=1651ms turn-detected=0ms
+[TIMING:closing-test] TURN#3
+speech-end=2026-09-23T15:54:53.819Z
+endpoint-evidence=2026-09-23T15:54:53.819Z (speech_final)
+turn-release=2026-09-23T15:54:53.970Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:closing-test] TURN#3 DELTAS
+endpoint-to-release=151ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[PIPELINE:closing-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:closing-test] run() exiting — state=LISTENING aborted=true
+  [PASS] C2. a QUESTION after arming still goes to the language model; the closing comes after its answer
+[PIPELINE:closing-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:closing-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:closing-test] GREETING greeting-text-ready +0ms
+[TIMING:closing-test] GREETING tts-request +0ms
+[TIMING:closing-test] GREETING tts-first-chunk +0ms
+[TIMING:closing-test] GREETING audio-queued +0ms
+[PLAYBACK:closing-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:closing-test] GREETING SUMMARY total=2346ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:closing-test] Greeting spoken: text="Hi Priya, this is Ishita from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:closing-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:closing-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, please." evidence-to-llm-open=1ms historyLength=3
+[TIMING:closing-test] TURN END turn-release=1790178898171 text="Yes, please." sttMs=0
+[STT:closing-test] Transcript received: "Yes, please." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:closing-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:closing-test] TURN#0 turn-detected +1ms
+[TIMING:closing-test] TURN#0 stt-to-release=153ms (sttLag=n/ams)
+[LLM:closing-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:closing-test] TURN#0 llm-request +1ms
+[SPECULATE:closing-test] ADOPTED pre-opened request — llm-request is 152ms after the provider stream was opened (first token already in hand, 136ms ago) evidence-to-llm-open=1ms
+[TIMING:closing-test] TURN#0 llm-first-token +1ms
+[TIMING:closing-test] TURN#0 first-sentence-ready +2ms
+[TIMING:closing-test] TURN#0 tts-request +2ms
+[TIMING:closing-test] TURN#0 tts-first-chunk +2ms
+[TIMING:closing-test] TURN#0 audio-queued +2ms
+[PLAYBACK:closing-test] draining 3059ms of queued audio before leaving SPEAKING (queued=2909ms elapsed=0ms)
+[TIMING:closing-test] TURN#0 SUMMARY total=3063ms turn-detected=1ms llm-request=1ms llm-first-token=1ms first-sentence-ready=2ms tts-request=2ms tts-first-chunk=2ms audio-queued=2ms
+[TIMING:closing-test] TURN#0
+speech-end=2026-09-23T15:54:58.019Z
+endpoint-evidence=2026-09-23T15:54:58.019Z (speech_final)
+turn-release=2026-09-23T15:54:58.171Z
+llm-request=2026-09-23T15:54:58.172Z
+llm-first-token=2026-09-23T15:54:58.172Z
+first-sentence-ready=2026-09-23T15:54:58.173Z
+tts-request=2026-09-23T15:54:58.173Z
+tts-first-audio=2026-09-23T15:54:58.173Z
+audio-queued=2026-09-23T15:54:58.173Z
+[TIMING:closing-test] TURN#0 DELTAS
+endpoint-to-release=152ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=1ms
+sentence-to-tts=0ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=154ms
+[PIPELINE:closing-test] Turn complete: assistant="Perfect, I'll get your free seat reserved. Hope to see you there!" llmMs=16 ttsMs=0
+[RESPONSE-LEN:closing-test] TURN#0 userChars=12 assistantChars=65 estTokens=17 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=2 audioQueuedMs=2909 briefRequested=false
+[SPECULATE:closing-test] LLM request PRE-OPENED on speech_final evidence: text="Okay, thank you." evidence-to-llm-open=0ms historyLength=5
+[TIMING:closing-test] TURN END turn-release=1790178901418 text="Okay, thank you." sttMs=0
+[STT:closing-test] Transcript received: "Okay, thank you." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:closing-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:closing-test] TURN#1 turn-detected +1ms
+[TIMING:closing-test] TURN#1 stt-to-release=151ms (sttLag=n/ams)
+[LLM:closing-test] Sending to fake-llm: historyLength=5 roles=[system,assistant,user,assistant,user] streaming=true
+[TIMING:closing-test] TURN#1 llm-request +1ms
+[SPECULATE:closing-test] ADOPTED pre-opened request — llm-request is 151ms after the provider stream was opened (first token already in hand, 133ms ago) evidence-to-llm-open=0ms
+[TIMING:closing-test] TURN#1 llm-first-token +2ms
+[TIMING:closing-test] TURN#1 tts-request +2ms
+[TIMING:closing-test] TURN#1 tts-first-chunk +2ms
+[TIMING:closing-test] TURN#1 audio-queued +2ms
+[PLAYBACK:closing-test] draining 1332ms of queued audio before leaving SPEAKING (queued=1182ms elapsed=0ms)
+[TIMING:closing-test] TURN#1 SUMMARY total=1334ms turn-detected=1ms llm-request=1ms llm-first-token=2ms tts-request=2ms tts-first-chunk=2ms audio-queued=2ms
+[TIMING:closing-test] TURN#1
+speech-end=2026-09-23T15:55:01.268Z
+endpoint-evidence=2026-09-23T15:55:01.268Z (speech_final)
+turn-release=2026-09-23T15:55:01.418Z
+llm-request=2026-09-23T15:55:01.419Z
+llm-first-token=2026-09-23T15:55:01.420Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T15:55:01.420Z
+tts-first-audio=2026-09-23T15:55:01.420Z
+audio-queued=2026-09-23T15:55:01.420Z
+[TIMING:closing-test] TURN#1 DELTAS
+endpoint-to-release=150ms
+release-to-llm-request=1ms
+llm-to-first-token=1ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=152ms
+[PIPELINE:closing-test] Turn complete: assistant="You're welcome! Take care." llmMs=18 ttsMs=0
+[RESPONSE-LEN:closing-test] TURN#1 userChars=16 assistantChars=26 estTokens=7 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=1182 briefRequested=false
+[PIPELINE:closing-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:closing-test] run() exiting — state=LISTENING aborted=true
+  [PASS] C3. UNARMED, the same 'Okay, thank you.' takes the contextual path exactly as before
+[PIPELINE:closing-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:closing-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:closing-test] GREETING greeting-text-ready +0ms
+[TIMING:closing-test] GREETING tts-request +0ms
+[TIMING:closing-test] GREETING tts-first-chunk +0ms
+[TIMING:closing-test] GREETING audio-queued +0ms
+[PLAYBACK:closing-test] draining 2331ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=1ms)
+[TIMING:closing-test] GREETING SUMMARY total=2332ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:closing-test] Greeting spoken: text="Hi Priya, this is Ishita from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:closing-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:closing-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, please." evidence-to-llm-open=0ms historyLength=3
+[TIMING:closing-test] TURN END turn-release=1790178905269 text="Yes, please." sttMs=0
+[STT:closing-test] Transcript received: "Yes, please." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:closing-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:closing-test] TURN#0 turn-detected +1ms
+[TIMING:closing-test] TURN#0 stt-to-release=152ms (sttLag=n/ams)
+[LLM:closing-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:closing-test] TURN#0 llm-request +2ms
+[SPECULATE:closing-test] ADOPTED pre-opened request — llm-request is 153ms after the provider stream was opened (first token already in hand, 137ms ago) evidence-to-llm-open=0ms
+[TIMING:closing-test] TURN#0 llm-first-token +2ms
+[TIMING:closing-test] TURN#0 first-sentence-ready +2ms
+[TIMING:closing-test] TURN#0 tts-request +2ms
+[TIMING:closing-test] TURN#0 tts-first-chunk +2ms
+[TIMING:closing-test] TURN#0 audio-queued +2ms
+[PLAYBACK:closing-test] draining 3058ms of queued audio before leaving SPEAKING (queued=2909ms elapsed=1ms)
+[TIMING:closing-test] TURN#0 SUMMARY total=3062ms turn-detected=1ms llm-request=2ms llm-first-token=2ms first-sentence-ready=2ms tts-request=2ms tts-first-chunk=2ms audio-queued=2ms
+[TIMING:closing-test] TURN#0
+speech-end=2026-09-23T15:55:05.118Z
+endpoint-evidence=2026-09-23T15:55:05.118Z (speech_final)
+turn-release=2026-09-23T15:55:05.269Z
+llm-request=2026-09-23T15:55:05.271Z
+llm-first-token=2026-09-23T15:55:05.271Z
+first-sentence-ready=2026-09-23T15:55:05.271Z
+tts-request=2026-09-23T15:55:05.271Z
+tts-first-audio=2026-09-23T15:55:05.271Z
+audio-queued=2026-09-23T15:55:05.271Z
+[TIMING:closing-test] TURN#0 DELTAS
+endpoint-to-release=151ms
+release-to-llm-request=2ms
+llm-to-first-token=0ms
+first-token-to-sentence=0ms
+sentence-to-tts=0ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=153ms
+[PIPELINE:closing-test] Turn complete: assistant="Perfect, I'll get your free seat reserved. Hope to see you there!" llmMs=16 ttsMs=0
+[RESPONSE-LEN:closing-test] TURN#0 userChars=12 assistantChars=65 estTokens=17 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=2 audioQueuedMs=2909 briefRequested=false
+[PIPELINE:closing-test] scripted closing ARMED — a bare closing acknowledgement will be answered with the fixed goodbye
+[TIMING:closing-test] TURN END turn-release=1790178908507 text="Okay, thank you." sttMs=0
+[STT:closing-test] Transcript received: "Okay, thank you." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:closing-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:closing-test] TURN#1 turn-detected +1ms
+[TIMING:closing-test] TURN#1 stt-to-release=161ms (sttLag=n/ams)
+[PIPELINE:closing-test] closing acknowledgement "Okay, thank you." after a confirmed registration — speaking the fixed goodbye: "Thank you. Have a great day. Bye!"
+[TIMING:closing-test] CLOSING tts-request +0ms
+[TIMING:closing-test] CLOSING tts-first-chunk +0ms
+[TIMING:closing-test] CLOSING audio-queued +0ms
+[PLAYBACK:closing-test] draining 1650ms of queued audio before leaving SPEAKING (queued=1500ms elapsed=0ms)
+[TIMING:closing-test] CLOSING SUMMARY total=1661ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:closing-test] TURN#1 SUMMARY total=1664ms turn-detected=1ms
+[TIMING:closing-test] TURN#1
+speech-end=2026-09-23T15:55:08.347Z
+endpoint-evidence=2026-09-23T15:55:08.347Z (speech_final)
+turn-release=2026-09-23T15:55:08.507Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:closing-test] TURN#1 DELTAS
+endpoint-to-release=160ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[SPECULATE:closing-test] LLM request PRE-OPENED on speech_final evidence: text="Thanks again." evidence-to-llm-open=1ms historyLength=7
+[TIMING:closing-test] TURN END turn-release=1790178910366 text="Thanks again." sttMs=0
+[STT:closing-test] Transcript received: "Thanks again." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:closing-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:closing-test] TURN#1 turn-detected +1ms
+[TIMING:closing-test] TURN#1 stt-to-release=165ms (sttLag=n/ams)
+[LLM:closing-test] Sending to fake-llm: historyLength=7 roles=[system,assistant,user,assistant,user,assistant,user] streaming=true
+[TIMING:closing-test] TURN#1 llm-request +1ms
+[SPECULATE:closing-test] ADOPTED pre-opened request — llm-request is 164ms after the provider stream was opened (first token already in hand, 149ms ago) evidence-to-llm-open=1ms
+[TIMING:closing-test] TURN#1 llm-first-token +1ms
+[TIMING:closing-test] TURN#1 tts-request +1ms
+[TIMING:closing-test] TURN#1 tts-first-chunk +1ms
+[TIMING:closing-test] TURN#1 audio-queued +1ms
+[PLAYBACK:closing-test] draining 332ms of queued audio before leaving SPEAKING (queued=182ms elapsed=0ms)
+[TIMING:closing-test] TURN#1 SUMMARY total=340ms turn-detected=1ms llm-request=1ms llm-first-token=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:closing-test] TURN#1
+speech-end=2026-09-23T15:55:10.202Z
+endpoint-evidence=2026-09-23T15:55:10.202Z (speech_final)
+turn-release=2026-09-23T15:55:10.366Z
+llm-request=2026-09-23T15:55:10.367Z
+llm-first-token=2026-09-23T15:55:10.367Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T15:55:10.367Z
+tts-first-audio=2026-09-23T15:55:10.367Z
+audio-queued=2026-09-23T15:55:10.367Z
+[TIMING:closing-test] TURN#1 DELTAS
+endpoint-to-release=164ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=165ms
+[PIPELINE:closing-test] Turn complete: assistant="Bye!" llmMs=15 ttsMs=0
+[RESPONSE-LEN:closing-test] TURN#1 userChars=13 assistantChars=4 estTokens=1 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=182 briefRequested=false
+[PIPELINE:closing-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:closing-test] run() exiting — state=LISTENING aborted=true
+  [PASS] C4. the goodbye is spoken ONCE — a second pleasantry is not answered with a second goodbye
+[PIPELINE:closing-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:closing-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:closing-test] GREETING greeting-text-ready +0ms
+[TIMING:closing-test] GREETING tts-request +0ms
+[TIMING:closing-test] GREETING tts-first-chunk +0ms
+[TIMING:closing-test] GREETING audio-queued +0ms
+[PLAYBACK:closing-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:closing-test] GREETING SUMMARY total=2345ms greeting-text-ready=0ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[PIPELINE:closing-test] Greeting spoken: text="Hi Priya, this is Ishita from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:closing-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:closing-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, please." evidence-to-llm-open=1ms historyLength=3
+[TIMING:closing-test] TURN END turn-release=1790178913242 text="Yes, please." sttMs=0
+[STT:closing-test] Transcript received: "Yes, please." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:closing-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:closing-test] TURN#0 turn-detected +1ms
+[TIMING:closing-test] TURN#0 stt-to-release=160ms (sttLag=n/ams)
+[LLM:closing-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:closing-test] TURN#0 llm-request +1ms
+[SPECULATE:closing-test] ADOPTED pre-opened request — llm-request is 159ms after the provider stream was opened (first token already in hand, 144ms ago) evidence-to-llm-open=1ms
+[TIMING:closing-test] TURN#0 llm-first-token +2ms
+[TIMING:closing-test] TURN#0 tts-request +2ms
+[TIMING:closing-test] TURN#0 tts-first-chunk +3ms
+[TIMING:closing-test] TURN#0 audio-queued +3ms
+[PLAYBACK:closing-test] draining 2923ms of queued audio before leaving SPEAKING (queued=2773ms elapsed=0ms)
+[TIMING:closing-test] TURN#0 SUMMARY total=2939ms turn-detected=1ms llm-request=1ms llm-first-token=2ms tts-request=2ms tts-first-chunk=3ms audio-queued=3ms
+[TIMING:closing-test] TURN#0
+speech-end=2026-09-23T15:55:13.083Z
+endpoint-evidence=2026-09-23T15:55:13.083Z (speech_final)
+turn-release=2026-09-23T15:55:13.242Z
+llm-request=2026-09-23T15:55:13.243Z
+llm-first-token=2026-09-23T15:55:13.244Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T15:55:13.244Z
+tts-first-audio=2026-09-23T15:55:13.245Z
+audio-queued=2026-09-23T15:55:13.245Z
+[TIMING:closing-test] TURN#0 DELTAS
+endpoint-to-release=159ms
+release-to-llm-request=1ms
+llm-to-first-token=1ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=1ms
+first-audio-to-queue=0ms
+speech-end-to-audio=162ms
+[PIPELINE:closing-test] Turn complete: assistant="Perfect, your seat is reserved. Shall I also note your email?" llmMs=15 ttsMs=1
+[RESPONSE-LEN:closing-test] TURN#0 userChars=12 assistantChars=61 estTokens=16 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=2773 briefRequested=false
+[PIPELINE:closing-test] scripted closing ARMED — a bare closing acknowledgement will be answered with the fixed goodbye
+[TIMING:closing-test] TURN END turn-release=1790178916349 text="Okay." sttMs=0
+[STT:closing-test] Transcript received: "Okay." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:closing-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:closing-test] TURN#1 turn-detected +0ms
+[TIMING:closing-test] TURN#1 stt-to-release=151ms (sttLag=n/ams)
+[LLM:closing-test] Sending to fake-llm: historyLength=5 roles=[system,assistant,user,assistant,user] streaming=true
+[TIMING:closing-test] TURN#1 llm-request +1ms
+[TIMING:closing-test] TURN#1 llm-first-token +16ms
+[TIMING:closing-test] TURN#1 tts-request +17ms
+[TIMING:closing-test] TURN#1 tts-first-chunk +17ms
+[TIMING:closing-test] TURN#1 audio-queued +17ms
+[PLAYBACK:closing-test] draining 696ms of queued audio before leaving SPEAKING (queued=546ms elapsed=0ms)
+[TIMING:closing-test] TURN#1 SUMMARY total=715ms turn-detected=0ms llm-request=1ms llm-first-token=16ms tts-request=17ms tts-first-chunk=17ms audio-queued=17ms
+[TIMING:closing-test] TURN#1
+speech-end=2026-09-23T15:55:16.198Z
+endpoint-evidence=2026-09-23T15:55:16.198Z (speech_final)
+turn-release=2026-09-23T15:55:16.349Z
+llm-request=2026-09-23T15:55:16.350Z
+llm-first-token=2026-09-23T15:55:16.365Z
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=2026-09-23T15:55:16.366Z
+tts-first-audio=2026-09-23T15:55:16.366Z
+audio-queued=2026-09-23T15:55:16.366Z
+[TIMING:closing-test] TURN#1 DELTAS
+endpoint-to-release=151ms
+release-to-llm-request=1ms
+llm-to-first-token=15ms
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=168ms
+[PIPELINE:closing-test] Turn complete: assistant="Sure, noted." llmMs=15 ttsMs=0
+[RESPONSE-LEN:closing-test] TURN#1 userChars=5 assistantChars=12 estTokens=3 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=1 audioQueuedMs=546 briefRequested=false
+[PIPELINE:closing-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:closing-test] run() exiting — state=LISTENING aborted=true
+  [PASS] C5. a closing word said to the agent's QUESTION is an answer, not a goodbye
+[PIPELINE:closing-test] run() started — state=CALLING streamingSTT=true llm=fake-llm tts=fake-tts stt=fake-stt
+[PIPELINE:closing-test] Conversation started — speaking fixed greeting, state=CALLING
+[TIMING:closing-test] GREETING greeting-text-ready +0ms
+[TIMING:closing-test] GREETING tts-request +1ms
+[TIMING:closing-test] GREETING tts-first-chunk +1ms
+[TIMING:closing-test] GREETING audio-queued +1ms
+[PLAYBACK:closing-test] draining 2332ms of queued audio before leaving SPEAKING (queued=2182ms elapsed=0ms)
+[TIMING:closing-test] GREETING SUMMARY total=2333ms greeting-text-ready=0ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[PIPELINE:closing-test] Greeting spoken: text="Hi Priya, this is Ishita from Team FlexiFunnels." state=SPEAKING
+[PIPELINE:closing-test] entering main loop — state=SPEAKING aborted=false
+[SPECULATE:closing-test] LLM request PRE-OPENED on speech_final evidence: text="Yes, please." evidence-to-llm-open=0ms historyLength=3
+[TIMING:closing-test] TURN END turn-release=1790178919599 text="Yes, please." sttMs=0
+[STT:closing-test] Transcript received: "Yes, please." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:closing-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:closing-test] TURN#0 turn-detected +0ms
+[TIMING:closing-test] TURN#0 stt-to-release=152ms (sttLag=n/ams)
+[LLM:closing-test] Sending to fake-llm: historyLength=3 roles=[system,assistant,user] streaming=true
+[TIMING:closing-test] TURN#0 llm-request +1ms
+[SPECULATE:closing-test] ADOPTED pre-opened request — llm-request is 152ms after the provider stream was opened (first token already in hand, 135ms ago) evidence-to-llm-open=0ms
+[TIMING:closing-test] TURN#0 llm-first-token +1ms
+[TIMING:closing-test] TURN#0 first-sentence-ready +1ms
+[TIMING:closing-test] TURN#0 tts-request +1ms
+[TIMING:closing-test] TURN#0 tts-first-chunk +1ms
+[TIMING:closing-test] TURN#0 audio-queued +1ms
+[PLAYBACK:closing-test] draining 3058ms of queued audio before leaving SPEAKING (queued=2909ms elapsed=1ms)
+[TIMING:closing-test] TURN#0 SUMMARY total=3066ms turn-detected=0ms llm-request=1ms llm-first-token=1ms first-sentence-ready=1ms tts-request=1ms tts-first-chunk=1ms audio-queued=1ms
+[TIMING:closing-test] TURN#0
+speech-end=2026-09-23T15:55:19.447Z
+endpoint-evidence=2026-09-23T15:55:19.448Z (speech_final)
+turn-release=2026-09-23T15:55:19.599Z
+llm-request=2026-09-23T15:55:19.600Z
+llm-first-token=2026-09-23T15:55:19.600Z
+first-sentence-ready=2026-09-23T15:55:19.600Z
+tts-request=2026-09-23T15:55:19.600Z
+tts-first-audio=2026-09-23T15:55:19.600Z
+audio-queued=2026-09-23T15:55:19.600Z
+[TIMING:closing-test] TURN#0 DELTAS
+endpoint-to-release=151ms
+release-to-llm-request=1ms
+llm-to-first-token=0ms
+first-token-to-sentence=0ms
+sentence-to-tts=0ms
+tts-to-first-audio=0ms
+first-audio-to-queue=0ms
+speech-end-to-audio=153ms
+[PIPELINE:closing-test] Turn complete: assistant="Perfect, I'll get your free seat reserved. Hope to see you there!" llmMs=17 ttsMs=0
+[RESPONSE-LEN:closing-test] TURN#0 userChars=12 assistantChars=65 estTokens=17 reportedCompletionTokens=NOT DIRECTLY MEASURABLE ttsChunks=2 audioQueuedMs=2909 briefRequested=false
+[PIPELINE:closing-test] scripted closing ARMED — a bare closing acknowledgement will be answered with the fixed goodbye
+[TIMING:closing-test] TURN END turn-release=1790178922846 text="Great." sttMs=0
+[STT:closing-test] Transcript received: "Great." userSpeechMs=0 sttLagMs=n/a
+[TURN-RELEASE:closing-test] stt=fake-stt reason=confirmed readsUnfinished=false graces=0 graceTrace=[] graceResets=[] marker=none finals=1
+[TIMING:closing-test] TURN#1 turn-detected +1ms
+[TIMING:closing-test] TURN#1 stt-to-release=160ms (sttLag=n/ams)
+[PIPELINE:closing-test] closing acknowledgement "Great." after a confirmed registration — speaking the fixed goodbye: "Thank you. Have a great day. Bye!"
+[TIMING:closing-test] CLOSING tts-request +0ms
+[TIMING:closing-test] CLOSING tts-first-chunk +0ms
+[TIMING:closing-test] CLOSING audio-queued +0ms
+[PLAYBACK:closing-test] draining 1650ms of queued audio before leaving SPEAKING (queued=1500ms elapsed=0ms)
+[TIMING:closing-test] CLOSING SUMMARY total=1650ms tts-request=0ms tts-first-chunk=0ms audio-queued=0ms
+[TIMING:closing-test] TURN#1 SUMMARY total=1651ms turn-detected=1ms
+[TIMING:closing-test] TURN#1
+speech-end=2026-09-23T15:55:22.687Z
+endpoint-evidence=2026-09-23T15:55:22.687Z (speech_final)
+turn-release=2026-09-23T15:55:22.846Z
+llm-request=NOT DIRECTLY MEASURABLE
+llm-first-token=NOT DIRECTLY MEASURABLE
+first-sentence-ready=NOT DIRECTLY MEASURABLE
+tts-request=NOT DIRECTLY MEASURABLE
+tts-first-audio=NOT DIRECTLY MEASURABLE
+audio-queued=NOT DIRECTLY MEASURABLE
+[TIMING:closing-test] TURN#1 DELTAS
+endpoint-to-release=159ms
+release-to-llm-request=NOT DIRECTLY MEASURABLE
+llm-to-first-token=NOT DIRECTLY MEASURABLE
+first-token-to-sentence=NOT DIRECTLY MEASURABLE
+sentence-to-tts=NOT DIRECTLY MEASURABLE
+tts-to-first-audio=NOT DIRECTLY MEASURABLE
+first-audio-to-queue=NOT DIRECTLY MEASURABLE
+speech-end-to-audio=NOT DIRECTLY MEASURABLE
+[PIPELINE:closing-test] acquireNextUserTurn returned null or aborted — exiting loop
+[PIPELINE:closing-test] run() exiting — state=LISTENING aborted=true
+  [PASS] C6. the pitch is never repeated and the gate is never re-asked by the closing
+[campaign-db] connection pool created (max=6, pid=2264)
+
+D. THE LIVE WATCHDOG — THE FULL CLOSING EXCHANGE, END TO END
+[sheet-sync] FINAL_YES on attempt 8a5943b4-b9ae-41e9-9f39-bf052231b38c was NOT written to the sheet — missing configuration: CAMPAIGN_SHEET_SPREADSHEET_ID. The registration itself is stored and unaffected.
+  [PASS] D1. the call is NOT ended on the tick after the confirmation — the person gets to speak
+  [PASS] D2. the pipeline was told to ready its goodbye — once, and before the confirmation had even been committed
+  [PASS] D3. the hangup comes AFTER the goodbye, promptly, and is still named agent_hangup:final_yes
+  [PASS] D4. the registration is persisted exactly once, as it always was
+[sheet-sync] FINAL_YES on attempt 01f3a67c-0246-44cb-8575-130ef00c4f31 was NOT written to the sheet — missing configuration: CAMPAIGN_SHEET_SPREADSHEET_ID. The registration itself is stored and unaffected.
+  [PASS] D5. a person who says nothing is still hung up — at the closing-wait bound, not the silence window
+[sheet-sync] FINAL_YES on attempt 7ffced30-acfb-4dc0-b26f-2088c01a54d8 was NOT written to the sheet — missing configuration: CAMPAIGN_SHEET_SPREADSHEET_ID. The registration itself is stored and unaffected.
+  [PASS] D6. a question after the confirmation is answered first; the closing then ends the call
+  [PASS] D7. a refusal still ends promptly as agent_hangup:final_no — the closing wait exists for a registration only
+  [PASS] D8. an undecided call ends on the silence window exactly as before
+[sheet-sync] FINAL_YES on attempt 7f46727c-6c1a-43b0-ae1b-20f91a615c28 was NOT written to the sheet — missing configuration: CAMPAIGN_SHEET_SPREADSHEET_ID. The registration itself is stored and unaffected.
+  [PASS] D9. the person speaks after the confirmation but the agent has NOT said goodbye: the line stays up
+  [PASS] D10. ...and the call ends promptly once the goodbye HAS been delivered, still as agent_hangup:final_yes
+[sheet-sync] FINAL_YES on attempt a994b6ce-d291-4780-b9fc-5d0c42da4439 was NOT written to the sheet — missing configuration: CAMPAIGN_SHEET_SPREADSHEET_ID. The registration itself is stored and unaffected.
+  [PASS] D11. a person who keeps talking and never closes is hung up at the closing-wait bound after the agent's LAST reply — not before
+
+ALL PASSED — 31 passed, 0 failed
+No call was placed. Telephony, Deepgram, the LLM, the TTS vendors and Google were not contacted.

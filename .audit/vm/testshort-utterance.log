@@ -1,0 +1,88 @@
+
+A. ENGLISH — a one-word yes at the gate is a registration
+  [PASS] A — "Yes." at the gate
+  [PASS] A — "Yes" at the gate
+  [PASS] A — "Yeah." at the gate
+  [PASS] A — "Yep." at the gate
+  [PASS] A — "Yup." at the gate
+  [PASS] A — "Okay." at the gate
+  [PASS] A — "OK." at the gate
+  [PASS] A — "Sure." at the gate
+  [PASS] A — "Alright." at the gate
+
+B. HINGLISH — every spelling of the one-word yes, spaced and unspaced
+  [PASS] B — "Haan." at the gate (the bare affirmative)
+  [PASS] B — "Haa." at the gate (the elongated form)
+  [PASS] B — "Haan ji." at the gate (the polite form, spaced)
+  [PASS] B — "Haanji." at the gate (the polite form as ONE token — Deepgram returns this)
+  [PASS] B — "Hanji." at the gate (the short unspaced form — Deepgram returns this too)
+  [PASS] B — "Han ji." at the gate (the short spaced form)
+  [PASS] B — "Han." at the gate (the short bare form)
+  [PASS] B — "Ji." at the gate (the bare honorific, which alone is a yes)
+  [PASS] B — "Ji haan." at the gate (honorific first)
+  [PASS] B — "हाँ" at the gate (Devanagari)
+  [PASS] B — "हां जी" at the gate (Devanagari, polite)
+  [PASS] B — "Theek hai." at the gate (agreement rather than affirmation)
+
+C. A one-word no at the gate is a refusal — including the "nahi ji" family
+  [PASS] C — "No." at the gate (English)
+  [PASS] C — "Nope." at the gate (English)
+  [PASS] C — "Nahi." at the gate (Hinglish)
+  [PASS] C — "Nahin." at the gate (Hinglish)
+  [PASS] C — "Nai." at the gate (Hinglish)
+  [PASS] C — "Ji nahi." at the gate (honorific FIRST — this one was always correct)
+  [PASS] C — "नहीं" at the gate (Devanagari)
+  [PASS] C — "Nahi ji." is a POLITE REFUSAL, not the "ji" hiding inside it
+  [PASS] C — "Nahin ji." is a POLITE REFUSAL, not the "ji" hiding inside it
+  [PASS] C — "Nai ji." is a POLITE REFUSAL, not the "ji" hiding inside it
+  [PASS] C — "No ji." is a POLITE REFUSAL, not the "ji" hiding inside it
+  [PASS] C — "Nahi ji" and "Ji nahi" settle identically
+  [PASS] C — a polite refusal with its reason attached is still a refusal
+  [PASS] C — EVERY <no> x <ji> spelling, in both scripts and both orders, is a refusal
+
+D. A bare short utterance WITHOUT sufficient context decides nothing
+  [PASS] D1 — a short yes with no question before it at all is not a registration
+  [PASS] D2 — a short yes to the PERMISSION question is engagement, not a confirmation
+  [PASS] D3 — the caller saying nothing but a greeting decides nothing
+  [PASS] D4 — a short yes inside a QUESTION is not an answer
+
+E. A short answer to an agent question that commits nothing
+  [PASS] E1 — a short no to an unrelated agent question keeps a registration already given
+  [PASS] E2 — a short POLITE no to an unrelated agent question also retracts nothing
+
+F. THE INVARIANT — the classifier reads every spelling the pipeline accepts
+  [PASS] F1 — every yes-family spelling the pipeline accepts also settles at the gate
+  [PASS] F2 — and the pipeline really does accept all of them (both halves of the invariant)
+  [PASS] F3 — the unspaced spellings settle EXACTLY as the spaced ones do
+  [PASS] F4 — bare "ha" is deliberately NOT an affirmation (it collides with laughter)
+  [PASS] F5 — the pipeline's wider acknowledgement vocabulary is NOT promoted to a yes
+  [PASS] F6 — "theek hai" IS a yes and bare "theek" is not — the distinction is kept
+
+G. CONFIRMATION BINDING is unchanged by the new spellings
+  [PASS] G1 — a short yes at the gate, then a retraction, is declined
+  [PASS] G2 — a courtesy sign-off after a no is still a no, whichever spelling it uses
+  [PASS] G3 — a yes is not acted on while the agent's latest turn is itself a question
+
+H. THE PARAPHRASED GATE accepts the short spellings too
+  [PASS] H1 — a one-word yes to a paraphrased gate is a registration
+  [PASS] H2 — and a one-word POLITE no to a paraphrased gate is a refusal
+
+J. "hello" — a greeting decides nothing, in either direction
+  [PASS] J1 — "hello" at the gate is neither a yes nor a no
+  [PASS] J2 — a greeting does not cancel a registration already given
+  [PASS] J3 — the pipeline's reading of "hello" is untouched by this pass
+
+K. A short yes at the END of an agent question is still a real answer
+  [PASS] K1 — every short yes is eligible as the answer to the gate
+  [PASS] K2 — and is bound to the LATEST question, not an earlier one
+
+I. ADVERSARIAL — a new spelling may not behave differently from the old one
+  [PASS] I1 — each new spelling settles exactly where its existing equivalent does
+  [PASS] I1b — the Devanagari yes is unaffected by the polite-refusal strip
+  [PASS] I2 — opt-out still outranks a short yes, in either spelling
+  [PASS] I3 — a machine's greeting still contributes no affirmation
+  [PASS] I4 — a hedge attached to a short yes reads the same in every spelling
+
+ALL PASSED — 62 passed, 0 failed
+
+No telephony, TTS, STT, LLM or database request was made. No call was placed.

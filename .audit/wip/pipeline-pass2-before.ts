@@ -1,0 +1,7863 @@
+/**
+ * conversation-pipeline.ts
+ *
+ * Drives one session's LISTENING -> THINKING -> SPEAKING -> (repeat)
+ * cycle against whatever streaming capabilities its resolved
+ * provider stack happens to expose:
+ *
+ *  - STT: if `transcribeStream` exists, runs ONE continuous
+ *    streaming transcription for the whole call and derives turn
+ *    boundaries from the `AdaptiveTurnDetector`. Otherwise falls
+ *    back to acquiring one whole `AudioPayload` at a time and
+ *    treating each as a complete turn (the only option a batch
+ *    `transcribe()` call allows).
+ *
+ *  - LLM: if `generateCompletionStream` exists, sentence-chunks the
+ *    incoming token deltas and starts TTS on each sentence as soon
+ *    as it's complete — real overlap between "the model is still
+ *    thinking" and "the assistant has already started speaking".
+ *    Otherwise waits for the full `generateCompletion` result before
+ *    speaking at all.
+ *
+ *  - TTS: if `synthesizeStream` exists, plays audio chunks as they
+ *    arrive. Otherwise synthesizes the whole utterance at once and
+ *    simulates its playback duration so barge-in cancellation still
+ *    behaves correctly even without a live audio transport.
+ *
+ * Barge-in ("the AI is speaking and the user starts talking") is
+ * handled the same way regardless of which capabilities are
+ * present: `BargeInController.triggerBargeIn()` aborts whatever is
+ * currently in flight and the pipeline immediately falls back to
+ * LISTENING.
+ */
+import type { TranscriptSegment } from "../../types/provider.types";
+import { SessionState } from "../../types/enums";
+import type { SupportedLanguage } from "../../types/enums";
+import type { AudioPayload, ConversationTurn } from "../../types/provider.types";
+import type { CompletionRequest } from "../../interfaces/providers/language-model-provider.interface";
+import type { LanguageModelProvider } from "../../interfaces/providers/language-model-provider.interface";
+import type { LlmStreamEvent } from "../../types/streaming.types";
+import type { BargeInTriggerTelemetry, TurnOutcome } from "../../types/benchmark.types";
+import type { SpeechToTextProvider } from "../../interfaces/providers/speech-to-text-provider.interface";
+import type { TextToSpeechProvider, SynthesisTaskRequest } from "../../interfaces/providers/text-to-speech-provider.interface";
+import type { TelephonyProvider } from "../../interfaces/providers/telephony-provider.interface";
+
+import type { SessionRecord } from "./session-record";
+import { detectLanguage, isLockGradeEvidence, type LanguageDetectionResult } from "./language-detector";
+import { currentTurnNote, languageHintFor, openingLineFor } from "./system-prompt";
+import { classifyIdentityAnswer } from "../../campaign/domain/identity-answer";
+import { SentenceChunker } from "./sentence-chunker";
+import { isBareAcknowledgement, readsAsUnfinishedThought } from "./turn-detection";
+import type { ContinuationHoldEvent, EndpointMarkerOutcome, TurnReleaseTrace } from "./turn-detection";
+import { voicemailPhraseIn } from "./voicemail-detection";
+import { combineSignals, abortableSleep } from "./abort-utils";
+import { estimateAudioSeconds, withByteCounter } from "./audio-utils";
+import { estimateLlmCost, estimateSttCost, estimateTtsCost, estimateTokenCount } from "./cost-estimator";
+import { withGracefulRetry, RecoverableTurnError, toSessionErrorInfo } from "./error-recovery";
+import { formatForSpeech } from "../../utils/speech-formatter";
+import { pronounceForSpeech } from "../../utils/speech-pronunciation";
+
+export interface ResolvedProviderStack {
+  readonly telephony: TelephonyProvider;
+  readonly stt: SpeechToTextProvider;
+  readonly llm: LanguageModelProvider;
+  readonly tts: TextToSpeechProvider;
+}
+
+/**
+ * The slice of the VoiceSessionManager the pipeline needs in order
+ * to move a session between states without duplicating the
+ * transition-validation logic that already lives on the manager.
+ */
+export interface PipelineHost {
+  transition(record: SessionRecord, to: SessionState, reason?: string): void;
+  markError(record: SessionRecord, sourceCategory: string, error: unknown): void;
+  /**
+   * The manager's existing public `end` — the one path that stops
+   * playback, aborts the loop, closes the media stream AND tells the
+   * telephony provider to hang up the carrier leg. Declared here so the
+   * pipeline can end a call it has established there is no point
+   * continuing: a voicemail or any other machine that answered.
+   *
+   * `DefaultVoiceSessionManager` already satisfies this — no new method
+   * was added to it, and this is the same call the Dashboard's End Call
+   * and the campaign watchdog already make.
+   */
+  end(sessionId: SessionRecord["id"]): Promise<unknown>;
+}
+
+interface AcquiredTurn {
+  readonly text: string;
+  /** How long the caller spoke. Context, NOT a latency — see benchmark.types.ts. */
+  readonly userSpeechMs: number;
+  /** STT recognition lag of the final segment that completed this turn. */
+  readonly sttLagMs: number | undefined;
+  /** Wall clock at which the caller's audio actually ended, back-dated by the recognition lag. */
+  readonly userSpeechEndedAtMs: number | undefined;
+  readonly sttCostUsd: number;
+  /**
+   * FIX #7A — wall clock at which the turn detector's `emitTurnEnd`
+   * actually ran, captured at the top of the `onTurnEnd` listener it
+   * calls synchronously (so no measurable gap from the real event).
+   * Used as this turn's `TurnTimer` t0 instead of a fresh `Date.now()`
+   * taken a microtask later in the main loop.
+   */
+  readonly turnReleasedAtMs: number;
+  /** FIX #7A — arrival time of the Deepgram evidence that ended this turn, if it was directly observed (see `lastEndpointEvidenceAtMs`). */
+  readonly endpointEvidenceAtMs: number | undefined;
+  readonly endpointEvidenceKind: "utterance_end" | "speech_final" | undefined;
+  /**
+   * PHASE 3 PHASE 0 — how many non-empty FINAL transcripts Deepgram
+   * delivered for this caller turn, and the wall-clock gaps between
+   * consecutive ones.
+   *
+   * Counted at the SAME event `lastFinalSegmentAtMs` is stamped at,
+   * and snapshot-and-cleared at the SAME turn-release boundary — so
+   * the window is the existing authoritative one that `sttLagMs` and
+   * `userSpeechEndedAtMs` already use. No new notion of a turn is
+   * introduced.
+   *
+   * `finalTranscriptCount > 1` IS the fragmentation signal: one
+   * natural utterance arriving as several finals is the failure mode
+   * `endpointing: 300` was rejected for on 2026-08-09, which at the
+   * time could only be observed by eye.
+   */
+  readonly finalTranscriptCount: number;
+  readonly interFinalGapsMs: readonly number[];
+  /**
+   * PHASE 3 BATCH 3 — absolute wall-clock observations for this turn,
+   * snapshotted at release alongside the two fields above. Telemetry
+   * only; see `TurnLatencyBreakdown` for what each one is.
+   */
+  readonly lastInboundAudioAtMs: number | undefined;
+  readonly lastInterimTranscriptAtMs: number | undefined;
+  readonly lastFinalTranscriptAtMs: number | undefined;
+  /**
+   * PHASE 3 BATCH 4 — the audio-bytes clock read at the same final
+   * `lastFinalTranscriptAtMs` reads the wall clock at.
+   */
+  readonly inboundStreamMsAtFinalTranscript: number | undefined;
+  /**
+   * PHASE 3 BATCH 6 — the other half of the STT-lag subtraction, and
+   * the clock offset in force when it was taken. See
+   * `TurnLatencyBreakdown` for why both are needed to reconstruct a
+   * lag the plausibility guard discarded.
+   */
+  readonly lastFinalWordEndStreamMs: number | undefined;
+  readonly sttClockOffsetMs: number | undefined;
+  /**
+   * PHASE 3 BATCH 5 — which guard the endpoint marker met inside
+   * `noteEndOfSpeech`. Absent when this turn received no marker.
+   */
+  readonly endpointMarkerOutcome: EndpointMarkerOutcome | undefined;
+  /**
+   * TURN-RELEASE TRACE (2026-09-21) — which guard released this turn,
+   * and what the continuation-grace counter did on the way. Snapshotted
+   * from the detector at the same boundary `endpointMarkerOutcome` is.
+   * Absent for a turn the detector did not produce (batch STT, a
+   * synthesised turn). See `TurnReleaseTrace`.
+   */
+  readonly releaseTrace: TurnReleaseTrace | undefined;
+}
+
+/**
+ * FIX #8 — an LLM request PRE-OPENED during the turn detector's evidenced
+ * confirmation window, so the provider's time-to-first-token overlaps the
+ * one hold the pipeline still pays after Deepgram has declared end of
+ * speech — instead of starting only once that hold has expired.
+ *
+ * WHAT IT IS. The SAME request `runThinkingAndSpeaking` would build after
+ * the turn is released: same provider method, same `sessionId`, and a
+ * history that is identical role-for-role and content-for-content
+ * (`ConversationMemory.previewRecentHistory` + the same
+ * `buildRequestHistory` annotation). Adoption re-derives the normal
+ * request and compares; on ANY difference the pre-opened stream is
+ * abandoned and the normal request is sent exactly as today.
+ *
+ * WHEN IT STARTS. Only on `AdaptiveTurnDetector.onTurnPending` — the
+ * detector telling us it has armed the EVIDENCED confirmation window:
+ * Deepgram's own endpointer explicitly declared end of speech
+ * (`speech_final: true` on the words, or the standalone end-of-speech
+ * marker), no interim is outstanding, and the text reads as finished.
+ * Never on an interim, never on a bare `is_final`, never on silence or a
+ * timer. The detector's own guards (filler, hold phrase, incomplete
+ * thought, pending interim, chunk-boundary grace) run BEFORE that hook
+ * fires, so a turn they hold is never speculated on.
+ *
+ * WHEN IT IS ABANDONED. Any further caller speech reaching the detector
+ * (interim or final — the same segment that cancels the pending turn
+ * inside the detector), the turn being released with different text,
+ * voicemail, an attention-check turn, the loop ending — and, at
+ * adoption, any mismatch with the normally-built request. Abandonment
+ * aborts the provider stream through the signal it was given, the same
+ * way a barge-in does.
+ *
+ * WHAT IT DOES NOT TOUCH. Turn release is still `onTurnEnd`, unchanged.
+ * Barge-in, backchannel and interruption handling are untouched: a
+ * speculation only exists while the pipeline is LISTENING and awaiting
+ * a turn, so nothing here is alive while the assistant is speaking.
+ * The user turn is committed to memory at release, as before; nothing is
+ * recorded early. Sentence chunking, TTS, and every log/metric mark the
+ * existing path emits are emitted at the same points.
+ */
+interface SpeculativeCompletion {
+  /** The pending turn text this request was built for, exactly as the detector reported it. */
+  readonly text: string;
+  readonly request: CompletionRequest;
+  /** Wall clock at which the provider stream was opened. */
+  readonly openedAtMs: number;
+  /** Wall clock of the Deepgram evidence this was started on, for the trace. */
+  readonly evidenceAtMs: number | undefined;
+  readonly abort: AbortController;
+  readonly iterator: AsyncIterator<LlmStreamEvent>;
+  /** The one `next()` issued at pre-open time — what actually opens the connection. */
+  readonly first: Promise<IteratorResult<LlmStreamEvent>>;
+  /** Wall clock at which `first` settled with a token, if it has yet. */
+  firstTokenAtMs: number | undefined;
+}
+
+interface ThinkingAndSpeakingResult {
+  readonly assistantText: string;
+  /** LLM time-to-first-token. */
+  readonly llmMs: number | undefined;
+  /** Full generation span with TTS blocking time subtracted out. */
+  readonly llmGenerationMs: number | undefined;
+  readonly llmCostUsd: number;
+  /** TTS time-to-first-audio-chunk for the first utterance of the turn. */
+  readonly ttsMs: number | undefined;
+  /** Total synthesis wall-clock across every sentence chunk of the turn. */
+  readonly ttsSynthesisMs: number;
+  readonly ttsCostUsd: number;
+  /**
+   * OpenAI-reported prompt tokens for this turn's LLM request (distinct
+   * from the character-count `promptTokens` heuristic used for cost
+   * estimation above). Only a streaming provider that reports usage
+   * populates this — see `LlmFinalEvent`.
+   */
+  readonly reportedPromptTokens?: number;
+  /** Of `reportedPromptTokens`, how many were served from the prompt-prefix cache. */
+  readonly cachedPromptTokens?: number;
+  /** Reasoning tokens generated before the first visible content token. */
+  readonly reasoningTokens?: number;
+  /**
+   * FIX #7A — OpenAI-reported completion tokens for this turn's reply,
+   * when the provider supplied them (see `LlmFinalEvent.completionTokens`).
+   * Telemetry only, and a real measurement rather than the
+   * character-count heuristic `estimateTokenCount` falls back to.
+   */
+  readonly reportedCompletionTokens?: number;
+  /** FIX #7A — number of sentence-level TTS invocations this turn produced (1 on the non-streaming LLM path). Telemetry only. */
+  readonly ttsChunkCount: number;
+
+  // --- PHASE A: TURN DISPOSITION. Telemetry only — every value below
+  // is read off a branch this method had already taken, and nothing
+  // here is consulted to decide anything. REQUIRED (not optional) so
+  // the compiler, rather than a reviewer, guarantees that every return
+  // path of a generated turn states what became of it. ---
+
+  /** What became of this reply. See `TurnOutcome`. */
+  readonly turnOutcome: TurnOutcome;
+  /** Raw model-output characters, before `toSpokenText`. A count, never the text. */
+  readonly charsGenerated: number;
+  /** Did the newer caller utterance observed at the supersession check take the floor? A boolean, never the text. */
+  readonly supersederTakesFloor?: boolean;
+
+  // --- PHASE 3 BATCH 2A: what the vendor SDK actually did on this
+  // turn's request. Observed, never configured. ---
+
+  /** HTTP attempts the SDK made. 1 means no retry occurred. */
+  readonly llmAttempts?: number;
+  /** Attempts beyond the first. */
+  readonly llmRetries?: number;
+  /** Measured wall clock spent on failed attempts plus backoff sleeps. */
+  readonly llmRetryOverheadMs?: number;
+  /** Compact non-sensitive reasons, e.g. `"500,500"`. */
+  readonly llmRetryReasons?: string;
+}
+
+// ------------------------------------------------------------------
+// Voice-safe output validation
+// ------------------------------------------------------------------
+
+/**
+ * Strips markdown formatting that would sound wrong when read aloud
+ * by TTS. Only removes formatting — NOT content. Prompt-echo
+ * contamination is handled by `isContaminatedOutput` + retry, not
+ * by regex stripping.
+ */
+function stripMarkdown(raw: string): string {
+  let text = raw;
+
+  // Remove markdown bullet points and numbered lists (e.g. "- ", "* ", "1. ")
+  text = text.replace(/^[\t ]*[-*•]\s+/gm, "");
+  text = text.replace(/^[\t ]*\d+\.\s+/gm, "");
+
+  // Remove markdown headers ("# ", "## ", etc.)
+  text = text.replace(/^[\t ]*#{1,6}\s+/gm, "");
+
+  // Remove bold / italic markers (* ** _ __ ` ``)
+  text = text.replace(/\*{1,3}([^*]+)\*{1,3}/g, "$1");
+  text = text.replace(/_{1,3}([^_]+)_{1,3}/g, "$1");
+  text = text.replace(/`{1,3}([^`]+)`{1,3}/g, "$1");
+
+  // Collapse multiple newlines into a single space (voice is continuous)
+  text = text.replace(/\n{2,}/g, " ");
+  text = text.replace(/\n/g, " ");
+
+  // Collapse multiple spaces
+  text = text.replace(/ {2,}/g, " ");
+
+  return text.trim();
+}
+
+/**
+ * The full text -> speech conversion applied to everything the caller
+ * hears: strip formatting TTS would read aloud, then enforce the
+ * conversational rules the system prompt only asks for (no hesitation
+ * openers, no stacked acknowledgements, no textbook Hindi, no ellipsis
+ * dead air).
+ */
+function toSpokenText(raw: string): string {
+  return formatForSpeech(stripMarkdown(raw));
+}
+
+/**
+ * Detects prompt-contaminated output — the model has echoed system
+ * instructions instead of producing a natural reply. Any output
+ * matching this check is NEVER spoken. The pipeline retries with
+ * a simplified prompt instead.
+ */
+const CONTAMINATION_MARKERS = [
+  "role:",
+  "persona:",
+  "constraint",
+  "language:",
+  "how to talk:",
+  "remember:",
+  "context:",
+  "instructions:",
+  "system prompt:",
+  "developer notes:",
+  "as a voice assistant",
+  "i was instructed",
+  "my role is",
+  "voice assistant on a",
+];
+
+function isContaminatedOutput(text: string): boolean {
+  const lower = text.toLowerCase();
+  return CONTAMINATION_MARKERS.filter((m) => lower.includes(m)).length >= 2;
+}
+
+/** Language-appropriate fallback greetings when the LLM fails or produces contaminated output. */
+function fallbackGreeting(language: SupportedLanguage): string {
+  switch (language) {
+    case "hi":
+      return "नमस्ते! मैं आपकी कैसे मदद कर सकता हूँ?";
+    case "hi-en":
+      return "Hey, namaste! Kaise help kar sakta hoon aapki?";
+    default:
+      return "Hey! How can I help you today?";
+  }
+}
+
+/** Maximum characters for a greeting — anything longer is almost certainly a prompt echo. */
+const MAX_GREETING_CHARS = 200;
+
+/**
+ * Compensates for the small startup buffer the telephony bridges fill
+ * before their playback pump sends its first frame. Keeps the drain
+ * from finishing marginally early and re-opening the "queue still
+ * playing while state says LISTENING" gap it exists to close.
+ */
+const PLAYBACK_PREROLL_ALLOWANCE_MS = 150;
+
+/**
+ * How often `drainPlayback` looks for a caller turn that is already
+ * waiting, and ONLY when its call site opted in
+ * (`interruptibleByBufferedTurn`).
+ *
+ * A caller who speaks into the THINKING gap has their words END before
+ * the reply's audio begins, so `spokeOverTheAssistant` is false, no
+ * barge-in path is ever consulted, and the completed turn lands in
+ * `AdaptiveTurnDetector.pendingEvent` with no subscriber to receive it
+ * — invisible until the whole reply has drained. On a long pitch block
+ * that is seconds of dead wait before the caller is answered.
+ *
+ * DELIBERATELY ITS OWN CONSTANT. It must not be tied to
+ * `STRANDED_RESUME_POLL_MS` or to any turn-detection window: this
+ * paces one observation of state that already exists and gates
+ * nothing about how a turn is detected, released or endpointed.
+ * Coarse on purpose — the cost of noticing late is at most one
+ * interval, against a wait measured in seconds.
+ */
+const BUFFERED_TURN_DRAIN_POLL_MS = 250;
+
+/**
+ * How much of its own reply the assistant must still have left to
+ * speak before a bare acknowledgement counts as backchannel rather
+ * than as an answer.
+ *
+ * This is the whole safety margin of the backchannel rule, so it is
+ * set from the approved script rather than from taste. The
+ * commitment question is the second-to-last line of its block —
+ * "Would you be interested to attend?" is followed by "The
+ * registration is completely FREE.", roughly two seconds of speech.
+ * A caller answering that question therefore has at most ~2s of reply
+ * left when their "haan" is recognised, and must be heard normally:
+ * that answer is the registration.
+ *
+ * 4000ms is double that, so an answer at the gate is never absorbed,
+ * while the long explanation blocks — where the queued reply runs many
+ * seconds ahead of playback — are fully covered. A short reply (a
+ * one-sentence answer to a question) never reaches this threshold at
+ * all and so keeps exactly today's barge-in behaviour.
+ *
+ * Measured from the same span `drainPlayback` waits out, so "still
+ * speaking" means here what it already means everywhere else.
+ */
+const BACKCHANNEL_MIN_REMAINING_SPEECH_MS = 4_000;
+
+/**
+ * A bare greeting and nothing else.
+ *
+ * `isBareAcknowledgement` deliberately EXCLUDES "hello": said over a
+ * reply that is already playing it means the line has gone bad, and it
+ * must interrupt. That reasoning is about audio the caller is failing
+ * to hear, so it does not apply while the assistant is still THINKING —
+ * nothing is playing to have gone bad. A caller who says "hello" into
+ * that gap is filling a silence, not opening a new subject, and
+ * throwing away the answer they are waiting for is the "the script
+ * restarted because I said hello" complaint in its other form.
+ *
+ * So this is read at exactly one place — the supersession test in
+ * `newerUserTurnWaiting`, where nothing has been spoken yet. Barge-in
+ * keeps `isBareAcknowledgement` and is completely unaffected: a "hello"
+ * over a playing reply still interrupts it, exactly as today.
+ */
+const BARE_GREETING_ONLY =
+  /^(?:(?:hello|hallo|helo|hullo|hi|hii+|hey|haan ji|haanji|hanji|namaste|namaskar|हैलो|हेलो|नमस्ते|नमस्कार)[\s,.!?…।-]*)+$/iu;
+
+/**
+ * A pure phone-answer greeting and nothing else — "Hello", "Hello
+ * hello", "Hi", "Namaste".
+ *
+ * `BARE_GREETING_ONLY` above deliberately includes "haan ji", because
+ * on a call it is said as a greeting as often as an agreement. That is
+ * exactly the ambiguity this narrower table exists to avoid: it is read
+ * at ONE place, the pickup-acknowledgement drop on an identity-first
+ * script (see `pickupAckAllowance`), where the opening line IS a
+ * question and "haan ji" over its tail is the ANSWER (identity-gate
+ * D2/D3 pin that). So this carries the greeting words only — no
+ * affirmation of any kind, so nothing that could answer the question
+ * can ever be dropped by it. "Yes hello" is not matched and reaches the
+ * gate, where the "yes" confirms.
+ *
+ * Duplicated from `BARE_GREETING_ONLY` rather than derived from it for
+ * the reason `ATTENTION_FILLER` gives: the other tables are read by the
+ * backchannel, supersession and attention paths, which this must leave
+ * byte-identical.
+ *
+ * THE SPELLINGS ARE DEEPGRAM'S, NOT THE CALLER'S. The STT stream runs
+ * with `language: "multi"`, and the multilingual model writes a
+ * one-word "hello" in whatever language it guesses for it. Verified on
+ * real calls (2026-09-21, 1,024 stored calls with a caller turn): the
+ * first utterance was "hello" 440 times, and "aló" 31, "¿aló" 12,
+ * "ഹലോ" 7, "allô" 4, "aló aló" / "aló ¿aló" / "hola" 2 each, "ಹಲೋ",
+ * "हॅलो" — every one of them the caller's pickup "hello", and every one
+ * rejected by a Latin-plus-Devanagari table, so the turn fell through
+ * to the identity gate as `unclear` and drew "Sorry — am I speaking
+ * with…?" (call 09b85194: opening → "ഹലോ." → "Sorry —"). So this table
+ * carries the observed renderings plus the same word in the other Indic
+ * scripts the model emits, and the punctuation class admits the Spanish
+ * inverted marks it attaches. Still greeting words only: no affirmation,
+ * no name, no question word, so "Yes, hello", "hello Rohan" and
+ * "Hello, who is this?" all still reach the gate.
+ */
+const PICKUP_GREETING_ONLY =
+  /^[\s,.!?¿¡…।-]*(?:(?:hello|hallo|helo|hullo|hi|hii+|hey|namaste|namaskar|alo|aló|allo|allô|hola|हैलो|हेलो|हॅलो|नमस्ते|नमस्कार|ഹലോ|ഹെലോ|ಹಲೋ|ಹಲೊ|హలో|ஹலோ|હેલો|હલો|ਹੈਲੋ|ਹਲੋ|হ্যালো|হেলো|ہیلو)[\s,.!?¿¡…।-]*)+$/iu;
+
+/**
+ * ---------------- "Hello? Can you hear me?" ----------------
+ *
+ * A caller who says nothing but "Hello?" over a reply that is already
+ * PLAYING is not opening a subject and is not objecting. They are
+ * asking one question — "is this line still alive?" — and the only
+ * answer to it is a short one, said quickly.
+ *
+ * `isBareAcknowledgement` deliberately excludes "hello" and must keep
+ * excluding it: over audio the caller is hearing, it means the line may
+ * have gone bad, so it MUST still interrupt. That judgement is correct
+ * and is not touched here. What was missing is what happens AFTER the
+ * interruption. The reply was cancelled, the part the caller heard was
+ * committed, and the part they did not hear — already computed by
+ * `unspokenTail` — was dropped on the floor the instant the "hello"
+ * became a turn (`resumeAfterStrandedBargeIn` abandons on any turn
+ * material, by design). The next request was then a full generation
+ * over the campaign prompt with no record of where the block stopped,
+ * so the likeliest completion was the block's own opening sentence —
+ * which is the reported "it starts the script again", and once per
+ * "hello".
+ *
+ * So this is a turn CLASS, read in the main loop between the user turn
+ * being committed and the language model being called. It uses the
+ * position the pipeline already computes rather than adding a second
+ * one, it never reaches the model, and it is bounded to the exact case
+ * it is for: an attention check is only ever handled here when a
+ * cancelled reply left an unheard remainder to resume. With no
+ * remainder held, every utterance below takes the normal contextual
+ * path it takes today.
+ *
+ * THE WHOLE UTTERANCE MUST BE THE CHECK. "Hello? What is this about?"
+ * is a real question with a greeting in front of it and is matched by
+ * nothing here, so it is answered by the normal path exactly as it is
+ * today. That distinction is the entire safety case for this class,
+ * which is why it is a closed vocabulary and not a prompt instruction.
+ */
+const ATTENTION_PRESENCE_PHRASES = [
+  // English
+  "can you hear me", "can u hear me", "can you hear", "do you hear me",
+  "are you hearing me", "am i audible", "is my voice audible",
+  "are you there", "are u there", "you there", "still there",
+  "are you still there", "are you listening", "is anyone there",
+  "anybody there", "anyone there", "is somebody there",
+  // Hinglish (transliterated)
+  "sun rahe ho", "sun rahe hain", "sun rahe hai", "aap sun rahe hain",
+  "aap sun rahe ho", "sunai de raha hai", "sunai de rahi hai",
+  "awaaz aa rahi hai", "awaz aa rahi hai", "aawaz aa rahi hai",
+  "suniye", "sun paa rahe hain", "sun pa rahe hain", "hain aap", "aap hain",
+  // Devanagari
+  "सुन रहे हो", "सुन रहे हैं", "आप सुन रहे हैं", "सुनाई दे रहा है",
+  "आवाज़ आ रही है", "आवाज आ रही है", "सुनिए", "आप हैं", "क्या आप हैं",
+];
+
+/**
+ * Words that may surround a presence check without making it something
+ * else — greetings, vocatives and politeness. Nothing here carries a
+ * subject, so an utterance made only of these plus the phrases above
+ * still asks one question and nothing more.
+ *
+ * The greeting alternation deliberately DUPLICATES `BARE_GREETING_ONLY`
+ * rather than being factored out of it. That constant is read by the
+ * backchannel and supersession paths, which this fix must leave
+ * byte-identical; a shared table would mean a future edit here silently
+ * changing those.
+ */
+const ATTENTION_FILLER =
+  "hello|hallo|helo|hullo|hi|hii+|hey|namaste|namaskar|हैलो|हेलो|नमस्ते|नमस्कार" +
+  "|please|kya|क्या|ji|जी|sir|madam|ma'am|aap|आप|to|toh";
+
+/**
+ * The WHOLE utterance is a presence check — a greeting, a "can you hear
+ * me", or the two stacked, and nothing else. Anything with content of
+ * its own falls through to the normal contextual path.
+ */
+const ATTENTION_PRESENCE_ONLY = new RegExp(
+  `^(?:(?:${ATTENTION_FILLER}|${ATTENTION_PRESENCE_PHRASES.join("|")})[\\s,.!?…।-]*)+$`,
+  "iu",
+);
+
+/**
+ * Is this utterance nothing but the caller checking we are still here?
+ *
+ * `BARE_GREETING_ONLY` is reused for the pure-greeting half so a
+ * repeated "hello hello" is read the same way in both places.
+ *
+ * Exported for the same reason `unspokenTail` is: the boundary between
+ * "Hello?" and "Hello? What is this about?" is the entire safety case
+ * for this turn class, and a table is only safe if a test can assert
+ * both sides of it directly.
+ */
+export function isAttentionCheck(text: string): boolean {
+  const trimmed = text.trim();
+  if (trimmed.length === 0) return false;
+  return BARE_GREETING_ONLY.test(trimmed) || ATTENTION_PRESENCE_ONLY.test(trimmed);
+}
+
+/**
+ * One utterance that takes no floor: a bare greeting, a bare
+ * acknowledgement or hesitation sound, or a pure presence check.
+ *
+ * A THIN DISJUNCTION OF THREE EXISTING PREDICATES AND NOTHING ELSE. It
+ * introduces no table, no phrase, no token and no threshold of its own,
+ * so what counts as non-meaningful here is exactly what already counts
+ * as non-meaningful everywhere those three are used.
+ *
+ * Read by `bufferedTurnTakesTheFloor` below and by
+ * `qualifiesForLanguageLock`, which is the same question — "did this
+ * utterance take the floor?" — asked of the language lock. Reusing it
+ * is deliberate: the lock must not introduce a second, drifting
+ * definition of a meaningful utterance.
+ */
+function utteranceTakesNoFloor(text: string): boolean {
+  return BARE_GREETING_ONLY.test(text) || isBareAcknowledgement(text) || isAttentionCheck(text);
+}
+
+/**
+ * Cost bound on the split scan below, in words.
+ *
+ * Purely a bound on work, not a judgement about content: the scan runs
+ * the three predicates over each candidate half, and those are
+ * whole-utterance regexes with a repeated alternation. A merge of
+ * floor-taking-nothing utterances is short by nature ("Umm Hello? Are
+ * you there?" is five words), so anything longer than this is content
+ * and is treated as such — which is the ACTIVE direction of this fix,
+ * never a new way to suppress an interruption. A long PURE presence
+ * check is unaffected: `utteranceTakesNoFloor` is tested on the whole
+ * text before the bound applies.
+ */
+const MAX_BUFFERED_TURN_SPLIT_WORDS = 16;
+
+/**
+ * Does this BUFFERED TURN TEXT take the floor — i.e. may the new
+ * buffered-turn drain check cut a generated reply short for it?
+ *
+ * READ AT EXACTLY ONE CALL SITE: the poll inside `drainPlayback`. It
+ * decides nothing anywhere else in the application, and the behaviour
+ * of every phrase it inspects is unchanged in the STT loop, in
+ * `isBackchannel`, in `handleAttentionCheck`, in `newerUserTurnWaiting`
+ * and in `triggerExternalBargeIn`.
+ *
+ * Exported for the same reason `isAttentionCheck` and `unspokenTail`
+ * are, and for no other: the boundary between "Umm Hello? Are you
+ * there?" and "Umm, I have a question about the workshop." is the
+ * entire safety case for this decision, and it is only safe if a test
+ * can assert both sides of it directly.
+ *
+ * WHY A SPLIT IS NEEDED AT ALL. The three predicates above each ask
+ * "is the WHOLE utterance nothing but X?", and a buffered turn is not
+ * always one utterance: `emitTurnEnd` MERGES turns that endpoint while
+ * nothing is subscribed, joining them with a space, which is precisely
+ * the situation this drain check exists for. So the caller's
+ * timing-less "Umm" and their "Hello? Are you there?" arrive as the
+ * single string "Umm Hello? Are you there?" — two halves that each
+ * take no floor, concatenated into something no whole-utterance
+ * predicate recognises. Reading that as a real contribution cut the
+ * block, which `test:stt-clock` asserts must not happen.
+ *
+ * THE RULE: the text takes no floor if it takes none as a whole, OR if
+ * it can be split at ONE word boundary into two parts that each take
+ * none. That is the exact shape a merge produces, it adds no
+ * vocabulary, and it is strictly more conservative than the
+ * whole-utterance test it wraps — it can only ever DECLINE to
+ * interrupt, never cause one.
+ *
+ * It does not over-decline, which is the half that matters for the
+ * latency fix: "Hello? What is this about?", "Umm, I have a question
+ * about the workshop.", "Yes, I have a question." and "I wanted to ask
+ * about the registration." all still take the floor, because no split
+ * of any of them leaves two floor-taking-nothing halves.
+ */
+export function bufferedTurnTakesTheFloor(text: string): boolean {
+  const trimmed = text.trim();
+  if (trimmed.length === 0) return false;
+  if (utteranceTakesNoFloor(trimmed)) return false;
+
+  const words = trimmed.split(/\s+/u);
+  if (words.length > MAX_BUFFERED_TURN_SPLIT_WORDS) return true;
+  for (let k = 1; k < words.length; k += 1) {
+    if (
+      utteranceTakesNoFloor(words.slice(0, k).join(" ")) &&
+      utteranceTakesNoFloor(words.slice(k).join(" "))
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * "Yes, I can hear you." — the caller answering the acknowledgement's
+ * own question ("Hey, can you hear me okay?"), which is the cue to carry
+ * on from where the reply stopped.
+ *
+ * Read at ONE place and only while an attention episode is open, i.e.
+ * only in the turn immediately after the assistant asked. A bare "yes"
+ * anywhere else is untouched by this and reaches the classifier and
+ * the registration gate exactly as it does today.
+ */
+const HEARING_CONFIRMATION_ONLY = new RegExp(
+  "^(?:(?:yes|yeah|yep|yup|ya|yaa|yes i can|yes i can hear you|i can hear you|" +
+    "i can hear|can hear you|i hear you|loud and clear|clear|perfectly|" +
+    "haan|haa|han|hanji|han ji|haan ji|ji|ji haan|theek hai|thik hai|" +
+    "sun raha hoon|sun rahi hoon|sun raha hu|haan sun raha hoon|" +
+    "sunai de raha hai|awaaz aa rahi hai|aa rahi hai|" +
+    "हाँ|हां|जी|जी हाँ|सुन रहा हूँ|सुन रही हूँ|आवाज़ आ रही है|ठीक है)" +
+    "[\\s,.!?…।-]*)+$",
+  "iu",
+);
+
+/**
+ * "Continue from where you stopped." — the caller, asked whether they
+ * can hear, telling us to carry on. Read ONLY inside an open attention
+ * episode that has a cut-off reply on record (`heldScriptFull`), i.e.
+ * in the turn right after "Hey, can you hear me okay?". Anywhere else
+ * the same words reach the language model exactly as they do today.
+ *
+ * A CONTAINS test, not a whole-utterance one, because the answer to a
+ * yes/no question is routinely prefixed: "Yes, continue from where you
+ * stopped." The context is what bounds it — one turn, one question.
+ *
+ * Exported for the same reason `isHearingCheck` is: a table is only
+ * safe if a test can assert both sides of it directly.
+ */
+const HEARING_CONTINUE_REQUEST = new RegExp(
+  "(?:^|[\\s,.!?…।-])(?:continue|carry on|go on|go ahead|keep going|resume|proceed|" +
+    "where you stopped|where you left|where you were|" +
+    "aage bolo|aage batao|aage boliye|aage bataiye|aage badho|aage badhiye|continue karo|continue kijiye|" +
+    "jahan ruke|jahan the|wahan se|" +
+    "आगे बोलो|आगे बताओ|आगे बोलिए|आगे बताइए|आगे बढ़ो|आगे बढ़िए|जारी रखो|जारी रखें|जहाँ रुके|जहां रुके|वहाँ से|वहां से)" +
+    "(?=$|[\\s,.!?…।-])",
+  "iu",
+);
+export function isContinueRequest(text: string): boolean {
+  const trimmed = text.trim();
+  if (trimmed.length === 0) return false;
+  return HEARING_CONTINUE_REQUEST.test(trimmed);
+}
+
+/**
+ * "Start from the beginning." / "No, I couldn't hear you." — the caller
+ * telling us they missed what was said. Both mean the same thing for
+ * the reply that was cut: say it again from its first word. Read under
+ * exactly the same bound as `HEARING_CONTINUE_REQUEST`, and checked
+ * FIRST, so "continue from the beginning" restarts.
+ *
+ * A bare "no" / "nahi" is included ONLY as a whole utterance: in this
+ * one position it is the direct answer to "can you hear me okay?", and
+ * it means "not well". With any content around it, it is not read here.
+ */
+const HEARING_RESTART_REQUEST = new RegExp(
+  "(?:^|[\\s,.!?…।-])(?:from the beginning|from the start|from the top|start over|start again|" +
+    "once again|once more|repeat|say that again|say it again|come again|" +
+    "couldn'?t hear|could not hear|can'?t hear|cannot hear|didn'?t hear|did not hear|" +
+    "not able to hear|unable to hear|missed that|i missed|what did you say|didn'?t catch|did not catch|couldn'?t catch|" +
+    "shuru se|shuruat se|shuruaat se|dobara|dubara|phir se|fir se|firse|wapas se|repeat karo|repeat kijiye|" +
+    "sunai nahi|sunayi nahi|suna nahi|nahi suna|nahi sun|awaaz nahi|awaz nahi|aawaz nahi|kya bola|kya kaha|" +
+    "शुरू से|शुरुआत से|दोबारा|दुबारा|फिर से|सुनाई नहीं|नहीं सुना|नहीं सुन|आवाज़ नहीं|आवाज नहीं|क्या बोला|क्या कहा)" +
+    "(?=$|[\\s,.!?…।-])",
+  "iu",
+);
+const HEARING_DENIAL_ONLY = /^(?:(?:no|nope|nah|nahi|nahin|नहीं)[\s,.!?…।-]*)+$/iu;
+export function isRestartRequest(text: string): boolean {
+  const trimmed = text.trim();
+  if (trimmed.length === 0) return false;
+  return HEARING_DENIAL_ONLY.test(trimmed) || HEARING_RESTART_REQUEST.test(trimmed);
+}
+
+/**
+ * The one short line an attention check is answered with. Deliberately
+ * fixed text, for the same reason the greeting is: it must be said
+ * within a TTS request rather than a language-model round trip, and it
+ * must never be an opportunity to regenerate the campaign script.
+ *
+ * It is a QUESTION on purpose. Over a reply the caller is talking
+ * across with "Hello? Hello?", the line may have gone bad in either
+ * direction, and asking is what turns the next turn into an
+ * instruction the pipeline can act on without the model: "yes" or
+ * "continue" resumes the unheard tail, "start from the beginning" or
+ * "I couldn't hear you" repeats the cut-off reply (see
+ * `handleAttentionCheck`). Gender-neutral in every language — the
+ * agent persona's gender is configurable, and no fixed line may
+ * assume it.
+ *
+ * Every form survives `toSpokenText` unchanged — none of the leading
+ * fillers, stacked acknowledgements or phrase substitutions in
+ * `speech-formatter.ts` matches any of them — which is what lets the
+ * commit site below compare what was spoken against what was heard.
+ */
+function attentionAcknowledgementFor(language: SupportedLanguage): string {
+  switch (language) {
+    case "hi":
+      return "हाँ, क्या आपको मेरी आवाज़ ठीक से सुनाई दे रही है?";
+    case "hi-en":
+      return "Haan, aap mujhe theek se sun paa rahe ho?";
+    default:
+      return "Hey, can you hear me okay?";
+  }
+}
+
+/**
+ * ---------------- FIX 2: silence and hearing recovery ----------------
+ *
+ * Two gaps, both in the layer that decides what the agent says next:
+ *
+ *   1. A caller who says NOTHING after a block finished heard dead air
+ *      until the campaign watchdog hung up on them 20s later. There was
+ *      no "Hello, are you there?" anywhere: the pipeline awaited the
+ *      next turn indefinitely and the watchdog can only end a call.
+ *
+ *   2. A caller who said only "Hello?" after a block had FINISHED (no
+ *      unheard remainder held) took the normal language-model path, and
+ *      the model — seeing a completed block and a bare greeting — either
+ *      improvised or restarted the script. Real transcripts show both.
+ *
+ * Both are answered here with FIXED lines spoken through the existing
+ * attention utterance path (`speakAttentionUtterance`): no language
+ * model, no script, and the same barge-in-safe THINKING -> SPEAKING ->
+ * drain sequence every other fixed line uses.
+ *
+ * SILENCE RECOVERY runs ONLY while the main loop is idle in LISTENING
+ * awaiting a turn (`waitForTurnDetectorEnd`), which by construction is
+ * after `drainPlayback` has slept out every queued frame of the previous
+ * reply. It never aborts, drains, clears or barges into anything: the
+ * timer is armed on subscription and simply lets the wait return
+ * `SILENCE_ELAPSED` instead of a turn. Any transcript text, any energy
+ * the transport attributes to the caller, and any turn material re-arm
+ * or cancel it — the same `lastConversationActivityAt` stamp the
+ * campaign watchdog already reads.
+ */
+/**
+ * Caller silence, in LISTENING, before each recovery step.
+ *
+ * The ladder is three steps of this interval, each re-armed by the
+ * previous one: prompt 1 ("Hello, are you there?"), prompt 2 ("Hello,
+ * is anyone there?"), then the call ends. At 10s a caller who merely
+ * paused to think — or who put the phone down for a moment — was asked
+ * if they were still there before they had finished deciding, so the
+ * window is 30s.
+ *
+ * ── The watchdog has to outlast this ─────────────────────────────
+ *
+ * `CAMPAIGN_MAX_SILENCE_SECONDS` hangs the call up on silence measured
+ * in exactly the same state (LISTENING) against the same
+ * `lastConversationActivityAt` stamp, so whichever window is shorter is
+ * the only one that ever fires. At the 10s interval the pipeline always
+ * acted first and the 20s watchdog was unreachable; at 30s it would be
+ * the other way round and no recovery prompt would ever be spoken. The
+ * watchdog default moved to 40s with this constant — see
+ * `maxSilenceSeconds` in `dispatch.config.ts`, which carries the same
+ * note. The two are a pair; changing one alone silently disables the
+ * other.
+ */
+const SILENCE_RECOVERY_INTERVAL_MS = 30_000;
+/** Recovery prompts spoken before the call is ended: "are you there?", "is anyone there?". */
+const SILENCE_RECOVERY_MAX_PROMPTS = 2;
+/** `waitForTurnDetectorEnd` returning this means the silence window expired with no turn. */
+const SILENCE_ELAPSED: unique symbol = Symbol("silence-elapsed");
+type SilenceElapsed = typeof SILENCE_ELAPSED;
+
+/**
+ * The n-th (1-based) recovery prompt. Fixed text for the same reason
+ * the attention acknowledgement is: it must never be an opportunity to
+ * regenerate the script, and it is spoken within a TTS request.
+ * Every form survives `toSpokenText` unchanged.
+ */
+function silenceRecoveryPromptFor(language: SupportedLanguage, promptIndex: number): string {
+  if (promptIndex <= 1) {
+    switch (language) {
+      case "hi":
+        return "हैलो, क्या आप वहाँ हैं?";
+      case "hi-en":
+        return "Hello, aap wahan hain?";
+      default:
+        return "Hello, are you there?";
+    }
+  }
+  switch (language) {
+    case "hi":
+      return "हैलो, क्या कोई है?";
+    case "hi-en":
+      return "Hello, koi hai wahan?";
+    default:
+      return "Hello, is anyone there?";
+  }
+}
+
+/**
+ * Said once an attention check with NO remainder to resume has been
+ * acknowledged and the caller has come back — either confirming they
+ * can hear, or checking again. It hands the conversation back to them
+ * without restating a word of the script; whatever they answer is then
+ * taken by the normal contextual path.
+ */
+function hearingFollowUpFor(language: SupportedLanguage): string {
+  switch (language) {
+    case "hi":
+      return "बस कन्फ़र्म करना था कि आप मुझे सुन पा रहे हैं। जो मैंने अभी कहा, वो आपने सुना?";
+    case "hi-en":
+      return "Bas confirm karna tha ki aap mujhe sun paa rahe hain. Jo maine abhi kaha, woh aapne suna?";
+    default:
+      return "I just want to make sure you can hear me. Did you catch what I was saying?";
+  }
+}
+
+/**
+ * ---------------- The agent's OWN backchannel cue ----------------
+ *
+ * A person listening to a long explanation says "mm-hmm" into the
+ * pauses. Nothing in this pipeline did, so a caller two or three
+ * clauses into an answer heard dead air every time they drew breath,
+ * and the ones who noticed said "hello?" — which is the attention
+ * flow, a hearing check, and a wasted turn.
+ *
+ * The cue is a SPEECH-SIDE act, not a semantic turn, and every rule
+ * below exists to keep it that way:
+ *
+ *   - It is CONSIDERED at exactly two instants, both of them existing
+ *     signals that the caller is mid-turn: the turn detector's
+ *     `onContinuationHold` observer (the caller has been quiet for the
+ *     whole adaptive silence window AND their text reads unfinished),
+ *     and a word-bearing final the provider did not endpoint — a
+ *     Deepgram chunk boundary, i.e. the caller still talking. The
+ *     first alone was unreachable on a real call (continuous speech
+ *     never lets the silence window expire), so the second is what
+ *     makes the cue audible; the recent-energy gate below is what
+ *     keeps it landing in a breath rather than on a word.
+ *   - It is played through `playBackchannelAudio`, which hands bytes
+ *     to the transport and touches NOTHING else: no state transition
+ *     (the session stays LISTENING), no `enterSpeaking`, no playback
+ *     accounting (`outboundQueuedMs`, `spokenUtterances`,
+ *     `firstAudioQueuedAtMs`), no turn timing, no `recordAssistantTurn`.
+ *     The language model never sees it and the transcript never
+ *     contains it. Because the session is not SPEAKING, none of the
+ *     SPEAKING-only filters (backchannel, uncorroborated, self-echo)
+ *     can drop a caller segment because of it, and barge-in is
+ *     untouched — there is nothing to barge into.
+ *   - It is deterministic. A short fixed vocabulary per language,
+ *     chosen from the caller's own recent words by `selectBackchannelCue`
+ *     (continuation / following a point / recognition / silence), never
+ *     the same word twice running, synthesised once per call and
+ *     cached. No language-model request.
+ *   - It is rare. Only for a turn that already has
+ *     `BACKCHANNEL_CUE_MIN_WORDS` words (a story, not an answer), at
+ *     most `BACKCHANNEL_CUE_MAX_PER_TURN` per turn, a further one only
+ *     after `BACKCHANNEL_CUE_MIN_NEW_WORDS` of fresh speech and never
+ *     within `BACKCHANNEL_CUE_MIN_GAP_MS` of the last one, never while the
+ *     transport heard loud caller energy in the last few hundred ms,
+ *     never during the greeting, an identity gate, an attention
+ *     episode or a held script position, and only while the main loop
+ *     is idle awaiting a turn (`awaitingTurn`).
+ *
+ * THE ONE HAZARD, and its guard: on a speakerphone our own cue can
+ * come back up the inbound track and be transcribed as the caller
+ * saying "hmm". The existing self-echo guard needs four words and
+ * cannot see a one-word cue, so `isBackchannelCueEcho` drops a bare
+ * one-or-two-word acknowledgement that arrives within
+ * `BACKCHANNEL_CUE_ECHO_WINDOW_MS` of a cue being played — before it
+ * reaches the turn detector. A caller's genuine continuation carries
+ * content and is never matched.
+ *
+ * Nothing about STT, endpointing, turn detection, barge-in, TTS
+ * provider selection or playback architecture changes: the cue is one
+ * extra consumer of an observer hook and one extra writer to a
+ * transport path that already exists.
+ */
+/** A turn must already be this long before a cue is even considered. */
+const BACKCHANNEL_CUE_MIN_WORDS = 8;
+/**
+ * Never more than this many cues into one caller turn. Three is what a
+ * genuinely long answer (60-70 words, ~20s) gets from a human listener
+ * at its natural breath points; a normal sentence never reaches the
+ * second — see `BACKCHANNEL_CUE_MIN_NEW_WORDS`.
+ */
+const BACKCHANNEL_CUE_MAX_PER_TURN = 3;
+/**
+ * A further cue needs SPEECH PROGRESS, not elapsed time: at least this
+ * many new words in the caller's held text since the last cue was
+ * played. The same floor a first cue needs, so each cue acknowledges a
+ * fresh clause and never the one already acknowledged. This, not a
+ * timer, is what spaces the cues to the caller's own rhythm.
+ */
+const BACKCHANNEL_CUE_MIN_NEW_WORDS = 8;
+/**
+ * ...and a safety floor between two cues, derived from the cue itself:
+ * the longest cue audio allowed (`BACKCHANNEL_CUE_MAX_AUDIO_MS`) must
+ * have finished playing AND its echo window
+ * (`BACKCHANNEL_CUE_ECHO_WINDOW_MS`) must have closed before the next
+ * one is even considered, so a cue's own echo can never be the pause
+ * the next cue lands in. At ordinary speech rates eight new words take
+ * about this long anyway, so the two rules agree; this one only bites
+ * on a fast talker.
+ */
+const BACKCHANNEL_CUE_MIN_GAP_MS = 3_500;
+/**
+ * Loud near-end energy this recent means the caller is already
+ * resuming; a cue now would land on their first word.
+ */
+const BACKCHANNEL_CUE_RECENT_ENERGY_MS = 400;
+/** A bare acknowledgement arriving this soon after a cue is read as our own echo. */
+const BACKCHANNEL_CUE_ECHO_WINDOW_MS = 2_000;
+/** Longest a cue is allowed to be — anything longer is a reply, not a cue. */
+const BACKCHANNEL_CUE_MAX_AUDIO_MS = 1_500;
+
+/**
+ * ---------------- WHICH cue, and whether any ----------------
+ *
+ * A listener's acknowledgements are not a playlist. The first version
+ * of this rotated a fixed table (`Mm-hmm → Okay → Right → Hmm`), and on
+ * a long answer that produced the same predictable sequence every
+ * time — audibly a machine. The selection below reads the LOCAL text
+ * instead: the words the caller has said since the last cue, and the
+ * last cue itself. Three conversational functions and one non-choice:
+ *
+ *   - CONTINUATION ("Mm-hmm." / "Hmm."): the default. "I'm listening,
+ *     go on." Chosen when the fresh text carries no stronger signal.
+ *   - FOLLOWING A POINT ("Right."): the fresh text has explanatory or
+ *     sequencing structure — "because", "the problem is", "first...
+ *     then", "kyunki", "matlab". The listener is tracking reasoning.
+ *   - RECOGNITION ("Yeah."): the fresh text states the caller's own
+ *     experience or opinion — "honestly", "I've been", "I feel", "it's
+ *     really hard". Used only in English: the Hindi/Hinglish
+ *     equivalents ("haan") are the same tokens that answer the gate,
+ *     and a cue must never be heard as a yes.
+ *   - SILENCE (`null`): a plain continuation right after a plain
+ *     continuation was acknowledged is left alone — a human does not
+ *     "mm-hmm" at every breath — and a content hash leaves roughly one
+ *     in four remaining plain opportunities silent so the pattern is
+ *     never predictable. A first opportunity in a turn is never made
+ *     silent, so a long answer still reliably gets one acknowledgement;
+ *     text with a stronger signal is never made silent either.
+ *
+ * Whatever is chosen is never the same word as the last cue. When two
+ * signals are present the one that occurs LAST in the fresh text wins,
+ * because it is the one the caller just said.
+ *
+ * Deterministic, table-driven, no model. Every form survives
+ * `toSpokenText` unchanged and is under `SELF_ECHO_MIN_WORDS`, which is
+ * why the echo guard above exists. Silence here changes no timing: the
+ * opportunity was declined, the next one is judged on its own text.
+ */
+export interface BackchannelCueContext {
+  readonly language: SupportedLanguage;
+  /** The caller's words since the last cue was played (or the whole held text for a first cue). */
+  readonly freshText: string;
+  /** The cue last played into this turn, or `null`. */
+  readonly lastCue: string | null;
+  /** Whether the previous opportunity in this turn was left silent. */
+  readonly previousOpportunitySilent: boolean;
+}
+
+/** Explanatory / sequencing language: the caller is making a point the listener is following. */
+const BACKCHANNEL_POINT_MARKERS = [
+  "because", "the reason", "that's why", "thats why", "which means", "what happens is",
+  "the problem is", "the thing is", "the point is", "the issue is", "basically", "for example",
+  "first of all", "firstly", "secondly", "after that", "so that", "in order to",
+  // Hinglish (transliterated) and Devanagari. Bare "then" / "phir" /
+  // "फिर" are deliberately absent: ordinary narration uses them at every
+  // clause, and "Right" there is the generic filler this table must
+  // never produce.
+  "kyunki", "kyonki", "isliye", "is liye", "matlab", "iska matlab", "sabse pehle", "uske baad",
+  "problem yeh hai", "baat yeh hai",
+  "क्योंकि", "इसलिए", "मतलब", "सबसे पहले", "उसके बाद",
+];
+
+/** The caller stating their own experience or view: recognition rather than tracking. */
+const BACKCHANNEL_RECOGNITION_MARKERS = [
+  "honestly", "to be honest", "i think", "i feel", "i believe", "in my experience", "for me",
+  "i've been", "i have been", "i've always", "i have always", "i'm interested", "i am interested",
+  "it's really", "it is really", "really hard", "really difficult", "very difficult", "struggling",
+  "not sure", "not really sure",
+];
+
+/** Default cues per language, two so a plain continuation can alternate rather than repeat. */
+const BACKCHANNEL_CONTINUATION_CUES: Readonly<Record<string, readonly [string, string]>> = {
+  en: ["Mm-hmm.", "Hmm."],
+  hi: ["हम्म।", "अच्छा।"],
+  "hi-en": ["Hmm.", "Achha."],
+};
+const BACKCHANNEL_POINT_CUE: Readonly<Record<string, string>> = { en: "Right.", hi: "सही।", "hi-en": "Sahi." };
+/** English only — see the block above. */
+const BACKCHANNEL_RECOGNITION_CUE: Readonly<Record<string, string>> = { en: "Yeah." };
+
+/** Roughly one in four plain continuations is left silent; which ones depends on the words, not on a counter. */
+const BACKCHANNEL_SILENCE_MODULUS = 4;
+
+function lastMarkerOffset(normalised: string, markers: readonly string[]): number {
+  let latest = -1;
+  for (const marker of markers) {
+    const at = normalised.lastIndexOf(` ${marker} `);
+    if (at > latest) latest = at;
+  }
+  return latest;
+}
+
+/** A small stable string hash — deterministic across runs, so the same words always decide the same way. */
+function contentHash(text: string): number {
+  let hash = 0;
+  for (let i = 0; i < text.length; i += 1) hash = (hash * 31 + text.charCodeAt(i)) >>> 0;
+  return hash;
+}
+
+/**
+ * The one place a cue's words are chosen. Pure; exported so the
+ * invariants — never the same word twice running, silence is a real
+ * outcome, content decides — can be asserted without a call.
+ */
+export function selectBackchannelCue(context: BackchannelCueContext): string | null {
+  const continuation = BACKCHANNEL_CONTINUATION_CUES[context.language] ?? BACKCHANNEL_CONTINUATION_CUES["en"]!;
+  const pointCue = BACKCHANNEL_POINT_CUE[context.language] ?? BACKCHANNEL_POINT_CUE["en"]!;
+  const recognitionCue = BACKCHANNEL_RECOGNITION_CUE[context.language];
+  const normalised = ` ${context.freshText.toLowerCase().replace(/[^\p{L}\p{M}\p{N}'’\s]/gu, " ").replace(/\s+/g, " ").trim()} `;
+
+  const pointAt = lastMarkerOffset(normalised, BACKCHANNEL_POINT_MARKERS);
+  const recognitionAt = recognitionCue === undefined ? -1 : lastMarkerOffset(normalised, BACKCHANNEL_RECOGNITION_MARKERS);
+
+  // The most recent signal wins; a cue never repeats the last one. If
+  // the only signal present is the word just said, fall through to a
+  // plain continuation rather than say it twice.
+  const signalled: string[] = [];
+  if (recognitionAt > pointAt) {
+    signalled.push(recognitionCue!);
+    if (pointAt >= 0) signalled.push(pointCue);
+  } else if (pointAt >= 0) {
+    signalled.push(pointCue);
+    if (recognitionAt >= 0 && recognitionCue !== undefined) signalled.push(recognitionCue);
+  }
+  const chosen = signalled.find((cue) => cue !== context.lastCue);
+  if (chosen !== undefined) return chosen;
+
+  // Plain continuation. A human does not acknowledge every breath: right
+  // after a plain acknowledgement the next plain opportunity is left
+  // silent, and a content hash leaves roughly one in four of the rest
+  // silent — never the first of a turn.
+  // Never two silences running either: a caller who has already been
+  // left one breath unacknowledged gets the next one.
+  if (context.previousOpportunitySilent) {
+    const [p, s] = continuation;
+    return context.lastCue === p ? s : p;
+  }
+  const lastWasContinuation = context.lastCue !== null && continuation.includes(context.lastCue);
+  if (lastWasContinuation) return null;
+  if (context.lastCue !== null && contentHash(normalised) % BACKCHANNEL_SILENCE_MODULUS === 0) return null;
+  const [primary, secondary] = continuation;
+  return context.lastCue === primary ? secondary : primary;
+}
+
+/**
+ * ---------------- The scripted closing after a registration ---------
+ *
+ * Once a registration is confirmed and the confirmation has been
+ * spoken, the call used to be ended by the campaign watchdog on its
+ * very next tick — before the person could say "okay, thank you". The
+ * campaign layer now HOLDS that hangup and waits for the person (see
+ * `closingResponsePending` in `call-runner.ts`), and asks this
+ * pipeline, through `armScriptedClosing`, to answer their closing
+ * pleasantry with ONE short fixed goodbye rather than a generated
+ * reply. Fixed, for the same reason the hearing lines are: the goodbye
+ * must never be an opportunity to restate the pitch, re-ask the gate or
+ * ask anything at all, and a generated line cannot promise that.
+ *
+ * Only a BARE closing acknowledgement is answered this way — the whole
+ * utterance is thanks, an acknowledgement, a goodbye, or a courtesy
+ * word, and nothing else. Anything with content — a question ("what
+ * time is it?"), an objection, a retraction ("no, cancel it") — takes
+ * the normal contextual path exactly as it does today, and the campaign
+ * layer's existing question guards keep the line open for it. The
+ * vocabulary therefore contains NO negation of any kind.
+ */
+const CLOSING_ACKNOWLEDGEMENT_TOKENS = [
+  // Thanks.
+  "thank you", "thanks", "thank you so much", "thanks a lot", "thank you very much",
+  "many thanks", "thanks so much", "thankyou",
+  "dhanyavaad", "dhanyavad", "dhanyawad", "shukriya", "bahut shukriya", "bahut dhanyavaad",
+  "धन्यवाद", "शुक्रिया", "बहुत धन्यवाद",
+  // Goodbyes.
+  "bye", "bye bye", "goodbye", "good bye", "see you", "see you there", "take care",
+  "have a good day", "have a great day", "have a nice day",
+  "phir milenge", "milte hain", "फिर मिलेंगे",
+  // Positive closers that carry no proposition of their own.
+  "perfect", "great", "wonderful", "awesome", "lovely", "sounds good", "good",
+  "done", "noted", "okay done", "cool", "super", "excellent", "nice", "alright",
+  "badhiya", "bahut badhiya", "bahut achha", "bahut accha", "sahi hai", "chalo", "chaliye",
+  "बढ़िया", "बहुत बढ़िया", "बहुत अच्छा", "चलो", "चलिए",
+  // Courtesy words that ride along with any of the above.
+  "ji", "sir", "madam", "ma'am", "maam", "please", "okay then", "ok then", "then",
+  "जी", "सर", "मैडम",
+];
+
+/** Punctuation that may sit between closing words without changing what they are. */
+const CLOSING_PUNCTUATION = /[,.!…।\-–—"'’()]/gu;
+
+/** The closing phrases as word arrays, longest first, so a greedy match prefers "thank you so much" to "thank you". */
+const CLOSING_PHRASES: readonly (readonly string[])[] = CLOSING_ACKNOWLEDGEMENT_TOKENS.map((phrase) =>
+  phrase.toLowerCase().replace(CLOSING_PUNCTUATION, "").split(/\s+/).filter((w) => w.length > 0),
+).sort((a, b) => b.length - a.length);
+
+/** Longer than this is a sentence, not a pleasantry. */
+const CLOSING_ACKNOWLEDGEMENT_MAX_WORDS = 8;
+
+/**
+ * Is the WHOLE utterance the person closing the conversation — a bare
+ * acknowledgement, a thank-you, a goodbye, or a courtesy stack of them
+ * ("Okay, thank you.", "Great, thanks ji.", "Theek hai, bye.")?
+ *
+ * Read word by word: at every position the utterance must continue
+ * with either a phrase from the closing table (longest first) or a
+ * single word `isBareAcknowledgement` already knows. Anything else —
+ * one word of content — fails it, so "thank you, but I have a
+ * question" and "okay, and what about the link" never match.
+ *
+ * A question mark anywhere is disqualifying: a question is never a
+ * closing. Negations are absent from the table by construction, so
+ * "no thanks" and "nahi" fall through to the contextual path, where
+ * the classifier and the campaign layer already read them.
+ *
+ * Exported so the boundary can be asserted by a test.
+ */
+export function isClosingAcknowledgement(text: string): boolean {
+  const trimmed = text.trim();
+  if (trimmed.length === 0 || trimmed.includes("?")) return false;
+  const words = trimmed
+    .toLowerCase()
+    .replace(CLOSING_PUNCTUATION, " ")
+    .split(/\s+/)
+    .filter((word) => word.length > 0);
+  if (words.length === 0 || words.length > CLOSING_ACKNOWLEDGEMENT_MAX_WORDS) return false;
+
+  // Every way of segmenting the words into closing phrases and bare
+  // acknowledgements is tried, not just the greedy one: "haan ji theek
+  // hai bye" must not have "haan ji theek" taken as one acknowledgement
+  // and "hai" left stranded. At most eight words, so this is cheap.
+  const reachable = new Array<boolean>(words.length + 1).fill(false);
+  reachable[0] = true;
+  for (let at = 0; at < words.length; at += 1) {
+    if (!reachable[at]) continue;
+    for (const phrase of CLOSING_PHRASES) {
+      if (phrase.length === 0 || at + phrase.length > words.length) continue;
+      if (phrase.every((word, offset) => words[at + offset] === word)) reachable[at + phrase.length] = true;
+    }
+    // The shared acknowledgement table has multi-word entries of its
+    // own ("theek hai", "haan ji", "got it", "samajh gaya").
+    for (let span = 1; span <= Math.min(3, words.length - at); span += 1) {
+      if (isBareAcknowledgement(words.slice(at, at + span).join(" "))) reachable[at + span] = true;
+    }
+  }
+  return reachable[words.length] === true;
+}
+
+/**
+ * The one fixed goodbye. Short, asks nothing, restates nothing, and
+ * ends on a sign-off the campaign layer's `agentClosedIn` already
+ * recognises. Every form survives `toSpokenText` unchanged — which is
+ * why none of them opens with "Okay, thank you": the speech formatter
+ * collapses that stack to a bare "Okay." on its way to the synthesiser,
+ * and the thanks is the part that must be heard.
+ */
+function scriptedClosingFor(language: SupportedLanguage): string {
+  switch (language) {
+    case "hi":
+      return "शुक्रिया। आपका दिन शुभ हो। बाय!";
+    case "hi-en":
+      return "Thank you. Aapka din shubh ho. Bye!";
+    default:
+      return "Thank you. Have a great day. Bye!";
+  }
+}
+
+/**
+ * ---------------- The hearing check that never ends ----------------
+ *
+ * Every branch of `handleAttentionCheck` that speaks a FIXED line
+ * (`attentionAcknowledgementFor`, `hearingFollowUpFor`) answers the
+ * caller without saying anything new: no script content, no
+ * language-model request, nothing that advances the call. That is
+ * exactly right once or twice — and it is a trap, because each of those
+ * lines is itself a question, and the caller's answer to it is another
+ * presence check, which the same branches answer with another fixed
+ * line. Nothing in the handler counted them, so:
+ *
+ *   caller "Hello? Hello?"  -> "Hey, can you hear me okay?"
+ *   caller "Hello? Hello?"  -> "Hey, can you hear me okay?"          (before a block)
+ *   caller "Hello?"         -> "I just want to make sure..."          (after one)
+ *   caller "Hello?"         -> "Hey, can you hear me okay?"
+ *   ... for as long as the caller keeps saying it
+ *
+ * — the caller-sustainable hearing loop the audit records as an open
+ * gap. It is sustainable from BOTH sides: the fixed lines share their
+ * vocabulary with `ATTENTION_PRESENCE_PHRASES`, so a fragment of our
+ * own line coming back up the inbound track ("can you hear", three
+ * words — under `SELF_ECHO_MIN_WORDS`, so the self-echo guard may not
+ * judge it at all) is a presence check too, and the agent then answers
+ * its own echo, forever, with no caller involved.
+ *
+ * The bound is therefore on the AGENT'S OWN CONTENTLESS LINES, not on
+ * the caller's utterances and not on the echo guard — the one thing
+ * both failure modes have in common is that the agent said a fixed
+ * hearing line and nothing changed. Two of them is the most any
+ * existing path produces (acknowledgement, then one follow-up), so
+ * this caps the third and every one after it; the turn takes the
+ * normal contextual path instead, which is where a caller who still
+ * cannot hear after two attempts belongs.
+ *
+ * RESUME and REPEAT are deliberately NOT counted, and reset the counter
+ * WHEN THEY ACTUALLY DELIVERED SOMETHING: both speak the interrupted
+ * reply itself, which is script content the caller asked for. One that
+ * was cut off before any of its audio reached the caller delivered no
+ * script content at all, so it does not reset the counter and this cap
+ * is what bounds it — see the note at the RESUME branch in
+ * `handleAttentionCheck`.
+ * The counter is reset by any turn that is not answered with a fixed
+ * line — i.e. by the caller contributing something meaningful — so a
+ * hearing check later in the same call is answered normally again.
+ */
+const MAX_HEARING_LINES_WITHOUT_PROGRESS = 2;
+
+/**
+ * A presence check STRICT enough to answer when nothing is held.
+ *
+ * `isAttentionCheck` reuses `BARE_GREETING_ONLY`, which deliberately
+ * contains "haan ji" (a phone-answer acknowledgement), and the
+ * `ATTENTION_FILLER` alternation, which lets a lone "ji" or "please"
+ * through. Both are fine when a cancelled reply's remainder is held —
+ * the only question there is "resume or not". They are NOT fine after a
+ * block has finished: a lone "haan ji" to the closing question is the
+ * caller's answer and must reach the classifier through the language
+ * model exactly as it does today. So the no-remainder branch requires
+ * the utterance to be made ONLY of greetings and presence phrases (plus
+ * the filler), and to contain at least one real greeting or presence
+ * phrase — "haan ji", "ji", "please" alone never qualify.
+ *
+ * Exported so a test can assert both sides of the boundary directly.
+ */
+const HEARING_GREETINGS =
+  "hello|hallo|helo|hullo|hi|hii+|hey|namaste|namaskar|हैलो|हेलो|नमस्ते|नमस्कार";
+const HEARING_PRESENCE_REQUIRED = new RegExp(
+  `(?:^|[\\s,.!?…।-])(?:${HEARING_GREETINGS}|${ATTENTION_PRESENCE_PHRASES.join("|")})(?=$|[\\s,.!?…।-])`,
+  "iu",
+);
+export function isHearingCheck(text: string): boolean {
+  const trimmed = text.trim();
+  if (trimmed.length === 0) return false;
+  if (!ATTENTION_PRESENCE_ONLY.test(trimmed)) return false;
+  // "haan ji" is in `BARE_GREETING_ONLY` but not in the filler or the
+  // presence phrases, so it fails `ATTENTION_PRESENCE_ONLY` above unless
+  // stacked with a real greeting — and even then must contain one.
+  return HEARING_PRESENCE_REQUIRED.test(trimmed);
+}
+
+/**
+ * A hearing check that is unmistakable even before any block has been
+ * spoken: an explicit presence phrase ("can you hear me", "are you
+ * there"), or the greeting said more than once ("Hello. Hello hello").
+ *
+ * Needed because a SINGLE "Hi." / "Hello." right after our opening line
+ * is the caller answering the phone, not a hearing problem — and the
+ * right answer to it is the pitch, which the contextual path already
+ * gives (real transcript, 2026-08-30 14:32 IST). Only after a block has
+ * been delivered does a lone "Hello?" mean "I did not hear that".
+ *
+ * Exported for the same reason `isHearingCheck` is.
+ */
+const HEARING_PRESENCE_PHRASE = new RegExp(
+  `(?:^|[\\s,.!?…।-])(?:${ATTENTION_PRESENCE_PHRASES.join("|")})(?=$|[\\s,.!?…।-])`,
+  "iu",
+);
+const HEARING_GREETING_TOKEN = new RegExp(`(?:^|[\\s,.!?…।-])(?:${HEARING_GREETINGS})(?=$|[\\s,.!?…।-])`, "giu");
+export function isEmphaticHearingCheck(text: string): boolean {
+  if (!isHearingCheck(text)) return false;
+  if (HEARING_PRESENCE_PHRASE.test(text)) return true;
+  const greetings = text.match(HEARING_GREETING_TOKEN);
+  return greetings !== null && greetings.length >= 2;
+}
+
+/**
+ * The greeting said more than once in ONE utterance — "Hello? Hello?",
+ * "hello hello". The second half of `isEmphaticHearingCheck`, on its
+ * own: a caller repeating themselves to get a response, with no
+ * presence question attached. Read by `bufferedTurnDemandsAttention`.
+ * Exported for the same reason the other vocabulary predicates are.
+ */
+export function isRepeatedGreeting(text: string): boolean {
+  if (!isHearingCheck(text)) return false;
+  const greetings = text.match(HEARING_GREETING_TOKEN);
+  return greetings !== null && greetings.length >= 2;
+}
+
+/**
+ * The WHOLE utterance is a greeting and nothing else — "Hello.",
+ * "Hi?", "Hey", "Hello hello" — with no presence question attached and
+ * no content of its own.
+ *
+ * The one input to the cross-turn repetition rule (see
+ * `lastTurnWasBareGreeting`): a turn that is this, followed by another
+ * turn that is a hearing check, is the caller repeating themselves
+ * because they did not hear us.
+ *
+ * Built from the predicates that already exist and adds no vocabulary
+ * of its own — `isHearingCheck` for "nothing but greetings, presence
+ * phrases and filler", minus the utterances that carry an explicit
+ * presence phrase, which are unmistakable on their own and never need a
+ * second turn to be believed. A lone "haan ji", "ji" or "please" is not
+ * this either, because `isHearingCheck` already requires a real
+ * greeting or presence phrase to be present.
+ *
+ * Exported for the same reason the other vocabulary predicates are: the
+ * boundary is the safety case, and a test must be able to assert both
+ * sides of it directly.
+ */
+export function isBareGreetingTurn(text: string): boolean {
+  const trimmed = text.trim();
+  if (trimmed.length === 0) return false;
+  if (!isHearingCheck(trimmed)) return false;
+  return !HEARING_PRESENCE_PHRASE.test(trimmed);
+}
+
+/**
+ * ---------------- Reached a machine, not a person ----------------
+ *
+ * A voicemail greeting opens the media stream exactly like a human
+ * answer does, so the pipeline used to start its script and deliver the
+ * whole pitch to an answering machine — a call paid for, a script
+ * spent, and a transcript of a recording for the classifier to read.
+ *
+ * There is no carrier verdict to consult (`external-limits.ts` records
+ * answering-machine detection as unavailable on both providers), so the
+ * only signal available is the one thing a machine reliably does: it
+ * says machine things. `voicemail-detection.ts` owns that vocabulary —
+ * the SAME table the outcome classifier has always used to keep a
+ * voicemail from being read as a registration.
+ *
+ * ONLY EVER A HEURISTIC, so the window it may fire in is deliberately
+ * narrow, and both bounds are load-bearing:
+ *
+ *   - `turnIndex === 0` — nothing the agent said has been answered yet.
+ *     A machine never answers, so it never leaves this window; a person
+ *     who has had one exchange with the agent can never be silenced by
+ *     this, whatever they go on to say.
+ *   - the time window — a machine's greeting is the FIRST thing on the
+ *     line and is over in seconds. Later in a call, "leave a message"
+ *     is a person talking about their phone.
+ *
+ * A false positive costs one attempt and nothing else: the call is
+ * classified `no_engagement`, which for a registration campaign is NOT
+ * terminal — `planRegistrationRetry` schedules the contact again.
+ */
+const VOICEMAIL_DETECTION_WINDOW_MS = 20_000;
+/**
+ * Cap on the early transcript held for matching. A marker phrase is at
+ * most a few words, so this only has to span the seam between two
+ * finals — it is not a buffer of the call.
+ */
+const VOICEMAIL_TRANSCRIPT_CAP = 400;
+
+/**
+ * ---------------- Is this the CALLER interrupting us? ----------------
+ *
+ * A transcript arriving while the assistant is speaking is not, on its
+ * own, evidence that the caller is talking over it. Deepgram is handed
+ * one mixed mono telephony channel and transcribes everything on it:
+ * a television, a second person across the room, a shop counter, and
+ * the echo of our own audio out of the caller's earpiece. Every one of
+ * those used to trigger a barge-in, which aborts the LLM/TTS stream and
+ * drops the whole outbound queue — so the assistant fell silent
+ * mid-sentence for a voice that was never speaking to it. That is the
+ * reported "it recognises background voices and goes quiet" behaviour.
+ *
+ * Nothing in a transcript can separate those from the caller. What
+ * separates them is LOUDNESS: the near-end speaker's mouth is
+ * centimetres from the microphone and everything else in the room is
+ * metres away. The transports already measure that (see the loud gate
+ * in `vad-segmenter.ts`) and stamp `record.lastCallerEnergyAt`, so a
+ * barge-in now needs BOTH signals to agree — words from Deepgram, and
+ * loud near-end speech from the transport at the same moment.
+ *
+ * A transcript that is NOT corroborated is treated exactly like a
+ * backchannel: ignored, so the assistant finishes its sentence. This
+ * cannot strand a soft-spoken caller, because the whole test only
+ * applies while the assistant is SPEAKING — every segment that arrives
+ * while it is LISTENING or THINKING feeds the turn detector completely
+ * ungated, exactly as before.
+ *
+ * ---------------- KNOWN AND ACCEPTED LIMITATION ----------------
+ *
+ * SOFT CALLER SPEECH OVER A PLAYING REPLY IS DISCARDED, and there is
+ * no signal at this layer that can recover it without re-opening the
+ * false interruption this gate exists to stop. Stated here rather
+ * than left to be rediscovered:
+ *
+ *   WHAT HAPPENS. A caller who speaks QUIETLY over the assistant
+ *   produces words from the STT and no loud near-end run from the
+ *   transport, so `lastCallerEnergyAt` is stale, this returns false,
+ *   and the segment is dropped without a barge-in and without
+ *   reaching the turn detector. Their interruption is not acted on
+ *   until the reply ends — at which point they are still talking and
+ *   everything from there is their turn as usual, so nothing is lost
+ *   permanently; what is lost is the interruption.
+ *
+ *   WHY IT IS NOT SIMPLY FIXED. Every candidate signal was checked
+ *   against the question "does this separate a quiet CALLER from a
+ *   television, a second person in the room, or unrelated room
+ *   speech?", and none of them does:
+ *
+ *     - the transport's soft threshold (`speechThreshold` /
+ *       `noteCallerSpeech`) is DELIBERATELY permissive — it is the
+ *       liveness signal that stops the campaign watchdog hanging up
+ *       on a soft-spoken caller — and `vad-segmenter.ts` says in as
+ *       many words that it cannot tell the caller from the room.
+ *       Admitting it here is the banned change with a different name.
+ *     - `segment.confidence` is already the second filter here, and
+ *       it measures the same acoustic quality the energy gate does:
+ *       quiet near-end speech and distant background speech both
+ *       score low, so it cannot separate them.
+ *     - there is no per-speaker signal to fall back on. The leg
+ *       carries ONE mixed mono channel (measured: `INBOUND
+ *       (caller)=7116, distinctTrackValues=1`), and `TranscriptSegment`
+ *       carries no speaker, channel or diarization field.
+ *     - `isSelfEcho` below separates OUR audio from everything else,
+ *       which is a different question and already answered.
+ *
+ *   WHAT WOULD BE WORSE. Feeding uncorroborated speech to the
+ *   detector, or lowering either threshold, restores the reported
+ *   "a background voice interrupts it and it goes quiet" behaviour —
+ *   a television cutting the assistant off mid-sentence for nobody.
+ *   A missed quiet interruption costs the rest of one reply; a false
+ *   one costs the reply, the LLM/TTS stream, the whole outbound
+ *   queue, and re-speaks the block the caller had already heard.
+ *
+ *   Read-only audit 2026-09-23 (H7). Closing this needs a signal
+ *   that does not exist at this layer — near/far discrimination or
+ *   speaker identity from the transport or the STT — not a rule
+ *   here.
+ */
+const BARGE_IN_ENERGY_WINDOW_MS = 2_000;
+/**
+ * Confidence floor for a segment allowed to interrupt.
+ *
+ * Distant and overlapped speech scores markedly lower than near-end
+ * speech, so this is a second, independent filter on the same class of
+ * false interruption. Applied ONLY when the provider reports a non-zero
+ * confidence: `0` means "not reported" (batch results, providers with
+ * no such field) and must not be read as "no confidence at all".
+ *
+ * Deliberately low. Deepgram runs here in `multi` language mode for
+ * Hinglish code-switching, where genuine near-end speech scores lower
+ * than it would on monolingual audio, and blocking a real interruption
+ * is a worse failure than allowing a marginal one — the energy gate
+ * above is what does the heavy lifting.
+ */
+const BARGE_IN_MIN_CONFIDENCE = 0.4;
+
+/**
+ * ---------------- SELF-ECHO: our own voice, transcribed ----------------
+ *
+ * On the live Vobiz leg the caller's handset feeds our own outbound audio
+ * back up the inbound track. Confirmed empirically, not assumed: a whole
+ * call tallied `INBOUND (caller)=7116, distinctTrackValues=1`, so there is
+ * no outbound or mixed track to filter — the echo IS the caller's track,
+ * acoustically, out of their earpiece or speakerphone. Deepgram
+ * transcribes it exactly like speech, and the transcript arrives as a
+ * caller turn the assistant then answers:
+ *
+ *   assistant: "You're welcome. What would you like to talk about?"
+ *   "caller":  "You are welcome. What would you like to talk..."
+ *
+ * The three gates that already exist cannot catch it. The near-end RMS
+ * gate cannot: speakerphone echo is genuinely loud. `isBackchannel`
+ * cannot: the text is not an acknowledgement. And `interruptionCorroborated`
+ * is never even asked, because the echo's Deepgram final lands ~0.4-1.7s
+ * after the words (`endpointing=400`, `utterance_end_ms=1000`), by which
+ * time `drainPlayback` has left SPEAKING and `spokeOverTheAssistant` is
+ * false — so the whole echoed sentence walks straight into the turn
+ * detector.
+ *
+ * WHY WORD-PAIR OVERLAP AND NOT SIMPLE CONTAINMENT. Every word a caller
+ * is likely to say back — "billing", "my account" — appears in the reply
+ * they are answering, so unigram containment would suppress real turns.
+ * Bigrams require word ORDER to agree, which is the property an echo has
+ * and a genuine answer does not: "yes I want to know about billing"
+ * scores 0 against a reply that contains the word "billing".
+ *
+ * Deliberately survives its own thresholds: the two-word echo
+ * ("Nice. Thanks." for "Nice, thanks.") is NOT suppressed, because
+ * nothing distinguishes it from a real two-word caller turn. A missed
+ * echo costs one confused exchange; a suppressed caller turn loses their
+ * words entirely, and that is the worse failure.
+ */
+/**
+ * Words a segment needs before it is eligible to be judged an echo at
+ * all. Four is what keeps every short caller utterance — "wait", "stop",
+ * "hello", "yes", "no", "billing", "haan ji" — categorically
+ * unsuppressible, whatever the assistant happens to be saying.
+ */
+const SELF_ECHO_MIN_WORDS = 4;
+/**
+ * Fraction of the segment's word pairs that must also appear, in the same
+ * order, in the audio the caller has actually heard. 0.7 admits the
+ * mis-recognitions a real acoustic path produces — "I'm here" heard back
+ * as "In here", "You're" as "You are" — while a genuine reply that merely
+ * reuses the reply's vocabulary scores near zero.
+ */
+const SELF_ECHO_MIN_BIGRAM_OVERLAP = 0.7;
+/**
+ * Absolute floor on matched pairs, so a short segment cannot clear the
+ * ratio above on a one- or two-pair coincidence.
+ */
+const SELF_ECHO_MIN_MATCHED_BIGRAMS = 3;
+
+/**
+ * ---------------- PHASE 1.3: THE LANGUAGE LOCK ----------------
+ *
+ * How many words the caller's utterance must have before the call's
+ * language may be FIXED to it.
+ *
+ * DERIVED FROM `SELF_ECHO_MIN_WORDS`, not chosen independently, and the
+ * derivation is the safety case. Four words is the floor below which
+ * the self-echo guard is not permitted to judge a segment at all (see
+ * the constant above — that floor is deliberate and is not being
+ * touched). So a shorter utterance is exactly one the pipeline CANNOT
+ * rule out as our own audio coming back up the inbound track. Locking
+ * the whole call's language to a three-word fragment of our own
+ * English reply is the worst failure this feature can produce, and
+ * tying the two constants together is what makes it unreachable: any
+ * utterance long enough to lock on is long enough to have been checked
+ * for echo first.
+ *
+ * It also gives the detector's ratios something to be a ratio OF. Below
+ * four words `HINGLISH_MARKER_RATIO` (0.2) cannot be distinguished from
+ * "one marker word", and a lone "Sorry?" or "One minute" — which every
+ * Hindi speaker on a phone call says in English — would otherwise be
+ * enough to lock the call into English.
+ *
+ * Counted with `selfEchoWords`, the same tokenizer the echo guard uses,
+ * so "at least as many words as the echo guard needs" is exact rather
+ * than approximate.
+ *
+ * COST OF BEING WRONG IN THIS DIRECTION IS ZERO. An utterance that does
+ * not qualify does not lock and does not change anything: the turn is
+ * detected, hinted and answered exactly as it is today, and the next
+ * qualifying turn takes the lock instead.
+ */
+const LANGUAGE_LOCK_MIN_WORDS = SELF_ECHO_MIN_WORDS;
+
+/**
+ * The identity question, asked a SECOND time.
+ *
+ * Not the bare line again: hearing the identical sentence twice is how
+ * a caller works out they are talking to a machine. One short natural
+ * lead-in, then the same question — which is what a person does when
+ * their question got lost.
+ */
+function identityReAskFor(language: SupportedLanguage, line: string): string {
+  switch (language) {
+    case "hi":
+      return `माफ़ कीजिए — ${line}`;
+    case "hi-en":
+      return `Sorry — ${line}`;
+    default:
+      return `Sorry — ${line}`;
+  }
+}
+
+/**
+ * ...and what is said when it was never answered. Short, warm, and it
+ * promises nothing: the call ends here rather than going on to somebody
+ * who has not said who they are.
+ */
+function identityGiveUpFor(language: SupportedLanguage): string {
+  switch (language) {
+    case "hi":
+      return "कोई बात नहीं, मैं बाद में कॉल कर लूँगी. धन्यवाद!";
+    case "hi-en":
+      return "Koi baat nahi, main baad mein call kar lungi. Thank you!";
+    default:
+      return "No problem, I'll try again later. Thank you!";
+  }
+}
+
+/**
+ * Did the campaign's OPENING LINE already ask who picked up?
+ *
+ * A script may introduce the agent first and leave the identity
+ * question to the gate (`registration v1`-`v7`), or it may open WITH the
+ * question and introduce the agent afterwards (`registration v8`, the
+ * approved identity-first flow). Both use the same gate, the same
+ * classifier and the same states — the only difference is whether the
+ * question has already been spoken by the time the first caller turn
+ * arrives.
+ *
+ * That is exactly the difference between `unasked` and `outstanding`,
+ * which the gate already distinguishes, so this decides which of the two
+ * the call starts in and nothing else. Without it an identity-first
+ * script asks the caller "Am I speaking with ...?" twice in a row: once
+ * as the greeting, then again as the gate's first act.
+ *
+ * READ ONCE, in the constructor. `buildCampaignContext` builds both
+ * strings, from templates that live next to each other in that one file,
+ * so they agree by construction rather than by luck — and v8's
+ * `openingLineTemplate` carries a comment saying so. Compared on letters
+ * and digits only (`\p{M}` kept, so Devanagari matras survive) rather
+ * than byte for byte, so punctuation and spacing around the question
+ * cannot break the match.
+ *
+ * Conservative in the safe direction: if this returns false for a script
+ * that DOES ask, the caller hears the question twice — annoying, not
+ * unsafe. It can never open the gate, skip the question, or shorten the
+ * campaign's path to a pitch.
+ */
+function openingLineAsksIdentity(openingLine: string | undefined, identityLine: string): boolean {
+  if (openingLine === undefined) return false;
+  const flatten = (text: string): string =>
+    text.toLowerCase().replace(/[^\p{L}\p{N}\p{M}]+/gu, " ").trim();
+  const opening = flatten(openingLine);
+  const identity = flatten(identityLine);
+  return identity.length > 0 && opening.includes(identity);
+}
+
+/**
+ * How many times the identity question may be RE-ASKED before the call
+ * is given up on.
+ *
+ * The gate never opens on its own, so something has to bound it: a
+ * caller who answers "kya chahiye?" to every ask would otherwise be
+ * asked forever. Three asks in total (the first, then two more) is what
+ * a person would do before concluding they cannot establish who they
+ * are talking to, and the call is then closed rather than pitched —
+ * which is the whole point of the gate.
+ */
+const MAX_IDENTITY_REASKS = 2;
+
+/**
+ * ---------------- The STT stream clock can rewind ----------------
+ *
+ * The interruption test below asks "did these words happen AFTER I
+ * started speaking", and answers it by comparing Deepgram's word times
+ * (`segment.endedAtMs`) against `speakingStartedAtStreamMs`, a snapshot
+ * of `inboundStreamMs`. That comparison is only meaningful while the
+ * two are the same clock, and they are not:
+ *
+ *   - `inboundStreamMs` counts every byte handed to the STT provider
+ *     and is monotonic for the WHOLE CALL.
+ *   - `segment.endedAtMs` is measured from the start of the audio the
+ *     provider's CURRENT WEBSOCKET has received.
+ *
+ * `@deepgram/sdk` hands back a reconnecting socket, and the provider
+ * deliberately keeps the transcript stream alive across a reconnect
+ * (ending it on the first blip used to kill the rest of the call). A
+ * reconnect opens a NEW Deepgram stream, so its word clock restarts at
+ * zero while `inboundStreamMs` keeps climbing. From that instant
+ * `endedAtMs` is a small number and the snapshot is a large one, the
+ * test is false for every segment, and BARGE-IN IS DEAD FOR THE REST
+ * OF THE CALL — silently, because a segment that fails the test is not
+ * logged: it simply falls through to the turn detector, so the caller
+ * is still transcribed and still answered, just never able to
+ * interrupt. "Deepgram hears my 'hello?' and the agent talks over it."
+ *
+ * So a rewind is detected and the offset between the two clocks is
+ * recorded, rather than the reported time being trusted raw. On a call
+ * that never reconnects the offset stays `0` and every comparison is
+ * byte-for-byte the one made before.
+ */
+/**
+ * How far behind the furthest point the call has reached a segment may
+ * land before it is read as a NEW stream rather than as noise.
+ *
+ * Within one connection the word clock is effectively monotonic —
+ * interim results extend the utterance, they do not retract seconds of
+ * it — so nothing legitimate moves it back this far. A reconnect moves
+ * it back by however long the call had been running, which is larger
+ * than this from two seconds into any call onwards.
+ */
+const STT_CLOCK_REWIND_TOLERANCE_MS = 2_000;
+
+/**
+ * ---------------- Stranded after a barge-in ----------------
+ *
+ * A barge-in cancels the reply in flight and drops the outbound queue.
+ * Normally the caller's interrupting words then become the next turn
+ * and are answered — but they do not always become a turn at all. A
+ * cough, a door, a half-word, a hesitation sound (`FILLER_ONLY` is
+ * dropped by the turn detector by design), a transcript Deepgram never
+ * finalised: each of those can cancel the reply and leave nothing
+ * behind to reply TO. The session then sits in LISTENING with the
+ * assistant mid-sentence and no reply on the way, and the caller hears
+ * dead air. They say "hello?", which is answered, or they hang up.
+ *
+ * So a cancelled reply that leaves the caller in silence is resumed
+ * from exactly where playback stopped — the words that were already
+ * synthesized or generated and never heard. No LLM round trip, so it
+ * starts speaking within a TTS request rather than in a couple of
+ * seconds, and it continues the script rather than restarting it.
+ *
+ * Guarded to the one case it is for: the resume is abandoned the moment
+ * the caller produces any turn material at all, so a real interruption
+ * is answered by the normal contextual path and never by this.
+ */
+/** Silence from the caller that says the barge-in produced no turn. */
+const STRANDED_RESUME_QUIET_MS = 700;
+/** Never wait longer than this for the line to go quiet before deciding. */
+const STRANDED_RESUME_MAX_WAIT_MS = 2_500;
+/** How often the wait re-checks, so a real turn is picked up promptly. */
+const STRANDED_RESUME_POLL_MS = 100;
+/**
+ * Hard cap per call. Bounds the pathological case — a caller on a noisy
+ * line whose every barge-in yields no turn — so this can never become a
+ * loop that talks over them repeatedly.
+ */
+const MAX_STRANDED_RESUMES = 3;
+
+/**
+ * The part of `fullText` the caller has NOT heard, given the prefix
+ * they have (`heardText`, from `heardSoFarText`).
+ *
+ * `heardText` is the spoken utterances joined by single spaces, and
+ * each of those is a trimmed slice of `fullText`, so the two agree on
+ * every non-whitespace character and can disagree on whitespace. The
+ * walk below compares them ignoring whitespace and returns the rest of
+ * `fullText` from the point the prefix ends.
+ *
+ * Returns `""` — resume nothing — the moment they diverge. Speech
+ * formatting is applied per utterance as well as to the whole reply, so
+ * the two are not guaranteed to line up; when they do not, saying
+ * nothing is correct and guessing is not.
+ */
+export function unspokenTail(fullText: string, heardText: string): string {
+  const heard = heardText.trim();
+  if (heard.length === 0) return fullText.trim();
+
+  const isSpace = (ch: string): boolean => /\s/u.test(ch);
+  let i = 0;
+  let j = 0;
+  while (i < fullText.length && j < heard.length) {
+    if (isSpace(fullText[i]!)) {
+      i += 1;
+      continue;
+    }
+    if (isSpace(heard[j]!)) {
+      j += 1;
+      continue;
+    }
+    if (fullText[i] !== heard[j]) return "";
+    i += 1;
+    j += 1;
+  }
+  while (j < heard.length && isSpace(heard[j]!)) j += 1;
+  // The "heard" text is not a prefix of the reply at all.
+  if (j < heard.length) return "";
+  return fullText.slice(i).trim();
+}
+
+/**
+ * Upper bound on a believable STT recognition lag, used only to
+ * discard nonsense samples from the benchmark (see
+ * `lastFinalSttLagMs`). Purely a metrics guard — it gates no
+ * transcript, no turn and no audio.
+ */
+const MAX_PLAUSIBLE_STT_LAG_MS = 10_000;
+
+/**
+ * One end-to-end latency trace per turn.
+ *
+ * The pipeline's stages run across three different async contexts
+ * (the STT listener, the LLM stream, the TTS stream), so "where did
+ * the time go" was previously only answerable by diffing wall-clock
+ * timestamps across unrelated log lines. This emits every stage of a
+ * single turn on a shared clock instead:
+ *
+ *   greeting:     call-connected -> tts-first-chunk -> audio-queued
+ *   normal turn:  turn-detected -> llm-request -> llm-first-token
+ *                 -> tts-first-chunk -> audio-queued
+ *
+ * `audio-queued` is the moment the first frame reaches the transport;
+ * the caller hears it one bridge pre-roll (~100ms) later.
+ */
+class TurnTimer {
+  private readonly startedAt: number;
+  private readonly marks: string[] = [];
+  /** Same instants as `marks`, keyed by stage, as absolute wall clock — lets `printLatencyBreakdown` compute a delta between any two named stages instead of only "since turn start". */
+  private readonly absoluteMarks = new Map<string, number>();
+
+  constructor(
+    private readonly sessionId: string,
+    private readonly label: string,
+    /**
+     * Overrides the timer's t0. Used for a normal/attention turn so
+     * "elapsed since start" is elapsed since the ACTUAL turn release
+     * (`AcquiredTurn.turnReleasedAtMs`) rather than since this object
+     * happened to be constructed a microtask or two later. Omitted by
+     * the greeting/resume timers, which have no such external t0.
+     */
+    startedAtOverride?: number,
+  ) {
+    this.startedAt = startedAtOverride ?? Date.now();
+  }
+
+  mark(stage: string): void {
+    const now = Date.now();
+    const at = now - this.startedAt;
+    this.marks.push(`${stage}=${at}ms`);
+    this.absoluteMarks.set(stage, now);
+    // eslint-disable-next-line no-console
+    console.log(`[TIMING:${this.sessionId}] ${this.label} ${stage} +${at}ms`);
+  }
+
+  summarize(): void {
+    // eslint-disable-next-line no-console
+    console.log(
+      `[TIMING:${this.sessionId}] ${this.label} SUMMARY total=${Date.now() - this.startedAt}ms ${this.marks.join(" ")}`,
+    );
+  }
+
+  /**
+   * FIX #7A — read-only latency trace for one turn, printed in
+   * addition to (never instead of) `summarize()` above. Every value
+   * here is either an absolute timestamp captured at the actual event
+   * (passed in via `opts`, or recorded by a prior `mark()` call) or a
+   * subtraction of two such timestamps — never inferred from an
+   * unrelated total. A boundary with no timestamp on either side
+   * prints "NOT DIRECTLY MEASURABLE" rather than a guessed number.
+   */
+  printLatencyBreakdown(opts: {
+    readonly speechEndAtMs: number | undefined;
+    readonly endpointEvidenceAtMs: number | undefined;
+    readonly endpointEvidenceKind: string | undefined;
+  }): void {
+    const turnRelease = this.startedAt;
+    const at = (stage: string): number | undefined => this.absoluteMarks.get(stage);
+    const llmRequest = at("llm-request");
+    const llmFirstToken = at("llm-first-token");
+    const firstSentence = at("first-sentence-ready");
+    const ttsRequest = at("tts-request");
+    const ttsFirstAudio = at("tts-first-chunk");
+    const audioQueued = at("audio-queued");
+
+    const ts = (ms: number | undefined): string => (ms === undefined ? "NOT DIRECTLY MEASURABLE" : new Date(ms).toISOString());
+    const delta = (fromMs: number | undefined, toMs: number | undefined): string =>
+      fromMs === undefined || toMs === undefined ? "NOT DIRECTLY MEASURABLE" : `${toMs - fromMs}ms`;
+
+    // eslint-disable-next-line no-console
+    console.log(
+      `[TIMING:${this.sessionId}] ${this.label}\n` +
+        `speech-end=${ts(opts.speechEndAtMs)}\n` +
+        `endpoint-evidence=${ts(opts.endpointEvidenceAtMs)}${opts.endpointEvidenceKind ? ` (${opts.endpointEvidenceKind})` : ""}\n` +
+        `turn-release=${ts(turnRelease)}\n` +
+        `llm-request=${ts(llmRequest)}\n` +
+        `llm-first-token=${ts(llmFirstToken)}\n` +
+        `first-sentence-ready=${ts(firstSentence)}\n` +
+        `tts-request=${ts(ttsRequest)}\n` +
+        `tts-first-audio=${ts(ttsFirstAudio)}\n` +
+        `audio-queued=${ts(audioQueued)}`,
+    );
+    // eslint-disable-next-line no-console
+    console.log(
+      `[TIMING:${this.sessionId}] ${this.label} DELTAS\n` +
+        `endpoint-to-release=${delta(opts.endpointEvidenceAtMs, turnRelease)}\n` +
+        `release-to-llm-request=${delta(turnRelease, llmRequest)}\n` +
+        `llm-to-first-token=${delta(llmRequest, llmFirstToken)}\n` +
+        `first-token-to-sentence=${delta(llmFirstToken, firstSentence)}\n` +
+        `sentence-to-tts=${delta(firstSentence, ttsRequest)}\n` +
+        `tts-to-first-audio=${delta(ttsRequest, ttsFirstAudio)}\n` +
+        `first-audio-to-queue=${delta(ttsFirstAudio, audioQueued)}\n` +
+        `speech-end-to-audio=${delta(opts.speechEndAtMs, audioQueued)}`,
+    );
+  }
+}
+
+/**
+ * FIX #7A — telemetry only. Caller-requested brevity ("keep it short",
+ * "one line", "just briefly") is checked against the raw user text so
+ * we can report whether the model honored it — nothing here alters
+ * the request, the prompt, or the response.
+ */
+const BREVITY_PHRASES = [
+  "short",
+  "briefly",
+  "brief",
+  "one line",
+  "one-line",
+  "one word",
+  "quick answer",
+  "quickly",
+  "concise",
+  "in short",
+  "just answer",
+  "straight answer",
+];
+
+function detectBrevityRequest(userText: string): string | undefined {
+  const lower = userText.toLowerCase();
+  return BREVITY_PHRASES.find((phrase) => lower.includes(phrase));
+}
+
+/**
+ * Words of `text`, lowercased, punctuation-free, apostrophes removed so
+ * "you're" and "youre" are the same token. Devanagari is preserved
+ * alongside Latin: the campaign runs in English, Hindi and Hinglish, and
+ * an echo of a Hindi reply must normalize just as an English one does.
+ *
+ * See the SELF_ECHO_* constants for why this exists.
+ */
+function selfEchoWords(text: string): string[] {
+  return text
+    .toLowerCase()
+    .replace(/['‘’ʼ]/g, "")
+    .replace(/[^a-z0-9ऀ-ॿ]+/g, " ")
+    .trim()
+    .split(/\s+/)
+    .filter((word) => word.length > 0);
+}
+
+/** Ordered adjacent word pairs — "a b c" -> ["a b", "b c"]. */
+function selfEchoBigrams(words: readonly string[]): string[] {
+  const bigrams: string[] = [];
+  for (let i = 0; i + 1 < words.length; i += 1) bigrams.push(`${words[i]} ${words[i + 1]}`);
+  return bigrams;
+}
+
+/**
+ * How much of `candidate` is word-for-word, in-order, already present in
+ * `spoken` — the fraction of the candidate's word pairs found in the
+ * assistant audio the caller has heard.
+ *
+ * Returns `0` for anything too short to judge, so the caller needs no
+ * length check of its own. Pure function over two strings: it reads no
+ * session state and decides nothing on its own.
+ */
+function selfEchoOverlap(
+  candidate: string,
+  spoken: string,
+): { overlap: number; matched: number; candidateWords: number } {
+  const candidateWords = selfEchoWords(candidate);
+  if (candidateWords.length < SELF_ECHO_MIN_WORDS) {
+    return { overlap: 0, matched: 0, candidateWords: candidateWords.length };
+  }
+  const candidateBigrams = selfEchoBigrams(candidateWords);
+  if (candidateBigrams.length === 0) {
+    return { overlap: 0, matched: 0, candidateWords: candidateWords.length };
+  }
+  const spokenBigrams = new Set(selfEchoBigrams(selfEchoWords(spoken)));
+  if (spokenBigrams.size === 0) {
+    return { overlap: 0, matched: 0, candidateWords: candidateWords.length };
+  }
+  let matched = 0;
+  for (const bigram of candidateBigrams) {
+    if (spokenBigrams.has(bigram)) matched += 1;
+  }
+  return {
+    overlap: matched / candidateBigrams.length,
+    matched,
+    candidateWords: candidateWords.length,
+  };
+}
+
+export class ConversationPipeline {
+  private readonly usesStreamingStt: boolean;
+  private sinceLastTurnBytes = 0;
+  private sinceLastTurnEncoding: AudioPayload["encoding"] | undefined;
+  private sinceLastTurnSampleRateHz: number | undefined;
+  private batchAudioIterator: AsyncIterator<AudioPayload> | undefined;
+  /** Total inbound audio (ms) handed to the STT stream so far — the same clock Deepgram's word times use. */
+  private inboundStreamMs = 0;
+  /** Value of `inboundStreamMs` when the current SPEAKING phase began. */
+  private speakingStartedAtStreamMs = 0;
+  /**
+   * Value of `inboundStreamMs` at the instant the fixed opening line
+   * finished — i.e. where `greetingDone` flipped, placed on the
+   * call-long audio timeline rather than on the wall clock.
+   *
+   * THE PICKUP WINDOW IS A SPAN OF THE CALLER'S AUDIO, NOT A SPAN OF
+   * OUR PROCESS. `pickupAckAllowance` was armed from `!greetingDone`
+   * alone, which asks when the TRANSCRIPT ARRIVED; the question the
+   * allowance is actually about is when the caller SPOKE. On a real
+   * call those differ by Deepgram's delivery lag — 0.4-1.7s
+   * (`endpointing=400`, `utterance_end_ms=1000`) — while the approved
+   * identity-first opening ("Hi, am I speaking with Sakshi?") is only
+   * ~2s of audio. So a "Hello" said 0.8s after pickup, squarely over
+   * the opening, routinely LANDS after the opening has finished: the
+   * allowance was never armed, the greeting reached the identity gate,
+   * classified `unclear`, and drew `identityReAskFor` — "Sorry — Am I
+   * speaking with…?" — which is the reported defect.
+   *
+   * Compared against `segment.startedAtMs` through the SAME re-base
+   * offset `sttStreamMsOf` maintains (`sttClockOffsetMs`), exactly as
+   * `speakingStartedAtStreamMs` is compared in
+   * `interruptionCorroborated`, so an STT reconnect cannot make the
+   * test lie: a re-base moves the offset up to the live edge, which is
+   * far past this snapshot.
+   *
+   * `0` until the opening finishes, which makes the comparison inert
+   * before then (a segment with word timings has `startedAtMs > 0`, and
+   * one without is excluded outright) — so nothing reads this until it
+   * describes a real instant.
+   */
+  private greetingDoneAtStreamMs = 0;
+  /**
+   * Stream position at which the most recently RELEASED user turn was
+   * handed to the main loop — stamped at the top of the `onTurnEnd`
+   * listener, on the same call-long timeline as
+   * `speakingStartedAtStreamMs`.
+   *
+   * Read by ONE place: the utterance-start guard in
+   * `interruptionCorroborated`. That guard exists for the caller's OWN
+   * sentence-tail — words belonging to the turn a reply is answering,
+   * released early by the detector, whose Deepgram utterance keeps
+   * extending across the reply boundary. Such a tail BEGAN before the
+   * turn was released, so this stamp is the correct reference point for
+   * it. Speech that began AFTER this stamp but BEFORE the reply entered
+   * SPEAKING is something else entirely: the caller starting a NEW
+   * utterance into the THINKING dead air, which the reply then talked
+   * over. Measured on a live call (2026-09-03): both were rejected
+   * alike, so a caller repeating themselves into the gap was muted for
+   * their whole utterance — every segment, finals included, dropped and
+   * never fed to the turn detector.
+   *
+   * `0` until the first turn releases, which is safe: the only reply
+   * before that is the fixed opening line, and `greetingDone` already
+   * blocks every barge-in path while it plays. A turn released while
+   * nobody is subscribed (buffered in `pendingEvent`) is stamped at
+   * DELIVERY, which can only be later than the real release — erring
+   * toward rejecting, i.e. toward exactly today's behaviour.
+   */
+  private lastTurnReleasedAtStreamMs = 0;
+  /**
+   * Furthest point the STT stream has reached ON THE CALL-LONG
+   * TIMELINE — i.e. after the offset below has been applied. A segment
+   * that lands far behind this is the stream having restarted; see
+   * `STT_CLOCK_REWIND_TOLERANCE_MS`. Held in re-based terms rather than
+   * as-reported so that a SECOND restart is measured against real call
+   * progress: a per-connection mark restarts low with its stream, and
+   * would go blind to the next restart until it had climbed back.
+   */
+  private sttClockHighWaterMs = 0;
+  /**
+   * Milliseconds to add to a reported `endedAtMs` to place it on
+   * `inboundStreamMs`'s call-long timeline. Zero — and therefore
+   * arithmetically invisible — until the STT stream restarts.
+   */
+  private sttClockOffsetMs = 0;
+  /** Latency trace for the turn currently in flight, if any. */
+  private activeTimer: TurnTimer | undefined;
+  /** Guards `tts-first-chunk` / `audio-queued` so they mark the FIRST occurrence of each per turn. */
+  private markedTtsThisTurn = false;
+  private markedAudioThisTurn = false;
+  /** FIX #7A — guards `first-sentence-ready` / `tts-request` the same way, one mark per turn. */
+  private markedFirstSentenceThisTurn = false;
+  private markedTtsRequestThisTurn = false;
+  /**
+   * FIX #7A — arrival time of the most recent Deepgram end-of-speech
+   * evidence (`UtteranceEnd`, or a final segment with `speech_final`)
+   * that actually reached the turn detector — i.e. was not filtered
+   * out as backchannel/uncorroborated speech first. Snapshotted and
+   * cleared by `waitForTurnDetectorEnd`'s `onTurnEnd` handler the same
+   * way `lastFinalSttLagMs`/`lastFinalSegmentAtMs` already are, so it
+   * cannot leak into the next turn's trace.
+   */
+  private lastEndpointEvidenceAtMs: number | undefined;
+  private lastEndpointEvidenceKind: "utterance_end" | "speech_final" | undefined;
+  /**
+   * True while the caller's CURRENT utterance has already been judged
+   * backchannel. Keeps one utterance treated consistently: its interim
+   * may be recognised with seconds of reply left and its final only
+   * once the reply is nearly over, and half of an ignored "okay"
+   * becoming a turn is the one outcome worse than either choice.
+   * Cannot outlive the assistant's turn — every read of it is guarded
+   * by `spokeOverTheAssistant`.
+   */
+  private backchannelInFlight = false;
+  /**
+   * False until the greeting has finished. The STT listener now runs
+   * from call-connect (see `run()`), so this is what keeps the
+   * greeting's own SPEAKING phase from being barge-in-able — exactly
+   * the property deferring the listener used to provide.
+   */
+  private greetingDone = false;
+  /**
+   * ---------------- The caller's PICKUP ACKNOWLEDGEMENT ----------------
+   *
+   * True once the caller has been heard saying something BEFORE the
+   * fixed opening line finished — i.e. while `greetingDone` was still
+   * false. Set from the STT listener, consumed by the FIRST turn the
+   * main loop acquires, and never set again: the listener only writes
+   * it while `!greetingDone`, and `greetingDone` is never cleared.
+   *
+   * WHY THIS EXISTS. The listener starts BEFORE the greeting (see
+   * `run()`), and the segments it produces are fed to the turn detector
+   * unchanged — only barge-in is gated on `greetingDone`. So the
+   * "Hello" a caller says as they put the phone to their ear is
+   * released by the detector while our opening line is still playing,
+   * held in `AdaptiveTurnDetector.pendingEvent` because nobody is
+   * subscribed yet, and delivered to the main loop's very first
+   * `onTurnEnd` subscription as the call's first user turn. It then
+   * reached the language model and was answered conversationally
+   * ("Hi! How can I help you?") immediately after our own opening line
+   * — which is the reported defect. `handleAttentionCheck` cannot catch
+   * it: that path only answers a turn itself when a barge-in left an
+   * unheard script remainder, and nothing has been interrupted here.
+   *
+   * A phone-answer reflex is not a conversational turn. It is the same
+   * judgement `isBackchannel` already makes about an acknowledgement
+   * said over a reply, applied to the one phase that had no such rule.
+   *
+   * EVERY BOUND IS LOAD-BEARING:
+   *
+   *   - it requires words heard BEFORE the opening line finished, so a
+   *     "Hello?" said AFTER it keeps exactly today's behaviour (that
+   *     case belongs to the attention-check family, not here);
+   *   - it is consumed by the first acquired turn whatever that turn
+   *     is, so at most ONE turn per call can ever be dropped;
+   *   - the WHOLE utterance must be a bare greeting or a bare
+   *     acknowledgement. "Hello? Who is this?" carries a real question
+   *     and is answered after the opening exactly as it is today.
+   *   - on an IDENTITY-FIRST script (`openingAsksIdentity`) only a pure
+   *     greeting qualifies (`PICKUP_GREETING_ONLY`): the opening line is
+   *     a question, so a bare acknowledgement heard over its tail
+   *     ("Haan.", "Yes.", "haan ji") is the ANSWER and is never dropped.
+   *     Before this narrowing the allowance was not granted at all on
+   *     such scripts, and the pickup "Hello" reached the identity gate,
+   *     read as `unclear`, and drew "Sorry — am I speaking with…?" —
+   *     24 of the 60 most recent real calls opened exactly that way.
+   *
+   * It changes nothing about STT, the display transcript, voicemail
+   * detection, turn detection or barge-in: the segments are recognised,
+   * shown and fed exactly as before, and this is read at ONE place —
+   * turn release, where the whole utterance is finally known.
+   */
+  private pickupAckAllowance = false;
+  /**
+   * The campaign's opening line IS the identity question — see
+   * `openingLineAsksIdentity`, which computes this once in the
+   * constructor.
+   *
+   * Read in exactly two places, and both are about the same thing: the
+   * caller's FIRST utterance is an ANSWER, not an acknowledgement.
+   * `identityState` starts `outstanding` instead of `unasked`, and the
+   * pickup-acknowledgement allowance drops a pure greeting only.
+   */
+  private readonly openingAsksIdentity: boolean;
+  /**
+   * Set once, when the live transcript shows we are talking to a
+   * machine. From that instant the agent says NOTHING for the rest of
+   * the call — see `synthesizeAndPlay`, which is the single choke point
+   * every spoken word goes through. Never cleared: a machine does not
+   * turn into a person.
+   */
+  private voicemailDetected = false;
+  /** Wall clock at which `run()` started — the origin of the detection window. */
+  private runStartedAtMs = 0;
+  /** Finals heard so far inside the detection window, bounded. */
+  private earlyTranscript = "";
+  /**
+   * ---------------- Assistant response lifecycle ----------------
+   *
+   * PENDING/SPEAKING -> COMPLETED -> committed to `memory`
+   * PENDING/SPEAKING -> CANCELLED -> discarded, never committed
+   *
+   * `runThinkingAndSpeaking` returns NORMALLY on barge-in (the LLM
+   * stream breaks, `drainPlayback` resolves early) and hands back
+   * whatever text had accumulated — including the complete reply when
+   * the model finished streaming while its audio was still queued on
+   * the transport. Nothing in that result says "this was cut off", so
+   * the commit site had no way to tell an interrupted reply from a
+   * finished one and committed both.
+   *
+   * An id rather than a boolean flag: the cancellation is recorded
+   * against the specific response that was in flight, so a stream that
+   * produces its last chunk (or its `final` event) after the barge-in
+   * handler has already run cannot commit itself, and — equally — a
+   * barge-in that lands when no response is pending cannot cancel the
+   * NEXT one, which takes a fresh id.
+   */
+  /** Id of the assistant response currently PENDING/SPEAKING. */
+  private currentResponseId = 0;
+  /** Id of the response a barge-in cancelled, if any. */
+  private cancelledResponseId: number | undefined;
+  /**
+   * The part of the cancelled response the caller had ACTUALLY HEARD,
+   * frozen at the instant of cancellation.
+   *
+   * A cancelled response is still not committed as if it had been
+   * delivered — that design is unchanged and correct. But discarding
+   * ALL of it, including the sentences the caller already listened to,
+   * is what let the script restart: the model's history said it had
+   * never spoken, so the next request regenerated the same block from
+   * the top and the caller heard the introduction again.
+   *
+   * So the two halves of an interrupted reply are now separated. What
+   * played is history (it happened, the caller heard it, and it is what
+   * "continue from where you were" is relative to). What was still
+   * queued, or never synthesized at all, is discarded exactly as
+   * before. Computed inside `triggerExternalBargeIn` — the single
+   * choke point every cancellation goes through — because playback
+   * stops there, and reading the clock any later would count audio the
+   * transport had already thrown away.
+   */
+  private cancelledHeardText = "";
+  /**
+   * DIAGNOSTIC ONLY (2026-09-21) — what tripped the barge-in that
+   * cancelled the response in flight, if one did. Written by
+   * `triggerExternalBargeIn` when it ACCEPTS, cleared where a reply
+   * cycle begins (next to `bargeIn.beginThinking()`, for the reason
+   * `BargeInController.lastBargeInPhase` is cleared there), and read
+   * once — cleared — by the main loop's `recordTurn`. See
+   * `BargeInTriggerTelemetry` for why this exists. Consulted by no
+   * decision.
+   */
+  private pendingBargeInTrigger: BargeInTriggerTelemetry | undefined;
+  /**
+   * Resumes spent on this call, against `MAX_STRANDED_RESUMES`. Bounds
+   * the pathological case where a noisy line barges in over and over
+   * and never produces a turn.
+   */
+  private strandedResumes = 0;
+  /**
+   * WHERE THE SCRIPT STOPPED — the part of the last cancelled reply the
+   * caller never heard, kept across loop iterations so an attention
+   * check can be resumed from it instead of regenerated.
+   *
+   * This is the one piece of state the fix adds, and existing state
+   * genuinely cannot carry it. `unspokenTail` already computes the
+   * value, but only as a local in the iteration that was interrupted;
+   * conversation memory holds only what the caller HEARD, by design,
+   * so the unheard tail exists nowhere else once that local goes out of
+   * scope. It is a slice of an LLM reply, so it is not recoverable from
+   * the script either.
+   *
+   * Set only when a cancelled reply left a remainder that
+   * `resumeAfterStrandedBargeIn` did not speak, and cleared by the
+   * first turn that is not an attention check — so it can never be
+   * spoken into a conversation that has moved on.
+   *
+   * A NON-EMPTY VALUE ALSO MEANS "NOT A SILENCE". It exists only when
+   * the assistant was cut off mid-sentence by something that produced
+   * no turn to answer, so the caller is waiting on the rest of that
+   * sentence rather than being absent — which is why
+   * `recoverFromSilence` speaks the tail at the first expiry instead of
+   * asking whether they are still there. See the note there.
+   */
+  private heldScriptRemainder = "";
+  /**
+   * THE WHOLE REPLY the held position belongs to — `heldScriptRemainder`
+   * is its unheard suffix. Kept so that, asked "can you hear me okay?",
+   * a caller who answers "start from the beginning" or "no, I couldn't
+   * hear you" can be given that reply again from its first word without
+   * a language-model request, exactly as the RESUME branch gives them
+   * the unheard tail. Set at the same site as `heldScriptRemainder`,
+   * outlives a complete resume (the position is then "" but the reply
+   * is still the one they may ask to hear again), and is cleared by the
+   * first turn that is not an attention check, by the same rule — so it
+   * can never be spoken into a conversation that has moved on.
+   */
+  private heldScriptFull = "";
+  /**
+   * An acknowledgement has been given and the caller has said nothing
+   * since but more attention checks. This is what coalesces a repeated
+   * "Hello? Hello? Hello?" into ONE acknowledgement.
+   *
+   * A boolean rather than a reading of the history, because the
+   * acknowledgement can itself be barged in on: what is committed is
+   * then a TRUNCATED PREFIX of it, so no exact test over the last
+   * assistant turn identifies an open episode — which is precisely the
+   * case (a second "hello" over the acknowledgement) this flag exists
+   * to handle.
+   */
+  /**
+   * ---------------- THE IDENTITY GATE ----------------
+   *
+   * "unasked"     the campaign has an identity line and it has not been
+   *               spoken yet. The caller's first turn is answered with
+   *               it, not with the language model.
+   * "outstanding" it has been asked and nobody has answered it yet.
+   *               EVERY turn in this state is read by
+   *               `classifyIdentityAnswer`, and the language model is
+   *               not reached until it says confirmed or denied.
+   * "confirmed"   they said they are the person we called. The gate is
+   *               open for the rest of the call and never closes again.
+   * "denied"      they said they are not. The gate stays shut; the
+   *               contextual path handles the wrong-person close, and
+   *               the pitch is never spoken.
+   *
+   * A session with NO identity line — every non-campaign session, and
+   * any script that does not require a name — starts "confirmed", so
+   * its behaviour is byte-for-byte what it was.
+   */
+  private identityState: "unasked" | "outstanding" | "confirmed" | "denied";
+  /** Re-asks spent, against `MAX_IDENTITY_REASKS`. */
+  private identityReAsks = 0;
+  private attentionEpisodeOpen = false;
+  /**
+   * FIX 2 — how many silence-recovery prompts have been spoken since the
+   * caller last produced a turn. Reset to 0 by every released turn, so
+   * "at most once each per unanswered silence episode" is a property of
+   * this counter: 0 -> "are you there?", 1 -> "is anyone there?",
+   * 2 -> the call is ended through the existing `host.end`.
+   */
+  private silenceRecoveryPrompts = 0;
+  /**
+   * FIX 2 — true once a GENERATED reply (a script block, an answer) has
+   * been committed to memory — not the greeting, not a fixed line. Read
+   * by `handleAttentionCheck`'s no-remainder branch to tell "Hello?"
+   * after the pitch (they did not hear it) from "Hi." after the opening
+   * line (they are answering the phone).
+   */
+  private contextualReplyCommitted = false;
+  /**
+   * FIX 2 — the open hearing episode was opened BEFORE any block had
+   * been delivered (a repeated "hello" over nothing but our opening
+   * line). The caller's return then gets the pitch from the contextual
+   * path rather than a "did you catch what I was saying" about nothing.
+   * False for every episode opened after a block, including the
+   * remainder path's.
+   */
+  private hearingEpisodeBeforeBlock = false;
+  /**
+   * THIS TURN answered the hearing question and nothing else.
+   *
+   * Set by the one branch of `handleAttentionCheck` that consumes a
+   * bare hearing confirmation before any block has been delivered, and
+   * read by `handleIdentityGate` on the same turn — the only two places
+   * either may be. Cleared at the top of `handleAttentionCheck`, which
+   * runs on every released turn before the gate, so it describes this
+   * turn and no other. The same per-turn shape as
+   * `lastTurnWasBareGreeting` above.
+   *
+   * WHY THE GATE CANNOT WORK THIS OUT FOR ITSELF. "Yes." is a complete
+   * answer to "Hey, can you hear me okay?" and a complete answer to "Am
+   * I speaking with Sakshi?", and no reading of those four letters can
+   * separate them — only knowing which question was asked can, and the
+   * pipeline is the only thing that knows. `identity-answer.ts` already
+   * excludes the hearing answers it CAN see ("yes, I can hear you", via
+   * `HEARING_ANSWERS`); this is the same exclusion for the ones it
+   * cannot, carried rather than guessed.
+   *
+   * THE DEFECT IT CLOSES. A repeated "hello" over an identity-first
+   * opening draws the fixed acknowledgement; the caller says "Yes.";
+   * that turn fell through to the gate, matched `CONFIRMATIONS`, and
+   * confirmed identity — so the pitch was spoken to somebody who had
+   * only ever said they could hear us, which is the exact confusion
+   * `identity-answer.ts` was written to end (read-only audit
+   * 2026-09-22, H2; reproduced through the harness). It now reads
+   * `unclear`, which costs one re-ask of the question they have not
+   * answered — the module's own stated trade against a wrong
+   * assumption. Nothing else changes: an explicit identity answer, a
+   * name, "speaking", "bol rahi hoon" and every turn that carries both
+   * answers at once are unaffected, because none of them is a bare
+   * hearing confirmation and none of them reaches this branch.
+   */
+  private turnAnsweredHearingCheckOnly = false;
+  /**
+   * How many FIXED hearing lines — the acknowledgement, the follow-up —
+   * have been spoken in a row without anything else happening in
+   * between. See `MAX_HEARING_LINES_WITHOUT_PROGRESS` for why this is
+   * counted on the agent's lines rather than on the caller's
+   * utterances.
+   *
+   * Incremented at exactly the four sites that speak one of those two
+   * lines, and reset at every other exit of `handleAttentionCheck` —
+   * the caller contributing something real, confirming they can hear,
+   * or asking for the interrupted reply to be resumed or repeated.
+   * Survives the episode flags on purpose: a loop is sustained by
+   * opening a NEW episode per "hello", so a counter cleared with the
+   * episode would count to one forever.
+   */
+  private hearingLinesWithoutProgress = 0;
+  /**
+   * ---------------- One "hello", or two? ----------------
+   *
+   * The caller's PREVIOUS turn was nothing but a greeting.
+   *
+   * `isRepeatedGreeting` / `isEmphaticHearingCheck` already recognise a
+   * greeting said twice, but only WITHIN one utterance ("Hello?
+   * Hello?"), because both are whole-utterance regexes. A caller who
+   * says "Hello." — waits — "Hello." produces two separate turns, and
+   * no predicate could see the repetition. So after a block had been
+   * delivered the qualifying test fell back to `isHearingCheck`, which
+   * a SINGLE bare greeting satisfies, and one "Hello" out of a clear
+   * sky was answered with "Hey, can you hear me okay?".
+   *
+   * That is the robotic reading. One greeting is a person saying hello;
+   * the same greeting twice in a row is a person who cannot hear us.
+   * This flag is the difference between them, and it is the whole of
+   * the repetition state: set from the turn currently being judged,
+   * read on the NEXT turn, and cleared by any turn that is not a bare
+   * greeting — so "Hello." then "Yes, tell me." is not a repeat, and a
+   * later single "Hello" starts over as a single one.
+   *
+   * Updated once per committed user turn, at the top of
+   * `handleAttentionCheck`, which the main loop runs for every turn
+   * before the language model is reached. It never widens what counts
+   * as a hearing check — an explicit presence phrase ("can you hear
+   * me") and a doubled greeting in one utterance still qualify on their
+   * own, immediately, exactly as before.
+   */
+  private lastTurnWasBareGreeting = false;
+  /**
+   * FIX #8 — the LLM request pre-opened for the turn the detector is
+   * currently holding in its evidenced confirmation window, if any. See
+   * `SpeculativeCompletion`. At most one at a time; replaced or
+   * abandoned by the sites listed there.
+   */
+  private speculation: SpeculativeCompletion | undefined;
+  /**
+   * FIX #8 — true only while `waitForTurnDetectorEnd` is subscribed,
+   * i.e. the main loop is idle in LISTENING waiting for the caller's
+   * next turn. That is the ONLY window a speculation may start in: any
+   * other time (greeting, THINKING, SPEAKING, the barge-in unwind, an
+   * attention utterance) the pending-turn hook is ignored, so the
+   * barge-in and buffered-turn paths see exactly the traffic they did.
+   */
+  private awaitingTurn = false;
+  /**
+   * ---------------- The agent's own backchannel cue ----------------
+   * See the block above `BACKCHANNEL_CUE_MIN_WORDS`. All of this is
+   * speech-side bookkeeping: none of it is read by turn detection,
+   * barge-in, the language model, memory, metrics or playback
+   * accounting.
+   */
+  /** Synthesised cue audio, keyed by `language|text`, so each cue costs one TTS request per call. */
+  private readonly backchannelCueCache = new Map<string, AudioPayload>();
+  /** Cues played into the caller turn currently being held. Reset when a turn is acquired. */
+  private backchannelCuesThisTurn = 0;
+  /** Wall clock of the last cue handed to the transport, `0` if none yet. */
+  private lastBackchannelCueAtMs = 0;
+  /** The cue last PLAYED into the current caller turn, or `null` — see `selectBackchannelCue`. Reset per turn. */
+  private lastBackchannelCue: string | null = null;
+  /** Whether the previous cue opportunity in this turn was left silent by the selector. Reset per turn. */
+  private backchannelPreviousOpportunitySilent = false;
+  /** True while a cue is being synthesised or handed over; at most one at a time. */
+  private backchannelCueInFlight = false;
+  /** Wall clock at which the last cue's audio was handed to the transport — the echo guard's origin. */
+  private lastBackchannelCuePlayedAtMs = 0;
+  /** Word count of the caller's held text when the last cue was PLAYED — see `BACKCHANNEL_CUE_MIN_NEW_WORDS`. Reset with the per-turn count. */
+  private backchannelWordsAtLastCue = 0;
+  /** True once the TTS provider failed or rejected a cue on this call: no further cue is attempted, so a failing provider is asked once. */
+  private backchannelCueDisabled = false;
+  /**
+   * ---------------- The scripted closing after a registration -------
+   * See the block above `CLOSING_ACKNOWLEDGEMENT_TOKENS`. Armed by the
+   * campaign layer through `armScriptedClosing`; consumed by
+   * `handleScriptedClosing` at most once per call.
+   */
+  private scriptedClosingArmed = false;
+  private scriptedClosingSpoken = false;
+  /**
+   * ---------------- Metrics bookkeeping (read-only observers) ----------------
+   * Everything below is written from points that already exist in the
+   * flow and is read only by `recordTurn`. Nothing here feeds turn
+   * detection, barge-in, STT, LLM, TTS or transport decisions.
+   */
+  /** Wall clock at which the most recent non-empty FINAL transcript segment arrived. */
+  private lastFinalSegmentAtMs: number | undefined;
+  /**
+   * PHASE 3 PHASE 0 — fragmentation observers. Incremented ONLY at the
+   * final-transcript site below and cleared ONLY at turn release,
+   * alongside `lastFinalSegmentAtMs`. Pure observation: no gate, no
+   * timer, no threshold and no branch in the call path reads either.
+   */
+  private finalTranscriptCount = 0;
+  private interFinalGapsMs: number[] = [];
+  /**
+   * Recognition lag of that segment: `inboundStreamMs - segment.endedAtMs`.
+   * Both operands are positions on the same audio-stream clock (the
+   * barge-in check above already relies on that equivalence), so the
+   * difference is how far behind the audio the transcript arrived.
+   */
+  private lastFinalSttLagMs: number | undefined;
+  /** Wall clock at which this turn's FIRST audio frame reached the transport. */
+  private firstAudioQueuedAtMs: number | undefined;
+  /**
+   * PHASE 3 BATCH 3 — wall clock of the most recent caller audio chunk
+   * handed to the STT stream. The REAL-TIME counterpart of
+   * `inboundStreamMs`, which counts the same chunks in audio-duration
+   * units; holding both is what makes a divergence between them
+   * visible. Rolling for the whole call, never cleared: inbound audio
+   * does not stop at a turn boundary.
+   */
+  private lastInboundAudioAtMs: number | undefined;
+  /**
+   * PHASE 3 BATCH 3 — wall clock of the latest non-empty INTERIM
+   * transcript. Snapshot-then-cleared at each release, like the
+   * endpoint evidence, so a turn that produced no interim reports
+   * "not observed" instead of inheriting the previous turn's.
+   */
+  private lastInterimTranscriptAtMs: number | undefined;
+  /**
+   * PHASE 3 BATCH 4 — `inboundStreamMs` as it stood when the most
+   * recent non-empty FINAL arrived, co-stamped with
+   * `lastFinalSegmentAtMs`. Measurement validation only: it is the
+   * audio-bytes reading that pairs with that wall-clock reading, and
+   * nothing derives a latency from it.
+   */
+  private lastFinalInboundStreamMs: number | undefined;
+  /**
+   * PHASE 3 BATCH 6 — the SUBTRAHEND of the STT lag, and the clock
+   * offset in force when it was read. Co-stamped with
+   * `lastFinalInboundStreamMs` above, in the same handler pass for the
+   * same final.
+   *
+   * Batch 4 persisted the minuend (`inboundStreamMs`) but not this, so
+   * a lag the plausibility guard rejected left no way to see WHY. Both
+   * are needed: `inboundStreamMs - lastFinalWordEndStreamMs` is exactly
+   * the lag that guard evaluated, and `sttClockOffsetMs` says whether a
+   * re-base had shifted the word-end position when it was taken.
+   *
+   * Measurement validation only, exactly like its Batch 4 twin: no
+   * latency is derived from either here, and nothing reads them to make
+   * a decision.
+   */
+  private lastFinalWordEndStreamMs: number | undefined;
+  private lastFinalSttClockOffsetMs: number | undefined;
+
+  constructor(
+    private readonly record: SessionRecord,
+    private readonly providers: ResolvedProviderStack,
+    private readonly host: PipelineHost,
+  ) {
+    // The gate is CLOSED only when this call actually has somebody to
+    // check. Everything else keeps the behaviour it has always had.
+    //
+    // `outstanding` rather than `unasked` when the campaign's opening
+    // line IS the identity question (`registration v8`): the greeting
+    // asks it, so the gate's job on the first caller turn is to read the
+    // ANSWER, not to ask again. See `openingLineAsksIdentity`. For every
+    // script whose opening does not ask it — v1 through v7 — this is
+    // false and the state is `unasked`, exactly as before.
+    const identityLine = record.campaignIdentityLine?.trim() ?? "";
+    this.openingAsksIdentity =
+      identityLine.length > 0 &&
+      openingLineAsksIdentity(record.campaignOpeningLine, identityLine);
+    this.identityState =
+      identityLine.length === 0
+        ? "confirmed"
+        : this.openingAsksIdentity
+          ? "outstanding"
+          : "unasked";
+    this.usesStreamingStt = typeof providers.stt.transcribeStream === "function";
+  }
+
+  /** Runs until the session's loop-abort signal fires or a fatal error occurs. */
+  async run(): Promise<void> {
+    const sid = this.record.id;
+    // The media stream has just opened, so this is the moment the callee
+    // picked up — the origin the voicemail detection window is measured
+    // from. Stamped before the listener starts, so a marker in the very
+    // first segment is inside the window.
+    this.runStartedAtMs = Date.now();
+    const loopSignal = this.record.loopAbortController?.signal;
+    if (!loopSignal) {
+      // eslint-disable-next-line no-console
+      console.error(`[PIPELINE:${sid}] run() aborted — no loopAbortController on session record`);
+      return;
+    }
+
+    // eslint-disable-next-line no-console
+    console.log(
+      `[PIPELINE:${sid}] run() started — state=${this.record.state} streamingSTT=${this.usesStreamingStt} llm=${this.providers.llm.descriptor.id} tts=${this.providers.tts.descriptor.id} stt=${this.providers.stt.descriptor.id}`,
+    );
+
+    // --- Start the continuous listener BEFORE the greeting ---
+    //
+    // The listener used to start after the greeting had finished
+    // playing, to stop the greeting being barged in on by the caller's
+    // "Hello?" as they pick up. That worked, but it made the FIRST user
+    // turn pay three costs no later turn pays:
+    //
+    //   1. Deepgram's websocket handshake (connect + waitForOpen) sat
+    //      directly on the first turn's critical path — the provider's
+    //      `checkHealth` does no network I/O, so warm-up never opens it.
+    //   2. Inbound audio has been accumulating in the session's
+    //      unbounded `AsyncQueue` since call-connect (no telephony
+    //      provider implements `openMediaStream`, so that is always the
+    //      source). By greeting-end that is ~4.5s of audio, which then
+    //      burst-replayed into the socket — leaving Deepgram several
+    //      hundred ms behind the live edge for the whole first turn.
+    //   3. The caller's first words were therefore transcribed late,
+    //      which delayed the turn detector, the LLM and the reply.
+    //
+    // Starting here removes all three: the handshake completes while
+    // the greeting is playing, and audio streams in real time from the
+    // first frame, so there is no backlog to catch up on. The greeting
+    // stays exactly as protected as before — `greetingDone` gates the
+    // barge-in check below, which is the only thing that could have
+    // interrupted it. Everything else (turn detection, the display
+    // transcript, metrics) runs live, so anything the caller says
+    // during the greeting is already recognized and waiting to become
+    // their first turn instead of arriving in a post-greeting burst.
+    if (this.usesStreamingStt && !loopSignal.aborted) {
+      this.startContinuousStt(loopSignal);
+    }
+
+    // --- Greeting phase: a dedicated startup action, NOT a turn ---
+    // Skipped outright when the machine announced itself before we got
+    // this far, which is the common case: its greeting starts the
+    // instant the line opens and ours needs a TTS round trip first.
+    if (!loopSignal.aborted && !this.voicemailDetected) {
+      // --- The greeting is spoken, not generated ---
+      //
+      // The system prompt mandates ONE fixed opening line per language
+      // ("Use one opening line only ... then stop and let them
+      // answer"), so an LLM round trip here only regenerates a line
+      // that is already decided — at a measured cost of ~2.0s on
+      // GPT-5.1 and ~5.7s on Gemma 4 before a single audio frame can
+      // exist. Speaking `openingLineFor` directly removes the entire
+      // LLM leg from call-connect, which is the only way time-to-first-
+      // audio can reach the ~1s target: even the fastest configured
+      // model's time-to-first-token exceeds that budget on its own.
+      //
+      // Everything downstream is unchanged — the greeting is still
+      // recorded in memory as the assistant's first turn, so the
+      // model has full context from the caller's very first reply.
+      // Benchmark metrics are unaffected: `metrics.recordTurn` was
+      // never called for the greeting (it is a startup action, not a
+      // turn), and every LLM-served turn is still measured.
+      const timer = new TurnTimer(sid, "GREETING");
+      // eslint-disable-next-line no-console
+      console.log(`[PIPELINE:${sid}] Conversation started — speaking fixed greeting, state=${this.record.state}`);
+      try {
+        const greetingText = openingLineFor(this.record.memory.currentLanguage, this.record.voiceGender, this.record.campaignOpeningLine);
+        timer.mark("greeting-text-ready");
+
+        this.beginTurnTiming(timer);
+        // Runs WHILE the greeting is being spoken, and is never awaited
+        // — see `primeLlmPrefixCache`. It is started here rather than
+        // after the greeting so the prefill overlaps greeting playback
+        // instead of the caller's first reply.
+        this.primeLlmPrefixCache(loopSignal);
+        await this.speakFixedUtterance(greetingText, loopSignal);
+        this.activeTimer = undefined;
+        timer.summarize();
+
+        if (this.voicemailDetected) {
+          // Cut mid-line by the detection below. Deliberately NOT
+          // committed: the transcript the outcome classifier reads
+          // should contain the machine's greeting, which is the evidence
+          // for the label, and not a fragment of ours that no person
+          // heard.
+          // eslint-disable-next-line no-console
+          console.log(`[PIPELINE:${sid}] Greeting CUT SHORT — voicemail detected while it was playing`);
+        } else {
+          // eslint-disable-next-line no-console
+          console.log(`[PIPELINE:${sid}] Greeting spoken: text="${greetingText}" state=${this.record.state}`);
+          this.record.memory.recordAssistantTurn(greetingText);
+        }
+        this.record.bargeIn.reset();
+      } catch (error) {
+        this.activeTimer = undefined;
+        if (!(error instanceof RecoverableTurnError)) {
+          // eslint-disable-next-line no-console
+          console.error(
+            `[PIPELINE:${sid}] Greeting FATAL error: state=${this.record.state} error=${error instanceof Error ? error.message : String(error)} errorType=${error?.constructor?.name}`,
+          );
+          this.host.markError(this.record, "PIPELINE", error);
+          return;
+        }
+        // eslint-disable-next-line no-console
+        console.error(
+          `[PIPELINE:${sid}] Greeting RecoverableTurnError (recovering): state=${this.record.state} error=${error.message} source=${error.sourceCategory} cause=${error.cause instanceof Error ? error.cause.message : String(error.cause)}`,
+        );
+        // State may be THINKING or SPEAKING here after the error.
+        // Recover to LISTENING so the main loop can proceed. The
+        // state machine now allows THINKING → LISTENING for exactly
+        // this recovery case.
+        if (this.record.state !== SessionState.LISTENING) {
+          try {
+            this.host.transition(this.record, SessionState.LISTENING, "recovering from greeting error");
+          } catch {
+            // eslint-disable-next-line no-console
+            console.error(`[PIPELINE:${sid}] Could not recover to LISTENING from state=${this.record.state} — ending pipeline`);
+            this.host.markError(this.record, "PIPELINE", error);
+            return;
+          }
+        }
+      }
+    }
+
+    // --- Hand off to the normal contextual conversation flow ---
+    // The greeting is done (or failed and recovered to LISTENING).
+    // Release the barge-in gate: from here on, everything — turn
+    // detection, barge-in, contextual replies — behaves exactly as it
+    // always has. The listener itself has been running since before
+    // the greeting (see above), so nothing has to be caught up here.
+    //
+    // Snapshotted BEFORE the flag is set, so the two describe the same
+    // instant and a segment arriving in between cannot be judged against
+    // a window that has not been recorded yet. See `greetingDoneAtStreamMs`.
+    this.greetingDoneAtStreamMs = this.inboundStreamMs;
+    this.greetingDone = true;
+
+    // The agent's own backchannel cue — see `BACKCHANNEL_CUE_MIN_WORDS`.
+    // Subscribed only now, so nothing the caller says during the
+    // greeting can draw a cue, and released when the loop exits.
+    // Observation of an existing detector decision; the detector's
+    // timing is byte-for-byte unchanged by the subscription.
+    const unsubscribeContinuationHold = this.record.turnDetector.onContinuationHold((event) =>
+      this.considerBackchannelCue(event),
+    );
+
+    // --- Main loop ---
+    // eslint-disable-next-line no-console
+    console.log(`[PIPELINE:${sid}] entering main loop — state=${this.record.state} aborted=${loopSignal.aborted}`);
+
+    while (!loopSignal.aborted) {
+      try {
+        if (this.record.state !== SessionState.LISTENING) {
+          this.host.transition(this.record, SessionState.LISTENING, "awaiting user speech");
+        }
+
+        const turn = await this.acquireNextUserTurn(loopSignal);
+        if (!turn || loopSignal.aborted) {
+          // eslint-disable-next-line no-console
+          console.log(`[PIPELINE:${sid}] acquireNextUserTurn returned null or aborted — exiting loop`);
+          break;
+        }
+
+        // The caller's turn is over, so the cue budget belongs to the
+        // next one. Speech-side bookkeeping only — see `considerBackchannelCue`.
+        this.backchannelCuesThisTurn = 0;
+        this.backchannelWordsAtLastCue = 0;
+        this.lastBackchannelCue = null;
+        this.backchannelPreviousOpportunitySilent = false;
+
+        // eslint-disable-next-line no-console
+        console.log(`[STT:${sid}] Transcript received: "${turn.text.slice(0, 80)}${turn.text.length > 80 ? "..." : ""}" userSpeechMs=${turn.userSpeechMs} sttLagMs=${turn.sttLagMs ?? "n/a"}`);
+        // TURN-RELEASE TRACE (2026-09-21) — TELEMETRY ONLY. One line,
+        // beside the transcript it describes, because reading the two
+        // together is the whole point: "which guard released THIS
+        // text". Emitted only when the streaming detector produced a
+        // trace, so batch-STT turns print nothing extra.
+        //
+        // The provider id is included because `endpointMarkerOutcome`
+        // cannot be read without it — Soniox marks every word-bearing
+        // final `isSpeechFinal: false` and signals the endpoint with a
+        // separate marker, so the same label means different things on
+        // the two providers. It is a campaign-level setting, already
+        // stored on `call_attempts.stt_provider`; repeated here only so
+        // a console trace is self-contained.
+        if (turn.releaseTrace !== undefined) {
+          const t = turn.releaseTrace;
+          // eslint-disable-next-line no-console
+          console.log(
+            `[TURN-RELEASE:${sid}] stt=${this.record.providerStack.speechToText.id}` +
+              ` reason=${t.releaseReason}` +
+              ` readsUnfinished=${t.heldTextReadsUnfinished}` +
+              ` graces=${t.continuationGracesAtRelease}` +
+              ` graceTrace=[${t.continuationGraceTrace.join(",")}]` +
+              ` graceResets=[${t.continuationGraceResets.map((r) => `${r.gracesDiscarded}@${r.source}`).join(",")}]` +
+              ` marker=${turn.endpointMarkerOutcome ?? "none"}` +
+              ` finals=${turn.finalTranscriptCount}`,
+          );
+        }
+
+        // ── A machine, not a person ─────────────────────────────────
+        //
+        // Still RECORDED, and that is not incidental: the outcome
+        // classifier reads this transcript and it is what labels the
+        // call `suspected_voicemail` rather than an ordinary silent
+        // call. But no reply is generated and nothing is spoken, so the
+        // machine costs no language-model request, no synthesis and no
+        // script. The call then ends on the existing silence watchdog
+        // once the recording stops talking — no hangup logic is added
+        // to the pipeline, exactly as before.
+        if (this.voicemailDetected) {
+          this.abandonSpeculation("voicemail — no reply is generated");
+          // PHASE 1.3 — a recording is not a caller, so this can never
+          // take the language lock: `commitTurnLanguage` is not called
+          // here and `effectiveLanguageFor` only reads.
+          this.record.memory.recordUserTurn(turn.text, this.effectiveLanguageFor(turn.text));
+          this.record.liveUserTranscript = "";
+          // eslint-disable-next-line no-console
+          console.log(`[PIPELINE:${sid}] voicemail — transcript recorded, nothing answered and nothing spoken`);
+          continue;
+        }
+
+        // ── The caller answering the phone, not taking a turn ───────
+        //
+        // "Hello" / "Haan" / "Hi" — the whole utterance — heard while
+        // our opening line was still playing. That is a phone-answer
+        // acknowledgement, and the answer to it is the opening line the
+        // caller is already hearing. See `pickupAckAllowance` for the
+        // full reasoning and for why each bound below is load-bearing.
+        //
+        // Dropped exactly as a backchannel is dropped: no user turn is
+        // recorded, no language-model request is made, nothing is
+        // synthesized and no metrics turn is measured. Nothing that ran
+        // before this point is skipped — the words were recognized,
+        // shown on the dashboard, tested for voicemail and fed to the
+        // turn detector exactly as they always are.
+        //
+        // Placed AFTER the voicemail branch above deliberately: a
+        // machine's greeting is also a "hello", and it must be RECORDED
+        // as the evidence that labels the call, not dropped. That
+        // branch `continue`s, so a voicemail call never reaches here —
+        // and it is ending anyway.
+        //
+        // The allowance is consumed by this turn WHATEVER it is, so at
+        // most one turn per call can ever be dropped and a later
+        // "hello" is untouched.
+        if (this.pickupAckAllowance) {
+          this.pickupAckAllowance = false;
+          const pickup = turn.text.trim();
+          // An identity-first opening is a QUESTION, so only a pure
+          // greeting is the phone being answered; anything that could
+          // be its answer goes on to the gate. See `PICKUP_GREETING_ONLY`.
+          // Both branches accept every greeting rendering Deepgram's
+          // multilingual model is known to produce (`PICKUP_GREETING_ONLY`);
+          // a bare acknowledgement is a pickup only when the opening
+          // asked nothing.
+          const isPickup = this.openingAsksIdentity
+            ? PICKUP_GREETING_ONLY.test(pickup)
+            : PICKUP_GREETING_ONLY.test(pickup) || BARE_GREETING_ONLY.test(pickup) || isBareAcknowledgement(pickup);
+          if (isPickup) {
+            // Nothing is pre-opened here in practice — the detector's
+            // pending hook only fires while the main loop is awaiting a
+            // turn, and this turn was released before the greeting
+            // finished. Belt to that brace: a request opened for a turn
+            // that is about to be dropped is closed now rather than
+            // left to expire.
+            this.abandonSpeculation("pickup acknowledgement — no reply is generated");
+            // Display-only preview. Cleared because no committed turn
+            // will replace it, and `getTranscript` appends it as a
+            // trailing user turn — exactly as the backchannel path does.
+            this.record.liveUserTranscript = "";
+            // eslint-disable-next-line no-console
+            console.log(
+              `[PIPELINE:${sid}] pickup acknowledgement ignored (not a turn): "${pickup}" — the opening line is the answer to it`,
+            );
+            continue;
+          }
+        }
+
+        // t0 for this turn's latency trace: the turn detector has just
+        // endpointed, i.e. the caller has stopped speaking as far as
+        // the pipeline is concerned. Everything after this is ours.
+        const timer = new TurnTimer(sid, `TURN#${this.record.turnIndex}`, turn.turnReleasedAtMs);
+        timer.mark("turn-detected");
+        // The trace above starts at turn RELEASE, so everything the
+        // caller actually waited through before that — Deepgram's
+        // endpointing window, its delivery lag, and the detector's
+        // confirmation hold — was invisible in the logs while being a
+        // real part of the "why is the reply 2-3s late" question. This
+        // is that span, from the wall clock at which the caller stopped
+        // talking (`userSpeechEndedAtMs`, already computed for the
+        // end-to-end metric) to the release this trace begins at.
+        // Diagnostic only: read by nothing, changes no timing.
+        if (turn.userSpeechEndedAtMs !== undefined) {
+          // eslint-disable-next-line no-console
+          console.log(
+            `[TIMING:${sid}] TURN#${this.record.turnIndex} stt-to-release=${Date.now() - turn.userSpeechEndedAtMs}ms (sttLag=${turn.sttLagMs ?? "n/a"}ms)`,
+          );
+        }
+        this.beginTurnTiming(timer);
+
+        // PHASE 1.3 — the ONE site that can fix the call's language.
+        // Before the lock is taken this is exactly the per-turn
+        // `detectLanguage` call it replaces; after it, the lock.
+        const turnLanguage = this.commitTurnLanguage(turn.text);
+        this.record.memory.recordUserTurn(turn.text, turnLanguage);
+        // The committed turn now carries this text — drop the
+        // display-only preview so it is not rendered twice.
+        this.record.liveUserTranscript = "";
+
+        // ── An attention check, not a new subject ─────────────────
+        //
+        // "Hello?" / "Can you hear me?" and nothing else, from a caller
+        // whose interruption left part of a reply unheard. Answered
+        // here — one short fixed line, or the unheard remainder itself
+        // — and never handed to the language model, which is what stops
+        // the campaign block being regenerated once per "hello".
+        //
+        // Returns false for everything else, including a greeting with
+        // a real question attached to it, so every other turn reaches
+        // `runThinkingAndSpeaking` on exactly the path it takes today.
+        // Reached only after `metrics.recordTurn` has advanced
+        // `turnIndex` at least once, so the voicemail window is closed
+        // before this can run.
+        // FIX #8 — `handleAttentionCheck` can only answer a turn itself
+        // while a script position is held or an episode is open, and
+        // `startSpeculation` already declines to start in either state,
+        // so no pre-opened request should exist here. Belt to that
+        // brace: if one somehow does, it is closed BEFORE the attention
+        // utterance is spoken rather than left open for the seconds that
+        // takes. Decided on the same two flags the handler reads.
+        if (this.speculation !== undefined && (this.attentionEpisodeOpen || this.heldScriptRemainder.length > 0)) {
+          this.abandonSpeculation("attention-check turn is answered without the language model");
+        }
+        if (await this.handleAttentionCheck(turn.text, loopSignal)) {
+          this.abandonSpeculation("attention-check turn was handled without the language model");
+          timer.summarize();
+          // FIX #7A — attention-check turns still went through real
+          // STT endpointing and turn release above; labelled ATTENTION
+          // by `label` alone (see `speakAttentionUtterance`'s own
+          // timer), so this one keeps reporting under its TURN# label
+          // with whatever LLM/TTS stages did NOT run left as
+          // "NOT DIRECTLY MEASURABLE" rather than fabricated.
+          timer.printLatencyBreakdown({
+            speechEndAtMs: turn.userSpeechEndedAtMs,
+            endpointEvidenceAtMs: turn.endpointEvidenceAtMs,
+            endpointEvidenceKind: turn.endpointEvidenceKind,
+          });
+          this.activeTimer = undefined;
+          continue;
+        }
+
+        // ── WHO PICKED UP ──────────────────────────────────────────
+        // Placed exactly here, between the attention check and the
+        // language model. See `handleIdentityGate`: while the gate is
+        // shut the model is never reached, so no reply exists to be
+        // spoken and the pitch cannot start. A hearing episode is
+        // consumed above and never reaches it, which is what keeps
+        // "I can hear you" from ever meaning "I am Sakshi".
+        if (await this.handleIdentityGate(turn.text, loopSignal)) {
+          this.abandonSpeculation("the identity gate answered the turn without the language model");
+          timer.summarize();
+          timer.printLatencyBreakdown({
+            speechEndAtMs: turn.userSpeechEndedAtMs,
+            endpointEvidenceAtMs: turn.endpointEvidenceAtMs,
+            endpointEvidenceKind: turn.endpointEvidenceKind,
+          });
+          this.activeTimer = undefined;
+          continue;
+        }
+
+        // ── The person closing a confirmed registration ─────────────
+        //
+        // "Okay, thank you." / "Great." / "Theek hai." after the
+        // confirmation has been spoken. Answered with ONE fixed goodbye
+        // and never handed to the language model — see
+        // `CLOSING_ACKNOWLEDGEMENT_TOKENS`. Reached only once the
+        // campaign layer has armed it (`armScriptedClosing`), and
+        // returns false for everything with content of its own, so a
+        // question after the confirmation reaches `runThinkingAndSpeaking`
+        // on exactly the path it takes today.
+        if (await this.handleScriptedClosing(turn.text, loopSignal)) {
+          this.abandonSpeculation("the closing was spoken without the language model");
+          timer.summarize();
+          timer.printLatencyBreakdown({
+            speechEndAtMs: turn.userSpeechEndedAtMs,
+            endpointEvidenceAtMs: turn.endpointEvidenceAtMs,
+            endpointEvidenceKind: turn.endpointEvidenceKind,
+          });
+          this.activeTimer = undefined;
+          continue;
+        }
+
+        // The reply about to be generated is PENDING from here until it
+        // either completes normally (committed below) or is cancelled by
+        // a barge-in (discarded below). Taken BEFORE generation starts so
+        // the id belongs to this response and no other.
+        const responseId = this.beginAssistantResponse();
+        const result = await this.runThinkingAndSpeaking(turn.text, turnLanguage, loopSignal);
+        timer.summarize();
+        timer.printLatencyBreakdown({
+          speechEndAtMs: turn.userSpeechEndedAtMs,
+          endpointEvidenceAtMs: turn.endpointEvidenceAtMs,
+          endpointEvidenceKind: turn.endpointEvidenceKind,
+        });
+        this.activeTimer = undefined;
+        // eslint-disable-next-line no-console
+        console.log(`[PIPELINE:${sid}] Turn complete: assistant="${result.assistantText.slice(0, 80)}${result.assistantText.length > 80 ? "..." : ""}" llmMs=${result.llmMs} ttsMs=${result.ttsMs}`);
+        // FIX #7A — response-length telemetry only: does not read from
+        // or alter generation in any way. `estimateTokenCount` is the
+        // same heuristic already used for cost above, reused here
+        // rather than re-implemented; `reportedCompletionTokens` is the
+        // real OpenAI usage count when the provider supplied one.
+        {
+          const brevityPhrase = detectBrevityRequest(turn.text);
+          // eslint-disable-next-line no-console
+          console.log(
+            `[RESPONSE-LEN:${sid}] TURN#${this.record.turnIndex} userChars=${turn.text.length} assistantChars=${result.assistantText.length} ` +
+              `estTokens=${estimateTokenCount(result.assistantText)} reportedCompletionTokens=${result.reportedCompletionTokens ?? "NOT DIRECTLY MEASURABLE"} ` +
+              `ttsChunks=${result.ttsChunkCount} audioQueuedMs=${Math.round(this.outboundQueuedMs)} ` +
+              `briefRequested=${brevityPhrase !== undefined}${brevityPhrase ? ` matchedPhrase="${brevityPhrase}"` : ""}`,
+          );
+        }
+        // An interrupted reply is CANCELLED, not a completed assistant
+        // turn: the caller talked over it, so committing it would put a
+        // sentence the caller never let us finish between their own two
+        // utterances and feed it to the next LLM request as if it had
+        // been a real exchange. Their words are not lost — the turn
+        // detector holds the interrupting utterance (see
+        // `AdaptiveTurnDetector.pendingEvent`) and it becomes the next
+        // user turn on the following iteration, so the model sees the
+        // caller's latest thought as the live conversational state.
+        // The unheard tail of a reply the caller cut off, if the
+        // barge-in turns out to have produced no turn to answer. See
+        // `resumeAfterStrandedBargeIn`, which runs at the end of this
+        // iteration — after the metrics below — and decides.
+        let strandedRemainder = "";
+        if (this.isResponseCancelled(responseId)) {
+          // The part that PLAYED is what the caller heard, so it is
+          // what the conversation actually contains — see
+          // `cancelledHeardText`. Committing it is what makes "carry on
+          // from where you left off" a statement about something the
+          // model can see; committing nothing is what made the next
+          // request start the block again. The unplayed remainder is
+          // still discarded, so nothing the caller never heard is ever
+          // put into the assistant's mouth.
+          const heard = this.cancelledHeardText;
+          // eslint-disable-next-line no-console
+          console.log(
+            `[PIPELINE:${sid}] Response #${responseId} CANCELLED by barge-in — heard="${heard.slice(0, 80)}${heard.length > 80 ? "..." : ""}" discarded="${result.assistantText.slice(heard.length, heard.length + 80)}${result.assistantText.length > heard.length + 80 ? "..." : ""}"`,
+          );
+          if (heard.length > 0) {
+            this.record.memory.recordAssistantTurn(heard);
+            this.contextualReplyCommitted = true;
+          }
+          strandedRemainder = unspokenTail(result.assistantText, heard);
+        } else if (result.assistantText.trim().length > 0) {
+          this.record.memory.recordAssistantTurn(result.assistantText);
+          this.contextualReplyCommitted = true;
+        } else {
+          // PHASE A — AN EMPTY GENERATION IS NOT AN ASSISTANT TURN.
+          //
+          // The guard mirrors the `heard.length > 0` one in the
+          // cancelled branch above, and for the same reason: a turn is
+          // committed because the caller HEARD it, and there is nothing
+          // here to have heard. A provider stream that failed, that
+          // ended with no content, or that was abandoned before its
+          // first token used to land here as `recordAssistantTurn("")`,
+          // which put an empty assistant message into the history and
+          // then into every later request — the model being shown that
+          // it answered, with nothing. The 2026-09-17 audit measured 14
+          // such turns on gemma-4 (14% of its assistant turns), 10 of
+          // which reached a later request; gpt-5.1 had none.
+          //
+          // Nothing replaces it: no placeholder, no apology, no fallback
+          // line. The history simply stays as it was, so the next
+          // request sees the caller's turn still unanswered — which is
+          // what actually happened.
+          //
+          // `contextualReplyCommitted` deliberately stays false for the
+          // same reason it is false for a cancelled reply that played
+          // nothing: no script content reached the caller.
+          // eslint-disable-next-line no-console
+          console.warn(
+            `[PIPELINE:${sid}] Response #${responseId} produced NO text (outcome=${result.turnOutcome}` +
+              ` charsGenerated=${result.charsGenerated} ttsChunks=${result.ttsChunkCount}) — not committed to history`,
+          );
+        }
+        this.record.bargeIn.reset();
+
+        // TRUE end-to-end response latency: the caller stopped talking
+        // -> the first AI audio frame reached the transport. Both
+        // endpoints are wall-clock stamps captured where those events
+        // actually happen, so this is one measured span rather than a
+        // sum of stages. It is deliberately NOT extended to cover the
+        // rest of the reply — synthesis of later sentences, queue
+        // drain and playback all happen while the caller is already
+        // being spoken to, so none of it is latency they wait on.
+        // Absent when the turn produced no audio at all (e.g. an
+        // immediate barge-in), which reports as N/A rather than 0.
+        const totalMs =
+          turn.userSpeechEndedAtMs !== undefined && this.firstAudioQueuedAtMs !== undefined
+            ? this.firstAudioQueuedAtMs - turn.userSpeechEndedAtMs
+            : undefined;
+
+        // PHASE 3 BATCH 1 — the three boundaries the per-turn console
+        // trace already printed and then threw away. Each is a
+        // subtraction of two timestamps that were BOTH captured at the
+        // event they name; none is derived from a total, and an
+        // absent endpoint on either side yields `undefined` rather
+        // than a substituted value. `positiveOrUndefined` in the
+        // collector then discards any negative result, so a stale or
+        // reordered stamp reports "not measured" instead of a 0.
+        //
+        // `endpointToReleaseMs` is undefined on a turn released by
+        // INFERENCE (the silence window simply expiring with no
+        // explicit provider claim) — that is a real distinction, not a
+        // gap, and collapsing it to 0 would report the detector as
+        // instant on exactly the turns where it waited longest.
+        const endpointToReleaseMs =
+          turn.endpointEvidenceAtMs !== undefined
+            ? turn.turnReleasedAtMs - turn.endpointEvidenceAtMs
+            : undefined;
+        const speechEndToReleaseMs =
+          turn.userSpeechEndedAtMs !== undefined
+            ? turn.turnReleasedAtMs - turn.userSpeechEndedAtMs
+            : undefined;
+        // The span `total` stops short of: queued -> actually sent by
+        // the bridge pump. Absent when this turn produced no audio, or
+        // when no bridge is attached (dashboard/mock sessions).
+        const playbackStartupMs =
+          this.firstAudioQueuedAtMs !== undefined &&
+          this.record.firstOutboundFrameAtMs !== undefined
+            ? this.record.firstOutboundFrameAtMs - this.firstAudioQueuedAtMs
+            : undefined;
+
+        this.record.metrics.recordTurn({
+          turnIndex: this.record.turnIndex++,
+          sttMs: turn.sttLagMs,
+          llmMs: result.llmMs,
+          ttsMs: result.ttsMs,
+          totalMs,
+          llmGenerationMs: result.llmGenerationMs,
+          ttsSynthesisMs: result.ttsSynthesisMs,
+          userSpeechMs: turn.userSpeechMs,
+          endpointToReleaseMs,
+          speechEndToReleaseMs,
+          playbackStartupMs,
+          // PHASE 3 BATCH 3 — the raw observations, passed straight
+          // through. No span is derived from them here: this batch
+          // captures, it does not calculate.
+          lastInboundAudioAtMs: turn.lastInboundAudioAtMs,
+          lastInterimTranscriptAtMs: turn.lastInterimTranscriptAtMs,
+          lastFinalTranscriptAtMs: turn.lastFinalTranscriptAtMs,
+          endpointEvidenceAtMs: turn.endpointEvidenceAtMs,
+          endpointEvidenceKind: turn.endpointEvidenceKind,
+          inboundStreamMsAtFinalTranscript: turn.inboundStreamMsAtFinalTranscript,
+          // PHASE 3 BATCH 6 — passed through beside their Batch 4 twin.
+          lastFinalWordEndStreamMs: turn.lastFinalWordEndStreamMs,
+          sttClockOffsetMs: turn.sttClockOffsetMs,
+          endpointMarkerOutcome: turn.endpointMarkerOutcome,
+          sttCostUsd: turn.sttCostUsd,
+          llmCostUsd: result.llmCostUsd,
+          ttsCostUsd: result.ttsCostUsd,
+          promptTokens: result.reportedPromptTokens,
+          cachedPromptTokens: result.cachedPromptTokens,
+          reasoningTokens: result.reasoningTokens,
+          llmAttempts: result.llmAttempts,
+          llmRetries: result.llmRetries,
+          llmRetryOverheadMs: result.llmRetryOverheadMs,
+          llmRetryReasons: result.llmRetryReasons,
+          finalTranscriptCount: turn.finalTranscriptCount,
+          interFinalGapsMs: turn.interFinalGapsMs,
+          // PHASE A — the turn's disposition, passed straight through
+          // from the branch that took it. Counts and one boolean; no
+          // transcript, no reply text, no prompt.
+          turnOutcome: result.turnOutcome,
+          charsGenerated: result.charsGenerated,
+          ttsChunkCount: result.ttsChunkCount,
+          supersederTakesFloor: result.supersederTakesFloor,
+          // TURN-RELEASE TRACE — spread so a turn with no trace (batch
+          // STT) omits all five rather than storing nulls. Counts and
+          // enums only; the transcript stays on the console line.
+          ...(turn.releaseTrace !== undefined
+            ? {
+                releaseReason: turn.releaseTrace.releaseReason,
+                heldTextReadsUnfinished: turn.releaseTrace.heldTextReadsUnfinished,
+                continuationGracesAtRelease: turn.releaseTrace.continuationGracesAtRelease,
+                continuationGraceTrace: turn.releaseTrace.continuationGraceTrace,
+                continuationGraceResets: turn.releaseTrace.continuationGraceResets,
+              }
+            : {}),
+          // Read-and-clear, so a turn with no barge-in reports absence
+          // rather than inheriting the previous turn's phase. Read HERE
+          // rather than earlier because `bargeIn.reset()` above clears
+          // the abort handles but deliberately not this label.
+          bargeInPhase: this.record.bargeIn.consumeBargeInPhase(),
+          // DIAGNOSTIC ONLY — same read-and-clear contract as the phase
+          // above. See `BargeInTriggerTelemetry`.
+          bargeInTrigger: this.consumeBargeInTrigger(),
+        });
+
+        // Last, after everything this turn owns has been committed and
+        // measured: if the barge-in that cancelled the reply produced no
+        // turn of its own, the caller is now sitting in silence. Resume
+        // rather than leave them there.
+        if (strandedRemainder.length > 0) {
+          const resumed = await this.resumeAfterStrandedBargeIn(strandedRemainder, loopSignal);
+          // NOT resumed means the caller produced a turn of their own,
+          // so the remainder is still exactly where the reply stopped.
+          // Held — not spoken — so that if that turn turns out to be a
+          // bare attention check, the script can be picked up from here
+          // instead of being regenerated. Any other turn clears it on
+          // the next iteration (see `handleAttentionCheck`), so it can
+          // never be spoken into a conversation that has moved on.
+          this.heldScriptRemainder = resumed ? "" : strandedRemainder;
+          this.heldScriptFull = resumed ? "" : result.assistantText;
+        } else {
+          // A reply that completed, or whose tail was resumed in full:
+          // no position is held, so no reply is on record to repeat.
+          this.heldScriptFull = "";
+        }
+      } catch (error) {
+        if (error instanceof RecoverableTurnError) {
+          // eslint-disable-next-line no-console
+          console.warn(`[PIPELINE:${sid}] RecoverableTurnError (continuing): ${error.message}`);
+          // Recover state to LISTENING so the next iteration can proceed.
+          if (this.record.state !== SessionState.LISTENING) {
+            try {
+              this.host.transition(this.record, SessionState.LISTENING, "recovering from turn error");
+            } catch {
+              // eslint-disable-next-line no-console
+              console.error(`[PIPELINE:${sid}] Cannot recover to LISTENING from state=${this.record.state}`);
+            }
+          }
+          continue;
+        }
+        // eslint-disable-next-line no-console
+        console.error(
+          `[PIPELINE:${sid}] FATAL error — state=${this.record.state} errorType=${error?.constructor?.name} error=${error instanceof Error ? error.message : String(error)}`,
+        );
+        this.host.markError(this.record, "PIPELINE", error);
+        return;
+      }
+    }
+
+    // eslint-disable-next-line no-console
+    unsubscribeContinuationHold();
+    console.log(`[PIPELINE:${sid}] run() exiting — state=${this.record.state} aborted=${loopSignal.aborted}`);
+  }
+
+  /**
+   * A barge-in cancelled the reply. If the caller then produced nothing
+   * to answer, speak the part of that reply they never heard.
+   *
+   * See the note on `STRANDED_RESUME_QUIET_MS` for why this exists: a
+   * cough, a door, a half-word, a hesitation sound or a transcript that
+   * never finalised can all cancel a reply and leave nothing behind to
+   * reply to, and the caller then hears dead air with the assistant
+   * stopped mid-sentence.
+   *
+   * THE GUARD IS THE WHOLE DESIGN. Any turn material at all — a
+   * completed turn already buffered for the next subscriber, or finals
+   * the detector is still holding — abandons the resume, because a
+   * genuine interruption must be answered by the normal contextual
+   * path and never by this. Both are guaranteed to become a turn (see
+   * `newerUserTurnWaiting` for why), so abandoning here always hands
+   * the call straight back to the main loop.
+   *
+   * Nothing here changes what a reply says, how it is generated, or how
+   * a barge-in behaves: it only fills a silence that would otherwise
+   * end the call, using text that was already generated for this
+   * caller and never reached them.
+   *
+   * @returns whether the remainder was actually spoken. Every path that
+   *   declines returns `false`, which is the caller's signal that the
+   *   remainder is still an unspoken script position and may be HELD —
+   *   see `heldScriptRemainder`. Purely additive: the decision to
+   *   resume, and every guard on it, is byte-for-byte the one this
+   *   method already made.
+   */
+  private async resumeAfterStrandedBargeIn(remainder: string, loopSignal: AbortSignal): Promise<boolean> {
+    const sid = this.record.id;
+    if (this.voicemailDetected) return false;
+    if (this.strandedResumes >= MAX_STRANDED_RESUMES) return false;
+
+    // Wait for the line to go quiet, re-checking often so a real turn
+    // is handed back to the main loop with no added latency.
+    const deadline = Date.now() + STRANDED_RESUME_MAX_WAIT_MS;
+    while (Date.now() < deadline) {
+      if (loopSignal.aborted) return false;
+      if (this.callerHasTurnMaterial() || this.callerUtteranceInFlight()) return false;
+      if (Date.now() - this.record.lastConversationActivityAt >= STRANDED_RESUME_QUIET_MS) break;
+      await abortableSleep(STRANDED_RESUME_POLL_MS, loopSignal);
+    }
+
+    if (loopSignal.aborted) return false;
+    if (this.callerHasTurnMaterial() || this.callerUtteranceInFlight()) return false;
+    // Anything other than LISTENING means the loop has already moved on
+    // (a turn is being answered, or the session is ending).
+    if (this.record.state !== SessionState.LISTENING) return false;
+
+    this.strandedResumes += 1;
+    // eslint-disable-next-line no-console
+    console.log(
+      `[PIPELINE:${sid}] barge-in produced no turn — RESUMING the unheard remainder (${this.strandedResumes}/${MAX_STRANDED_RESUMES}): "${remainder.slice(0, 80)}${remainder.length > 80 ? "..." : ""}"`,
+    );
+    const timer = new TurnTimer(sid, "RESUME");
+    this.beginTurnTiming(timer);
+    try {
+      // The remainder is a slice of `assistantText`, i.e. already
+      // formatted — see `speakFixedUtterance`'s `alreadyFormatted`.
+      await this.speakFixedUtterance(remainder, loopSignal, "resuming an interrupted reply", true);
+    } finally {
+      this.activeTimer = undefined;
+      timer.summarize();
+    }
+    // Committed for the same reason the interrupted part was: the caller
+    // heard it, so the model must be able to see it and carry on from
+    // there instead of starting the block again. Marked as recovery —
+    // the caller never asked for it, the pipeline spoke it because a
+    // barge-in left them mid-sentence. See `ConversationTurn.replayOf`.
+    this.record.memory.recordAssistantTurn(remainder, "resume");
+    // FIX 2 — script content the caller heard: a block has been delivered.
+    this.contextualReplyCommitted = true;
+    this.record.bargeIn.reset();
+    return true;
+  }
+
+  /**
+   * The caller is checking whether we are still on the line. Answer
+   * that, and only that.
+   *
+   * Called from the main loop after the user turn has been committed
+   * and before the language model is reached, so everything it declines
+   * takes the normal contextual path untouched. Three outcomes:
+   *
+   *   RESUME — an acknowledgement already stands and the caller has
+   *     said nothing since but attention checks or a confirmation that
+   *     they can hear. Speak the part of the interrupted reply they
+   *     never heard, from `heldScriptRemainder`. No language-model
+   *     request, so it cannot restate a line and cannot restart the
+   *     block: the text is a suffix of a reply already generated for
+   *     this caller, and the prefix of it they DID hear is in the
+   *     history as their own assistant turn.
+   *
+   *   ACKNOWLEDGE — the first attention check of an episode. One short
+   *     fixed line, exactly once, and the episode is then open so no
+   *     further "hello" can produce a second one.
+   *
+   *   REPEAT — the caller, asked whether they can hear, says "start
+   *     from the beginning" or "no, I couldn't hear you". Speak the
+   *     whole cut-off reply again (`heldScriptFull`), by the same fixed
+   *     path as RESUME: no language-model request, nothing regenerated.
+   *
+   *   DECLINE — everything else. A real question, an objection, a
+   *     backchannel that reached a turn, an attention check with
+   *     nothing held to resume. The episode closes, the held position
+   *     is released, and the turn is answered by the contextual path
+   *     exactly as it is today.
+   *
+   * The RESUME branch is bounded without a counter: every resume speaks
+   * a strict suffix of what was held and re-holds only what is still
+   * unheard, so each round is strictly shorter and the remainder
+   * reaches "" in at most as many rounds as the reply has utterances.
+   * A caller who keeps interrupting therefore hears the block advance,
+   * never repeat.
+   *
+   * @returns whether this turn was handled here.
+   */
+  /**
+   * WHO PICKED UP — the gate that must open before the campaign is
+   * spoken.
+   *
+   * Runs at exactly one place: after `handleAttentionCheck` has
+   * declined the turn and BEFORE `runThinkingAndSpeaking`. That
+   * ordering is the whole design, and both halves matter:
+   *
+   *   - The attention check runs FIRST, so a "Hello?" over the identity
+   *     question, and the caller's answer to the hearing line that
+   *     follows, are consumed there and never reach this method at all.
+   *     A hearing episode therefore cannot move the identity state, in
+   *     either direction. That is the reported defect, closed
+   *     structurally rather than by a rule the model is asked to obey.
+   *
+   *   - It runs BEFORE the language model, so while the gate is shut
+   *     the model is never asked for a reply and cannot produce a pitch
+   *     to be spoken. "No pitch before identity is confirmed" is not an
+   *     instruction here; it is that the code which speaks the pitch is
+   *     not reached.
+   *
+   * Returns true when it answered the turn itself, exactly like
+   * `handleAttentionCheck`, and the main loop then continues.
+   */
+  private async handleIdentityGate(userText: string, loopSignal: AbortSignal): Promise<boolean> {
+    const sid = this.record.id;
+    const line = this.record.campaignIdentityLine;
+    if (line === undefined || this.identityState === "confirmed" || this.identityState === "denied") {
+      return false;
+    }
+
+    // ── Not asked yet: ask it, and nothing else ──────────────────
+    if (this.identityState === "unasked") {
+      this.identityState = "outstanding";
+      // eslint-disable-next-line no-console
+      console.log(`[PIPELINE:${sid}] identity gate — asking who picked up: "${line}"`);
+      this.abandonSpeculation("the identity question is asked without the language model");
+      await this.speakAttentionUtterance(line, loopSignal, "asking who picked up");
+      return true;
+    }
+
+    // ── Asked, and this turn is the answer ───────────────────────
+    //
+    // ...unless it is the answer to the OTHER question we asked. A bare
+    // "Yes." said straight after "Hey, can you hear me okay?" answers
+    // that, and `classifyIdentityAnswer` cannot see the difference
+    // because there is no difference in the words — so the pipeline,
+    // which does know, says so. Treated as `unclear`, which is what the
+    // hearing answers the classifier CAN see already settle as, and
+    // what costs one re-ask rather than a wrong assumption. See
+    // `turnAnsweredHearingCheckOnly`.
+    const verdict = this.turnAnsweredHearingCheckOnly
+      ? "unclear"
+      : classifyIdentityAnswer(userText, this.record.request.campaign?.customer.name);
+    // eslint-disable-next-line no-console
+    console.log(
+      `[PIPELINE:${sid}] identity gate — "${userText.trim().slice(0, 40)}" reads as ${verdict.toUpperCase()}`,
+    );
+
+    if (verdict === "confirmed") {
+      this.identityState = "confirmed";
+      // The turn itself still goes to the language model, which is what
+      // carries the conversation on into the campaign from here.
+      return false;
+    }
+
+    if (verdict === "denied") {
+      // Wrong person. The gate stays shut for the rest of the call, so
+      // no later turn can reopen it, and the contextual path speaks the
+      // apology-and-close the script already owns. Nothing is pitched
+      // and nothing is registered.
+      this.identityState = "denied";
+      return false;
+    }
+
+    // ── Unclear: ask again, or give up ──────────────────────────
+    if (this.identityReAsks >= MAX_IDENTITY_REASKS) {
+      // Three asks with no answer. The gate must not open on a guess,
+      // so the call ends instead of continuing into a pitch aimed at
+      // somebody who never said who they are.
+      // eslint-disable-next-line no-console
+      console.log(
+        `[PIPELINE:${sid}] identity gate — ${this.identityReAsks} re-asks spent with no clear answer; ending the call rather than pitching`,
+      );
+      await this.speakAttentionUtterance(
+        identityGiveUpFor(this.record.memory.currentLanguage),
+        loopSignal,
+        "closing a call whose caller never confirmed who they are",
+      );
+      void this.host.end(this.record.id);
+      return true;
+    }
+
+    this.identityReAsks += 1;
+    // eslint-disable-next-line no-console
+    console.log(`[PIPELINE:${sid}] identity gate — no clear answer; asking again (${this.identityReAsks}/${MAX_IDENTITY_REASKS})`);
+    this.abandonSpeculation("the identity question is re-asked without the language model");
+    await this.speakAttentionUtterance(
+      identityReAskFor(this.record.memory.currentLanguage, line),
+      loopSignal,
+      "returning to the unanswered identity question",
+    );
+    return true;
+  }
+
+  private async handleAttentionCheck(userText: string, loopSignal: AbortSignal): Promise<boolean> {
+    const sid = this.record.id;
+    const trimmed = userText.trim();
+    const isCheck = isAttentionCheck(trimmed);
+    // ── Cross-turn greeting repetition — see `lastTurnWasBareGreeting`.
+    //
+    // Read BEFORE it is updated, so `repeatedGreeting` below describes
+    // the PREVIOUS turn and this turn together. Updated here rather
+    // than at any of the method's ten return points, so no branch can
+    // forget it and the flag describes every committed turn.
+    const previousTurnWasBareGreeting = this.lastTurnWasBareGreeting;
+    this.lastTurnWasBareGreeting = isBareGreetingTurn(trimmed);
+    // Cleared for the same reason and in the same place: this method
+    // runs on every released turn, before the identity gate that reads
+    // it, so the flag can only ever describe the turn in hand. See
+    // `turnAnsweredHearingCheckOnly`.
+    this.turnAnsweredHearingCheckOnly = false;
+    // Only ever read inside an open episode: this is the caller
+    // confirming the line after OUR acknowledgement, not a bare "yes"
+    // in open conversation, which is never seen by this method.
+    const confirmsHearing =
+      this.attentionEpisodeOpen && HEARING_CONFIRMATION_ONLY.test(trimmed);
+    // The caller's INSTRUCTION after the question, read only while a
+    // cut-off reply is on record (`heldScriptFull`) to act on. "Start
+    // from the beginning" / "I couldn't hear you" wins over "continue",
+    // so "continue from the beginning" restarts. Neither is ever read
+    // outside an open episode, so the same words in open conversation
+    // reach the language model exactly as today.
+    const replyOnRecord = this.attentionEpisodeOpen && this.heldScriptFull.length > 0;
+    const wantsRestart = replyOnRecord && isRestartRequest(trimmed);
+    const wantsContinue = replyOnRecord && !wantsRestart && isContinueRequest(trimmed);
+
+    if (!isCheck && !confirmsHearing && !wantsRestart && !wantsContinue) {
+      // A real contribution. The episode is over and the held position
+      // is released — an unheard remainder must never be spoken into a
+      // conversation that has moved on to something else.
+      this.attentionEpisodeOpen = false;
+      this.hearingEpisodeBeforeBlock = false;
+      this.heldScriptRemainder = "";
+      this.heldScriptFull = "";
+      // The caller said something. Whatever came before, the hearing
+      // lines are no longer being spoken into a void.
+      this.hearingLinesWithoutProgress = 0;
+      return false;
+    }
+
+    const remainder = this.heldScriptRemainder;
+
+    // ── Say the cut-off reply again, from its first word ───────────
+    //
+    // "Start from the beginning." / "No, I couldn't hear you." Spoken
+    // through the same fixed-utterance path as the RESUME below, so
+    // there is no language-model request and nothing can be restated
+    // differently or regenerated: the text is the reply already
+    // generated for this caller. Whatever they hear of it is committed
+    // as heard; whatever they cut off again is re-held as the position.
+    if (wantsRestart) {
+      // ── THE EXISTING CAP, ON THIS PATH TOO ───────────────────────
+      //
+      // The same guard the RESUME branch below opens with, for the same
+      // reason. REPEAT re-speaks the whole cut-off reply from its first
+      // word, and — like RESUME — it neither consulted the cap nor
+      // advanced the counter, so a caller who cut every replay with
+      // another bare "No." was offered the whole block again per "No.",
+      // without bound (read-only audit, 2026-09-22, reproduced through
+      // the harness: four cut repeats, a fifth started, one model
+      // request). The counter, the cap and the fallback are the existing
+      // ones (`MAX_HEARING_LINES_WITHOUT_PROGRESS`, still 2;
+      // `declineExhaustedHearingCheck`, unchanged): once the lines are
+      // spent, a further restart request takes the contextual path
+      // exactly as an exhausted hearing check does.
+      if (this.hearingLineCapReached()) return this.declineExhaustedHearingCheck(trimmed);
+      const full = this.heldScriptFull;
+      // eslint-disable-next-line no-console
+      console.log(
+        `[PIPELINE:${sid}] hearing check answered "${trimmed.slice(0, 40)}" — REPEATING the interrupted reply from the beginning: "${full.slice(0, 80)}${full.length > 80 ? "..." : ""}"`,
+      );
+      this.heldScriptRemainder = "";
+      const spoken = await this.speakAttentionUtterance(
+        full,
+        loopSignal,
+        "repeating the interrupted reply from the beginning",
+        // The caller ASKED for this one. Deliberately not "resume": an
+        // intentional re-delivery of a script line stays visible to the
+        // adherence diagnostic exactly as it was before `replayOf`
+        // existed.
+        "repeat",
+      );
+      // What was delivered decides the position and the cap, on this
+      // path and the RESUME path below, from the one place that reads
+      // them — see `concludeReplay`.
+      this.concludeReplay(spoken);
+      return true;
+    }
+
+    // "Continue" with nothing left to continue — the tail was already
+    // resumed in full. The conversation carries on through the
+    // contextual path, which sees both lines in its history.
+    if (wantsContinue && remainder.length === 0) {
+      this.attentionEpisodeOpen = false;
+      this.hearingEpisodeBeforeBlock = false;
+      this.heldScriptFull = "";
+      this.hearingLinesWithoutProgress = 0;
+      return false;
+    }
+
+    // ── Carry on from exactly where the reply stopped ───────────────
+    //
+    // Reached by a second "hello", by a confirmation ("yes", "haan")
+    // and by an explicit "continue from where you stopped".
+    if (this.attentionEpisodeOpen && remainder.length > 0) {
+      // ── THE EXISTING CAP, NOW ALSO ON THIS PATH ──────────────────
+      //
+      // The four sites that speak a FIXED hearing line have always
+      // asked this first; RESUME never did, because it speaks script
+      // content and a resume was, by construction, always progress —
+      // `heardSoFarText` rounded up, so any resume that started counted
+      // as delivered and the remainder was strictly shorter every round.
+      //
+      // With delivered audio measured accurately that is no longer
+      // true. A caller who interrupts before any of the resumed audio
+      // reaches them leaves the whole remainder re-held and the counter
+      // untouched (see the reset below), so without this guard the same
+      // block is replayed for as long as they keep saying "hello?" —
+      // the loop `MAX_HEARING_LINES_WITHOUT_PROGRESS` already exists to
+      // end.
+      //
+      // Nothing about the cap changes: not its value, not how it is
+      // incremented, not what declining does. A resume that DELIVERS
+      // anything still resets the counter, so a caller who is actually
+      // hearing the reply never reaches this at all — and one who has
+      // twice heard nothing is handed to the contextual path, which is
+      // where a caller the fixed lines are not reaching belongs.
+      if (this.hearingLineCapReached()) return this.declineExhaustedHearingCheck(trimmed);
+      // eslint-disable-next-line no-console
+      console.log(
+        `[PIPELINE:${sid}] attention check answered — RESUMING from where the reply stopped: "${remainder.slice(0, 80)}${remainder.length > 80 ? "..." : ""}"`,
+      );
+      this.heldScriptRemainder = "";
+      const spoken = await this.speakAttentionUtterance(
+        remainder,
+        loopSignal,
+        "resuming after an attention check",
+        "resume",
+      );
+      // ── WHAT WAS DELIVERED DECIDES, ON BOTH REPLAY PATHS ──────────
+      //
+      // The position, the cap and the release of a reply that has now
+      // been heard in full are settled in one place for RESUME and
+      // REPEAT alike — see `concludeReplay`. The reasoning the two
+      // branches used to carry separately is recorded there; what
+      // follows is why the zero-delivery half of it exists at all.
+      //
+      // ── A RESUME THAT DELIVERED NOTHING IS NOT PROGRESS ───────────
+      //
+      // This reset used to be unconditional, on the premise that a
+      // replay is always script content and therefore always advances
+      // the call (see `MAX_HEARING_LINES_WITHOUT_PROGRESS`). That
+      // premise held only while `heardSoFarText` rounded UP: an
+      // utterance counted as heard the instant playback started, so a
+      // resume could not deliver nothing.
+      //
+      // With delivered audio measured accurately it can. A caller who
+      // interrupts inside the resumed sentence every time hears no more
+      // of it each round, the whole remainder is re-held, and the
+      // unconditional reset meant the cap could never be reached — the
+      // same block replayed for as long as they kept saying "hello?".
+      //
+      // So the reset now follows what was actually delivered, which is
+      // the value the line above already computed. Nothing else changes:
+      // no new counter, no new threshold, and a resume that delivers any
+      // audio at all resets the cap exactly as it always did.
+      // ── AND A ZERO-DELIVERY RESUME IS A LINE SPENT ────────────────
+      //
+      // The complement of the reset, and the half that makes the guard
+      // at the top of this branch reachable. Leaving the counter merely
+      // UNRESET was not enough: nothing else on this path advances it,
+      // so a caller whose every "hello?" lands before the resumed audio
+      // reaches them held it at whatever the one acknowledgement had
+      // set it to, the cap was never met, and the same block was
+      // offered again per "hello?" forever (measured: six
+      // interruptions, seven copies spoken, one language-model
+      // request).
+      //
+      // Counted for exactly the reason the four fixed-line sites count
+      // themselves: the agent has just spoken and the call is no
+      // further forward. Uses the existing counter and the existing cap
+      // (`MAX_HEARING_LINES_WITHOUT_PROGRESS`, still 2). Once it is
+      // met, the guard at the top of this branch hands the next check
+      // to `declineExhaustedHearingCheck` — the same contextual
+      // fallback a caller gets when the fixed hearing lines are spent.
+      this.concludeReplay(spoken);
+      return true;
+    }
+
+    // ── One short acknowledgement, once per episode ─────────────────
+    if (isCheck && !this.attentionEpisodeOpen && remainder.length > 0) {
+      if (this.hearingLineCapReached()) return this.declineExhaustedHearingCheck(trimmed);
+      // Set BEFORE the line is spoken. A second "hello" over the
+      // acknowledgement itself must find the episode already open, or
+      // it produces the second acknowledgement this exists to prevent.
+      this.attentionEpisodeOpen = true;
+      this.hearingLinesWithoutProgress += 1;
+      const line = attentionAcknowledgementFor(this.record.memory.currentLanguage);
+      // eslint-disable-next-line no-console
+      console.log(`[PIPELINE:${sid}] attention check — acknowledging once: "${line}"`);
+      await this.speakAttentionUtterance(line, loopSignal, "acknowledging an attention check");
+      return true;
+    }
+
+    // ── FIX 2: nothing to resume — the block finished ──────────────
+    //
+    // The caller heard the whole block and is now saying nothing but
+    // "Hello?" / "Can you hear me?". Handing that to the language model
+    // is what regenerated the script (real transcripts: the greeting
+    // spoken twice, the pitch re-pitched). So, with the STRICT
+    // vocabulary (see `isHearingCheck` — a lone "haan ji" is never
+    // this), the episode is opened with one fixed acknowledgement; the
+    // caller's next presence check or hearing confirmation gets one
+    // fixed follow-up that hands the floor back to them; and whatever
+    // they say after that takes the contextual path with both lines in
+    // its history. No script text is spoken by either branch.
+    if (!this.attentionEpisodeOpen) {
+      // ── One greeting is a hello; two in a row is a hearing problem ──
+      //
+      // Two ways to qualify, and a single bare greeting is neither:
+      //
+      //   UNMISTAKABLE — an explicit presence phrase ("can you hear
+      //     me", "are you there") or the greeting doubled inside one
+      //     utterance ("Hello? Hello?"). Answered on the first turn,
+      //     before a block and after one, exactly as before.
+      //
+      //   REPEATED ACROSS TURNS — this turn is a strict hearing check
+      //     and the caller's PREVIOUS turn was a bare greeting too.
+      //     "Hello." ... "Hello." is a person who cannot hear us, and
+      //     it is the case no whole-utterance predicate could see,
+      //     because the two halves arrive as two separate turns.
+      //
+      // What changes is only this: after a block, a SINGLE bare "Hello"
+      // used to qualify by `isHearingCheck` alone and was answered with
+      // "Hey, can you hear me okay?" on the spot. One greeting out of a
+      // clear sky is a person saying hello, so it now takes the
+      // contextual path — where the model answers it naturally and the
+      // conversation carries on — and the hearing check waits for the
+      // second one. Nothing here widens the vocabulary, and the
+      // before-a-block rule is untouched: a single "Hi." after our
+      // opening line is still the caller answering the phone.
+      const qualifies =
+        isEmphaticHearingCheck(trimmed) ||
+        (previousTurnWasBareGreeting && isHearingCheck(trimmed));
+      if (qualifies) {
+        if (this.hearingLineCapReached()) return this.declineExhaustedHearingCheck(trimmed);
+        this.attentionEpisodeOpen = true;
+        this.hearingEpisodeBeforeBlock = !this.contextualReplyCommitted;
+        this.hearingLinesWithoutProgress += 1;
+        const line = attentionAcknowledgementFor(this.record.memory.currentLanguage);
+        // eslint-disable-next-line no-console
+        console.log(
+          `[PIPELINE:${sid}] hearing check with nothing to resume (${this.contextualReplyCommitted ? "after a block" : "before any block"}) — acknowledging once: "${line}"`,
+        );
+        await this.speakAttentionUtterance(line, loopSignal, "acknowledging a hearing check");
+        return true;
+      }
+      // A bare "haan ji"/"ji"/"Hi." — an answer or a pickup, not a
+      // hearing problem. The contextual path (and the classifier) see
+      // it exactly as today.
+      this.hearingLinesWithoutProgress = 0;
+      return false;
+    }
+    // Episode open, nothing held: the caller came back.
+    if (this.hearingEpisodeBeforeBlock) {
+      // Opened before any block was delivered. Still checking -> the same
+      // acknowledgement again (a TTS request, never the model, so the
+      // greeting cannot be re-spoken). Confirming they can hear -> the
+      // contextual path continues with the pitch, which is what they
+      // are waiting for; there is nothing to ask "did you catch" about.
+      if (isCheck) {
+        if (this.hearingLineCapReached()) return this.declineExhaustedHearingCheck(trimmed);
+        this.hearingLinesWithoutProgress += 1;
+        const line = attentionAcknowledgementFor(this.record.memory.currentLanguage);
+        // eslint-disable-next-line no-console
+        console.log(`[PIPELINE:${sid}] hearing check repeated before any block — acknowledging again: "${line}"`);
+        await this.speakAttentionUtterance(line, loopSignal, "acknowledging a repeated hearing check");
+        return true;
+      }
+      this.attentionEpisodeOpen = false;
+      this.hearingEpisodeBeforeBlock = false;
+      // They answered the question rather than asking it again.
+      this.hearingLinesWithoutProgress = 0;
+      // ── AND IT IS THE HEARING QUESTION THEY ANSWERED ──────────────
+      //
+      // Reached only by `confirmsHearing` — a whole utterance made of
+      // nothing but "yes" / "haan" / "ji" / "theek hai"
+      // (`HEARING_CONFIRMATION_ONLY`), said straight after our own "can
+      // you hear me okay?". The turn now goes on to the identity gate,
+      // which must not read it as the answer to a different question it
+      // happens to fit. See `turnAnsweredHearingCheckOnly`.
+      this.turnAnsweredHearingCheckOnly = true;
+      return false;
+    }
+    // Opened after a block, by the acknowledgement above, with nothing
+    // held to resume. One follow-up, once, that hands the floor back
+    // without restating a word of the script; the episode closes so a
+    // further "hello" starts over with the acknowledgement rather than
+    // looping here. The acknowledgement itself is still spoken exactly
+    // once per episode.
+    //
+    // A REPLAY THAT COMPLETED NEVER ARRIVES HERE. `concludeReplay`
+    // closes the episode when the interrupted reply has been delivered
+    // in full, so the caller's next turn is a turn in the conversation
+    // rather than an answer to us — see the note there. This line is
+    // reached only by an episode that has spoken nothing but fixed
+    // lines, which is the exchange it was written for and which
+    // `test:language-lock` E2 pins.
+    if (this.hearingLineCapReached()) return this.declineExhaustedHearingCheck(trimmed);
+    this.attentionEpisodeOpen = false;
+    this.hearingLinesWithoutProgress += 1;
+    const followUp = hearingFollowUpFor(this.record.memory.currentLanguage);
+    // eslint-disable-next-line no-console
+    console.log(`[PIPELINE:${sid}] hearing check answered — following up once: "${followUp}"`);
+    await this.speakAttentionUtterance(followUp, loopSignal, "following up a hearing check");
+    return true;
+  }
+
+  /**
+   * Have the fixed hearing lines already been spent with nothing to
+   * show for them? See `MAX_HEARING_LINES_WITHOUT_PROGRESS`.
+   *
+   * Read at the four sites in `handleAttentionCheck` that speak one of
+   * those lines, and nowhere else. It decides nothing about RESUME or
+   * REPEAT, which speak the interrupted reply rather than a fixed line.
+   */
+  private hearingLineCapReached(): boolean {
+    return this.hearingLinesWithoutProgress >= MAX_HEARING_LINES_WITHOUT_PROGRESS;
+  }
+
+  /**
+   * The cap is reached and this turn would have been a third fixed
+   * hearing line. Decline it exactly the way a real contribution is
+   * declined — the episode closes and the held position is released,
+   * because the turn is about to be answered by the contextual path and
+   * an unheard remainder must never be spoken into a reply generated
+   * after it.
+   *
+   * THE COUNTER IS DELIBERATELY NOT RESET HERE. It is reset only by
+   * something actually happening (see the sites in
+   * `handleAttentionCheck`), so a caller — or an echo — that keeps
+   * producing presence checks keeps taking the contextual path rather
+   * than alternating between the model and a canned line, which is the
+   * same loop one period longer.
+   */
+  /**
+   * A replay of the interrupted reply — RESUME or REPEAT — has just
+   * finished. Settle the held position and the cap from WHAT WAS
+   * ACTUALLY DELIVERED, which is the only thing either branch may be
+   * judged on.
+   *
+   * Three outcomes, and they are three different states of the call:
+   *
+   *   NOTHING DELIVERED (`heard` empty). The caller cut the replay
+   *     before any of its audio reached them, so the agent has spoken
+   *     and the call is no further forward: one hearing line is spent,
+   *     exactly as the four fixed-line sites spend one. The position is
+   *     kept — the whole reply is still owed — and the guard at the top
+   *     of each replay branch ends the loop once the existing cap
+   *     (`MAX_HEARING_LINES_WITHOUT_PROGRESS`, still 2) is met.
+   *
+   *   PART DELIVERED. Script content reached the caller, so the call
+   *     advanced and the counter resets exactly as it always did. What
+   *     is still unheard stays held, and `heldScriptFull` stays with
+   *     it: a caller who now asks to start again is still owed the
+   *     whole reply.
+   *
+   *   DELIVERED IN FULL, NOTHING UNHEARD. The recovery is over, and so
+   *     is the episode. The reply this episode existed to rescue has
+   *     been heard end to end: there is no position left to hold, no
+   *     cut-off reply left to repeat, and nothing left to ask the
+   *     caller about. The last thing they heard was SCRIPT CONTENT,
+   *     ending on the script's own question, so whatever they say next
+   *     is a turn in the conversation and belongs to the contextual
+   *     path.
+   *
+   * THE LAST CASE IS BOTH DEFECTS. Nothing on either replay path
+   * cleared `heldScriptFull` or closed the episode, so a reply already
+   * re-delivered in full stayed "a cut-off reply on record" inside a
+   * still-open hearing episode. Two things followed, and this settles
+   * both:
+   *
+   *   C1 — a later bare "No." re-read as a restart request and played
+   *     the whole block again, once per "No.", bounded only by the 180s
+   *     call cap or the caller hanging up (reproduced: three "No."s,
+   *     three full replays, three commits, one language-model
+   *     request). It is now an ordinary turn, which is what an answer
+   *     to the question the block ended on should always have been.
+   *
+   *   H1 — a later bare "Yes." was consumed as one more hearing
+   *     confirmation and drew "Did you catch what I was saying?"
+   *     instead of the confirmation the script owes them, so the yes
+   *     the outcome classifier reads at the anchor arrived a turn late
+   *     or not at all. It now reaches the model on the turn it was
+   *     said.
+   *
+   * WHAT THIS DOES NOT TOUCH. An episode that spoke nothing but FIXED
+   * lines never comes through here, so the acknowledgement-then-
+   * follow-up exchange is exactly as it was: "Hey, can you hear me
+   * okay?" -> "Yes." -> "I just want to make sure you can hear me. Did
+   * you catch what I was saying?", in the locked language, with no
+   * language-model request (`test:language-lock` E1/E2,
+   * `test:hearing-loop` A2/A4/D4). Closing is keyed on a replay having
+   * been delivered, not on what the caller said.
+   *
+   * No new counter, no new threshold and no new state. The counter, the
+   * cap, the two held-position fields and the two episode flags are the
+   * existing ones, and delivery is read from what
+   * `speakAttentionUtterance` measured after the utterance was spoken
+   * and cancelled — never from an intention, so a replay the caller
+   * heard any of is progress however it was asked for.
+   */
+  private concludeReplay(spoken: { readonly heard: string; readonly unheard: string }): void {
+    // Cut off again: whatever is STILL unheard is still the position.
+    this.heldScriptRemainder = spoken.unheard;
+
+    if (spoken.heard.length === 0) {
+      this.hearingLinesWithoutProgress += 1;
+      return;
+    }
+
+    // Script content the caller HEARD, not a fixed hearing line: the
+    // call advanced.
+    this.contextualReplyCommitted = true;
+    this.hearingLinesWithoutProgress = 0;
+
+    // Still owed the rest of it, so the reply stays on record for a
+    // later resume or restart, inside the episode that is recovering it.
+    if (spoken.unheard.length > 0) return;
+
+    // Delivered whole: nothing is held, nothing is on record, and the
+    // recovery episode is over.
+    this.heldScriptFull = "";
+    this.attentionEpisodeOpen = false;
+    this.hearingEpisodeBeforeBlock = false;
+  }
+
+  private declineExhaustedHearingCheck(trimmed: string): boolean {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[PIPELINE:${this.record.id}] ${MAX_HEARING_LINES_WITHOUT_PROGRESS} hearing lines already spoken with nothing in between — "${trimmed.slice(0, 40)}" takes the contextual path instead of another`,
+    );
+    this.attentionEpisodeOpen = false;
+    this.hearingEpisodeBeforeBlock = false;
+    this.heldScriptRemainder = "";
+    this.heldScriptFull = "";
+    return false;
+  }
+
+  /**
+   * Speaks one fixed line for the attention path and commits what the
+   * caller actually HEARD of it.
+   *
+   * Reuses the existing response-cancellation mechanism rather than
+   * adding one: `beginAssistantResponse` takes the id (and clears the
+   * previous reply's playback accounting), `triggerExternalBargeIn`
+   * freezes `cancelledHeardText` at the instant playback stopped, and
+   * `isResponseCancelled` says which of the two to commit. Identical to
+   * what the main loop does for a generated reply — a caller who talks
+   * over the acknowledgement is a barge-in like any other, and nothing
+   * they did not hear is ever put into the assistant's mouth.
+   *
+   * A barge-in cannot land before the id is taken: it requires
+   * SPEAKING, and the session is in LISTENING until `speakFixedUtterance`
+   * transitions through THINKING to SPEAKING below.
+   */
+  private async speakAttentionUtterance(
+    text: string,
+    loopSignal: AbortSignal,
+    transitionReason: string,
+    /**
+     * Set ONLY by the branches that re-speak an interrupted reply — the
+     * RESUME and REPEAT branches of `handleAttentionCheck` and
+     * `recoverFromSilence`'s held-position branch. Omitted for the fixed
+     * lines (the acknowledgement, the follow-up, the identity question,
+     * the silence prompts), which are not script text and are not a
+     * replay of anything. Recorded on the committed turn and read only
+     * by the adherence diagnostic — see `ConversationTurn.replayOf`.
+     */
+    replayOf?: "resume" | "repeat",
+    timerLabel = "ATTENTION",
+  ): Promise<{ readonly heard: string; readonly unheard: string }> {
+    const responseId = this.beginAssistantResponse();
+    const timer = new TurnTimer(this.record.id, timerLabel);
+    this.beginTurnTiming(timer);
+    try {
+      // `replayOf` is set at exactly the three sites that re-speak an
+      // interrupted reply, and those are exactly the texts that have
+      // already been through the formatter. Every fixed line (the
+      // acknowledgement, the follow-up, the identity question, the
+      // silence prompts, the closing) leaves it unset and is formatted
+      // here exactly as before.
+      await this.speakFixedUtterance(text, loopSignal, transitionReason, replayOf !== undefined);
+    } finally {
+      this.activeTimer = undefined;
+      timer.summarize();
+    }
+
+    const cancelled = this.isResponseCancelled(responseId);
+    const heard = cancelled ? this.cancelledHeardText : text;
+    if (heard.length > 0) this.record.memory.recordAssistantTurn(heard, replayOf);
+    this.record.bargeIn.reset();
+    return { heard, unheard: cancelled ? unspokenTail(text, heard) : "" };
+  }
+
+  // ---------------------------------------------------------------
+  // The scripted closing after a confirmed registration
+  // ---------------------------------------------------------------
+
+  /**
+   * ADDITIVE, READ-ONLY. Did the person on this line say they are NOT
+   * the person we called?
+   *
+   * Reports the identity gate's own `denied` verdict — the state
+   * `handleIdentityGate` already sets from `classifyIdentityAnswer`
+   * and never leaves — and nothing else. No new state, no new counter,
+   * no timer, no threshold: one existing field, projected.
+   *
+   * IT EXISTS BECAUSE THE GATE'S VERDICT STOPPED AT THE GATE. Shutting
+   * the gate keeps the IDENTITY question from being reopened, and that
+   * is all it ever did. Everything the campaign does with a finished
+   * call — the stored outcome, the contact disposition, the retry
+   * decision, the registrations sheet and the early hangup — is read
+   * back out of the TRANSCRIPT by `classifyOutcome`, which cannot see
+   * this verdict and whose own wrong-number table is deliberately
+   * narrower than the identity classifier's denials. So a denial the
+   * gate understood perfectly ("No.", "Nahi, main Sakshi nahi hoon")
+   * followed by a later generic "Haan" at the commitment question
+   * settled `confirmed_at_gate` / FINAL_YES — a sheet row, a closed
+   * contact and an early hangup, for somebody who had just said they
+   * were not the person (reproduced through the real classifier,
+   * 2026-09-23).
+   *
+   * Read by the campaign layer through the manager, contained at the
+   * call site exactly as `lastActivityAt` and `getTranscript` are, so a
+   * manager or a session without it behaves exactly as before. The
+   * pipeline decides nothing downstream with it — it only reports what
+   * its own gate already concluded.
+   */
+  identityDenied(): boolean {
+    return this.identityState === "denied";
+  }
+
+  /**
+   * ADDITIVE. The campaign layer has established that this call's
+   * registration is confirmed (the classifier's own reading, in
+   * `call-runner.ts`) and is now holding the hangup for the person's
+   * closing response. From here on, a bare closing acknowledgement is
+   * answered with one fixed goodbye instead of a generated reply — see
+   * `handleScriptedClosing`. Idempotent; nothing is spoken by arming.
+   *
+   * The pipeline is deliberately NOT the one deciding a registration
+   * happened: that judgement is the outcome classifier's, it lives in
+   * the campaign layer, and the dependency direction forbids this file
+   * from importing it. The campaign layer says WHEN; this file only
+   * knows HOW to close.
+   */
+  armScriptedClosing(): void {
+    if (this.scriptedClosingArmed) return;
+    this.scriptedClosingArmed = true;
+    // eslint-disable-next-line no-console
+    console.log(`[PIPELINE:${this.record.id}] scripted closing ARMED — a bare closing acknowledgement will be answered with the fixed goodbye`);
+  }
+
+  /**
+   * Answers the person's closing pleasantry with the fixed goodbye,
+   * once, and only while armed. See `CLOSING_ACKNOWLEDGEMENT_TOKENS` for
+   * what qualifies and why nothing else does.
+   *
+   * One extra guard beyond the vocabulary: the agent's latest committed
+   * turn must not ASK anything. An "okay" said to "shall I send you the
+   * link?" is an answer, and the contextual path must take it, exactly
+   * as `definitiveAnswerIn` in the campaign layer already refuses to
+   * hang up while the agent's latest turn is a question.
+   *
+   * Spoken through `speakAttentionUtterance`, the existing fixed-line
+   * path: no language-model request, the goodbye is committed to
+   * memory as an assistant turn once its audio has drained, and the
+   * campaign watchdog then reads a transcript that ends on the agent
+   * after the person has spoken — which is what releases the held
+   * hangup. Nothing here ends the call; the hangup stays where it has
+   * always been.
+   */
+  private async handleScriptedClosing(userText: string, loopSignal: AbortSignal): Promise<boolean> {
+    if (!this.scriptedClosingArmed || this.scriptedClosingSpoken) return false;
+    const trimmed = userText.trim();
+    if (!isClosingAcknowledgement(trimmed)) return false;
+    // The person's turn has just been recorded, so the assistant's
+    // latest turn is the confirmation (or an answer) they are closing on.
+    const lastAssistant = [...this.record.memory.history()]
+      .reverse()
+      .find((turn) => turn.role === "assistant");
+    if (lastAssistant !== undefined && lastAssistant.content.includes("?")) return false;
+
+    this.scriptedClosingSpoken = true;
+    const line = scriptedClosingFor(this.record.memory.currentLanguage);
+    // eslint-disable-next-line no-console
+    console.log(
+      `[PIPELINE:${this.record.id}] closing acknowledgement "${trimmed.slice(0, 40)}" after a confirmed registration — speaking the fixed goodbye: "${line}"`,
+    );
+    await this.speakAttentionUtterance(line, loopSignal, "closing after a confirmed registration", undefined, "CLOSING");
+    return true;
+  }
+
+  // ---------------------------------------------------------------
+  // The agent's own backchannel cue — see `BACKCHANNEL_CUE_MIN_WORDS`
+  // ---------------------------------------------------------------
+
+  /**
+   * Every condition under which a cue must NOT be played, gathered in
+   * one place so the decision at trigger time and the re-check after
+   * synthesis cannot disagree. Read-only over state that already
+   * exists.
+   */
+  private backchannelCueGatesHold(): boolean {
+    return (
+      this.greetingDone &&
+      !this.voicemailDetected &&
+      this.awaitingTurn &&
+      this.record.state === SessionState.LISTENING &&
+      this.identityState === "confirmed" &&
+      !this.attentionEpisodeOpen &&
+      this.heldScriptRemainder.length === 0 &&
+      !this.scriptedClosingSpoken &&
+      !(this.record.loopAbortController?.signal.aborted ?? true)
+    );
+  }
+
+  /**
+   * The detector has just armed a continuation grace: the caller has
+   * been quiet for the whole silence window and their text so far reads
+   * as unfinished. Decide — deterministically and with every bound
+   * above — whether to say "mm-hmm" into that pause.
+   *
+   * Synchronous and never throws: it is called from inside the
+   * detector's own timer callback. The synthesis and hand-over run on a
+   * detached promise that re-checks every gate before a byte is sent.
+   */
+  private considerBackchannelCue(event: ContinuationHoldEvent): void {
+    // "Wait" / "ek minute" is a request for time. Silence IS the answer
+    // to it; an "okay" there reads as impatience.
+    if (event.askedForAMoment) return;
+    if (this.backchannelCueInFlight || this.backchannelCueDisabled) return;
+    if (!this.backchannelCueGatesHold()) return;
+    const words = event.text.trim().length === 0 ? 0 : event.text.trim().split(/\s+/).length;
+    if (words < BACKCHANNEL_CUE_MIN_WORDS) return;
+    if (this.backchannelCuesThisTurn >= BACKCHANNEL_CUE_MAX_PER_TURN) return;
+    // Speech progress since the last cue, not time: a further cue needs
+    // a fresh clause to acknowledge — see `BACKCHANNEL_CUE_MIN_NEW_WORDS`.
+    if (this.backchannelCuesThisTurn > 0 && words - this.backchannelWordsAtLastCue < BACKCHANNEL_CUE_MIN_NEW_WORDS) return;
+    const now = Date.now();
+    if (this.lastBackchannelCueAtMs !== 0 && now - this.lastBackchannelCueAtMs < BACKCHANNEL_CUE_MIN_GAP_MS) return;
+    // The transport heard the caller loud and near a moment ago: they
+    // are already resuming, and a cue now lands on their first word.
+    if (this.record.lastCallerEnergyAt !== 0 && now - this.record.lastCallerEnergyAt < BACKCHANNEL_CUE_RECENT_ENERGY_MS) {
+      return;
+    }
+
+    // Nothing is spent here. The per-turn slot, the word mark and the
+    // gap clock are all stamped where the audio is actually handed to
+    // the transport (`speakBackchannelCue`), so an attempt the re-check
+    // declines — the caller resumed while the first cue of the call was
+    // being synthesised — costs the turn nothing and the next breath is
+    // tried again from the now-warm cache. The one thing that must not
+    // repeat is asking a failing provider: `backchannelCueDisabled`.
+    // WHICH cue — or none. Read from the words said since the last cue
+    // and the last cue itself; see `selectBackchannelCue`. Silence is a
+    // real outcome and costs nothing: no slot, no gap clock, no word
+    // mark, so the next breath is judged on its own text.
+    const language = this.record.memory.currentLanguage;
+    const heldWords = event.text.trim().split(/\s+/);
+    const freshText = heldWords.slice(this.backchannelCuesThisTurn > 0 ? this.backchannelWordsAtLastCue : 0).join(" ");
+    const cue = selectBackchannelCue({
+      language,
+      freshText,
+      lastCue: this.lastBackchannelCue,
+      previousOpportunitySilent: this.backchannelPreviousOpportunitySilent,
+    });
+    if (cue === null) {
+      this.backchannelPreviousOpportunitySilent = true;
+      // eslint-disable-next-line no-console
+      console.log(`[BACKCHANNEL:${this.record.id}] opportunity left silent — plain continuation after "${this.lastBackchannelCue ?? "nothing"}"`);
+      return;
+    }
+    this.backchannelCueInFlight = true;
+    void this.speakBackchannelCue(cue, language, event.text, words).finally(() => {
+      this.backchannelCueInFlight = false;
+    });
+  }
+
+  /**
+   * Synthesise (once per call, cached) and hand over one cue. Between
+   * the two, every gate is re-checked and the detector's held text is
+   * compared with what it was: a caller who resumed while the cue was
+   * being synthesised has new finals, and the cue is dropped rather
+   * than played into their sentence. The cache means only the first cue
+   * of a call can ever be late enough for that to matter.
+   */
+  private async speakBackchannelCue(
+    cue: string,
+    language: SupportedLanguage,
+    heldText: string,
+    heldWords: number,
+  ): Promise<void> {
+    const sid = this.record.id;
+    const key = `${language}|${cue}`;
+    let audio = this.backchannelCueCache.get(key);
+    if (audio === undefined) {
+      const startedAt = Date.now();
+      try {
+        const task: SynthesisTaskRequest = {
+          sessionId: sid,
+          request: { text: pronounceForSpeech(toSpokenText(cue), language), language },
+        };
+        audio = await this.providers.tts.synthesize(task);
+      } catch (error) {
+        this.backchannelCueDisabled = true;
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[BACKCHANNEL:${sid}] cue "${cue}" not synthesised — ${error instanceof Error ? error.message : String(error)}; no further cue on this call, the caller simply hears the pause`,
+        );
+        return;
+      }
+      const audioMs = estimateAudioSeconds(audio) * 1000;
+      if (audio.data.byteLength === 0 || audioMs > BACKCHANNEL_CUE_MAX_AUDIO_MS) {
+        this.backchannelCueDisabled = true;
+        // eslint-disable-next-line no-console
+        console.warn(`[BACKCHANNEL:${sid}] cue "${cue}" rejected — ${Math.round(audioMs)}ms of audio is not a cue; no further cue on this call`);
+        return;
+      }
+      this.backchannelCueCache.set(key, audio);
+      // A real TTS request, charged where the greeting's is.
+      this.record.metrics.recordAuxiliaryCost({
+        textToSpeech: estimateTtsCost(this.providers.tts.descriptor.id, cue.length, audioMs / 1000),
+      });
+      // eslint-disable-next-line no-console
+      console.log(`[BACKCHANNEL:${sid}] cue "${cue}" synthesised in ${Date.now() - startedAt}ms (${Math.round(audioMs)}ms of audio, cached)`);
+    }
+
+    // The turn may have moved on while we synthesised. The SAME turn
+    // having grown (the caller carried on and another chunk landed) is
+    // fine — that is the long turn this cue is for; a different turn,
+    // or none, is not.
+    if (!this.backchannelCueGatesHold()) return;
+    if (!this.record.turnDetector.getPendingTurnText().trim().startsWith(heldText.trim())) return;
+    if (
+      this.record.lastCallerEnergyAt !== 0 &&
+      Date.now() - this.record.lastCallerEnergyAt < BACKCHANNEL_CUE_RECENT_ENERGY_MS
+    ) {
+      return;
+    }
+
+    // Spent HERE, on audio that is actually going out — see the note in
+    // `considerBackchannelCue`. The word mark is the held text as it was
+    // when this cue was decided, so the next cue needs a fresh clause on
+    // top of what this one acknowledged.
+    this.backchannelCuesThisTurn += 1;
+    this.backchannelWordsAtLastCue = heldWords;
+    this.lastBackchannelCue = cue;
+    this.backchannelPreviousOpportunitySilent = false;
+    this.lastBackchannelCueAtMs = Date.now();
+    await this.playBackchannelAudio(audio);
+    this.lastBackchannelCuePlayedAtMs = Date.now();
+    // eslint-disable-next-line no-console
+    console.log(
+      `[BACKCHANNEL:${sid}] cue "${cue}" played into the caller's pause (${this.backchannelCuesThisTurn}/${BACKCHANNEL_CUE_MAX_PER_TURN} this turn, ${heldWords} words held) — held text: "${heldText.slice(0, 60)}${heldText.length > 60 ? "..." : ""}"`,
+    );
+  }
+
+  /**
+   * Hands cue audio to the transport and does NOTHING else. This is
+   * deliberately not `playAudioChunk`: that method is the reply
+   * pipeline's accounting point (`outboundQueuedMs`,
+   * `outboundPlaybackStartedAt`, `firstAudioQueuedAtMs`, the
+   * `audio-queued` timing mark), all of which describe a reply the
+   * session is SPEAKING. A cue is none of that, and letting it through
+   * there would put its few hundred ms into the next turn's latency
+   * figures and into `remainingSpeechMs`. The transport path itself —
+   * `mediaStream.sendAudio` and the outbound listeners, with their
+   * backpressure — is the same one every reply uses.
+   */
+  private async playBackchannelAudio(audio: AudioPayload): Promise<void> {
+    if (audio.data.byteLength === 0) return;
+    if (this.record.mediaStream) {
+      await this.record.mediaStream.sendAudio(audio);
+    }
+    for (const listener of this.record.outboundAudioListeners) {
+      const pending = listener(audio);
+      if (pending) await pending;
+    }
+  }
+
+  /**
+   * Is this segment our own cue coming back up the inbound track? See
+   * the hazard note above `BACKCHANNEL_CUE_MIN_WORDS`. Only ever true
+   * within `BACKCHANNEL_CUE_ECHO_WINDOW_MS` of a cue actually being
+   * played, and only for a bare one-or-two-word acknowledgement.
+   */
+  private isBackchannelCueEcho(segment: TranscriptSegment): boolean {
+    if (this.lastBackchannelCuePlayedAtMs === 0) return false;
+    if (Date.now() - this.lastBackchannelCuePlayedAtMs > BACKCHANNEL_CUE_ECHO_WINDOW_MS) return false;
+    const text = segment.text.trim();
+    if (text.length === 0) return false;
+    if (text.split(/\s+/).length > 2) return false;
+    return isBareAcknowledgement(text);
+  }
+
+  /**
+   * READ-ONLY. Does the caller have something in flight that is going to
+   * become a turn? Pure observation over the turn detector's two
+   * existing read-only accessors — it consumes nothing, arms no timer
+   * and clears nothing, and in particular it does NOT subscribe (a
+   * subscriber would receive the turn and the main loop would never see
+   * it).
+   */
+  private callerHasTurnMaterial(): boolean {
+    return (
+      this.record.turnDetector.hasBufferedTurn() ||
+      this.record.turnDetector.getPendingTurnText().trim().length > 0
+    );
+  }
+
+  /**
+   * READ-ONLY. Is the caller mid-utterance RIGHT NOW — Deepgram has
+   * shown interim words it has not finalised yet?
+   *
+   * `callerHasTurnMaterial` above deliberately counts FINALS only, and
+   * for the supersession sites that is correct (an interim that never
+   * finalises must not discard a reply — see `newerUserTurnWaiting`).
+   * But the stranded-barge-in RESUME asks a different question — "is
+   * the line actually quiet?" — and on a live call (2026-09-03) it
+   * answered wrongly: the caller was mid-sentence ("Wait, can you
+   * please speak to…", interim on screen), Deepgram went >700ms between
+   * interims, `lastConversationActivityAt` aged past
+   * `STRANDED_RESUME_QUIET_MS`, and the resume spoke the remainder over
+   * them. `liveUserTranscript` is the pipeline's own existing record of
+   * exactly that open utterance — set on every non-empty segment,
+   * cleared on commit and by every filter branch — so reading it here
+   * adds no new state.
+   *
+   * Read ONLY by `resumeAfterStrandedBargeIn`, and its failing
+   * direction is benign by construction: declining a resume holds the
+   * remainder (`heldScriptRemainder`), the existing attention-resume
+   * path. The silence-recovery window and every other reader of
+   * `callerHasTurnMaterial` are deliberately untouched — a stale
+   * preview from an interim that never finalises must not be able to
+   * hold the 8s silence recovery open.
+   */
+  private callerUtteranceInFlight(): boolean {
+    return this.record.liveUserTranscript.trim().length > 0;
+  }
+
+  /** Installs `timer` as the trace for the turn now starting. */
+  private beginTurnTiming(timer: TurnTimer): void {
+    this.activeTimer = timer;
+    this.markedTtsThisTurn = false;
+    this.markedAudioThisTurn = false;
+    this.markedFirstSentenceThisTurn = false;
+    this.markedTtsRequestThisTurn = false;
+    this.firstAudioQueuedAtMs = undefined;
+    // PHASE 3 BATCH 1 — cleared HERE, alongside `firstAudioQueuedAtMs`,
+    // because the two are only meaningful as a pair: the playback
+    // startup span is the gap between them, and a stale value from the
+    // previous turn would measure the gap across a turn boundary. One
+    // reset site for both, so they cannot fall out of step.
+    this.record.firstOutboundFrameAtMs = undefined;
+  }
+
+  /**
+   * Sends the system prompt to the LLM once, while the greeting is
+   * still playing, so the caller's FIRST reply is answered from the
+   * provider's prompt-prefix cache instead of a cold prefill.
+   *
+   * WHY THE SECOND RESPONSE IS THE SLOW ONE. The greeting is fixed text
+   * and deliberately makes no LLM request (see the greeting block
+   * above), so the reply to the caller's first "Yes." is this call's
+   * FIRST LLM request — and it is the one request that cannot hit the
+   * prefix cache. Measured against the live prompt stack on gpt-5.1
+   * (12,411 prompt tokens, `verbosity: "low"`, 0 reasoning tokens):
+   *
+   *   cold  `cached_tokens: 0`      first visible token 2726ms
+   *   warm  `cached_tokens: 12288`  first visible token 1326ms
+   *
+   * Turn detection for a short endpointed "Yes." already releases in
+   * ~300ms and TTS is warm from the greeting, so that ~1.4s prefill is
+   * the bottleneck on this exact transition, and it is the only turn
+   * that pays it.
+   *
+   * COSTS NOTHING IT DOES NOT ALREADY COST. The prefill happens once
+   * per call either way — this only moves it off the caller's clock and
+   * onto greeting playback. The stream is abandoned at its first event,
+   * so it generates no reply.
+   *
+   * TOUCHES NOTHING. Not awaited, so no path waits on it; sends only
+   * the system turn, so it cannot alter what the model is later told;
+   * writes nothing to `memory`, records no metrics, and swallows every
+   * error — a provider that refuses this leaves the call exactly as it
+   * behaves today.
+   */
+  private primeLlmPrefixCache(loopSignal: AbortSignal): void {
+    const generate = this.providers.llm.generateCompletionStream;
+    if (!generate) return;
+    // The shared prefix of every later request, and nothing else.
+    const prefix = this.record.memory.recentHistory().filter(turn => turn.role === "system");
+    if (prefix.length === 0) return;
+
+    void (async () => {
+      const abort = new AbortController();
+      const signal = combineSignals([abort.signal, loopSignal]);
+      try {
+        const stream = generate.call(
+          this.providers.llm,
+          { sessionId: this.record.id, history: prefix },
+          signal,
+        );
+        if (!stream) return;
+        // The prefill — the part being cached — is complete before the
+        // first event can arrive, so there is nothing to gain by
+        // reading further.
+        for await (const _event of stream) {
+          void _event;
+          break;
+        }
+      } catch {
+        // A cold cache is the current behaviour, not a failure.
+      } finally {
+        abort.abort();
+      }
+    })();
+  }
+
+  // ---------------------------------------------------------------
+  /**
+   * FIX #11 — ask the TTS provider to open its transport now, while the
+   * detector's evidenced confirmation window, the model's
+   * time-to-first-token and the chunker's accumulation still lie between
+   * here and the first synthesis call.
+   *
+   * This is a NETWORK HINT AND NOTHING ELSE, and every part of that is
+   * deliberate:
+   *
+   *   - it cannot produce audio, an LLM call, a transcript, a turn
+   *     release, an interruption or a barge-in. It opens a socket. The
+   *     provider contract (`prepareSession`) forbids sending anything on
+   *     it, and the Sarvam adapter's socket stays virgin until
+   *     `synthesizeStream` claims it;
+   *   - it decides nothing about turn-taking. `onTurnPending` is
+   *     OBSERVED here exactly as FIX #8 observes it — the release is
+   *     still `onTurnEnd` and the detector's guards are untouched;
+   *   - if the caller turns out to still be speaking, the turn is
+   *     cancelled inside the detector as before and the unused socket
+   *     simply expires. Nothing downstream is aware it existed;
+   *   - a provider that does not implement `prepareSession` (Cartesia,
+   *     Smallest AI, ElevenLabs — all three reach their vendor over
+   *     `fetch`, which `http-keepalive.ts` already keeps warm) is not
+   *     called at all;
+   *   - it never throws. A failed hint means the handshake is paid on
+   *     the caller's clock, which is exactly what happened before.
+   *
+   * The session's loop signal is passed so a call that ends mid-window
+   * releases the socket immediately rather than waiting out its TTL.
+   */
+  private prepareTtsTransport(): void {
+    const prepare = this.providers.tts.prepareSession;
+    if (typeof prepare !== "function") return;
+    const loopSignal = this.record.loopAbortController?.signal;
+    if (!loopSignal || loopSignal.aborted) return;
+    try {
+      prepare.call(this.providers.tts, this.record.id, loopSignal);
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[TTS-PREOPEN:${this.record.id}] provider hint failed — synthesis is unaffected: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
+  // FIX #8 — speculative LLM pre-open. See `SpeculativeCompletion`.
+  // ---------------------------------------------------------------
+
+  /**
+   * The detector has armed its EVIDENCED confirmation window for `text`
+   * (see `AdaptiveTurnDetector.onTurnPending`). Open the request that
+   * turn will need, now, so the provider's time-to-first-token runs
+   * during that window instead of after it.
+   *
+   * Every guard here is a reason the released turn would NOT reach
+   * `runThinkingAndSpeaking`'s LLM call as this text, or would reach it
+   * in a state this request cannot match:
+   *   - not idle in LISTENING awaiting a turn (greeting, thinking,
+   *     speaking, barge-in unwind, attention utterance): the pending
+   *     turn hook is simply ignored — those paths are untouched;
+   *   - voicemail: the machine gets no reply;
+   *   - an attention episode is open or a script position is held:
+   *     `handleAttentionCheck` may answer the turn without the model;
+   *   - no streaming provider: nothing to pre-open.
+   *
+   * Nothing is committed to memory here. The history is the memory's
+   * own PREVIEW of the window it will produce once the turn is recorded,
+   * annotated by the same `buildRequestHistory`.
+   */
+  private startSpeculation(text: string): void {
+    if (!this.awaitingTurn || this.voicemailDetected) return;
+    if (this.record.state !== SessionState.LISTENING) return;
+    if (this.attentionEpisodeOpen || this.heldScriptRemainder.length > 0) return;
+    // ...and not while the identity gate is shut, for exactly the same
+    // reason. A turn taken by the gate is answered from a fixed line,
+    // so a pre-opened request for it is a request that can never be
+    // adopted: the tokens are paid for and thrown away, and the
+    // "zero language-model requests" the attention and continuity
+    // suites assert would stop being true of the opening.
+    if (this.identityState === "unasked" || this.identityState === "outstanding") return;
+    const generate = this.providers.llm.generateCompletionStream;
+    if (typeof generate !== "function") return;
+    const loopSignal = this.record.loopAbortController?.signal;
+    if (!loopSignal || loopSignal.aborted) return;
+    if (text.trim().length === 0) return;
+    // FIX 2 — the same predicate `handleAttentionCheck`'s no-remainder
+    // branch applies: a turn it will answer with a fixed line never
+    // reaches the model, so a request pre-opened for it would only be
+    // abandoned. Same family as the two guards on the line above.
+    if (this.contextualReplyCommitted ? isHearingCheck(text) : isEmphaticHearingCheck(text)) return;
+    // Same family again: once the campaign layer has armed the scripted
+    // closing, a bare closing acknowledgement is answered by the fixed
+    // goodbye (`handleScriptedClosing`) and never reaches the model, so
+    // a request pre-opened for it could only ever be abandoned.
+    if (this.scriptedClosingArmed && !this.scriptedClosingSpoken && isClosingAcknowledgement(text)) return;
+
+    if (this.speculation !== undefined) {
+      // The same pending turn re-announced (e.g. `speech_final` on the
+      // words AND a standalone marker for the same utterance): the open
+      // request already is this request.
+      if (this.speculation.text === text) return;
+      this.abandonSpeculation("pending turn text changed");
+    }
+
+    const sid = this.record.id;
+    const evidenceAtMs = this.lastEndpointEvidenceAtMs;
+    const evidenceKind = this.lastEndpointEvidenceKind;
+    try {
+      // PHASE 1.3 — the same answer `commitTurnLanguage` will give for
+      // this text when the turn is released, WITHOUT taking the lock
+      // (nothing is committed here). Reading the lock rather than the
+      // raw detection is what keeps the pre-opened request identical to
+      // the one built at release, so `adoptSpeculation` still matches.
+      const turnLanguage = this.effectiveLanguageFor(text);
+      const request: CompletionRequest = {
+        sessionId: sid,
+        history: this.buildRequestHistory(turnLanguage, this.record.memory.previewRecentHistory(text)),
+      };
+      const abort = new AbortController();
+      const stream = generate.call(this.providers.llm, request, combineSignals([abort.signal, loopSignal]));
+      const iterator = stream[Symbol.asyncIterator]();
+      // An async generator runs nothing until its first `next()` — this
+      // call is what actually opens the provider connection.
+      const openedAtMs = Date.now();
+      const first = iterator.next();
+      const speculation: SpeculativeCompletion = {
+        text,
+        request,
+        openedAtMs,
+        evidenceAtMs,
+        abort,
+        iterator,
+        first,
+        firstTokenAtMs: undefined,
+      };
+      // Observe (for the trace) and mark handled: an abandoned request
+      // whose connection fails must not surface as an unhandled
+      // rejection. The adopter still sees the rejection through `first`.
+      first.then(
+        (result) => {
+          if (!result.done && result.value.type === "token") speculation.firstTokenAtMs = Date.now();
+        },
+        () => undefined,
+      );
+      this.speculation = speculation;
+      // eslint-disable-next-line no-console
+      console.log(
+        `[SPECULATE:${sid}] LLM request PRE-OPENED on ${evidenceKind ?? "endpoint"} evidence: text="${text.slice(0, 80)}${text.length > 80 ? "..." : ""}"` +
+          `${evidenceAtMs !== undefined ? ` evidence-to-llm-open=${openedAtMs - evidenceAtMs}ms` : ""} historyLength=${request.history.length}`,
+      );
+    } catch (error) {
+      // Nothing is lost: the turn is released and sent exactly as today.
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[SPECULATE:${sid}] could not pre-open the LLM request — falling back to the normal path: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  /**
+   * Drop the pre-opened request. Aborts the provider stream through the
+   * signal it was given — the same mechanism a barge-in uses — and
+   * releases the generator. Idempotent.
+   */
+  private abandonSpeculation(reason: string): void {
+    const speculation = this.speculation;
+    if (speculation === undefined) return;
+    this.speculation = undefined;
+    speculation.abort.abort();
+    void Promise.resolve(speculation.iterator.return?.()).catch(() => undefined);
+    // eslint-disable-next-line no-console
+    console.log(
+      `[SPECULATE:${this.record.id}] pre-opened LLM request ABANDONED (${reason}) text="${speculation.text.slice(0, 80)}${speculation.text.length > 80 ? "..." : ""}"` +
+        ` openMs=${Date.now() - speculation.openedAtMs} firstToken=${speculation.firstTokenAtMs !== undefined ? "received" : "not yet"}`,
+    );
+  }
+
+  /**
+   * Hand the pre-opened request to the turn that has just been released,
+   * IF it is that turn's request: same user text, and a history equal
+   * role-for-role and content-for-content to the one
+   * `runThinkingAndSpeaking` has just built the normal way. Any
+   * difference — different text, memory changed underneath, stream
+   * already aborted — abandons it and the caller sends its own request
+   * exactly as today.
+   *
+   * On adoption the reply's `thinkingSignal` is linked to the stream's
+   * abort, so a barge-in cancels it precisely as it cancels a stream the
+   * caller opened itself.
+   */
+  private adoptSpeculation(
+    userText: string,
+    request: CompletionRequest,
+    thinkingSignal: AbortSignal,
+  ): SpeculativeCompletion | undefined {
+    const speculation = this.speculation;
+    if (speculation === undefined) return undefined;
+    if (speculation.text !== userText) {
+      this.abandonSpeculation("released turn text differs");
+      return undefined;
+    }
+    if (speculation.abort.signal.aborted) {
+      this.abandonSpeculation("pre-opened stream already aborted");
+      return undefined;
+    }
+    const same =
+      speculation.request.sessionId === request.sessionId &&
+      speculation.request.history.length === request.history.length &&
+      speculation.request.history.every((turn, i) => {
+        const other = request.history[i];
+        return other !== undefined && other.role === turn.role && other.content === turn.content;
+      });
+    if (!same) {
+      this.abandonSpeculation("pre-opened request does not match the request built at release");
+      return undefined;
+    }
+    this.speculation = undefined;
+    if (thinkingSignal.aborted) {
+      speculation.abort.abort();
+    } else {
+      thinkingSignal.addEventListener("abort", () => speculation.abort.abort(), { once: true });
+    }
+    return speculation;
+  }
+
+  /**
+   * The adopted stream, as the ordinary `for await` in
+   * `runStreamingCompletion` expects it: the result of the `next()`
+   * issued at pre-open time first, then the rest of the generator. A
+   * rejection from the pre-open surfaces here, where the existing
+   * dropped-connection handling already is. Breaking out of this
+   * generator returns the underlying one, as it does today.
+   */
+  private async *resumeSpeculativeStream(speculation: SpeculativeCompletion): AsyncIterable<LlmStreamEvent> {
+    try {
+      const first = await speculation.first;
+      if (first.done) return;
+      yield first.value;
+      for (;;) {
+        const next = await speculation.iterator.next();
+        if (next.done) return;
+        yield next.value;
+      }
+    } finally {
+      await speculation.iterator.return?.();
+    }
+  }
+
+  /**
+   * Real-time ms of already-synthesized reply audio the transport has
+   * been handed but has not played yet — the same span `drainPlayback`
+   * waits out before leaving SPEAKING. `0` when nothing is playing.
+   */
+  private remainingSpeechMs(): number {
+    if (this.outboundPlaybackStartedAt === 0 || this.outboundQueuedMs <= 0) return 0;
+    return this.outboundQueuedMs - (Date.now() - this.outboundPlaybackStartedAt);
+  }
+
+  /**
+   * How far the transport has actually got through this reply, in ms of
+   * its audio — the play head `heardSoFarText` reads.
+   *
+   * TWO TERMS, BOTH ALREADY MAINTAINED.
+   *
+   *   1. `Date.now() - outboundPlaybackStartedAt` — how long since the
+   *      first frame was HANDED OVER. This is what the play head used
+   *      to be, whole.
+   *   2. minus the transport's own unsent backlog
+   *      (`SessionRecord.outboundBacklogMs`). The pipeline hands audio
+   *      over faster than real time and the bridge paces it out,
+   *      holding up to its high-water mark; term 1 therefore leads the
+   *      caller's ears by exactly that queue, and a barge-in DISCARDS
+   *      it. Counting it would credit the caller with audio that was
+   *      thrown away before it was ever sent.
+   *
+   * No transport reporter (the in-process fallback, the harnesses) means
+   * no backlog, hand-off IS delivery, and this is term 1 alone — the
+   * arithmetic those paths have always had.
+   */
+  private playedSoFarMs(): number {
+    if (this.outboundPlaybackStartedAt === 0) return 0;
+    const handedOverMs = Date.now() - this.outboundPlaybackStartedAt;
+    let backlogMs = 0;
+    try {
+      backlogMs = this.record.outboundBacklogMs?.() ?? 0;
+    } catch {
+      // A transport tearing down mid-read reports nothing rather than
+      // failing a barge-in. Zero is the previous behaviour.
+      backlogMs = 0;
+    }
+    return Math.max(0, handedOverMs - (backlogMs > 0 ? backlogMs : 0));
+  }
+
+  /**
+   * The part of the reply currently being spoken that the transport has
+   * already PLAYED — i.e. what the caller has actually heard.
+   *
+   * Every utterance handed to `synthesizeAndPlay` is recorded with the
+   * playback offsets it occupies (`spokenUtterances`), and
+   * `playedSoFarMs` is how far the transport has got, so an utterance
+   * whose END is behind the play head has been heard in full.
+   *
+   * IT ROUNDS DOWN, AND THAT IS THE FIX. This used to count an
+   * utterance as heard the moment its START was behind the head, so a
+   * barge-in 200ms into a three-second sentence committed the whole
+   * sentence and resumed from the NEXT one — the caller heard "I am
+   * calling…" and was answered with the sentence after it. A chunk here
+   * is a whole sentence, so the old rounding could skip a whole
+   * sentence, and the transport backlog above could skip several more.
+   *
+   * The reason it rounded up was real: a partially-heard sentence that
+   * is not committed is replayed, and a replay used to be
+   * indistinguishable from the agent looping on its own script. That is
+   * why this change is only half of one — the recovery paths now commit
+   * their text as `replayOf: "resume"` (see `ConversationTurn.replayOf`)
+   * and the adherence check reads it. Replaying the sentence the caller
+   * was cut off in the middle of is the correct behaviour, and it is no
+   * longer reported as repetition.
+   *
+   * An utterance that is not `complete` is never counted however far the
+   * head has run: more of its audio may still be on the way, so its
+   * extent is not yet its duration.
+   *
+   * Read-only over counters that already exist for `drainPlayback` and
+   * `remainingSpeechMs`. Nothing here changes what is synthesized,
+   * queued, played or cancelled.
+   */
+  private heardSoFarText(): string {
+    if (this.outboundPlaybackStartedAt === 0 || this.spokenUtterances.length === 0) return "";
+    const playedMs = this.playedSoFarMs();
+    return this.spokenUtterances
+      .filter(
+        (utterance) =>
+          utterance.complete &&
+          utterance.endsAtMs > utterance.startsAtMs &&
+          utterance.endsAtMs <= playedMs,
+      )
+      .map((utterance) => utterance.text)
+      .join(" ")
+      .trim();
+  }
+
+  /**
+   * Has the caller moved on from the turn this reply is answering?
+   *
+   * TWO signals, and the second is why this method exists rather than
+   * being one call at each site.
+   *
+   * 1. `hasBufferedTurn()` — the caller spoke, STOPPED, and their words
+   *    passed every release guard while we were still preparing a reply
+   *    to what they said before that. The original signal, unchanged.
+   *
+   * 2. The caller has RESUMED SPEAKING, and their new contribution has
+   *    not endpointed yet.
+   *
+   * Signal 1 alone was blind to the commonest shape of the reported
+   * defect. A caller finishes a thought, the detector releases it, and
+   * ~0.3-1.5s later they carry on — a clarification, the question the
+   * first line was leading up to, the context for it. `pendingEvent` is
+   * null the whole time, because nothing has endpointed yet, so nothing
+   * stopped the reply to the older, partial thought: it was spoken OVER
+   * the caller mid-sentence, and their real question was then answered
+   * separately. Three utterances that were one thought came back as
+   * three isolated answers — exactly the reported "responds to
+   * individual utterances instead of the conversation" behaviour.
+   *
+   * `getPendingTurnText()` is what closes it: the FINAL transcript
+   * words the detector is holding for the utterance in progress. Three
+   * properties make it safe to read here.
+   *
+   *   - It can never be the turn we are answering. `emitTurnEnd` calls
+   *     `reset()` — which clears `pendingFinalText` — BEFORE it
+   *     dispatches to listeners, so anything held here arrived strictly
+   *     after the release of the turn this reply belongs to.
+   *   - It cannot strand the call. Non-empty, non-filler pending text
+   *     is guaranteed to become a turn: every `emitTurnEnd` path that
+   *     does not release rearms the timer, and every hold is bounded
+   *     (`MAX_CONTINUATION_GRACES`, `MAX_CHUNK_BOUNDARY_GRACES`,
+   *     `MAX_INTERIM_CONFIRMATIONS`). So a supersession is always
+   *     followed by a real turn — the same guarantee signal 1 relies
+   *     on.
+   *   - FINALS ONLY, deliberately. An interim-only utterance is NOT
+   *     used: Deepgram owing a final it never delivers would leave a
+   *     discarded reply and no turn to replace it, and silence is a
+   *     worse failure than a stale sentence. That case keeps exactly
+   *     the behaviour it has today — the reply is spoken and the
+   *     caller's speech barges in on it.
+   *
+   * A bare acknowledgement is excluded. "Haan" / "okay" / "hmm"
+   * landing while we are still THINKING is the caller showing they are
+   * listening, not a new contribution — the same judgement
+   * `isBackchannel` makes while the assistant is SPEAKING, for the same
+   * reason. Cancelling a reply for one would restart the block the
+   * acknowledgement was agreeing with.
+   *
+   * Read only at the two existing sites, and only while nothing has
+   * been spoken yet, so the barge-in path is untouched.
+   */
+  private newerUserTurnWaiting(): boolean {
+    // ── PHASE B — THE BUFFERED SIGNAL IS FILTERED, AS IT ALREADY IS
+    // EVERYWHERE ELSE ────────────────────────────────────────────────
+    //
+    // This branch used to be `return true` for ANY buffered turn. That
+    // is the one place in the pipeline where a waiting turn was taken at
+    // face value: `drainPlayback` — the same question asked while the
+    // reply is PLAYING — has always run it through
+    // `bufferedTurnTakesTheFloor` first, and the pending branch below
+    // has always excluded a bare greeting and a bare acknowledgement.
+    // So a "haan ji" or an "okay" that landed while the assistant was
+    // SPEAKING was correctly ignored, and the identical utterance
+    // landing a second earlier, while it was still THINKING, destroyed
+    // the whole reply.
+    //
+    // The 2026-09-17 audit measured that: 18 of 51 gemma-4 turns were
+    // discarded after their first token with TTS never invoked, and 11
+    // of those 18 superseding utterances fail `bufferedTurnTakesTheFloor`
+    // — i.e. the reply was thrown away for something this codebase
+    // already classifies as not taking the floor. Gemma is over-exposed
+    // only because its time-to-first-token leaves a much wider window
+    // for one to arrive; the defect is not Gemma's.
+    //
+    // NO NEW POLICY AND NO NEW THRESHOLD. `bufferedTurnTakesTheFloor` is
+    // called unchanged, on the same `bufferedTurnText()` the drain reads,
+    // so "what counts as taking the floor" has exactly one definition and
+    // this branch now shares it. A buffered turn that DOES take the
+    // floor supersedes exactly as it does today.
+    if (this.record.turnDetector.hasBufferedTurn()) {
+      if (bufferedTurnTakesTheFloor(this.record.turnDetector.bufferedTurnText())) return true;
+      // ...and if it does not, fall through rather than return `false`.
+      // The caller may have gone on to say something real since that
+      // turn was buffered (`emitTurnEnd` clears the pending finals
+      // before buffering, so anything below is strictly newer than it).
+      // That second signal is judged on its own terms by the branch
+      // below, which is untouched — so a genuine follow-up still
+      // supersedes, and only the acknowledgement alone stops doing so.
+    }
+
+    const resumed = this.record.turnDetector.getPendingTurnText().trim();
+    if (resumed.length === 0) return false;
+    if (BARE_GREETING_ONLY.test(resumed)) return false;
+    return !isBareAcknowledgement(resumed);
+  }
+
+  /**
+   * The THINKING-side supersession decision, and the telemetry for it,
+   * read ONCE per check.
+   *
+   * PHASE A introduced this as telemetry: which of
+   * `newerUserTurnWaiting`'s two signals fired, and whether the
+   * utterance behind it takes the floor. PHASE B makes the floor
+   * verdict load-bearing for the BUFFERED signal — so the decision and
+   * the description of it must come from one evaluation, or the record
+   * could name a signal other than the one that decided.
+   *
+   * `newerUserTurnWaiting()` remains the decision. Everything else here
+   * re-reads the same three accessors it reads: `hasBufferedTurn`,
+   * `bufferedTurnText` and `getPendingTurnText` are all documented pure
+   * observations — they arm no timer, consume nothing, clear nothing and
+   * touch no threshold — and there is no `await` between the reads, so
+   * no turn can land in the middle of one assessment.
+   *
+   * `takesFloor` is reported in two situations, and this is deliberately
+   * WIDER than Phase A shipped:
+   *
+   *   - a supersession happened: the verdict of the utterance that
+   *     caused it (Phase A's meaning, unchanged); and
+   *   - a buffered turn was waiting and was judged NOT to take the
+   *     floor, so the reply was KEPT. That is the Phase B filter doing
+   *     its work, and it is the only way the fix is measurable in
+   *     production — without it, `supersederTakesFloor: false` simply
+   *     stops appearing and a fix that silently stopped working would
+   *     look identical to one that never has to fire.
+   *
+   * The value still means exactly what it meant: "did the newer
+   * utterance take the floor". Only the set of turns it is recorded on
+   * is larger. It is `undefined` when nothing newer was waiting at all.
+   *
+   * The utterance itself is NEVER returned or logged; only the boolean
+   * verdict and which signal it came from.
+   */
+  private describeSupersession():
+    | {
+        readonly supersedes: true;
+        readonly outcome: Extract<TurnOutcome, "superseded_buffered" | "superseded_pending">;
+        readonly takesFloor: boolean;
+      }
+    | { readonly supersedes: false; readonly takesFloor: boolean | undefined } {
+    const detector = this.record.turnDetector;
+    const bufferedTakesFloor = detector.hasBufferedTurn()
+      ? bufferedTurnTakesTheFloor(detector.bufferedTurnText())
+      : undefined;
+
+    if (!this.newerUserTurnWaiting()) {
+      // Nothing supersedes. `bufferedTakesFloor` is `false` here exactly
+      // when a buffered turn was waiting and the Phase B filter is why
+      // this reply survived; `undefined` when none was waiting.
+      return { supersedes: false, takesFloor: bufferedTakesFloor };
+    }
+
+    if (bufferedTakesFloor === true) {
+      return { supersedes: true, outcome: "superseded_buffered", takesFloor: true };
+    }
+    // The pending signal is what decided: either no turn was buffered,
+    // or one was and it did not take the floor, and the caller has since
+    // resumed with something the branch below `newerUserTurnWaiting`'s
+    // buffered check accepts.
+    return {
+      supersedes: true,
+      outcome: "superseded_pending",
+      takesFloor: bufferedTurnTakesTheFloor(detector.getPendingTurnText()),
+    };
+  }
+
+  /**
+   * Is this segment the caller acknowledging, rather than taking a
+   * turn? Only ever asked while the assistant is speaking.
+   *
+   * Judged on the WHOLE pending utterance — the finals the turn
+   * detector already holds plus this segment — so a turn that started
+   * with real content is never mistaken for an acknowledgement.
+   */
+  private isBackchannel(segment: TranscriptSegment): boolean {
+    const pending = this.record.turnDetector.getPendingTurnText();
+    const utterance = pending.length > 0 ? `${pending} ${segment.text}` : segment.text;
+    // A bare greeting, before a single frame of this reply has PLAYED.
+    //
+    // `isBareAcknowledgement` excludes "hello" because over audio the
+    // caller is hearing it means the line has gone bad, and it must
+    // interrupt. That reasoning is about audio they are failing to
+    // hear — and here there is none: the state is SPEAKING but the
+    // transport has not started playing, so nothing exists to have gone
+    // bad. It is the same case `BARE_GREETING_ONLY` already covers while
+    // THINKING, and the window is real (TTS time-to-first-chunk sits
+    // inside SPEAKING).
+    //
+    // Cancelling here is what produced the reported "the script starts
+    // again" defect: `heardSoFarText` is empty before playback begins,
+    // so a barge-in commits NOTHING to memory, and the next request
+    // regenerates the identical script line — once per "hello?".
+    //
+    // Bounded and non-stranding: it holds only while SPEAKING has no
+    // audio, so the moment playback starts a "hello" interrupts exactly
+    // as it does today, and once the turn ends the segment feeds the
+    // turn detector normally.
+    if (this.outboundPlaybackStartedAt === 0 && BARE_GREETING_ONLY.test(utterance.trim())) {
+      return true;
+    }
+    if (!isBareAcknowledgement(utterance)) return false;
+    // FIX 1 (natural backchanneling) — `!replyFullyQueued` is the second
+    // way of knowing the assistant still has more to say. The
+    // remaining-audio test below measures how far ahead the TRANSPORT
+    // buffer is, and the Plivo bridge deliberately bounds that buffer
+    // with backpressure (high-water 2.8s) — so during a long block
+    // `remainingSpeechMs()` sat at 2.2–2.8s, never crossed the 4s
+    // threshold, and every mid-block "haan ji" / "okay" was a barge-in
+    // that restarted the block. While the reply is still being
+    // generated and handed over sentence by sentence there is, by
+    // construction, more speech to come, whatever the buffer holds.
+    // The 4s rule is unchanged and still decides the end of the block,
+    // once everything has been queued: an answer to the closing question
+    // is heard exactly as before.
+    return (
+      this.backchannelInFlight ||
+      !this.replyFullyQueued ||
+      this.remainingSpeechMs() > BACKCHANNEL_MIN_REMAINING_SPEECH_MS
+    );
+  }
+
+  /** Records a stage on the in-flight turn's trace, if one is active. */
+  private markTiming(stage: string): void {
+    this.activeTimer?.mark(stage);
+  }
+
+  /**
+   * Marks a new assistant response as PENDING and returns its id. The
+   * id is what the commit site checks against `cancelledResponseId`.
+   */
+  private beginAssistantResponse(): number {
+    this.currentResponseId += 1;
+    // Whatever the PREVIOUS reply spoke belongs to the previous reply.
+    // Cleared here, at the response boundary, and not only in
+    // `resetPlaybackAccounting`: a reply cancelled before it ever
+    // entered SPEAKING never calls that, and would otherwise be
+    // credited with the utterances of the reply before it — which is
+    // the last reply's text being committed a second time.
+    this.spokenUtterances = [];
+    this.cancelledHeardText = "";
+    return this.currentResponseId;
+  }
+
+  /** True if `responseId` was cancelled by a barge-in while in flight. */
+  private isResponseCancelled(responseId: number): boolean {
+    return this.cancelledResponseId === responseId;
+  }
+
+  /**
+   * Externally-triggered barge-in (e.g. from a telephony transport's own
+   * energy VAD, or a test harness).
+   *
+   * @returns whether the barge-in was ACCEPTED, so a transport that
+   *   clears its own playback buffer for latency knows whether to.
+   *   Declining is not a failure: it means the assistant is saying
+   *   something that is not interruptible, and a transport that dropped
+   *   its queue anyway would leave the caller in silence with nothing
+   *   left to play and no reply on the way.
+   */
+  triggerExternalBargeIn(
+    // DIAGNOSTIC ONLY — which path is asking, recorded when accepted.
+    // Defaults to `external` for the transports' energy-only fallback
+    // (via `signalBargeIn`), which passes nothing. Changes no decision.
+    source: BargeInTriggerTelemetry["source"] = "external",
+    evidence: Omit<BargeInTriggerTelemetry, "source"> = {},
+  ): boolean {
+    // THE OPENING LINE IS NOT INTERRUPTIBLE.
+    //
+    // `greetingDone` has always gated the transcript-confirmed barge-in
+    // path below (see `startContinuousStt`) — a caller saying "hello?"
+    // as they lift the phone must not destroy the very first thing the
+    // assistant says. The transports' own energy VAD reached this method
+    // WITHOUT that gate, so a "hello" on pickup truncated the opening
+    // line ~120ms in and left the caller listening to nothing while the
+    // next reply was generated. Saying "hello" again cancelled that
+    // reply too, and the call could livelock there until they hung up.
+    //
+    // Nothing the caller says during the greeting is lost: the listener
+    // has been running since call-connect and the turn detector buffers
+    // the turn (`AdaptiveTurnDetector.pendingEvent`), so it is answered
+    // the moment the opening line finishes.
+    if (!this.greetingDone) {
+      // eslint-disable-next-line no-console
+      console.log(
+        `[PIPELINE:${this.record.id}] barge-in DECLINED — the fixed opening line is still playing`,
+      );
+      return false;
+    }
+    // FIX 1 — A RECOGNISED BACKCHANNEL IS NOT AN INTERRUPTION, FROM THIS
+    // PATH EITHER.
+    //
+    // The transports' energy-only fallback reaches this method after
+    // ~700ms of sustained loud near-end energy with no transcript to
+    // judge. A caller saying "haan ji" / "okay okay" over the assistant
+    // produces exactly that energy — and Deepgram's interim for it has
+    // usually already landed and been absorbed as backchannel above
+    // (`backchannelInFlight` is true from that interim until its final).
+    // Cancelling the reply here would undo that judgement through the
+    // side door and drop the whole outbound queue, which is the
+    // "block restarts after I said okay" defect on the Plivo bridge.
+    //
+    // Narrow by construction: the flag is set ONLY while the assistant
+    // is SPEAKING and ONLY after the STT loop has seen a bare
+    // acknowledgement and nothing else for the current utterance. Any
+    // content at all — "wait", "no", "ok but…" — clears it on the very
+    // segment that carries it (see the STT loop), and the transcript-
+    // confirmed path then reaches this method with the flag false, as
+    // it always has. With no transcript at all (a dead STT socket) the
+    // flag is false and the fallback fires exactly as before. Gated on
+    // SPEAKING so the supersession callers, which run while THINKING,
+    // can never be declined by a stale flag.
+    if (this.record.state === SessionState.SPEAKING && this.backchannelInFlight) {
+      // eslint-disable-next-line no-console
+      console.log(
+        `[PIPELINE:${this.record.id}] barge-in DECLINED — the caller is backchannelling, not interrupting`,
+      );
+      return false;
+    }
+    // Recorded FIRST, before anything can observe the aborts below:
+    // whichever response is in flight is now CANCELLED and stays
+    // cancelled, so a chunk or `final` event that arrives after this
+    // handler has run cannot commit it. Marking the id of an already
+    // committed response (a barge-in signalled with nothing pending) is
+    // harmless — the next response takes a fresh id.
+    this.cancelledResponseId = this.currentResponseId;
+    // Frozen HERE, before the aborts below stop the transport: this is
+    // the last instant at which "how much of the reply has played" is
+    // still a true statement about what the caller heard. Read by the
+    // commit site in the main loop — see `cancelledHeardText`.
+    this.cancelledHeardText = this.heardSoFarText();
+    // DIAGNOSTIC ONLY — see `pendingBargeInTrigger`. Stamped at the one
+    // instant every accepted barge-in passes through.
+    this.pendingBargeInTrigger = { source, ...evidence };
+    this.record.bargeIn.triggerBargeIn();
+    if (this.record.state === SessionState.SPEAKING) {
+      this.host.transition(this.record, SessionState.LISTENING, "external barge-in signal");
+    }
+    return true;
+  }
+
+  /** DIAGNOSTIC ONLY — read-and-clear, mirroring `consumeBargeInPhase`. */
+  private consumeBargeInTrigger(): BargeInTriggerTelemetry | undefined {
+    const trigger = this.pendingBargeInTrigger;
+    this.pendingBargeInTrigger = undefined;
+    return trigger;
+  }
+
+  /**
+   * Does this transcript segment corroborate as the CALLER talking over
+   * the assistant, rather than something else the microphone can hear?
+   *
+   * See the note on `BARGE_IN_ENERGY_WINDOW_MS` for why a transcript
+   * alone is not evidence. Only ever asked while the assistant is
+   * SPEAKING, and it gates nothing else: no turn, no timer, no
+   * threshold, no state.
+   */
+  private interruptionCorroborated(segment: TranscriptSegment): boolean {
+    // A transport that never reports energy at all — the in-process
+    // audio fallback, the test harnesses — keeps exactly the
+    // transcript-only behaviour this had before the energy gate existed.
+    // `noteCallerEnergy` is the only writer, so `0` is "never stamped".
+    if (this.record.lastCallerEnergyAt !== 0) {
+      const energyAgeMs = Date.now() - this.record.lastCallerEnergyAt;
+      if (energyAgeMs > BARGE_IN_ENERGY_WINDOW_MS) return false;
+    }
+    // `0` is "not reported", not "no confidence" — see the constant.
+    if (segment.confidence > 0 && segment.confidence < BARGE_IN_MIN_CONFIDENCE) {
+      return false;
+    }
+    // ── The caller finishing their OWN sentence is not an interruption ──
+    //
+    // The caller at the site above is judged on where the words ENDED
+    // (`endedAtMs`), which is right for "did this speech happen while I
+    // was talking". But Deepgram's segments are cumulative within one
+    // utterance: a caller who was already talking when the reply began
+    // — the tail of the turn the reply is answering, released early by
+    // the detector — keeps extending the same utterance, and its end
+    // time crosses `speakingStartedAtStreamMs` a few hundred ms into the
+    // reply. That transcript ended after we started but BEGAN before we
+    // did: they did not interrupt us, we started over them. Treating it
+    // as a barge-in cut replies off at their first sentence on live
+    // Vobiz calls, with the corroboration gate above unable to help
+    // (near-end energy is present either way).
+    //
+    // So a segment whose FIRST word predates the start of this speaking
+    // phase does not corroborate. A genuine interruption begins after
+    // playback started by definition, and Deepgram opens a new utterance
+    // (a new `start`) after any endpointed pause, so nothing a caller
+    // says in reply to what they are hearing is affected.
+    //
+    // Placed on the call-long timeline with the SAME re-base offset
+    // `sttStreamMsOf` maintains for `endedAtMs` — already updated for
+    // this very segment, because that runs first in the STT loop — so
+    // an STT stream reconnect cannot make this test lie in either
+    // direction. It reads the offset and writes nothing. `0` is "no word
+    // timings in this result" (see the Deepgram adapter), never a
+    // position, so it keeps exactly today's behaviour.
+    if (segment.startedAtMs > 0) {
+      const startedOnCallTimelineMs = this.sttClockOffsetMs + segment.startedAtMs;
+      if (startedOnCallTimelineMs <= this.speakingStartedAtStreamMs) {
+        // ── Which "began before we did" is this? ────────────────────
+        //
+        // The rejection above was written for the sentence-TAIL case:
+        // words that belong to the very turn this reply is answering,
+        // released early by the detector, whose utterance keeps
+        // extending across the reply boundary. That utterance began
+        // BEFORE the turn was released, so it fails the test below and
+        // keeps exactly today's behaviour — the first-sentence-cutoff
+        // defect this guard was built against stays fixed.
+        //
+        // An utterance that began AFTER the release but BEFORE the
+        // reply entered SPEAKING is the OTHER case the original
+        // comment already named: "they did not interrupt us, we
+        // started over them." The caller spoke into the THINKING dead
+        // air (measured 1.4–3.6s of LLM latency on live calls) and the
+        // reply landed on top of them. They had the floor first, so
+        // their words corroborate: the energy and confidence gates
+        // above have already passed by this point, which is what keeps
+        // a television or a background voice out of this band exactly
+        // as before. Live call 2026-09-03: "I just said can you please
+        // speak to me in हिंदी?" (confidence 0.99, loud energy 2ms
+        // fresh) was rejected here twice and erased whole — every
+        // segment dropped and never fed to the turn detector.
+        if (startedOnCallTimelineMs <= this.lastTurnReleasedAtStreamMs) return false;
+        // eslint-disable-next-line no-console
+        console.log(
+          `[TURN:${this.record.id}] caller began speaking BEFORE the reply did (started during the thinking gap) — treating as interruption: "${segment.text.trim().slice(0, 80)}"`,
+        );
+      }
+    }
+    return true;
+  }
+
+  /**
+   * Is this transcript our OWN audio, coming back up the caller's
+   * inbound track? See the SELF_ECHO_* constants for the evidence and
+   * for why the two existing gates cannot answer this.
+   *
+   * EXISTING PLAYBACK ACCOUNTING FIRST, text second. `heardSoFarText()`
+   * is the whole reason this can be decided at all: it is already
+   * maintained for the barge-in commit site, and it returns precisely
+   * the assistant audio the caller has ACTUALLY HEARD — utterances
+   * behind the play head, never ones still queued. You cannot echo what
+   * has not reached you, so anything outside it is not evidence, and a
+   * reply that has played nothing yet can produce no echo at all. No new
+   * timer, no new window, no new state: the bound is playback itself.
+   *
+   * Deliberately NOT gated on `SPEAKING`. The dominant case is the
+   * echo's final landing after `drainPlayback` has already left
+   * SPEAKING — gating on state is exactly the hole this closes. It is
+   * bounded instead by `spokenUtterances`, which `beginAssistantResponse`
+   * clears the moment the next reply starts.
+   *
+   * Read-only. Decides nothing but its own boolean.
+   */
+  private isSelfEcho(segment: TranscriptSegment): boolean {
+    const text = segment.text.trim();
+    if (text.length === 0) return false;
+    // Existing accounting, first and cheapest: nothing has been played,
+    // so there is nothing that could have echoed.
+    const heard = this.heardSoFarText();
+    if (heard.length === 0) return false;
+
+    const { overlap, matched, candidateWords } = selfEchoOverlap(text, heard);
+    if (candidateWords < SELF_ECHO_MIN_WORDS) return false;
+    if (matched < SELF_ECHO_MIN_MATCHED_BIGRAMS) return false;
+    if (overlap < SELF_ECHO_MIN_BIGRAM_OVERLAP) return false;
+
+    // eslint-disable-next-line no-console
+    console.log(
+      `[TURN:${this.record.id}] SELF-ECHO suppressed (our own audio back up the inbound track): "${text}" — ${matched}/${candidateWords - 1} word pairs (${Math.round(overlap * 100)}%) match assistant audio already played`,
+    );
+    return true;
+  }
+
+  // ---------------------------------------------------------------
+  // STT
+  // ---------------------------------------------------------------
+
+  private inboundAudioSource(): AsyncIterable<AudioPayload> {
+    return this.record.mediaStream?.inbound ?? this.record.inboundAudioFallback;
+  }
+
+  /**
+   * `segment.endedAtMs`, placed on the same call-long timeline
+   * `inboundStreamMs` uses — see `STT_CLOCK_REWIND_TOLERANCE_MS` for
+   * why the reported value cannot be compared against it raw.
+   *
+   * Called once per segment, before anything reads the result, and it
+   * is the only writer of either clock field.
+   *
+   * `0` is passed straight back. The provider reports `0` for "no word
+   * timings in this result" (see the Deepgram adapter), NOT for "the
+   * start of the stream", so it must neither move the high-water mark
+   * (a spurious rewind) nor be shifted by the offset (which would let
+   * a segment with no timings at all read as an interruption). Keeping
+   * it at `0` is exactly the arithmetic this had before.
+   */
+  private sttStreamMsOf(segment: TranscriptSegment): number {
+    const reported = segment.endedAtMs;
+    if (reported <= 0) return 0;
+
+    let onCallTimelineMs = this.sttClockOffsetMs + reported;
+    if (onCallTimelineMs + STT_CLOCK_REWIND_TOLERANCE_MS < this.sttClockHighWaterMs) {
+      // The stream restarted. `inboundStreamMs` is the audio position
+      // this segment's words are near, and `reported` is where the new
+      // stream thinks they are, so the difference is where the new
+      // stream's zero sits on our timeline. Recomputed from absolute
+      // values, so a second and third reconnect are handled the same
+      // way rather than compounding.
+      //
+      // It lands a recognition-lag too FAR forward, because
+      // `inboundStreamMs` is the live edge while `reported` is the end
+      // of the last recognised word. That bias makes the interruption
+      // test marginally more permissive for the rest of the call, which
+      // is the safe direction: a wrongly-allowed barge-in still has to
+      // clear the backchannel and near-end-energy gates, and if it
+      // produces no turn `resumeAfterStrandedBargeIn` continues the
+      // reply. A wrongly-BLOCKED one is silent and permanent.
+      this.sttClockOffsetMs = Math.max(0, this.inboundStreamMs - reported);
+      onCallTimelineMs = this.sttClockOffsetMs + reported;
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[TURN:${this.record.id}] STT stream clock restarted (reported=${Math.round(reported)}ms, call was at ${Math.round(this.sttClockHighWaterMs)}ms) — re-basing interruption timing by ${Math.round(this.sttClockOffsetMs)}ms so barge-in keeps working`,
+      );
+    }
+
+    if (onCallTimelineMs > this.sttClockHighWaterMs) {
+      this.sttClockHighWaterMs = onCallTimelineMs;
+    }
+    return onCallTimelineMs;
+  }
+
+  private startContinuousStt(loopSignal: AbortSignal): void {
+    const wrapped = withByteCounter(this.inboundAudioSource(), (chunk) => {
+      this.sinceLastTurnBytes += chunk.data.byteLength;
+      this.sinceLastTurnEncoding ??= chunk.encoding;
+      this.sinceLastTurnSampleRateHz ??= chunk.sampleRateHz;
+      // Monotonic clock over the audio actually handed to the STT
+      // stream, in the SAME units Deepgram reports word times in
+      // (ms from the start of the stream). Used below to tell
+      // "the caller is interrupting me" apart from "the caller
+      // spoke before I started, and the transcript only just landed".
+      this.inboundStreamMs += estimateAudioSeconds(chunk) * 1000;
+      // PHASE 3 BATCH 3 — METRICS ONLY. The same chunk, stamped on the
+      // WALL clock instead of the audio clock. Nothing reads it to make
+      // a decision; it exists so the two clocks can later be compared.
+      this.lastInboundAudioAtMs = Date.now();
+    });
+
+    void (async () => {
+      try {
+        const stream = this.providers.stt.transcribeStream?.({
+          sessionId: this.record.id,
+          audio: wrapped,
+          language: this.record.memory.currentLanguage,
+          signal: loopSignal,
+          // PHASE 3 — CONTROLLED ENDPOINTING A/B. Already resolved and
+          // validated by the session manager, before this pipeline was
+          // constructed. Read as a plain number ON PURPOSE: this `for
+          // await` sits inside a `try` whose `catch` deliberately
+          // swallows transport errors, so anything that could THROW
+          // here would become a silently deaf call rather than a
+          // reported fault. There is nothing left to validate.
+          // Defaults to the production 400 for an unassigned session.
+          endpointingMs: this.record.sttEndpointingMs,
+        });
+        if (!stream) return;
+
+        for await (const segment of stream) {
+          if (loopSignal.aborted) break;
+
+          // STT LIVENESS ONLY — the provider just delivered a segment,
+          // so its connection is demonstrably alive. Stamped before any
+          // routing below because every kind of segment (marker,
+          // interim, final, empty) is equally proof of that. Read by
+          // the transports' energy-only barge-in fallback, which exists
+          // for a dead STT socket and must not fire while this is
+          // fresh. Nothing downstream reads it: no turn, no timer, no
+          // threshold, no state.
+          this.record.lastSttEvidenceAt = Date.now();
+
+          // ── An end-of-speech MARKER, not a transcript ────────────
+          //
+          // The provider's endpointer reporting that the words it has
+          // already delivered are finished — see
+          // `TranscriptSegment.isEndOfSpeechMarker`. It carries no text
+          // and no word timings, so it is routed straight to the turn
+          // detector and to nothing else: it must not reach the display
+          // preview, the recognition-lag metric, the STT stream clock
+          // (`endedAtMs` of 0 is not a position on it), the barge-in
+          // corroboration gates, or `feed` — where a text-less final
+          // would restart the turn clock and be measured as an enormous
+          // inter-final pause.
+          //
+          // Nothing else in this loop changes, and a provider that
+          // never sends a marker never reaches this branch.
+          if (segment.isEndOfSpeechMarker) {
+            // FIX #7A — telemetry only: arrival of the `UtteranceEnd`
+            // evidence itself, before it is handed to the detector.
+            //
+            // FIX #9 — stamped ONLY when the detector is actually holding
+            // words for the marker to be about. Deepgram delivers
+            // `UtteranceEnd` ~1s after the last word, which on a clean
+            // line is long AFTER the 150ms evidenced release of that
+            // turn; a marker landing on an empty detector describes a
+            // turn already answered, and stamping it here made the NEXT
+            // turn's `endpoint-to-release` read as multi-second stale
+            // evidence whenever that turn released by inference.
+            // `noteEndOfSpeech` itself already ignores a marker with
+            // nothing held, so this changes no decision — only what the
+            // trace attributes.
+            if (this.record.turnDetector.getPendingTurnText().trim().length > 0) {
+              this.lastEndpointEvidenceAtMs = Date.now();
+              this.lastEndpointEvidenceKind = "utterance_end";
+            }
+            this.record.turnDetector.noteEndOfSpeech();
+            continue;
+          }
+
+          // DISPLAY ONLY: surface what the caller is saying as soon
+          // as Deepgram reports it (interim segments included) so the
+          // Dashboard transcript no longer lags turn-end. Nothing
+          // downstream reads this — turn detection, barge-in and the
+          // LLM continue to work off `segment` / the turn detector
+          // exactly as before.
+          if (segment.text.trim().length > 0) {
+            // The caller is audibly speaking right now. Stamped here
+            // because this is the earliest point the pipeline knows
+            // that — before any state transition — so the campaign
+            // silence watchdog cannot mistake a caller mid-utterance
+            // for a silent line.
+            this.record.lastConversationActivityAt = Date.now();
+            // OBSERVATION ONLY — see `pickupAckAllowance`. The caller
+            // has been heard while our opening line is still playing,
+            // so the turn this eventually becomes MIGHT be their
+            // phone-answer acknowledgement. Whether it actually is one
+            // is decided at turn release, on the whole utterance, in
+            // the main loop; nothing here inspects the text, filters a
+            // segment, or changes what is fed to the turn detector.
+            // On an identity-first script the opening line ASKS
+            // something, so the caller's "Haan." over its tail is the
+            // ANSWER and must not be dropped — the consumer narrows what
+            // qualifies to a pure greeting there (`PICKUP_GREETING_ONLY`)
+            // rather than withholding the allowance, because the "Hello"
+            // a caller says as they lift the phone is a pickup on every
+            // script, and read as an identity answer it is `unclear` and
+            // re-asks a question they were still hearing.
+            if (!this.greetingDone) this.pickupAckAllowance = true;
+            // Prefix the finals already accumulated for this turn. A
+            // Deepgram interim/final is only the tail since the last
+            // final, so without this the preview snaps back to the
+            // latest fragment ("50,000 rupees") halfway through an
+            // utterance the detector is correctly still buffering.
+            // Still one field, so still one bubble — display only.
+            const buffered = this.record.turnDetector.getPendingTurnText();
+            this.record.liveUserTranscript =
+              buffered.length > 0 ? `${buffered} ${segment.text}`.trim() : segment.text;
+          }
+
+          // Checked BEFORE anything downstream: while a machine is
+          // announcing itself, its greeting must not become a barge-in
+          // judgement, a turn, or a reply.
+          this.checkForVoicemail(segment);
+
+          // Placed on the call-long timeline BEFORE anything reads it:
+          // both the recognition-lag metric just below and the
+          // interruption test further down compare this against
+          // `inboundStreamMs`-based values, and the raw `endedAtMs` is
+          // only meaningful while the provider's CURRENT socket is the
+          // call's first — a reconnect restarts it at zero. See
+          // `STT_CLOCK_REWIND_TOLERANCE_MS`. Called once per segment,
+          // and before the two `continue`s below, so every segment
+          // maintains the clock. On a call whose STT stream never
+          // restarts the offset is `0` and every value is identical to
+          // the raw one.
+          const segmentEndedAtStreamMs = this.sttStreamMsOf(segment);
+
+          // ── The pickup greeting Deepgram delivered LATE ───────────
+          //
+          // The allowance above is armed from `!greetingDone`, which
+          // asks when the TRANSCRIPT ARRIVED. This asks the question
+          // the allowance is actually about — when the caller SPOKE —
+          // and arms it for words that began while the opening line was
+          // still playing but whose final only landed after it. That
+          // gap is Deepgram's delivery lag (0.4-1.7s) against an
+          // identity-first opening of ~2s, so it is the COMMON case,
+          // not an edge: the pickup "Hello" then reached the identity
+          // gate, read as `unclear`, and drew "Sorry — Am I speaking
+          // with…?" over a question the caller had only just heard.
+          //
+          // EVERY BOUND HERE IS THE EXISTING ONE. It arms the SAME
+          // allowance, which is still consumed by the first acquired
+          // turn whatever that turn is, and still drops it only if the
+          // WHOLE utterance passes the same `PICKUP_GREETING_ONLY`
+          // table — no vocabulary is added and no rule is relaxed. All
+          // this widens is WHICH segments count as "heard during the
+          // opening", from the arrival clock to the audio clock.
+          //
+          // SCOPED TO THE PICKUP WINDOW BY CONSTRUCTION, not by a word:
+          // `greetingDoneAtStreamMs` is a fixed, early position on a
+          // monotonic call-long timeline, so a "Hello?" spoken at any
+          // point after the opening — the attention-check case, which
+          // must stay a real turn — is strictly greater than it and is
+          // untouched.
+          //
+          // THE WHOLE UTTERANCE MUST BE INSIDE THE OPENING, which is
+          // why this reads where the words ENDED and not where they
+          // began. A hello that STRADDLES the end of the opening is
+          // left to the ordinary path: it is the caller speaking into
+          // the silence after the question as much as over it, and
+          // there is nothing to separate it from a first answer. Being
+          // wrong in that direction costs the caller hearing the
+          // question twice — annoying, not unsafe — which is the same
+          // bias `openingLineAsksIdentity` is written with, and it is
+          // what keeps a turn that must be ANSWERED (buffered-turn
+          // D1/D2/D5/D6, whose "Hello." ends just after the opening)
+          // out of the allowance entirely.
+          //
+          // Reuses `segmentEndedAtStreamMs` — already re-based for this
+          // very segment one line above — rather than re-deriving it,
+          // so the two readings cannot drift. `0` is that helper's
+          // "no word timings in this result" (see the Deepgram
+          // adapter), never a position, so it is excluded.
+          if (
+            segmentEndedAtStreamMs > 0 &&
+            segment.text.trim().length > 0 &&
+            segmentEndedAtStreamMs <= this.greetingDoneAtStreamMs
+          ) {
+            this.pickupAckAllowance = true;
+          }
+
+          // METRICS ONLY — pure observation, no control flow. Records
+          // when this final landed and how far behind the audio it
+          // was, so `recordTurn` can report real recognition latency
+          // instead of the caller's speaking duration.
+          if (segment.isFinal && segment.text.trim().length > 0) {
+            // PHASE 3 PHASE 0 — one `Date.now()` read, used for both the
+            // existing stamp and the gap, so the two cannot describe
+            // different instants. The gap is measured against the
+            // PREVIOUS final, captured before the field is overwritten;
+            // the first final of a turn has no predecessor and
+            // contributes no gap.
+            const finalAtMs = Date.now();
+            if (this.lastFinalSegmentAtMs !== undefined) {
+              this.interFinalGapsMs.push(finalAtMs - this.lastFinalSegmentAtMs);
+            }
+            this.finalTranscriptCount += 1;
+            this.lastFinalSegmentAtMs = finalAtMs;
+            // PHASE 3 BATCH 4 — the AUDIO-BYTES clock, read on the line
+            // after the WALL clock, in the same handler pass for the
+            // same final. Co-stamped deliberately: the whole value of
+            // this reading is that it pairs with
+            // `lastFinalSegmentAtMs` at one event, so the two clocks
+            // can be compared across turns.
+            //
+            // Recorded UNCONDITIONALLY, outside the plausibility bound
+            // below: a turn whose `sttMs` was rejected is precisely the
+            // turn this exists to explain.
+            this.lastFinalInboundStreamMs = this.inboundStreamMs;
+            // PHASE 3 BATCH 6 — the SUBTRAHEND Batch 4 left out, plus
+            // the offset that shaped it. Same handler pass, same final,
+            // and UNCONDITIONAL for the same reason its twin above is:
+            // the turns worth explaining are precisely the ones the
+            // bound below throws away, and without these two an
+            // `sttMs` of `undefined` is indistinguishable from
+            // "no word timings", "negative after a re-base" and
+            // "beyond the plausibility bound".
+            //
+            // Written BEFORE `lagMs` is computed so no branch can skip
+            // them. Neither is read by anything that makes a decision.
+            this.lastFinalWordEndStreamMs = segmentEndedAtStreamMs;
+            this.lastFinalSttClockOffsetMs = this.sttClockOffsetMs;
+            // On the RE-BASED clock, not raw `endedAtMs`. After an STT
+            // stream reconnect the raw value restarts at zero, so the
+            // lag computed from it inflates by however long the call
+            // had been running — which back-dated `userSpeechEndedAtMs`
+            // by that whole span and printed nonsense `stt-to-release`
+            // figures for every turn after the "STT stream clock
+            // restarted" line. `0` is "no word timings in this result"
+            // (see `sttStreamMsOf`), never a position, so it is
+            // excluded rather than measured.
+            const lagMs =
+              segmentEndedAtStreamMs > 0
+                ? this.inboundStreamMs - segmentEndedAtStreamMs
+                : Number.NaN;
+            // Bounded: during the initial replay of audio buffered
+            // while the greeting played, the stream clock advances far
+            // faster than real time and a segment landing inside that
+            // burst yields a meaningless span.
+            if (Number.isFinite(lagMs) && lagMs >= 0 && lagMs <= MAX_PLAUSIBLE_STT_LAG_MS) {
+              this.lastFinalSttLagMs = lagMs;
+            }
+          }
+
+          // PHASE 3 BATCH 3 — METRICS ONLY, and the mirror of the block
+          // above for the other kind of segment. An end-of-speech
+          // MARKER can never reach here (its branch `continue`s well
+          // above), so an `UtteranceEnd` is never mistaken for an
+          // interim. Pure observation, no control flow.
+          if (!segment.isFinal && segment.text.trim().length > 0) {
+            this.lastInterimTranscriptAtMs = Date.now();
+          }
+
+          // The user has started talking while the assistant was
+          // speaking — cut TTS immediately and resume listening,
+          // then keep feeding this segment into the turn detector so
+          // nothing the user said is lost.
+          //
+          // `segment.endedAtMs` is the stream-relative end of the last
+          // word Deepgram has transcribed. A segment only counts as an
+          // interruption if that speech happened AFTER the assistant
+          // started speaking. Without this check the very first turn is
+          // always destroyed: the caller says "Hello?" as they pick up
+          // (while we are still in THINKING), Deepgram's transcript for
+          // it lands a second later — by which time the greeting has
+          // entered SPEAKING — and the greeting is barged-in before a
+          // single audio frame reaches the caller.
+          //
+          // `greetingDone` keeps that guarantee now that the listener
+          // starts before the greeting rather than after it: until the
+          // greeting has finished, no segment can trigger a barge-in,
+          // which is precisely the protection deferring the listener
+          // used to provide. The segment is still fed to the turn
+          // detector below, so the words are not lost.
+          //
+          // Read through `sttStreamMsOf` rather than raw (computed
+          // above, before the metrics block): the reported time is
+          // measured from the start of the STT provider's CURRENT
+          // connection, and a reconnect restarts it at zero while
+          // `speakingStartedAtStreamMs` keeps counting the whole call —
+          // after which this test is false forever and the assistant
+          // becomes uninterruptible. See
+          // `STT_CLOCK_REWIND_TOLERANCE_MS`.
+          const spokeOverTheAssistant =
+            this.greetingDone &&
+            this.record.state === SessionState.SPEAKING &&
+            segmentEndedAtStreamMs > this.speakingStartedAtStreamMs;
+
+          // ── Backchannel, not barge-in ─────────────────────────────
+          //
+          // "Ok." / "haan" / "hmm" said while the assistant is still
+          // several seconds into its own reply is the caller showing
+          // they are listening, not asking it to stop. Treating it as
+          // an interruption is what produced the reported "the agent
+          // stops and repeats the explanation" behaviour, and the
+          // mechanism is not the prompt:
+          //
+          //   1. barge-in aborts the LLM/TTS stream mid-paragraph;
+          //   2. an interrupted reply is CANCELLED, so it is never
+          //      committed to `memory` (see the commit site in the main
+          //      loop) — the model's history says it never spoke;
+          //   3. the next request therefore generates the SAME block
+          //      again from the top, and the caller hears the pitch
+          //      restart. `conversation-policy.ts` cannot prevent that:
+          //      "never repeat a line they have already heard" is
+          //      unactionable when history shows the line was never
+          //      said.
+          //
+          // So an acknowledgement here does nothing at all: no
+          // interruption, and it is not fed to the turn detector, so it
+          // creates no turn and the assistant simply finishes its
+          // sentence — which also means the reply IS committed, and the
+          // commitment question inside it stays in the transcript the
+          // FINAL_YES gate reads.
+          //
+          // The whole utterance is tested, not just this segment, so
+          // "ok, but what's the price?" is not an acknowledgement and
+          // interrupts exactly as it does today. Deepgram's interims
+          // accumulate until its next final, so the "ok" is still part
+          // of the turn when the caller carries on.
+          if (spokeOverTheAssistant && this.isBackchannel(segment)) {
+            // Deepgram finalising the utterance ends it; until then the
+            // same utterance keeps being treated as backchannel even if
+            // the reply is nearly finished by the time its final lands.
+            this.backchannelInFlight = !segment.isFinal;
+            // Display-only preview. Cleared because no turn will
+            // replace it, and `getTranscript` appends it as a trailing
+            // user turn — a stale one would sit after the assistant's
+            // last turn and block the final-answer hangup check, which
+            // requires the assistant to have spoken last.
+            this.record.liveUserTranscript = "";
+            // eslint-disable-next-line no-console
+            console.log(
+              `[TURN:${this.record.id}] backchannel ignored (not a barge-in): "${segment.text.trim()}" — ${Math.round(this.remainingSpeechMs())}ms of reply still to play`,
+            );
+            continue;
+          }
+          this.backchannelInFlight = false;
+
+          // ── Not the caller, so not an interruption ────────────────
+          //
+          // Words, over the assistant, that the transport's energy VAD
+          // does not corroborate as loud near-end speech — a television,
+          // a second person in the room, our own audio echoing back out
+          // of the caller's earpiece. Ignored exactly like the
+          // backchannel above: no barge-in, and NOT fed to the turn
+          // detector, so it creates no turn either and the assistant
+          // simply finishes its sentence.
+          //
+          // Only reachable while the assistant is SPEAKING. A caller
+          // speaking while it is LISTENING or THINKING is never touched
+          // by this, so a soft-spoken caller cannot be filtered out of
+          // the conversation — and if these words really were theirs,
+          // they are still talking when the reply ends, and everything
+          // from that point on becomes their turn as usual.
+          if (spokeOverTheAssistant && !this.interruptionCorroborated(segment)) {
+            this.record.liveUserTranscript = "";
+            // eslint-disable-next-line no-console
+            console.log(
+              `[TURN:${this.record.id}] uncorroborated speech ignored (not the caller interrupting): "${segment.text.trim()}" — confidence=${segment.confidence} loudSpeechAgeMs=${this.record.lastCallerEnergyAt === 0 ? "n/a" : Date.now() - this.record.lastCallerEnergyAt}`,
+            );
+            continue;
+          }
+
+          // ── Our own voice, not the caller's ───────────────────────
+          //
+          // Acoustic self-echo out of the caller's handset — see the
+          // SELF_ECHO_* constants. Ignored exactly like the two filters
+          // above and by the same mechanism: no barge-in, and NOT fed to
+          // the turn detector, so it creates no turn, opens no LLM
+          // request, and the assistant simply finishes its sentence.
+          //
+          // Placed here, and NOT inside the `spokeOverTheAssistant`
+          // guard the two filters above share, for one reason: the echo's
+          // final usually lands after `drainPlayback` has left SPEAKING,
+          // where that guard is false and both of those filters are
+          // skipped. `isSelfEcho` supplies its own bound — the assistant
+          // audio actually played — so it needs no state gate.
+          //
+          // Above `triggerExternalBargeIn` deliberately: our own audio
+          // must not cut our own reply off. Genuine caller speech does
+          // not reach `isSelfEcho`'s thresholds, so it falls through to
+          // the identical barge-in call below, unchanged.
+          if (this.isSelfEcho(segment)) {
+            // Same reason as the two filters above: no turn will replace
+            // this preview, and `getTranscript` appends a stale one as a
+            // trailing user turn.
+            this.record.liveUserTranscript = "";
+            continue;
+          }
+
+          if (spokeOverTheAssistant) {
+            // DIAGNOSTIC ONLY — the evidence this interruption was
+            // accepted on, so a noisy line can be told apart from a
+            // caller after the fact. Counts, ages and booleans; the
+            // words stay on this console line. See
+            // `BargeInTriggerTelemetry`. Decides nothing.
+            const text = segment.text.trim();
+            const energyAgeMs =
+              this.record.lastCallerEnergyAt === 0 ? undefined : Date.now() - this.record.lastCallerEnergyAt;
+            const beganBeforeReply =
+              segment.startedAtMs > 0 &&
+              this.sttClockOffsetMs + segment.startedAtMs <= this.speakingStartedAtStreamMs;
+            const evidence: Omit<BargeInTriggerTelemetry, "source"> = {
+              words: text.length === 0 ? 0 : text.split(/\s+/).length,
+              confidence: segment.confidence,
+              isFinal: segment.isFinal,
+              ...(energyAgeMs !== undefined ? { energyAgeMs } : {}),
+              beganBeforeReply,
+              replyRemainingMs: Math.max(0, Math.round(this.remainingSpeechMs())),
+              replyFullyQueued: this.replyFullyQueued,
+            };
+            // eslint-disable-next-line no-console
+            console.log(
+              `[TURN:${this.record.id}] barge-in ACCEPTED on transcript: "${text.slice(0, 60)}" — words=${evidence.words} confidence=${segment.confidence} isFinal=${segment.isFinal}` +
+                ` energyAgeMs=${energyAgeMs ?? "n/a"} beganBeforeReply=${beganBeforeReply} replyRemainingMs=${evidence.replyRemainingMs} replyFullyQueued=${this.replyFullyQueued}`,
+            );
+            this.triggerExternalBargeIn("transcript", evidence);
+          }
+
+          // ── Our own backchannel cue, back up the inbound track ─────
+          //
+          // A bare one-or-two-word acknowledgement landing within
+          // `BACKCHANNEL_CUE_ECHO_WINDOW_MS` of a cue we just played, in
+          // LISTENING, is our own "mm-hmm" echoing out of the caller's
+          // handset. The four-word self-echo guard above cannot see it.
+          // Dropped like the filters above: not fed to the detector, so
+          // it can neither extend the caller's turn text nor re-arm a
+          // window they were not speaking into. Anything with content
+          // is never matched and falls through untouched.
+          if (this.record.state === SessionState.LISTENING && this.isBackchannelCueEcho(segment)) {
+            this.record.liveUserTranscript = this.record.turnDetector.getPendingTurnText();
+            // eslint-disable-next-line no-console
+            console.log(
+              `[TURN:${this.record.id}] backchannel-cue echo ignored: "${segment.text.trim()}" — ${Date.now() - this.lastBackchannelCuePlayedAtMs}ms after our own cue`,
+            );
+            continue;
+          }
+
+          // FIX #7A — telemetry only: arrival of `speech_final`
+          // evidence on a segment that is actually about to reach the
+          // detector (i.e. survived the backchannel/uncorroborated
+          // filters above), so this only records evidence that could
+          // plausibly have participated in the release it precedes.
+          if (segment.isSpeechFinal) {
+            this.lastEndpointEvidenceAtMs = Date.now();
+            this.lastEndpointEvidenceKind = "speech_final";
+          } else {
+            // FIX #9 — telemetry only. This segment (interim or
+            // chunk-boundary final) is the caller CONTINUING past
+            // whatever endpoint claim was recorded for the words before
+            // it, so that claim no longer describes the end of the turn
+            // that will eventually be released. Left in place it was
+            // printed against a later inferred release as a multi-second
+            // `endpoint-to-release`. Cleared here; a fresh claim for the
+            // extended utterance re-stamps it. The detector receives
+            // exactly the same segment it always did.
+            this.lastEndpointEvidenceAtMs = undefined;
+            this.lastEndpointEvidenceKind = undefined;
+          }
+
+          // FIX #8 — the caller is still speaking (this segment, interim
+          // or final, is about to cancel the detector's pending turn
+          // exactly as it always has), so a request pre-opened for that
+          // pending turn is for text that will not be released. Abandon
+          // it BEFORE the feed, so the detector's own handling — and any
+          // fresh pending-turn notification it produces — starts clean.
+          if (this.speculation !== undefined) this.abandonSpeculation("caller resumed speaking");
+
+          this.record.turnDetector.feed(segment);
+
+          // ── The caller is STILL TALKING: a chunk boundary mid-turn ──
+          //
+          // A word-bearing final the provider did NOT endpoint
+          // (`isSpeechFinal === false`) is Deepgram closing a chunk while
+          // the caller carries on — the one signal that says "long turn
+          // in progress" while it is in progress. The continuation-hold
+          // trigger alone was unreachable on a real call: every such
+          // chunk re-arms the silence window before it can expire, and
+          // the eventual endpoint releases the turn, so a person giving a
+          // long answer without a 1.1s mid-thought pause never drew a
+          // cue. Same decision, same gates (word floor, per-turn cap,
+          // cooldown, recent-energy, attention, identity, LISTENING and
+          // idle), same cached audio, same raw transport path — only the
+          // moment it is consulted is added. Observation of a segment
+          // already fed; changes nothing about what the detector does
+          // with it.
+          //
+          // ...and the caller's BREATH mid-sentence. A final the provider
+          // DID endpoint (~400ms of silence) whose accumulated text still
+          // reads unfinished — "...for quite some time now," — is the
+          // caller drawing breath at a comma, the exact instant a human
+          // listener says "mm-hmm". The detector holds that text for
+          // the full silence window (it is not releasable), so a cue
+          // here can never precede or cause a release; a final whose
+          // text reads FINISHED is a release candidate and is
+          // deliberately not consulted — the caller is done, not
+          // continuing. `readsAsUnfinishedThought` is the detector's own
+          // judgement, read-only.
+          if (
+            segment.isFinal &&
+            segment.text.trim().length > 0 &&
+            this.record.state === SessionState.LISTENING
+          ) {
+            const held = this.record.turnDetector.getPendingTurnText();
+            const stillTalking = segment.isSpeechFinal === false || readsAsUnfinishedThought(held);
+            if (stillTalking) {
+              this.considerBackchannelCue({ text: held, graceMs: 0, askedForAMoment: false, turnDurationMs: 0 });
+            }
+          }
+        }
+      } catch {
+        // A broken streaming STT connection here degrades to
+        // "no more live transcription" rather than crashing the
+        // session; `acquireNextUserTurn` will simply stop resolving
+        // new turns, and `end()` still works normally.
+      }
+    })();
+  }
+
+  /**
+   * Have we reached a machine? Read on every segment inside the
+   * detection window and at most once per call — see the note on
+   * `VOICEMAIL_DETECTION_WINDOW_MS` for why the window is narrow and
+   * what a false positive costs.
+   *
+   * Interim segments are TESTED but not accumulated: testing them is
+   * what makes the gate fast enough to cut our own opening line while
+   * it is still playing, and accumulating them would count the same
+   * words several times over.
+   */
+  private checkForVoicemail(segment: TranscriptSegment): void {
+    if (this.voicemailDetected) return;
+    const text = segment.text.trim();
+    if (text.length === 0) return;
+    // Both bounds are load-bearing — see the constant.
+    if (this.record.turnIndex !== 0) return;
+    if (Date.now() - this.runStartedAtMs > VOICEMAIL_DETECTION_WINDOW_MS) return;
+
+    const heard = this.earlyTranscript.length > 0 ? `${this.earlyTranscript} ${text}` : text;
+    const phrase = voicemailPhraseIn(heard);
+    if (phrase === undefined) {
+      if (segment.isFinal) this.earlyTranscript = heard.slice(-VOICEMAIL_TRANSCRIPT_CAP);
+      return;
+    }
+    this.hangUpOnVoicemail(phrase, heard);
+  }
+
+  /**
+   * We reached a machine: stop talking and HANG UP.
+   *
+   * Three things, in this order, and the order matters.
+   *
+   *   1. Stop mid-sentence. `voicemailDetected` closes
+   *      `synthesizeAndPlay` — the one choke point every spoken word on
+   *      every path goes through — so nothing further can be
+   *      synthesized even while the hangup is in flight. The transition
+   *      reason says "barge-in" because that is exactly what the
+   *      transports must do with it: their existing
+   *      SPEAKING -> LISTENING handler reads the reason and clears both
+   *      our outbound queue and the carrier's playback buffer, so the
+   *      machine stops hearing us in the same tick. That is why no new
+   *      transport message is needed.
+   *
+   *   2. Record what the machine said. The outcome classifier reads the
+   *      transcript, and this phrase is the whole evidence for the
+   *      `suspected_voicemail` label. Hanging up before the turn
+   *      detector had released a turn would leave an empty transcript
+   *      and the call would be filed as an ordinary silent one.
+   *
+   *   3. End the call, through the manager's existing public `end` —
+   *      the same one the Dashboard's End Call and the campaign
+   *      watchdog use. It aborts the loop, closes the media stream and
+   *      tells the telephony provider to hang up the carrier leg, so
+   *      the line is released immediately rather than held open for the
+   *      silence watchdog to time out on. Not awaited: this runs on the
+   *      STT listener task, and `end` itself awaits the conversation
+   *      loop it is aborting.
+   */
+  private hangUpOnVoicemail(phrase: string, heard: string): void {
+    this.voicemailDetected = true;
+    // FIX #8 — a machine gets no reply, so nothing pre-opened for it is wanted.
+    this.abandonSpeculation("voicemail detected");
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[PIPELINE:${this.record.id}] VOICEMAIL DETECTED ("${phrase}") — stopping the agent and hanging up`,
+    );
+    // Whatever reply is in flight is cancelled and must never be
+    // committed as something a person heard.
+    this.cancelledResponseId = this.currentResponseId;
+    this.cancelledHeardText = "";
+    this.record.bargeIn.triggerBargeIn();
+    if (this.record.state === SessionState.SPEAKING) {
+      this.host.transition(
+        this.record,
+        SessionState.LISTENING,
+        "voicemail detected — barge-in to stop the agent speaking",
+      );
+    }
+
+    // See (2) above: the evidence, committed before the call ends.
+    const machineText = heard.trim();
+    if (machineText.length > 0) {
+      // PHASE 1.3 — read-only, exactly as the main loop's voicemail
+      // branch: the machine's words are evidence for the outcome
+      // classifier, never a language decision.
+      this.record.memory.recordUserTurn(machineText, this.effectiveLanguageFor(machineText));
+      this.record.liveUserTranscript = "";
+    }
+
+    void Promise.resolve(this.host.end(this.record.id)).catch(() => {
+      // Already ending, or ended by the transport dropping first —
+      // `end` is idempotent and there is nothing left to do here.
+    });
+  }
+
+  private async acquireNextUserTurn(loopSignal: AbortSignal): Promise<AcquiredTurn | null> {
+    if (!this.usesStreamingStt) {
+      return this.acquireBatchTurn(loopSignal);
+    }
+    // FIX 2 — await the turn with the silence window armed. Each expiry
+    // is one recovery step (a fixed prompt, or the hangup) and then the
+    // wait resumes; a released turn ends the episode.
+    while (!loopSignal.aborted) {
+      const result = await this.waitForTurnDetectorEnd(loopSignal, SILENCE_RECOVERY_INTERVAL_MS);
+      if (result !== SILENCE_ELAPSED) {
+        if (result !== null) this.silenceRecoveryPrompts = 0;
+        return result;
+      }
+      const keepWaiting = await this.recoverFromSilence(loopSignal);
+      if (!keepWaiting) return null;
+    }
+    return null;
+  }
+
+  /**
+   * FIX 2 — the silence window expired while awaiting a turn.
+   *
+   * Reached ONLY from `acquireNextUserTurn`, i.e. only when the main
+   * loop was idle in LISTENING: the previous reply's `drainPlayback` has
+   * completed, nothing is being synthesized, and no stranded-resume or
+   * attention utterance is in progress (those run to completion before
+   * the loop comes back to await a turn). Nothing here aborts, drains,
+   * clears or barges into anything — it speaks one fixed line through
+   * the same path the attention acknowledgement uses, or ends the call
+   * through the same `host.end` the voicemail path uses, and that is
+   * the one that already resolves to `endCall` on the re-keyed
+   * `call_uuid`.
+   *
+   * @returns whether the caller should keep being awaited. `false` only
+   *   when the call is being ended (or the loop is already aborting).
+   */
+  private async recoverFromSilence(loopSignal: AbortSignal): Promise<boolean> {
+    const sid = this.record.id;
+    if (loopSignal.aborted || this.voicemailDetected) return false;
+    // The loop has moved on (a barge-in unwind, the session ending)
+    // — not a silence to recover from. Wait again, decide nothing.
+    if (this.record.state !== SessionState.LISTENING) return true;
+
+    // ── A HELD SCRIPT POSITION IS NOT A SILENCE TO RECOVER FROM ─────
+    //
+    // `heldScriptRemainder` is non-empty for exactly one reason: a
+    // barge-in cut a reply off mid-sentence, the caller then produced
+    // nothing that needed answering, and `resumeAfterStrandedBargeIn`
+    // declined to speak the tail (the line was not quiet yet, or a
+    // turn was in flight that turned out not to be one). The assistant
+    // therefore owes this caller the rest of a sentence it stopped in
+    // the middle of, and they are sitting there waiting for it.
+    //
+    // Speaking "Hello, are you there?" at that moment is the reported
+    // defect. The caller said "Hmm" / "Hello?" over the block, the
+    // block stopped mid-sentence, and the next thing they heard was
+    // the agent asking whether they were still on the line — their own
+    // non-substantive utterance read back to them as absence. This is
+    // the distinction between "the caller said nothing" and "the
+    // caller said nothing that takes the floor": only the first is a
+    // silence, and only the first has no unfinished sentence owed.
+    //
+    // WHAT THEY ARE OWED IS THE TAIL, which is what every other reader
+    // of this field already does with it — `handleAttentionCheck`'s
+    // RESUME branch and `resumeAfterStrandedBargeIn`. Spoken through
+    // the SAME `speakAttentionUtterance` path with the SAME
+    // bookkeeping as that RESUME branch: no language-model request, no
+    // script lookup, no new vocabulary and no new predicate, and the
+    // text is one already generated for this caller that never
+    // reached them.
+    //
+    // TIMING IS UNCHANGED. It runs at the same expiry that would
+    // otherwise have spoken prompt 1, arms no timer of its own, and
+    // does NOT consume a recovery step — a caller who then really is
+    // silent gets prompt 1, prompt 2 and the hangup on exactly the
+    // schedule they get today.
+    //
+    // BOUNDED WITHOUT A COUNTER, by the identical argument the
+    // attention RESUME branch makes: the position is cleared before
+    // the tail is spoken and re-held only as `unheard`, a strict
+    // suffix of what was just spoken. An uninterrupted resume leaves
+    // nothing held; an interrupted one proves the caller is there and
+    // leaves strictly less. So this cannot repeat indefinitely and the
+    // hangup below stays reachable.
+    const held = this.heldScriptRemainder;
+    if (held.length > 0) {
+      // eslint-disable-next-line no-console
+      console.log(
+        `[PIPELINE:${sid}] caller quiet for ${SILENCE_RECOVERY_INTERVAL_MS}ms with a script position HELD — resuming where the reply stopped instead of asking if they are there: "${held.slice(0, 80)}${held.length > 80 ? "..." : ""}"`,
+      );
+      // Cannot be open — `startSpeculation` declines outright while a
+      // position is held — but closed here for the same belt-to-brace
+      // reason the prompt path below closes it.
+      this.abandonSpeculation("resuming a held script position without the language model");
+      this.heldScriptRemainder = "";
+      const spoken = await this.speakAttentionUtterance(
+        held,
+        loopSignal,
+        "resuming a held script position rather than recovering from silence",
+        "resume",
+        "RESUME",
+      );
+      // Cut off again: whatever is STILL unheard is still the position.
+      this.heldScriptRemainder = spoken.unheard;
+      // Script content the caller heard: a block has been delivered.
+      if (spoken.heard.length > 0) this.contextualReplyCommitted = true;
+      if (loopSignal.aborted) return false;
+      // Back to LISTENING before the window is re-armed, exactly as the
+      // recovery-prompt path below does after its own fixed utterance.
+      if (this.record.state !== SessionState.LISTENING) {
+        this.host.transition(
+          this.record,
+          SessionState.LISTENING,
+          "awaiting user speech after resuming a held script position",
+        );
+      }
+      return true;
+    }
+
+    if (this.silenceRecoveryPrompts >= SILENCE_RECOVERY_MAX_PROMPTS) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[PIPELINE:${sid}] caller unresponsive after ${SILENCE_RECOVERY_MAX_PROMPTS} recovery prompts and ${SILENCE_RECOVERY_INTERVAL_MS}ms more silence — ending the call`,
+      );
+      this.abandonSpeculation("unresponsive caller — the call is ending");
+      try {
+        void Promise.resolve(this.host.end(this.record.id)).catch(() => {
+          // Already ending, or ended by the transport dropping first —
+          // `end` is idempotent and there is nothing left to do here.
+        });
+      } catch (error) {
+        // A host without `end` (a test harness). Production's host is the
+        // manager, which has it. Nothing to recover: the loop exits below
+        // and the campaign watchdog still ends a silent call.
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[PIPELINE:${sid}] host.end unavailable — leaving the hangup to the watchdog: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+      return false;
+    }
+
+    this.silenceRecoveryPrompts += 1;
+    // Cannot be open (a pending turn is turn material and re-arms the
+    // window), but a request pre-opened for a turn that is not coming
+    // must not outlive this.
+    this.abandonSpeculation("silence recovery prompt is spoken without the language model");
+    const line = silenceRecoveryPromptFor(this.record.memory.currentLanguage, this.silenceRecoveryPrompts);
+    // eslint-disable-next-line no-console
+    console.log(
+      `[PIPELINE:${sid}] caller silent for ${SILENCE_RECOVERY_INTERVAL_MS}ms — recovery prompt ${this.silenceRecoveryPrompts}/${SILENCE_RECOVERY_MAX_PROMPTS}: "${line}"`,
+    );
+    await this.speakAttentionUtterance(line, loopSignal, "silence recovery prompt", undefined, "RECOVERY");
+    if (loopSignal.aborted) return false;
+    // Back to LISTENING before the window is re-armed, exactly as the
+    // top of the main loop does after any other fixed utterance.
+    if (this.record.state !== SessionState.LISTENING) {
+      this.host.transition(this.record, SessionState.LISTENING, "awaiting user speech after a recovery prompt");
+    }
+    return true;
+  }
+
+  /**
+   * @param silenceTimeoutMs FIX 2 — when given, the wait also resolves
+   *   to `SILENCE_ELAPSED` once the caller has produced nothing for this
+   *   long: no transcript text, no caller energy, no turn material,
+   *   measured from the later of this subscription and the pipeline's
+   *   `lastConversationActivityAt`. Anything the caller does re-arms it;
+   *   a released turn or the loop aborting cancels it. Read-only over
+   *   the detector, exactly like `callerHasTurnMaterial`.
+   */
+  private waitForTurnDetectorEnd(
+    loopSignal: AbortSignal,
+    silenceTimeoutMs?: number,
+  ): Promise<AcquiredTurn | null | SilenceElapsed> {
+    return new Promise((resolve) => {
+      let settled = false;
+      // FIX #8 — the speculation window is exactly this subscription.
+      this.awaitingTurn = true;
+      const subscribedAtMs = Date.now();
+      let silenceTimer: ReturnType<typeof setTimeout> | undefined;
+
+      const finish = (result: AcquiredTurn | null | SilenceElapsed): void => {
+        if (settled) return;
+        settled = true;
+        this.awaitingTurn = false;
+        if (silenceTimer !== undefined) clearTimeout(silenceTimer);
+        unsubscribe();
+        unsubscribePending();
+        loopSignal.removeEventListener("abort", onAbort);
+        // FIX #8 — the loop is ending, or a turn was released with text
+        // other than the one speculated on; either way that request is
+        // for a turn that will never be sent. Matching text is adopted
+        // (or abandoned) in `runThinkingAndSpeaking`, never here.
+        if (
+          result === null ||
+          result === SILENCE_ELAPSED ||
+          (this.speculation !== undefined && this.speculation.text !== result.text)
+        ) {
+          this.abandonSpeculation(
+            result === null
+              ? "turn acquisition ended"
+              : result === SILENCE_ELAPSED
+                ? "silence window expired with no turn"
+                : "released turn differs from the speculated text",
+          );
+        }
+        resolve(result);
+      };
+
+      // FIX 2 — arm (or re-arm) the silence window. It fires only when
+      // the caller has been quiet for the whole interval AND nothing is
+      // in flight for them; otherwise it re-arms for the remainder.
+      const armSilenceWindow = (): void => {
+        if (silenceTimeoutMs === undefined || settled) return;
+        const quietSinceMs = Math.max(subscribedAtMs, this.record.lastConversationActivityAt);
+        const remainingMs = quietSinceMs + silenceTimeoutMs - Date.now();
+        silenceTimer = setTimeout(() => {
+          if (settled) return;
+          if (
+            this.callerHasTurnMaterial() ||
+            Date.now() - Math.max(subscribedAtMs, this.record.lastConversationActivityAt) < silenceTimeoutMs
+          ) {
+            armSilenceWindow();
+            return;
+          }
+          finish(SILENCE_ELAPSED);
+        }, Math.max(remainingMs, 25));
+      };
+      armSilenceWindow();
+
+      // FIX #8 — see `SpeculativeCompletion`. Observation of the
+      // detector's evidenced confirmation window; it decides nothing
+      // about the release.
+      const unsubscribePending = this.record.turnDetector.onTurnPending((text) => {
+        // FIX #11 — pre-open the TTS transport. First, because it is the
+        // longest lead time available to it and it costs nothing to
+        // start: it opens a network connection and nothing else.
+        this.prepareTtsTransport();
+        this.startSpeculation(text);
+      });
+
+      const unsubscribe = this.record.turnDetector.onTurnEnd((event) => {
+        // FIX #7A — captured at the top of this listener, which
+        // `AdaptiveTurnDetector.emitTurnEnd` invokes synchronously, so
+        // this IS the turn-release instant, not an approximation of it.
+        const turnReleasedAtMs = Date.now();
+        // Where the release falls on the STT stream clock — the
+        // reference point that separates "the tail of THIS turn, still
+        // extending" from "a new utterance begun after it". Read only
+        // by `interruptionCorroborated`; see the field for why.
+        this.lastTurnReleasedAtStreamMs = this.inboundStreamMs;
+        // eslint-disable-next-line no-console
+        console.log(
+          `[TIMING:${this.record.id}] TURN END turn-release=${turnReleasedAtMs} text="${event.text}" sttMs=${event.turnDurationMs}`,
+        );
+        const audioSeconds = this.consumeSinceLastTurnAudioSeconds();
+        const providerId = this.providers.stt.descriptor.id;
+
+        // Snapshot the metrics observers for THIS turn before the next
+        // one starts overwriting them. `userSpeechEndedAtMs` back-dates
+        // the last final's arrival by its own recognition lag, giving
+        // the wall clock at which the caller actually stopped talking —
+        // the t0 the end-to-end latency is measured from.
+        const sttLagMs = this.lastFinalSttLagMs;
+        const lastSegmentAtMs = this.lastFinalSegmentAtMs;
+        // PHASE 3 BATCH 4 — snapshotted and cleared with its wall-clock
+        // twin below, so the pair always describes the same final or
+        // neither does.
+        const lastFinalInboundStreamMs = this.lastFinalInboundStreamMs;
+        this.lastFinalInboundStreamMs = undefined;
+        // PHASE 3 BATCH 6 — snapshotted and cleared in the same place
+        // and the same order as their Batch 4 twin above, so all three
+        // readings describe one final or none of them do.
+        const lastFinalWordEndStreamMs = this.lastFinalWordEndStreamMs;
+        const lastFinalSttClockOffsetMs = this.lastFinalSttClockOffsetMs;
+        this.lastFinalWordEndStreamMs = undefined;
+        this.lastFinalSttClockOffsetMs = undefined;
+        const userSpeechEndedAtMs =
+          lastSegmentAtMs !== undefined ? lastSegmentAtMs - (sttLagMs ?? 0) : undefined;
+        this.lastFinalSttLagMs = undefined;
+        this.lastFinalSegmentAtMs = undefined;
+        // PHASE 3 PHASE 0 — same snapshot-then-clear pattern, at the
+        // same boundary, so the counts describe exactly the turn being
+        // released and never leak into the next one.
+        const finalTranscriptCount = this.finalTranscriptCount;
+        const interFinalGapsMs = this.interFinalGapsMs;
+        this.finalTranscriptCount = 0;
+        this.interFinalGapsMs = [];
+        // Same snapshot-then-clear pattern for the Deepgram endpoint
+        // evidence that triggered this release (see the field docs).
+        const endpointEvidenceAtMs = this.lastEndpointEvidenceAtMs;
+        const endpointEvidenceKind = this.lastEndpointEvidenceKind;
+        this.lastEndpointEvidenceAtMs = undefined;
+        this.lastEndpointEvidenceKind = undefined;
+        // PHASE 3 BATCH 3 — same snapshot-then-clear pattern, for the
+        // wall-clock observations. `lastFinalTranscriptAtMs` reuses the
+        // value already snapshotted into `lastSegmentAtMs` above rather
+        // than re-reading the field: that IS the observed arrival of
+        // this turn's last non-empty final, and re-deriving it would
+        // risk drifting from the stamp `sttLagMs` was measured against.
+        // The interim stamp is cleared so it cannot be inherited; the
+        // inbound-audio stamp is NOT, because audio keeps arriving and
+        // the freshest frame is exactly what this turn wants to report.
+        const lastInterimTranscriptAtMs = this.lastInterimTranscriptAtMs;
+        this.lastInterimTranscriptAtMs = undefined;
+
+        finish({
+          text: event.text,
+          userSpeechMs: event.turnDurationMs,
+          sttLagMs,
+          userSpeechEndedAtMs,
+          sttCostUsd: estimateSttCost(providerId, audioSeconds),
+          turnReleasedAtMs,
+          endpointEvidenceAtMs,
+          endpointEvidenceKind,
+          finalTranscriptCount,
+          interFinalGapsMs,
+          lastInboundAudioAtMs: this.lastInboundAudioAtMs,
+          lastInterimTranscriptAtMs,
+          lastFinalTranscriptAtMs: lastSegmentAtMs,
+          inboundStreamMsAtFinalTranscript: lastFinalInboundStreamMs,
+          lastFinalWordEndStreamMs,
+          sttClockOffsetMs: lastFinalSttClockOffsetMs,
+          // PHASE 3 BATCH 5 — read-and-clear, so a turn that received
+          // no marker reports absence rather than the previous turn's
+          // label. Telemetry only; the detector consults it for nothing.
+          endpointMarkerOutcome: this.record.turnDetector.consumeEndpointMarkerOutcome(),
+          // TURN-RELEASE TRACE — read-and-clear at the same boundary
+          // and for the same reason as the marker outcome above: the
+          // detector snapshots it before notifying this listener, so
+          // this is the only place it describes the right turn.
+          releaseTrace: this.record.turnDetector.consumeReleaseTrace(),
+        });
+      });
+
+      const onAbort = (): void => finish(null);
+      loopSignal.addEventListener("abort", onAbort, { once: true });
+    });
+  }
+
+  private consumeSinceLastTurnAudioSeconds(): number {
+    if (this.sinceLastTurnBytes === 0 || !this.sinceLastTurnSampleRateHz) return 0;
+    const seconds = estimateAudioSeconds({
+      data: new Uint8Array(this.sinceLastTurnBytes),
+      encoding: this.sinceLastTurnEncoding ?? "PCM_16",
+      sampleRateHz: this.sinceLastTurnSampleRateHz,
+    });
+    this.sinceLastTurnBytes = 0;
+    return seconds;
+  }
+
+  private async acquireBatchTurn(loopSignal: AbortSignal): Promise<AcquiredTurn | null> {
+    this.batchAudioIterator ??= this.inboundAudioSource()[Symbol.asyncIterator]();
+
+    while (!loopSignal.aborted) {
+      let onAbort: (() => void) | undefined;
+      const abortPromise = new Promise<IteratorResult<AudioPayload>>((resolve) => {
+        onAbort = () => resolve({ value: undefined as unknown as AudioPayload, done: true });
+        loopSignal.addEventListener("abort", onAbort, { once: true });
+      });
+
+      const next = await Promise.race([this.batchAudioIterator.next(), abortPromise]);
+      if (onAbort) loopSignal.removeEventListener("abort", onAbort);
+
+      if (next.done || loopSignal.aborted) return null;
+
+      const providerId = this.providers.stt.descriptor.id;
+      let segments: TranscriptSegment[] = [];
+
+if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
+  segments = [];
+
+  for await (const segment of this.providers.stt.transcribeStream({
+    sessionId: this.record.id,
+    audio: (async function* () {
+      yield next.value;
+    })(),
+    language: this.record.memory.currentLanguage,
+    signal: loopSignal,
+    // Same already-resolved value as the streaming path above. Both
+    // paths read the one field on the record, so a call cannot run two
+    // different endpointing values.
+    endpointingMs: this.record.sttEndpointingMs,
+  })) {
+    segments.push(segment);
+  }
+} else {
+  segments = [
+    ...(await withGracefulRetry("SPEECH_TO_TEXT", () =>
+    this.providers.stt.transcribe({
+      sessionId: this.record.id,
+      audio: next.value,
+      language: this.record.memory.currentLanguage,
+    }),
+    )),
+];
+}
+
+      const text = segments
+        .filter((segment) => segment.isFinal)
+        .map((segment) => segment.text)
+        .join(" ")
+        .trim();
+
+      if (text.length === 0) continue; // silence/noise chunk — keep listening
+
+      // A batch `transcribe()` exposes no per-segment stream
+      // timestamps, so recognition lag and end-of-speech are genuinely
+      // unmeasurable here — reported as absent rather than as 0.
+      return {
+        text,
+        userSpeechMs: 0,
+        sttLagMs: undefined,
+        userSpeechEndedAtMs: undefined,
+        sttCostUsd: estimateSttCost(providerId, estimateAudioSeconds(next.value)),
+        // Batch STT has no incremental endpointing event to speak of —
+        // the whole utterance resolves at once, right here.
+        turnReleasedAtMs: Date.now(),
+        endpointEvidenceAtMs: undefined,
+        endpointEvidenceKind: undefined,
+        // The batch STT path resolves a whole utterance in one call and
+        // emits no incremental finals, so there is nothing to fragment:
+        // exactly one final, and no gap between consecutive ones. Both
+        // configured LLM/STT production paths stream, so this branch is
+        // not exercised in production.
+        finalTranscriptCount: 1,
+        interFinalGapsMs: [],
+        // PHASE 3 BATCH 3 — absent for the same reason as the fields
+        // above. A batch `transcribe()` delivers no interim segments
+        // and no per-segment arrival to stamp, and its audio never
+        // passes through the streaming byte counter that carries the
+        // inbound stamp. Absent, never substituted.
+        lastInboundAudioAtMs: undefined,
+        lastInterimTranscriptAtMs: undefined,
+        lastFinalTranscriptAtMs: undefined,
+        // Batch STT never advances the streaming byte counter, so there
+        // is no audio-clock reading to pair with. Absent, not zero.
+        inboundStreamMsAtFinalTranscript: undefined,
+        // Same reason: with no streaming segment there is no word-end
+        // position and no stream clock to have been re-based.
+        lastFinalWordEndStreamMs: undefined,
+        sttClockOffsetMs: undefined,
+        // Batch STT delivers no end-of-speech marker, so there is no
+        // `noteEndOfSpeech` branch to report.
+        endpointMarkerOutcome: undefined,
+        // Batch STT bypasses the adaptive detector entirely — no
+        // silence window, no continuation grace, no release decision —
+        // so there is no trace to report rather than an empty one.
+        releaseTrace: undefined,
+      };
+    }
+
+    return null;
+  }
+
+  // ---------------------------------------------------------------
+  // LANGUAGE
+  // ---------------------------------------------------------------
+
+  /**
+   * ---------------- PHASE 1.3: THE LANGUAGE LOCK ----------------
+   *
+   * THE LANGUAGE THIS TURN IS ANSWERED IN. Read by everything that has
+   * to produce words: the per-turn hint on the language-model request,
+   * the TTS synthesis request, the fixed hearing lines, the
+   * silence-recovery prompt and the fallback greeting (all of which
+   * read `memory.currentLanguage`, which this writes through
+   * `recordUserTurn`).
+   *
+   * BEFORE THE LOCK IS TAKEN this is byte-for-byte what the pipeline
+   * always did: `detectLanguage` over the caller's latest turn, with
+   * the language already in play as the fallback for an utterance that
+   * carries no signal. AFTER it is taken, the lock is returned and the
+   * detection is not consulted.
+   *
+   * WHY A LOCK AT ALL. `detectLanguage` re-decides every turn by
+   * design, which is right for a per-turn hint and wrong for a call:
+   * one "okay", one English product name, one mis-scored fragment and
+   * the agent answers the rest of a Hindi call in English. That is the
+   * reported defect (MEETING_NOTES: "agent switched to English mid-call
+   * when user responded in English") and roadmap §4.3.
+   *
+   * DEEPGRAM'S LANGUAGE IDENTIFICATION IS ALREADY WHAT FEEDS THIS, and
+   * no request parameter changed for this feature. The live socket runs
+   * Nova-3 with `language: "multi"` — Deepgram's multilingual mode — so
+   * Hindi speech arrives as Devanagari and English as Latin, and the
+   * `devanagari` / `mixed-script` bases below ARE that identification,
+   * read off the script of the transcript it returns. Nova-3 also
+   * reports a per-word `language` tag in that mode; plumbing it through
+   * would mean changing `TranscriptSegment` and the turn detector, and
+   * the audit (§D item 4) has that field's real-call behaviour on this
+   * account listed as unvalidated. Not needed for the lock, so not
+   * done.
+   */
+  private effectiveLanguageFor(text: string): SupportedLanguage {
+    const locked = this.record.memory.languageLock;
+    if (locked !== undefined) return locked;
+    const current = this.record.memory.currentLanguage;
+    // A bare greeting, acknowledgement, filler or presence check takes
+    // no floor and cannot move the active language either — see
+    // `commitTurnLanguage`. Same helper the lock's clause 2 uses.
+    if (utteranceTakesNoFloor(text.trim())) return current;
+    return detectLanguage(text, current).language;
+  }
+
+  /**
+   * `effectiveLanguageFor`, plus the one side effect: if the call has
+   * no language yet and THIS utterance is the caller's first meaningful
+   * one, the call's language is fixed to it here.
+   *
+   * Called from exactly one place — the main loop, immediately before
+   * the turn is committed to memory. Every other language site either
+   * reads the memory or calls `effectiveLanguageFor`, so this is the
+   * only line in the pipeline that can take a lock.
+   *
+   * IDENTICAL RETURN VALUE TO `effectiveLanguageFor` FOR THE SAME TEXT,
+   * and that is load-bearing rather than incidental: `startSpeculation`
+   * pre-opens the language-model request from `effectiveLanguageFor`
+   * before the turn is released, and `adoptSpeculation` compares the
+   * two requests content-for-content. If locking changed the answer for
+   * the very turn that took the lock, every first meaningful utterance
+   * would throw its pre-opened request away and pay full latency. It
+   * cannot: the lock is taken TO `detected.language`, which is what
+   * both paths return.
+   */
+  private commitTurnLanguage(text: string): SupportedLanguage {
+    const locked = this.record.memory.languageLock;
+    if (locked !== undefined) return locked;
+
+    const current = this.record.memory.currentLanguage;
+    const detected = detectLanguage(text, current);
+
+    // ── A no-floor utterance cannot move the active language ────────
+    //
+    // Real call aa0f2e03 (2026-09-21): English campaign, the caller
+    // said "Hello" in English, Soniox wrote "हेलो।". The detector read
+    // the script as Hindi; the lock correctly refused a bare greeting as
+    // evidence; and the per-turn language was moved to Hindi anyway,
+    // because this path returned the raw detection for every unlocked
+    // turn. Every fixed line then spoke Hindi ("माफ़ कीजिए — Am I
+    // speaking with…?", the hearing line, the give-up) and the gate
+    // never opened.
+    //
+    // So a bare greeting, a bare acknowledgement or filler, or a pure
+    // presence check — `utteranceTakesNoFloor`, the SAME predicate the
+    // lock's clause 2 already applies — leaves the active language where
+    // it was. Deliberately ONLY that predicate: a short substantive
+    // utterance below the lock's word floor, an ambiguous fall-through,
+    // and an explicit "please speak in Hindi" all still follow the
+    // detection exactly as before (language-lock D3/D4/D4b pin that),
+    // and the lock itself is untouched — such an utterance cannot
+    // qualify for it anyway. `effectiveLanguageFor` applies the same
+    // rule so a pre-opened request still matches at release.
+    if (utteranceTakesNoFloor(text.trim())) {
+      if (detected.language !== current) {
+        // eslint-disable-next-line no-console
+        console.log(
+          `[LANGUAGE:${this.record.id}] per-turn detection ${detected.language} IGNORED — a no-floor utterance (basis=${detected.basis});` +
+            ` active language stays ${current}: "${text.trim().slice(0, 80)}"`,
+        );
+      }
+      return current;
+    }
+
+    if (this.qualifiesForLanguageLock(text, detected)) {
+      this.record.memory.lockLanguage(detected.language);
+      // eslint-disable-next-line no-console
+      console.log(
+        `[LANGUAGE:${this.record.id}] call language LOCKED to ${detected.language} on the first meaningful utterance` +
+          ` (basis=${detected.basis} confidence=${detected.confidence} hindiMarkers=${detected.hindiMarkerHits}):` +
+          ` "${text.trim().slice(0, 80)}"`,
+      );
+    }
+    return detected.language;
+  }
+
+  /**
+   * ---------------- WHAT COUNTS AS "THE FIRST MEANINGFUL
+   *                  UTTERANCE" ----------------
+   *
+   * Every clause is a REFUSAL, and each one is a case where locking
+   * would fix the call's language on something that is not the caller
+   * choosing a language. Nothing here introduces a phrase table, a
+   * token list or a language rule of its own — each clause delegates to
+   * a predicate or constant that already exists for another reason,
+   * which is what keeps this from becoming a second, drifting
+   * definition of "meaningful".
+   *
+   *   1. NOT INSIDE A HEARING EPISODE. The same two flags
+   *      `startSpeculation` declines on. Inside an episode the agent
+   *      has just spoken a FIXED line — "Hey, can you hear me okay?" —
+   *      and the natural answer to a fixed line repeats its words, in
+   *      its language. Locking there would let the agent's own script
+   *      choose the call's language, and a Hindi caller answering an
+   *      English hearing line with "Yes I can hear you" would lock the
+   *      call into English. It also covers every branch
+   *      `handleAttentionCheck` answers without the model
+   *      (confirmations, restart/continue requests), which are replies
+   *      to our line rather than the caller's own subject.
+   *
+   *   2. IT TOOK THE FLOOR. `utteranceTakesNoFloor` — the existing
+   *      disjunction of bare greeting, bare acknowledgement/filler and
+   *      pure presence check. "Hello?", "Haan ji.", "Okay", "Can you
+   *      hear me?" are noise for this purpose whatever language they
+   *      appear to be in. Note the pickup acknowledgement never even
+   *      reaches here: the main loop drops it before the turn is
+   *      committed.
+   *
+   *   3. LONG ENOUGH TO HAVE BEEN CHECKED FOR ECHO. See
+   *      `LANGUAGE_LOCK_MIN_WORDS`. This is the silence/noise/self-echo
+   *      clause: an empty or unintelligible turn has no words, and a
+   *      fragment too short for the self-echo guard to judge is one the
+   *      pipeline cannot swear is not our own audio.
+   *
+   *   4. THE DETECTION IS LOCK-GRADE. See `isLockGradeEvidence`. This
+   *      is the ambiguity clause — it refuses a result that merely
+   *      carried the previous language forward, refuses an English
+   *      fall-through that had Hindi words in it, and refuses an
+   *      utterance that NAMES a language ("please speak in Hindi"),
+   *      which is a request about language rather than the caller
+   *      choosing one by speaking it.
+   *
+   * WHAT IT DELIBERATELY DOES NOT REFUSE: a genuinely code-mixed first
+   * utterance. That locks to HINGLISH, which is a first-class
+   * `SupportedLanguage` here and whose prompt hint is "mirror their mix
+   * naturally". Collapsing a mixed opener onto one of the two pure
+   * languages would be inventing a policy; the architecture already has
+   * the right answer for it.
+   */
+  private qualifiesForLanguageLock(text: string, detected: LanguageDetectionResult): boolean {
+    if (this.attentionEpisodeOpen || this.heldScriptRemainder.length > 0) return false;
+    const trimmed = text.trim();
+    if (trimmed.length === 0) return false;
+    if (utteranceTakesNoFloor(trimmed)) return false;
+    if (selfEchoWords(trimmed).length < LANGUAGE_LOCK_MIN_WORDS) return false;
+    return isLockGradeEvidence(detected);
+  }
+
+  // ---------------------------------------------------------------
+  // LLM + TTS
+  // ---------------------------------------------------------------
+
+  /**
+   * Builds the turn array sent to the LLM.
+   *
+   * Rules:
+   *   1. Exactly ONE system turn — the leading prompt from ConversationMemory.
+   *   2. The language hint and the current-turn marker are folded into
+   *      the latest user message, never added as separate system turns
+   *      (doing so caused
+   *      Gemma's `toGoogleContents` to merge ALL system turns into
+   *      the first user message, growing it each turn and triggering
+   *      prompt-echo).
+   *   3. History order: system → user → assistant → user → assistant …
+   */
+ private buildRequestHistory(
+  detectedLanguage: SupportedLanguage,
+  // FIX #8 — optional, additive: the window to annotate. Defaults to
+  // exactly what it always read; `startSpeculation` passes the memory's
+  // preview of that same window with the pending user turn appended.
+  recent: readonly ConversationTurn[] = this.record.memory.recentHistory(),
+): readonly ConversationTurn[] {
+
+  const turns = recent.map(turn => ({ ...turn }));
+
+  const hint = languageHintFor(detectedLanguage);
+
+  for (let i = turns.length - 1; i >= 0; i--) {
+
+      const turn = turns[i];
+
+      if (!turn) continue;
+
+      if (turn.role === "user") {
+
+          // Marked as well as language-hinted. History has no "this one
+          // is now" signal of its own, and a barge-in leaves two user
+          // turns in a row with no assistant turn between them (the
+          // interrupted reply is never committed) — which is exactly
+          // when a reply comes back continuing the previous topic
+          // instead of answering what was just asked.
+          turn.content = `${currentTurnNote()}\n${hint}\n${turn.content}`;
+
+          break;
+      }
+  }
+
+  return turns;
+}
+
+  /**
+   * Speaks a known utterance with no LLM call in the path — used for
+   * the greeting, whose text the system prompt already fixes.
+   *
+   * Goes through the same THINKING -> SPEAKING -> drain sequence as a
+   * generated reply so state transitions, barge-in and playback
+   * accounting behave identically; only the token-generation stage is
+   * absent. THINKING is entered because the state machine has no
+   * LISTENING -> SPEAKING edge, and skipping it would also hide the
+   * greeting from the dashboard's state stepper.
+   */
+  private async speakFixedUtterance(
+    text: string,
+    loopSignal: AbortSignal,
+    transitionReason = "preparing the greeting",
+    /**
+     * ---------------- RECOVERY TEXT IS ALREADY FORMATTED -------------
+     *
+     * `true` ONLY for text that came out of a reply this pipeline
+     * already spoke: a held remainder or a whole cut-off reply. Both are
+     * slices of `assistantText`, which is `toSpokenText(...)` of the
+     * model's output — so the formatter has already run over them, and
+     * running it a second time here is not a no-op.
+     *
+     * `formatForSpeech` is anchored at the start of the text it is
+     * given. A remainder that begins mid-sentence — which is exactly
+     * what `unspokenTail` returns after a cut at a clause or forced
+     * boundary — gets its first letter capitalised: "products,
+     * checkout, courses…" becomes "Products, checkout, courses…". That
+     * rewritten form is what `spokenUtterances` then records, so
+     * `unspokenTail(text, heard)` compares "P" against "p", finds a
+     * mismatch on the first character and returns "" — the remainder is
+     * dropped with nothing said about it. The leading-filler and
+     * stacked-acknowledgement rules are anchored the same way and can
+     * edit a remainder that happens to begin with one of their forms.
+     *
+     * So the recovery paths hand their text through UNCHANGED. It is
+     * still the approved wording — it has been through the formatter
+     * once, where the formatter belongs — and it is now character-exact
+     * against the position held for it.
+     *
+     * `false` (the default) for everything else, which is every path
+     * that speaks text the formatter has NOT already seen: the opening
+     * line, the attention acknowledgement and follow-up, the identity
+     * question and its re-ask, the silence-recovery prompts and the
+     * scripted closing. All of them keep the formatting they have
+     * always had.
+     *
+     * `pronounceForSpeech` inside `synthesizeAndPlay` is untouched by
+     * this and still runs for every utterance: it rewrites the TTS
+     * REQUEST only, never the text that is stored or committed.
+     */
+    alreadyFormatted = false,
+  ): Promise<void> {
+    // ── ...AND THE SAME ON THE WAY IN ──────────────────────────────
+    //
+    // The fixed-line path's first act is a transition of its own, and
+    // ENDING has no edge to THINKING either. Every caller reaches here
+    // after an await — the previous fixed line draining, a held
+    // position being settled, the silence window expiring — so the same
+    // teardown race applies, and it is refused on the same existing
+    // signal (see `enterSpeaking`). Two lines further down this method
+    // already returns without speaking when the loop is aborted; this
+    // is that same decision, taken before the transition rather than
+    // after it, so nothing new is skipped and nothing new is spoken.
+    if (this.record.loopAbortController?.signal.aborted === true) return;
+    this.host.transition(this.record, SessionState.THINKING, transitionReason);
+    const speakingSignal = this.enterSpeaking();
+    if (speakingSignal.aborted || loopSignal.aborted) return;
+
+    const spoken = await this.synthesizeAndPlay(
+      alreadyFormatted ? text : toSpokenText(text),
+      speakingSignal,
+    );
+    // The greeting is a startup action, not a turn, so it is correctly
+    // absent from `turnLatencies` — but it still consumes real TTS
+    // characters, and that cost used to be dropped on the floor.
+    this.record.metrics.recordAuxiliaryCost({ textToSpeech: spoken.ttsCostUsd });
+    await this.drainPlayback(speakingSignal);
+  }
+
+  private async runThinkingAndSpeaking(
+    userText: string,
+    // PHASE 1.3 — was the whole `LanguageDetectionResult`, of which
+    // only `.language` was ever read. Narrowed to the language itself
+    // so the CALL'S language (which may be the lock rather than this
+    // turn's detection) is what reaches the request.
+    turnLanguage: SupportedLanguage,
+    loopSignal: AbortSignal,
+  ): Promise<ThinkingAndSpeakingResult> {
+    const sid = this.record.id;
+    const isGreeting = userText === "";
+
+    this.host.transition(this.record, SessionState.THINKING, "generating a reply");
+    // DIAGNOSTIC ONLY — cleared at the same boundary `beginThinking`
+    // clears the barge-in phase label, for the same reason.
+    this.pendingBargeInTrigger = undefined;
+    const thinkingSignal = combineSignals([this.record.bargeIn.beginThinking(), loopSignal]);
+    const request: CompletionRequest = { sessionId: this.record.id, history: this.buildRequestHistory(turnLanguage) };
+    const llmProviderId = this.providers.llm.descriptor.id;
+    // FIX #8 — the request above is STILL built, exactly as before, and
+    // is the reference a pre-opened request must match to be adopted.
+    // Anything else falls through to sending `request` as today.
+    const preOpened = this.adoptSpeculation(userText, request, thinkingSignal);
+
+    // eslint-disable-next-line no-console
+    console.log(
+      `[LLM:${sid}] Sending to ${llmProviderId}: historyLength=${request.history.length} roles=[${request.history.map((t) => t.role).join(",")}] streaming=${typeof this.providers.llm.generateCompletionStream === "function"}`,
+    );
+    this.markTiming("llm-request");
+    if (preOpened !== undefined) {
+      const now = Date.now();
+      // eslint-disable-next-line no-console
+      console.log(
+        `[SPECULATE:${sid}] ADOPTED pre-opened request — llm-request is ${now - preOpened.openedAtMs}ms after the provider stream was opened` +
+          ` (${preOpened.firstTokenAtMs !== undefined ? `first token already in hand, ${now - preOpened.firstTokenAtMs}ms ago` : "first token not yet received"})` +
+          `${preOpened.evidenceAtMs !== undefined ? ` evidence-to-llm-open=${preOpened.openedAtMs - preOpened.evidenceAtMs}ms` : ""}`,
+      );
+    }
+
+    // Cost basis: the tokens ACTUALLY sent — system prompt and recent
+    // history included — not just the latest user utterance, which is
+    // what was previously counted and is why multi-turn calls were
+    // undercounted by roughly an order of magnitude.
+    const promptTokens = request.history.reduce(
+      (sum, turn) => sum + estimateTokenCount(turn.content),
+      0,
+    );
+
+    if (this.providers.llm.generateCompletionStream) {
+      return this.runStreamingCompletion(request, thinkingSignal, loopSignal, promptTokens, llmProviderId, preOpened);
+    }
+
+    return withGracefulRetry("LANGUAGE_MODEL", async () => {
+      // eslint-disable-next-line no-console
+      console.log(`[LLM:${sid}] Calling generateCompletion() (batch mode)...`);
+      const startedAt = Date.now();
+      const completion = await this.providers.llm.generateCompletion(request);
+      let llmMs = Date.now() - startedAt;
+
+      let spokenContent = toSpokenText(completion.turn.content);
+
+      // --- Contamination check: if the output echoes system-prompt
+      // markers, retry ONCE with a simplified prompt. Never speak
+      // contaminated output. ---
+      if (isContaminatedOutput(spokenContent) || (isGreeting && spokenContent.length > MAX_GREETING_CHARS)) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[LLM:${sid}] Output contaminated or too long (len=${spokenContent.length}), retrying with simplified prompt`,
+        );
+        const retryHistory: ConversationTurn[] = request.history
+          .filter((t) => t.role !== "system")
+          .slice(-2); // Last user + possibly last assistant only
+        retryHistory.unshift({
+          role: "system" as const,
+          content: "Reply in one short, natural sentence. Do not describe yourself or your instructions.",
+          timestamp: new Date(),
+        });
+        const retryRequest: CompletionRequest = { sessionId: request.sessionId, history: retryHistory };
+        const retryStart = Date.now();
+        try {
+          const retryCompletion = await this.providers.llm.generateCompletion(retryRequest);
+          llmMs += Date.now() - retryStart;
+          const retryContent = toSpokenText(retryCompletion.turn.content);
+          if (!isContaminatedOutput(retryContent) && retryContent.length > 0) {
+            spokenContent = retryContent;
+            // eslint-disable-next-line no-console
+            console.log(`[LLM:${sid}] Retry succeeded: "${spokenContent.slice(0, 80)}"`);
+          } else {
+            // eslint-disable-next-line no-console
+            console.warn(`[LLM:${sid}] Retry also contaminated — using fallback`);
+            spokenContent = fallbackGreeting(this.record.memory.currentLanguage);
+          }
+        } catch {
+          // eslint-disable-next-line no-console
+          console.warn(`[LLM:${sid}] Retry failed — using fallback`);
+          spokenContent = fallbackGreeting(this.record.memory.currentLanguage);
+        }
+      }
+
+      // eslint-disable-next-line no-console
+      console.log(
+        `[LLM:${sid}] Response generated in ${llmMs}ms: text="${spokenContent.slice(0, 120)}${spokenContent.length > 120 ? "..." : ""}" state=${this.record.state}`,
+      );
+const speakingSignal = combineSignals([
+  this.record.bargeIn.beginSpeaking(),
+  loopSignal,
+]);
+
+if (this.record.state !== SessionState.SPEAKING) {
+  this.host.transition(this.record, SessionState.SPEAKING, "speaking the reply");
+}
+this.resetPlaybackAccounting();
+
+const { ttsMs, ttsCostUsd, firstChunkMs } =
+  await this.synthesizeAndPlay(spokenContent, speakingSignal);
+
+// Streaming TTS only enqueues; hold SPEAKING until playback drains.
+// (The batch-TTS branch already sleeps for its own playback and will
+// simply find nothing left to wait for here.)
+// Interruptible by an already-waiting caller turn, for parity with the
+// streaming branch below — this is a GENERATED reply, so the same
+// "answer the turn that is already waiting" rule applies.
+await this.drainPlayback(speakingSignal, true);
+
+      // A non-streaming provider emits nothing until generation is
+      // complete, so time-to-first-token and full generation time are
+      // necessarily the same measurement. Neither is contaminated by
+      // TTS here: `generateCompletion` is a single await with no
+      // synthesis interleaved inside it.
+      return {
+        // PHASE A — the non-streaming path has no supersession check and
+        // no mid-stream failure to observe: it either produced audio or
+        // produced nothing to produce audio from. `firstChunkMs` is the
+        // same "real audio existed" test the streaming path uses.
+        turnOutcome:
+          firstChunkMs !== undefined
+            ? "spoken"
+            : spokenContent.trim().length === 0
+              ? "empty_response"
+              : "aborted",
+        charsGenerated: spokenContent.length,
+        assistantText: spokenContent,
+        llmMs,
+        llmGenerationMs: llmMs,
+        llmCostUsd: estimateLlmCost(llmProviderId, promptTokens, estimateTokenCount(spokenContent)),
+        ttsMs: firstChunkMs,
+        ttsSynthesisMs: ttsMs,
+        ttsCostUsd,
+        // Non-streaming LLM path: exactly one synthesizeAndPlay call for the whole reply.
+        ttsChunkCount: 1,
+      };
+    });
+  }
+
+  private async runStreamingCompletion(
+    request: CompletionRequest,
+    thinkingSignal: AbortSignal,
+    loopSignal: AbortSignal,
+    promptTokens: number,
+    llmProviderId: string,
+    // FIX #8 — optional, additive: an adopted pre-opened stream for THIS
+    // request. When present it is consumed in place of opening a new
+    // one, and `startedAt` is the instant it was really opened, so
+    // `llmMs` stays what it is documented as: provider time-to-first-token.
+    preOpened?: SpeculativeCompletion,
+  ): Promise<ThinkingAndSpeakingResult> {
+    const chunker = new SentenceChunker();
+    let fullText = "";
+    let finalText: string | undefined;
+    let ttsSynthesisMs = 0;
+    let ttsCostUsd = 0;
+    let speakingSignal: AbortSignal | undefined;
+    // --- Metrics accumulators (no effect on generation or playback) ---
+    /** Request -> first token. The only LLM figure TTS cannot contaminate. */
+    let llmFirstTokenMs: number | undefined;
+    /** Time-to-first-audio of the FIRST utterance spoken this turn. */
+    let ttsFirstChunkMs: number | undefined;
+    /**
+     * Wall clock spent inside `synthesizeAndPlay` while the LLM stream
+     * was still open. The provider's generator is suspended at its
+     * `yield` for exactly this long, so its own `latencyMs` silently
+     * includes it — subtracting it back out is what makes
+     * `llmGenerationMs` a real generation measurement.
+     */
+    let ttsBlockedDuringStreamMs = 0;
+    /** Wall clock at which the LLM stream finished producing. */
+    let llmStreamEndedAtMs: number | undefined;
+    // --- OpenAI usage telemetry, carried through from the final event.
+    // Purely diagnostic: never read to alter this turn's request or
+    // response, only forwarded into `TurnLatencyBreakdown`. ---
+    let reportedPromptTokens: number | undefined;
+    let cachedPromptTokens: number | undefined;
+    let reasoningTokens: number | undefined;
+    let reportedCompletionTokens: number | undefined;
+    // PHASE 3 BATCH 2A — retry attribution, carried through from the
+    // provider's final event exactly as the usage counts above are.
+    // Observed, never configured: nothing here alters a retry.
+    let llmAttempts: number | undefined;
+    let llmRetries: number | undefined;
+    let llmRetryOverheadMs: number | undefined;
+    let llmRetryReasons: string | undefined;
+    /** FIX #7A — telemetry only: count of sentence-level synthesizeAndPlay invocations this turn. */
+    let ttsChunkCount = 0;
+    // Set once contamination is detected mid-stream: stops speaking any
+    // further sentences from this turn. See the contamination check
+    // below for why this exists — the batch path's isContaminatedOutput
+    // + retry safety net never runs for a streaming provider, and both
+    // configured LLM providers (GPT-5.1, Gemma) implement streaming.
+    let contaminated = false;
+    /**
+     * Set when the caller's newer turn cancelled this reply before a
+     * word of it was spoken. Only used to keep the two checks below
+     * from cancelling — and logging — the same reply twice.
+     */
+    let superseded = false;
+    // PHASE A — TELEMETRY ONLY. Set by whichever branch below actually
+    // disposed of this reply; `undefined` until one does, and resolved
+    // against the measurements at the return sites. Nothing reads it.
+    let outcome: TurnOutcome | undefined;
+    let supersederTakesFloor: boolean | undefined;
+    const startedAt = preOpened?.openedAtMs ?? Date.now();
+
+    try {
+      const stream =
+        preOpened !== undefined
+          ? this.resumeSpeculativeStream(preOpened)
+          : this.providers.llm.generateCompletionStream?.(request, thinkingSignal);
+      if (!stream) throw new Error("generateCompletionStream unexpectedly unavailable");
+
+      for await (const event of stream) {
+        if (thinkingSignal.aborted) break;
+
+        if (event.type === "token") {
+          if (fullText.length === 0) {
+            // FIX #8 — for an adopted pre-opened stream whose first token
+            // arrived BEFORE adoption, measure to its real arrival, not
+            // to the moment this loop got round to reading it.
+            llmFirstTokenMs ??= (preOpened?.firstTokenAtMs ?? Date.now()) - startedAt;
+            this.markTiming("llm-first-token");
+          }
+          fullText += event.delta;
+          const readySentences = chunker.push(event.delta);
+          for (const sentence of readySentences) {
+            const cleaned = toSpokenText(sentence);
+            if (cleaned.length === 0) continue;
+
+            // FIX #7A — the chunker has just produced a TTS-ready
+            // sentence. Marked here, before the contamination/
+            // supersession checks below, because those decide whether
+            // the sentence gets SPOKEN, not whether it was READY.
+            if (!this.markedFirstSentenceThisTurn) {
+              this.markedFirstSentenceThisTurn = true;
+              this.markTiming("first-sentence-ready");
+            }
+
+            // Check the ACCUMULATED text so far, not just this sentence
+            // in isolation — a leak's markers are often split across
+            // sentence boundaries (e.g. "Persona: ..." / "Constraints:
+            // ..."), and isContaminatedOutput requires two markers to
+            // avoid false positives on an innocent single word. This
+            // can't prevent an EARLIER sentence in the same turn from
+            // having already been spoken (streaming speaks as it goes,
+            // by design, for latency) — but it stops the turn the
+            // moment contamination becomes detectable, rather than
+            // speaking the entire echoed prompt to the caller.
+            if (isContaminatedOutput(fullText)) {
+              contaminated = true;
+              outcome = "contaminated";
+              break;
+            }
+
+            // ── Superseded, not interrupted ───────────────────────
+            //
+            // Nothing of this reply has been spoken yet
+            // (`speakingSignal` is still unset), and the caller has
+            // ALREADY finished saying something newer — a correction, a
+            // clarification, a different question. Speaking this now
+            // answers a question they have moved on from, and then
+            // makes them wait through it before their real one is
+            // answered. That is the stale-backlog behaviour: old
+            // question, old answer, new question, new answer.
+            //
+            // So the reply is cancelled through the SAME path a
+            // barge-in takes — the caller's newer turn wins, this
+            // response is never committed, and the buffered turn (the
+            // turn detector merges consecutive ones, so a correction
+            // and the thought it corrects arrive together) is picked up
+            // as the next turn on the following iteration. One current
+            // response instead of a queue of stale ones.
+            //
+            // Deliberately only BEFORE the first sentence. Once audio
+            // is playing, the caller talking is a barge-in and is
+            // handled exactly as it is today; nothing about that path
+            // changes. And the loop cannot stall: a buffered turn is
+            // delivered to the next subscriber immediately, so every
+            // supersession is followed by a real turn.
+            if (speakingSignal === undefined) {
+              // PHASE A/B — the decision and its description, from one
+              // evaluation, taken BEFORE `triggerExternalBargeIn` so it
+              // describes the detector as it stood when the decision was
+              // made. See `describeSupersession`.
+              const supersession = this.describeSupersession();
+              if (supersession.takesFloor !== undefined) {
+                supersederTakesFloor = supersession.takesFloor;
+              }
+              if (supersession.supersedes) {
+                outcome = supersession.outcome;
+                // eslint-disable-next-line no-console
+                console.log(
+                  `[PIPELINE:${this.record.id}] reply SUPERSEDED before it was spoken — the caller has already said something newer` +
+                    ` (signal=${supersession.outcome} supersederTakesFloor=${supersession.takesFloor} charsGenerated=${fullText.length})`,
+                );
+                superseded = true;
+                this.triggerExternalBargeIn("supersession");
+                break;
+              }
+              if (supersession.takesFloor === false) {
+                // PHASE B — a turn IS waiting, and it does not take the
+                // floor. The reply continues down the unchanged path and
+                // is spoken; the waiting turn is answered on the next
+                // iteration exactly as it would have been.
+                // eslint-disable-next-line no-console
+                console.log(
+                  `[PIPELINE:${this.record.id}] a waiting caller turn does NOT take the floor — the reply is KEPT` +
+                    ` (charsGenerated=${fullText.length})`,
+                );
+              }
+            }
+
+            speakingSignal ??= this.enterSpeaking();
+            if (speakingSignal.aborted) break;
+            const synthesisStartedAt = Date.now();
+            const spoken = await this.synthesizeAndPlay(cleaned, speakingSignal);
+            ttsBlockedDuringStreamMs += Date.now() - synthesisStartedAt;
+            ttsFirstChunkMs ??= spoken.firstChunkMs;
+            ttsSynthesisMs += spoken.ttsMs;
+            ttsCostUsd += spoken.ttsCostUsd;
+            ttsChunkCount += 1;
+          }
+        } else {
+          finalText = event.turn.content;
+          llmStreamEndedAtMs = Date.now();
+          reportedPromptTokens = event.promptTokens;
+          cachedPromptTokens = event.cachedPromptTokens;
+          reasoningTokens = event.reasoningTokens;
+          reportedCompletionTokens = event.completionTokens;
+          llmAttempts = event.llmAttempts;
+          llmRetries = event.llmRetries;
+          llmRetryOverheadMs = event.llmRetryOverheadMs;
+          llmRetryReasons = event.llmRetryReasons;
+        }
+
+        if (contaminated || speakingSignal?.aborted) break;
+      }
+    } catch (error) {
+      // Streaming LLM connection dropped mid-reply — speak whatever
+      // was generated so far rather than losing the turn entirely.
+      //
+      // The recovery is unchanged; only the silence about it is. This
+      // catch swallowed every mid-turn provider failure — a 401, a rate
+      // limit, a dropped socket — with no log line, and the turn then
+      // produced an empty reply that is indistinguishable in storage
+      // from a model that legitimately returned nothing. Naming the
+      // error here is what separates those two, and it is the whole
+      // change: nothing is rethrown, no fallback is spoken, no state is
+      // transitioned, no retry is attempted.
+      //
+      // Deliberately reports only what was already measured on this
+      // turn — no prompt text, no transcript, no reply content, no
+      // credential — plus the provider's own message.
+      // PHASE A — records that the stream is what ended this turn. The
+      // resolution at the return site still lets a turn whose partial
+      // text DID reach the caller report `spoken`, because it was not a
+      // silent turn; `charsGenerated` and this line describe the rest.
+      outcome = "stream_error";
+      // eslint-disable-next-line no-console
+      console.error(
+        `[LLM:${this.record.id}] streaming completion FAILED mid-turn` +
+          ` provider=${llmProviderId} turnIndex=${this.record.turnIndex}` +
+          ` firstTokenMs=${llmFirstTokenMs ?? "never"} charsGenerated=${fullText.length}` +
+          ` spokenChunks=${ttsChunkCount} elapsedMs=${Date.now() - startedAt}` +
+          ` error=${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}`,
+      );
+    }
+
+    // The stream may end without a final event (abort, dropped
+    // connection); fall back to "now" so generation time is still
+    // bounded by something real.
+    llmStreamEndedAtMs ??= Date.now();
+    const llmGenerationMs = Math.max(
+      0,
+      llmStreamEndedAtMs - startedAt - ttsBlockedDuringStreamMs,
+    );
+
+    if (contaminated) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[LLM:${this.record.id}] Streaming output contaminated (prompt echo) — suppressing remainder of turn, using fallback`,
+      );
+      const fallback = fallbackGreeting(this.record.memory.currentLanguage);
+      if (!(speakingSignal?.aborted ?? false)) {
+        speakingSignal ??= this.enterSpeaking();
+        if (!speakingSignal.aborted) {
+          const spoken = await this.synthesizeAndPlay(fallback, speakingSignal);
+          ttsFirstChunkMs ??= spoken.firstChunkMs;
+          ttsSynthesisMs += spoken.ttsMs;
+          ttsCostUsd += spoken.ttsCostUsd;
+          ttsChunkCount += 1;
+        }
+      }
+      // Stay in SPEAKING until the queued audio has actually played.
+      // The TTS metrics are already fixed above, so the drain never
+      // leaks into them.
+      if (speakingSignal) await this.drainPlayback(speakingSignal);
+      return {
+        // PHASE A — `contaminated` is the disposition of the GENERATED
+        // reply, which is what this field is about; the fixed fallback
+        // spoken in its place is not a model turn. `charsGenerated`
+        // counts the suppressed output, not the fallback.
+        turnOutcome: "contaminated",
+        charsGenerated: fullText.length,
+        assistantText: fallback,
+        llmMs: llmFirstTokenMs,
+        llmGenerationMs,
+        llmCostUsd: estimateLlmCost(llmProviderId, promptTokens, estimateTokenCount(fallback)),
+        ttsMs: ttsFirstChunkMs,
+        ttsSynthesisMs,
+        ttsCostUsd,
+        ttsChunkCount,
+        ...(reportedPromptTokens !== undefined ? { reportedPromptTokens } : {}),
+        ...(cachedPromptTokens !== undefined ? { cachedPromptTokens } : {}),
+        ...(reasoningTokens !== undefined ? { reasoningTokens } : {}),
+        ...(reportedCompletionTokens !== undefined ? { reportedCompletionTokens } : {}),
+        ...(llmAttempts !== undefined ? { llmAttempts } : {}),
+        ...(llmRetries !== undefined ? { llmRetries } : {}),
+        ...(llmRetryOverheadMs !== undefined ? { llmRetryOverheadMs } : {}),
+        ...(llmRetryReasons !== undefined ? { llmRetryReasons } : {}),
+      };
+    }
+
+    const rawRemainder = chunker.flush();
+    const remainder = rawRemainder ? toSpokenText(rawRemainder) : "";
+    // The same supersession test, for the reply that never reached a
+    // sentence cut and so arrives here whole. Same two conditions:
+    // nothing spoken yet, and the caller has already moved on.
+    // PHASE A/B — assessed once, under exactly the conditions that
+    // guarded the old `newerUserTurnWaiting()` call in the chain below,
+    // so the same turns are assessed as before. Read-only.
+    const tailSupersession =
+      !superseded && remainder.length > 0 && speakingSignal === undefined
+        ? this.describeSupersession()
+        : undefined;
+    if (tailSupersession !== undefined && tailSupersession.takesFloor !== undefined) {
+      supersederTakesFloor = tailSupersession.takesFloor;
+    }
+
+    if (superseded) {
+      // Already cancelled above; the remainder belongs to the reply the
+      // caller has moved on from, so none of it is spoken.
+    } else if (tailSupersession !== undefined && tailSupersession.supersedes) {
+      outcome = tailSupersession.outcome;
+      // eslint-disable-next-line no-console
+      console.log(
+        `[PIPELINE:${this.record.id}] reply SUPERSEDED before it was spoken — the caller has already said something newer` +
+          ` (signal=${tailSupersession.outcome} supersederTakesFloor=${tailSupersession.takesFloor} charsGenerated=${fullText.length})`,
+      );
+      this.triggerExternalBargeIn("supersession");
+    } else if (remainder.length > 0 && !(speakingSignal?.aborted ?? false)) {
+      // PHASE B — reached, rather than superseded, when a waiting turn
+      // does not take the floor. The reply is spoken by the unchanged
+      // path below and the waiting turn is answered next iteration.
+      if (tailSupersession?.takesFloor === false) {
+        // eslint-disable-next-line no-console
+        console.log(
+          `[PIPELINE:${this.record.id}] a waiting caller turn does NOT take the floor — the reply is KEPT` +
+            ` (charsGenerated=${fullText.length})`,
+        );
+      }
+      speakingSignal ??= this.enterSpeaking();
+      if (!speakingSignal.aborted) {
+        const spoken = await this.synthesizeAndPlay(remainder, speakingSignal);
+        ttsFirstChunkMs ??= spoken.firstChunkMs;
+        ttsSynthesisMs += spoken.ttsMs;
+        ttsCostUsd += spoken.ttsCostUsd;
+        ttsChunkCount += 1;
+      }
+    }
+
+    // Hold SPEAKING open for the audio still queued on the transport.
+    // Aborts instantly on barge-in; the TTS metrics were accumulated
+    // from generation time only, so they are unaffected.
+    //
+    // Interruptible by an already-waiting caller turn: this is THE long
+    // drain — a generated pitch block is seconds of audio, and a turn
+    // the caller completed into the THINKING gap would otherwise be
+    // invisible until every one of them had played out.
+    if (speakingSignal) await this.drainPlayback(speakingSignal, true);
+
+    const assistantText = toSpokenText(finalText ?? fullText);
+
+    // If nothing was ever spoken (e.g. immediate barge-in), still
+    // make sure we transitioned through SPEAKING at least nominally
+    // isn't required — LISTENING is re-entered naturally by the
+    // caller's next loop iteration either way.
+    void loopSignal;
+
+    // PHASE A — the turn's disposition, resolved from what was already
+    // measured. `ttsFirstChunkMs` (not `ttsChunkCount`) is the test for
+    // `spoken`: it is set only by a real first audio chunk, whereas the
+    // chunk counter also counts a `synthesizeAndPlay` that returned
+    // through its skip guard. Branch-set outcomes win, except that a
+    // turn the caller actually heard reports `spoken` even if the
+    // stream failed on the way — see `TurnOutcome`.
+    const charsGenerated = (finalText ?? fullText).length;
+    const resolvedOutcome: TurnOutcome =
+      outcome === "superseded_buffered" || outcome === "superseded_pending" || outcome === "contaminated"
+        ? outcome
+        : ttsFirstChunkMs !== undefined
+          ? "spoken"
+          : (outcome ?? (assistantText.trim().length === 0 ? "empty_response" : "aborted"));
+
+    return {
+      turnOutcome: resolvedOutcome,
+      charsGenerated,
+      ...(supersederTakesFloor !== undefined ? { supersederTakesFloor } : {}),
+      assistantText,
+      llmMs: llmFirstTokenMs,
+      llmGenerationMs,
+      llmCostUsd: estimateLlmCost(llmProviderId, promptTokens, estimateTokenCount(assistantText)),
+      ttsMs: ttsFirstChunkMs,
+      ttsSynthesisMs,
+      ttsCostUsd,
+      ttsChunkCount,
+      ...(reportedPromptTokens !== undefined ? { reportedPromptTokens } : {}),
+      ...(cachedPromptTokens !== undefined ? { cachedPromptTokens } : {}),
+      ...(reasoningTokens !== undefined ? { reasoningTokens } : {}),
+      ...(reportedCompletionTokens !== undefined ? { reportedCompletionTokens } : {}),
+      ...(llmAttempts !== undefined ? { llmAttempts } : {}),
+      ...(llmRetries !== undefined ? { llmRetries } : {}),
+      ...(llmRetryOverheadMs !== undefined ? { llmRetryOverheadMs } : {}),
+      ...(llmRetryReasons !== undefined ? { llmRetryReasons } : {}),
+    };
+  }
+
+  private enterSpeaking(): AbortSignal {
+    // ── A SESSION THAT IS ENDING NEVER SPEAKS AGAIN ────────────────
+    //
+    // Every call site reaches this after an await — the model's stream,
+    // the synthesis of an earlier sentence — and the session can have
+    // been ended while that await was outstanding. The state table has
+    // no ENDING -> SPEAKING edge, so `transition` THREW: the main loop
+    // caught it as a fatal turn error, `markError` filed it, the
+    // session observer reported "errored", and `call-runner.ts`
+    // finalized the attempt TEMPORARY — which the retry planner then
+    // REDIALS. A person who hung up mid-reply was called back because
+    // of a teardown race (read-only audit 2026-09-22, H5; reproduced
+    // through the harness).
+    //
+    // The signal is the existing one and needs no new state:
+    // `VoiceSessionManagerImpl.end()` aborts the loop controller BEFORE
+    // it transitions to ENDING, and the pipeline's own `host.end`
+    // (voicemail, the identity give-up, the silence give-up) goes
+    // through that same method. So an aborted controller is "this
+    // session is ending", already true by the time the transition would
+    // be attempted.
+    //
+    // Nothing is swallowed. An invalid transition from any other state
+    // still throws and is still reported exactly as it is today; this
+    // declines only the one transition that teardown makes meaningless.
+    // The returned signal is aborted, which is precisely what every
+    // caller already tests before synthesizing anything, so the reply
+    // stops here on the path it already has.
+    if (this.record.loopAbortController?.signal.aborted === true) {
+      const ended = new AbortController();
+      ended.abort();
+      return ended.signal;
+    }
+    if (this.record.state !== SessionState.SPEAKING) {
+      this.host.transition(this.record, SessionState.SPEAKING, "speaking the reply");
+    }
+    this.resetPlaybackAccounting();
+    return combineSignals([this.record.bargeIn.beginSpeaking(), this.record.loopAbortController!.signal]);
+  }
+
+  // ---------------------------------------------------------------
+  // Real-time playback accounting
+  //
+  // A streaming TTS provider hands us a whole reply far faster than
+  // real time, and `playAudioChunk` only ENQUEUES it on the transport
+  // (both the Plivo and Vobiz bridges pace their own 20ms pumps).
+  // Without the drain below, SPEAKING ended the moment the last byte
+  // was queued — leaving several seconds of assistant audio still
+  // playing while the session already claimed to be LISTENING. That
+  // single fact broke barge-in (`state === SPEAKING` was false, so no
+  // interruption was ever triggered) and let a new turn's audio be
+  // appended behind the previous turn's backlog.
+  // ---------------------------------------------------------------
+
+  /** Total real-time duration of audio handed to the transport this speaking phase. */
+  private outboundQueuedMs = 0;
+  /** Wall clock at which the transport began playing this speaking phase. */
+  private outboundPlaybackStartedAt = 0;
+  /**
+   * Every utterance handed to the transport this speaking phase, with
+   * the playback offsets (ms into this phase's audio) it occupies.
+   * Read only by `heardSoFarText`, to tell the part of an interrupted
+   * reply the caller heard from the part they did not.
+   *
+   * `startsAtMs` is `outboundQueuedMs` as it stood before the utterance
+   * was queued. `endsAtMs` is where it stood after the last audio chunk
+   * of that utterance was handed over — i.e. start + the utterance's
+   * real duration, summed from the SAME `estimateAudioSeconds` call
+   * `drainPlayback` already bills the queue with. Nothing new is
+   * measured or guessed.
+   *
+   * `complete` is "no more audio is coming for this entry". An
+   * utterance is still being synthesized chunk by chunk while it is the
+   * last one, so its `endsAtMs` is only a partial extent until then;
+   * counting it as heard on that partial extent would credit the caller
+   * with a whole sentence on a fraction of its audio, which is the
+   * defect this accounting exists to prevent. Set at the two instants
+   * that make it true and nowhere else: the next utterance starting,
+   * and `drainPlayback` (the reply being fully queued).
+   */
+  private spokenUtterances: Array<{
+    readonly text: string;
+    readonly startsAtMs: number;
+    endsAtMs: number;
+    complete: boolean;
+  }> = [];
+  /**
+   * FIX 1 — true once EVERY utterance of the current reply has been
+   * handed to the transport, i.e. from the moment `drainPlayback` is
+   * entered. Until then the reply is still being generated/synthesized
+   * sentence by sentence and more speech is certainly to come, which
+   * is what `isBackchannel` needs to know and what the bounded
+   * transport buffer cannot tell it. Read only by `isBackchannel`;
+   * changes nothing about what is synthesized, queued, played or
+   * cancelled.
+   */
+  private replyFullyQueued = false;
+
+  private resetPlaybackAccounting(): void {
+    this.outboundQueuedMs = 0;
+    this.outboundPlaybackStartedAt = 0;
+    // A new reply: nothing of it has been handed over yet.
+    this.replyFullyQueued = false;
+    // Belongs to one reply, like the two counters above it.
+    this.spokenUtterances = [];
+    // Called at exactly the two places the session enters SPEAKING, so
+    // this is the stream-clock mark the barge-in check above compares
+    // incoming transcript segments against.
+    this.speakingStartedAtStreamMs = this.inboundStreamMs;
+    // A backchannel judgement belongs to one utterance during one
+    // reply. If Deepgram never sent the final that would have closed it
+    // (a dropped socket mid-"okay"), it must not carry into the next
+    // reply and absorb the first acknowledgement heard there.
+    this.backchannelInFlight = false;
+  }
+
+  /**
+   * Holds SPEAKING open until the audio already handed to the
+   * transport has actually played out. Resolves immediately when
+   * `signal` aborts, so barge-in cuts the wait with no added latency.
+   *
+   * @param interruptibleByBufferedTurn Opt-in, and OFF by default. With
+   *   it `false` this method is byte-for-byte what it has always been:
+   *   one `abortableSleep` for the whole remaining span. With it `true`
+   *   the same span is slept in `BUFFERED_TURN_DRAIN_POLL_MS` steps and
+   *   a caller turn that is ALREADY COMPLETE and waiting cuts the
+   *   reply short instead of being answered after it.
+   *
+   *   Passed `true` from exactly the two generated-reply drains. The
+   *   fixed-utterance drains (`speakFixedUtterance` — the opening line,
+   *   the attention acknowledgement, the hearing follow-up, the
+   *   silence-recovery prompts, a resumed remainder) and the
+   *   contamination fallback deliberately do NOT pass it and keep
+   *   today's behaviour exactly.
+   *
+   *   Three properties make the polling safe, and all three are
+   *   load-bearing:
+   *
+   *     - It POLLS a read-only getter and never subscribes.
+   *       `emitTurnEnd` buffers only while `listeners.size === 0`, so
+   *       an extra `onTurnEnd` subscriber would consume the event and
+   *       the main loop would never see it (see the note at
+   *       `newerUserTurnWaiting`). Pending-event ownership is
+   *       unchanged.
+   *     - It runs only AFTER the early returns below, so it cannot
+   *       fire before playback has begun. `heardSoFarText()` is empty
+   *       until then, and a barge-in with nothing heard commits
+   *       NOTHING — which erases the reply from history and makes the
+   *       next request generate the block again from the top.
+   *     - It reuses `triggerExternalBargeIn()` unchanged, and treats
+   *       `false` as "keep draining". Declining is a real answer: it
+   *       is how the opening line and a backchannel in flight stay
+   *       uninterruptible.
+   *
+   *   It changes nothing about turn detection: the caller's own
+   *   endpointing, windows, graces and thresholds decide when a turn
+   *   exists, and this only reads one that already does. A caller
+   *   mid-sentence has no buffered turn and so can never be cut by it.
+   */
+  private async drainPlayback(
+    signal: AbortSignal,
+    interruptibleByBufferedTurn = false,
+  ): Promise<void> {
+    // FIX 1 — every call site reaches here only after the last utterance
+    // of the reply has been handed to the transport, so this is the one
+    // instant "all of the reply is queued" becomes true. Set before the
+    // early returns below: a reply that queued nothing is trivially
+    // fully queued.
+    this.replyFullyQueued = true;
+    // The second of the two proofs that an utterance is fully queued
+    // (see `spokenUtterances`): every call site reaches here only after
+    // the last utterance has been handed over, so the last entry can
+    // receive no more audio. Set BEFORE the early returns below, for
+    // the same reason the flag above is.
+    const last = this.spokenUtterances[this.spokenUtterances.length - 1];
+    if (last !== undefined) last.complete = true;
+    if (this.outboundPlaybackStartedAt === 0 || this.outboundQueuedMs <= 0) return;
+    if (signal.aborted) return;
+
+    const elapsedMs = Date.now() - this.outboundPlaybackStartedAt;
+    // Small allowance for the bridge's startup pre-roll: the pump waits
+    // for a few frames before its first send, so playback starts
+    // marginally later than the first enqueue.
+    const remainingMs = this.outboundQueuedMs - elapsedMs + PLAYBACK_PREROLL_ALLOWANCE_MS;
+    if (remainingMs <= 0) return;
+
+    // eslint-disable-next-line no-console
+    console.log(
+      `[PLAYBACK:${this.record.id}] draining ${Math.round(remainingMs)}ms of queued audio before leaving SPEAKING (queued=${Math.round(this.outboundQueuedMs)}ms elapsed=${elapsedMs}ms)`,
+    );
+    if (!interruptibleByBufferedTurn) {
+      await abortableSleep(remainingMs, signal);
+      return;
+    }
+
+    // The same span, slept in steps. The deadline is fixed here from
+    // the same `remainingMs` the single sleep would have used, so an
+    // uninterrupted drain waits exactly as long as it does today and
+    // leaves SPEAKING at the same instant.
+    const drainDeadlineMs = Date.now() + remainingMs;
+    // One line per drain, not one per poll: a barge-in that is DECLINED
+    // is retried on the next tick (declining can stop being true), and
+    // logging each attempt would print four lines a second through a
+    // whole block. The existing "barge-in DECLINED" line says why.
+    let announced = false;
+    for (;;) {
+      const leftMs = drainDeadlineMs - Date.now();
+      if (leftMs <= 0 || signal.aborted) return;
+      await abortableSleep(Math.min(BUFFERED_TURN_DRAIN_POLL_MS, leftMs), signal);
+      if (signal.aborted) return;
+      // The audio has finished. Nothing is gained by cancelling a reply
+      // that has already been spoken in full, and doing so would commit
+      // it as a heard PREFIX instead of a completed turn, so the drain
+      // ends here exactly as the single sleep would have.
+      if (Date.now() >= drainDeadlineMs) return;
+
+      const buffered = this.record.turnDetector.bufferedTurnText().trim();
+      if (buffered.length === 0) continue;
+      // A buffered "hello", "okay", "umm" or "are you there?" is the
+      // caller filling the silence or showing they are listening, not
+      // taking the floor — and so is any MERGE of those, which is what
+      // a buffered turn can be. Cutting the block for one is the "it
+      // restarts after I said okay" defect. See
+      // `bufferedTurnTakesTheFloor`: it composes the three existing
+      // predicates and adds no vocabulary, and it is read here and
+      // nowhere else. `newerUserTurnWaiting()` is deliberately not
+      // reused — its buffered branch is unfiltered.
+      // EXCEPT a caller repeating themselves to get our attention —
+      // "Hello? Hello?", or "Hello." answered by this very reply and
+      // now "Hello?" again after the thinking gap. They are not filling
+      // the silence; they are asking whether anyone is there, and the
+      // rest of the block is not the answer. Cutting here enters the
+      // existing hearing flow: the heard prefix is committed, the tail
+      // is held, and the waiting hello is answered with the fixed
+      // question on the next iteration (see `handleAttentionCheck`).
+      const demandsAttention = this.bufferedTurnDemandsAttention(buffered);
+      if (!bufferedTurnTakesTheFloor(buffered) && !demandsAttention) continue;
+
+      if (!announced) {
+        announced = true;
+        // eslint-disable-next-line no-console
+        console.log(
+          demandsAttention
+            ? `[PLAYBACK:${this.record.id}] the caller is repeating a hello to get our attention — cutting the reply to answer it: "${buffered.slice(0, 80)}"`
+            : `[PLAYBACK:${this.record.id}] a caller turn is already waiting — asking to cut the reply short to answer it: "${buffered.slice(0, 80)}${buffered.length > 80 ? "..." : ""}"`,
+        );
+      }
+      // Accepted: the signal is now aborted, the part the caller heard
+      // is frozen for the commit site, and the buffered turn is picked
+      // up on the next loop iteration. Declined: keep draining.
+      if (this.triggerExternalBargeIn("buffered_turn")) return;
+    }
+  }
+
+  /**
+   * Does the turn waiting behind a playing GENERATED reply demand our
+   * attention rather than fill the silence? Two shapes, both the caller
+   * repeating themselves because nothing came back:
+   *
+   *   (a) "Hello? Hello?" in one utterance (`isRepeatedGreeting`);
+   *   (b) across the thinking gap — the turn this reply answers was
+   *       itself nothing but a greeting / attention check ("Hello."),
+   *       and now another strict hearing check is waiting ("Hello?").
+   *       Real call 2026-09-04 08:52 UTC: 2.8s to first audio, the
+   *       caller said hello again, and waited through an 18s block
+   *       before being asked whether they could hear.
+   *
+   * Read ONLY by the `drainPlayback` poll, so only while a generated
+   * reply is playing and something has already been heard. Reads the
+   * buffered text and the committed history; adds no state, no timer,
+   * no vocabulary. A single "Hello?" after a substantive turn, a
+   * presence question ("are you there?") and any merge with a
+   * hesitation sound are NOT this and keep today's behaviour.
+   */
+  private bufferedTurnDemandsAttention(buffered: string): boolean {
+    if (isRepeatedGreeting(buffered)) return true;
+    if (!isHearingCheck(buffered)) return false;
+    const history = this.record.memory.history();
+    for (let i = history.length - 1; i >= 0; i -= 1) {
+      const turn = history[i];
+      if (turn?.role === "user") return isAttentionCheck(turn.content);
+    }
+    return false;
+  }
+
+  private async synthesizeAndPlay(
+    text: string,
+    speakingSignal: AbortSignal,
+  ): Promise<{ ttsMs: number; ttsCostUsd: number; firstChunkMs?: number }> {
+    const sid = this.record.id;
+    // THE choke point. Every spoken word on every path — the greeting,
+    // a generated reply, the contamination fallback, a resumed
+    // remainder — is synthesized here, so one condition here is what
+    // makes "the agent does not speak on a voicemail" a guarantee
+    // instead of a list of places that remembered to check.
+    if (speakingSignal.aborted || text.trim().length === 0 || this.voicemailDetected) {
+      // eslint-disable-next-line no-console
+      console.log(`[TTS:${sid}] synthesizeAndPlay skipped (aborted=${speakingSignal.aborted} emptyText=${text.trim().length === 0} voicemail=${this.voicemailDetected})`);
+      return { ttsMs: 0, ttsCostUsd: 0 };
+    }
+
+    // FIX #7A — this utterance is actually going to be synthesized;
+    // marks the first such call this turn, i.e. the moment TTS is
+    // requested for the turn's first chunk.
+    if (!this.markedTtsRequestThisTurn) {
+      this.markedTtsRequestThisTurn = true;
+      this.markTiming("tts-request");
+    }
+
+    // The text of this utterance, against the playback offset it starts
+    // at. Recorded before synthesis so it is recorded whether or not
+    // the provider, the transport or the caller cuts it short —
+    // `heardSoFarText` decides what of it was heard from the play head,
+    // not from whether this call returned. The original wording is
+    // stored, NOT the `pronounceForSpeech` rewrite below: history, the
+    // classifier and the sheet all read approved wording.
+    //
+    // A new utterance beginning is one of the two proofs that the
+    // PREVIOUS one is fully queued (see `spokenUtterances`): the
+    // synthesize-and-play calls are awaited one after another, so no
+    // further audio can arrive for it.
+    const previous = this.spokenUtterances[this.spokenUtterances.length - 1];
+    if (previous !== undefined) previous.complete = true;
+    // `endsAtMs` starts equal to `startsAtMs` — nothing of it has been
+    // handed over yet — and is advanced by `playAudioChunk` as its audio
+    // arrives.
+    this.spokenUtterances.push({
+      text,
+      startsAtMs: this.outboundQueuedMs,
+      endsAtMs: this.outboundQueuedMs,
+      complete: false,
+    });
+
+    const ttsProviderId = this.providers.tts.descriptor.id;
+    const language = this.record.memory.currentLanguage;
+    const task: SynthesisTaskRequest = {
+      sessionId: this.record.id,
+      // Numeric notation ("7:30 PM", "₹1,50,000+") is read aloud
+      // differently in English than in Hindi/Hinglish, and every TTS
+      // vendor mangles it the same way. Rewriting it HERE, on the way
+      // into `synthesize`, is what keeps that fix identical across
+      // Cartesia, Smallest AI, Sarvam and ElevenLabs while leaving the
+      // transcript, the classifier and the sheet reading the original
+      // approved wording.
+      request: { text: pronounceForSpeech(text, language), language },
+    };
+    const startedAt = Date.now();
+
+    if (this.providers.tts.synthesizeStream) {
+      let chunkCount = 0;
+      // Synthesis time-to-first-chunk for THIS utterance. Independent
+      // of `markedTtsThisTurn`, which fires once per turn and so
+      // cannot measure the second and later sentences.
+      let firstChunkMs: number | undefined;
+      /**
+       * Real-time duration of the audio this utterance actually
+       * yielded. Accumulated per chunk, so a barge-in halfway through
+       * bills for the half that was generated rather than for a whole
+       * clip that never was. See the cost note below.
+       */
+      let generatedAudioSeconds = 0;
+      this.transportBackpressureMs = 0;
+      try {
+       for await (const chunk of this.providers.tts.synthesizeStream(task, speakingSignal)) {
+   if (chunkCount === 0) {
+    firstChunkMs = Date.now() - startedAt;
+    if (!this.markedTtsThisTurn) {
+      this.markedTtsThisTurn = true;
+      this.markTiming("tts-first-chunk");
+    }
+}
+  if (speakingSignal.aborted) {
+    console.log(`[TTS:${sid}] Barge-in detected, interrupting playback`);
+
+    await this.record.mediaStream?.interruptPlayback();
+
+    break;
+  }
+
+  chunkCount += 1;
+  generatedAudioSeconds += estimateAudioSeconds(chunk.audio);
+
+  await this.playAudioChunk(chunk.audio);
+}
+      } catch (err) {
+        if (!speakingSignal.aborted) {
+          // eslint-disable-next-line no-console
+          console.warn(`[TTS:${sid}] streaming TTS error after ${chunkCount} chunks: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+      const ttsMs = Math.max(0, Date.now() - startedAt - this.transportBackpressureMs);
+      // Charged once for this utterance's text, not per chunk.
+      //
+      // BOTH billing units are handed over and the provider's own rate
+      // table picks the one it actually bills in — exactly as the batch
+      // branch below already does. This used to pass characters only,
+      // with a note saying ElevenLabs was the sole provider here and
+      // billed per character, and that a duration-billed vendor gaining
+      // a streaming path would have to supply its duration at this call
+      // site. Cartesia is that vendor: it bills per generated audio
+      // minute, so with no duration `estimateTtsCost` would warn and
+      // return 0, silently zeroing the TTS cost of every campaign call.
+      //
+      // `generatedAudioSeconds` is summed from the chunks actually
+      // yielded, so an utterance cut short by a barge-in is billed for
+      // what was generated, not for the clip it would have been.
+      return {
+        ttsMs,
+        ttsCostUsd: estimateTtsCost(ttsProviderId, text.length, generatedAudioSeconds),
+        ...(firstChunkMs !== undefined ? { firstChunkMs } : {}),
+      };
+    }
+
+    return withGracefulRetry("TEXT_TO_SPEECH", async () => {
+      const audio = await this.providers.tts.synthesize(task);
+      const ttsCallMs = Date.now() - startedAt;
+      // Trace parity with the streaming branch above.
+      //
+      // `tts-first-chunk` existed ONLY there, so on a batch provider the
+      // per-turn trace jumped straight from `llm-first-token` to
+      // `audio-queued` and the span between them — chunk accumulation
+      // plus the whole synthesis round trip — could not be attributed
+      // from the logs at all. That gap is why "where do the 635ms go"
+      // had to be answered by probing the vendor directly instead of by
+      // reading a production call. Marks the same instant the streaming
+      // branch does: the first audio this utterance produced.
+      if (!this.markedTtsThisTurn) {
+        this.markedTtsThisTurn = true;
+        this.markTiming("tts-first-chunk");
+      }
+      await this.playAudioChunk(audio);
+
+      // ── Do NOT wait out this clip's playback here ──────────────────
+      //
+      // This branch runs for every TTS provider that exposes only
+      // `synthesize()`. As of the Smallest AI streaming change that is
+      // NONE of the four configured providers: ElevenLabs, Sarvam,
+      // Cartesia and Smallest AI all implement `synthesizeStream` and
+      // all take the streaming branch above, which enqueues and returns
+      // immediately. This branch is now the fallback for a provider
+      // that does not stream, and the guarantee below is why it stays.
+      // (This comment previously named Cartesia, Sarvam and Smallest AI
+      // as batch-only and ElevenLabs as the sole streamer; every part
+      // of that is now out of date. The feature detection above was
+      // always correct — only the comment was wrong.)
+      // The difference was the entire dead-air problem:
+      //
+      //   `runStreamingCompletion` awaits `synthesizeAndPlay` once per
+      //   sentence chunk. `playAudioChunk` has already handed the whole
+      //   clip to the transport and parked on the bridge's outbound
+      //   backpressure until the queue drained back to its low-water
+      //   mark (~0.8s still buffered). Sleeping the FULL clip duration
+      //   on top of that waited for the same audio a second time, so
+      //   the pump ran dry — and only then did the next sentence's
+      //   synthesis round trip start, with nothing queued to cover it.
+      //   Measured silence per chunk boundary: (clipDuration - 0.8s) +
+      //   the next request's latency, i.e. the reported 1-3s pauses,
+      //   landing on exactly the `.`/`,` boundaries the chunker cuts at.
+      //
+      // Dropping the sleep makes this branch behave like the streaming
+      // one: the next sentence is synthesized while the current one is
+      // still playing out of the transport queue, so the queue stays
+      // fed across the boundary. Nothing is lost — SPEAKING is still
+      // held open for queued-but-unplayed audio by `drainPlayback`,
+      // which accounts for it from `outboundQueuedMs` (incremented in
+      // `playAudioChunk` whether or not a transport is attached) and
+      // aborts instantly on barge-in.
+      const playbackMs = estimateAudioSeconds(audio) * 1000;
+      if (speakingSignal.aborted) {
+        await this.record.mediaStream?.interruptPlayback();
+      }
+
+      // Batch synthesis returns the whole utterance in one piece, so
+      // first-audio and full-synthesis are the same measurement.
+      //
+      // Both billing units are handed over and the provider's own rate
+      // table picks the one it actually bills in: characters for Sarvam
+      // and Smallest AI, generated audio minutes for Cartesia. The
+      // duration is `playbackMs` — the length of the synthesized audio
+      // — NOT `ttsCallMs`, which is synthesis latency.
+      return {
+        ttsMs: ttsCallMs,
+        ttsCostUsd: estimateTtsCost(ttsProviderId, text.length, playbackMs / 1000),
+        firstChunkMs: ttsCallMs,
+      };
+    });
+  }
+
+  private playAudioChunkCount = 0;
+  private outboundReadyResolved = false;
+  /**
+   * Wall-clock ms the current `synthesizeAndPlay` call spent parked on
+   * transport backpressure. Subtracted from `ttsMs` so the benchmark
+   * metric keeps measuring how fast the TTS provider generated audio,
+   * not how long the telephony pump took to play it — the same
+   * separation `drainPlayback` already preserves.
+   */
+  private transportBackpressureMs = 0;
+
+  /**
+   * Waits until at least one outbound delivery path (mediaStream or
+   * a listener) is available, up to a timeout. Called once before
+   * the first audio chunk to handle the edge case where the pipeline
+   * starts before the bridge has registered its listener.
+   */
+  private async waitForOutboundReady(timeoutMs: number, signal: AbortSignal): Promise<void> {
+    if (this.outboundReadyResolved) return;
+    const hasPath = () => !!this.record.mediaStream || this.record.outboundAudioListeners.size > 0;
+    if (hasPath()) { this.outboundReadyResolved = true; return; }
+
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[PLAYBACK:${this.record.id}] No outbound delivery path yet — waiting up to ${timeoutMs}ms for bridge to attach`,
+    );
+
+    const deadline = Date.now() + timeoutMs;
+    while (!hasPath() && Date.now() < deadline && !signal.aborted) {
+      await new Promise((r) => setTimeout(r, 50));
+    }
+
+    this.outboundReadyResolved = true;
+    if (!hasPath()) {
+      // eslint-disable-next-line no-console
+      console.error(
+        `[PLAYBACK:${this.record.id}] WARNING: No outbound delivery path after ${timeoutMs}ms — audio will be lost. hasMediaStream=${!!this.record.mediaStream} listenerCount=${this.record.outboundAudioListeners.size}`,
+      );
+    } else {
+      // eslint-disable-next-line no-console
+      console.log(
+        `[PLAYBACK:${this.record.id}] Outbound delivery path ready: hasMediaStream=${!!this.record.mediaStream} listenerCount=${this.record.outboundAudioListeners.size}`,
+      );
+    }
+  }
+
+  private async playAudioChunk(audio: AudioPayload): Promise<void> {
+    this.playAudioChunkCount += 1;
+
+    // On the first chunk, wait for the bridge to register its listener.
+    if (this.playAudioChunkCount === 1) {
+      await this.waitForOutboundReady(500, this.record.loopAbortController?.signal ?? AbortSignal.abort());
+    }
+
+    // Account for the real-time duration handed to the transport so
+    // `drainPlayback` can hold SPEAKING open until it has actually
+    // played. Zero-byte chunks are stream-end markers, not audio.
+    if (audio.data.byteLength > 0) {
+      if (this.outboundPlaybackStartedAt === 0) {
+        this.outboundPlaybackStartedAt = Date.now();
+      }
+      if (!this.markedAudioThisTurn) {
+        this.markedAudioThisTurn = true;
+        // First frame handed to the transport. The caller hears it one
+        // bridge pre-roll later (~100ms on the Plivo/Vobiz pumps).
+        // This is the t1 of the end-to-end latency metric — the same
+        // instant the `audio-queued` trace has always logged, now also
+        // retained as a number instead of only reaching the console.
+        this.firstAudioQueuedAtMs = Date.now();
+        this.markTiming("audio-queued");
+      }
+      this.outboundQueuedMs += estimateAudioSeconds(audio) * 1000;
+      // The utterance being handed over now extends to here. Same
+      // number `outboundQueuedMs` just took, so the per-utterance
+      // extents and the phase total can never disagree.
+      const current = this.spokenUtterances[this.spokenUtterances.length - 1];
+      if (current !== undefined) current.endsAtMs = this.outboundQueuedMs;
+    }
+
+    if (this.record.mediaStream) {
+      await this.record.mediaStream.sendAudio(audio);
+    }
+    for (const listener of this.record.outboundAudioListeners) {
+      // A transport may return a promise to apply backpressure once its
+      // outbound queue is full (see SessionRecord.outboundAudioListeners).
+      // Awaiting it paces this loop to roughly real time, which is what
+      // keeps the bridge's queue — and therefore the audio at risk of
+      // being discarded on barge-in or socket close — bounded.
+      // Bridges resolve pending waiters on barge-in/close, so this can
+      // never outlive the utterance it belongs to.
+      const pending = listener(audio);
+      if (pending) {
+        const parkedAt = Date.now();
+        await pending;
+        this.transportBackpressureMs += Date.now() - parkedAt;
+      }
+    }
+  }
+}
+
+export { toSessionErrorInfo };

@@ -1,0 +1,75 @@
+test:ack-continuity                before=6/4  after=10/4  ok
+      = pre-existing: "Achha, mujhe workshop ke baare mei..." while SPEAKING — interrupts the block and is answered by the model
+      = pre-existing: "Okay, but I have a question about ..." while SPEAKING — interrupts the block and is answered by the model
+      = pre-existing: 10 — the reported sequence: "Okay" (absorbed) then "Hello?" -> acknowledged, block carries on, no false recovery
+      = pre-existing: 5 — "Hello?" while SPEAKING: acknowledged, then the held remainder is resumed and NO "are you there?" is spoken
+test:attention                     before=11/22  after=11/22  ok
+      = pre-existing: B1 — a single "Hello?" mid-block gets one short acknowledgement, with NO language-model request
+      = pre-existing: B2 — the acknowledgement is SHORT
+      = pre-existing: B4 — a repeated hello NEVER re-speaks the campaign opening
+      = pre-existing: C1 — "Yes, I can hear you." resumes the block, without a language-model request
+      = pre-existing: C2 — a bare "Haan" after the acknowledgement resumes too
+      = pre-existing: C3 — a SECOND hello resumes rather than acknowledging again
+      = pre-existing: C4 — the resumed text is in the history the model is next shown
+      = pre-existing: D1 — "Hello? What is this about?" is answered contextually, not acknowledged
+      = pre-existing: D2 — a real question RELEASES the held script position
+      = pre-existing: G1 — a real interruption still barges in and is answered by the model
+      = pre-existing: G2 — only the part of the block the caller HEARD is committed (unchanged)
+      = pre-existing: H1 — no sentence the caller has heard is ever synthesized a second time
+      = pre-existing: H2 — the resume is a strict suffix of the interrupted reply
+      = pre-existing: I1 — the call carries on normally after an attention-check episode
+      = pre-existing: J1 — "Hello? Hello?" over a playing block STOPS it at once, asks the fixed question, and listens
+      = pre-existing: J2 — "Hello? Hello? Can you hear me?" over the block: cut, asked once, no generation
+      = pre-existing: J3 — a single "Hello" over the block keeps the EXISTING decision: it already interrupts and is asked about once
+      = pre-existing: J4 — "Yes." after the question RESUMES the block from where it stopped, without the model
+      = pre-existing: J5 — "Yes, continue from where you stopped." RESUMES from the stopping point, not from the top
+      = pre-existing: J6 — "Start from the beginning." REPEATS the whole cut-off reply from its first word, without the model
+      = pre-existing: J7 — "No, I couldn't hear you." also REPEATS the cut-off reply from the beginning
+      = pre-existing: J8 — a substantive answer after the question takes the NORMAL path, and the held position is released
+test:barge-in                      before=43/9  after=43/9  ok
+      = pre-existing: J3 — "Actually, I wanted to ask about the price." over the same block is a REAL interruption: block cut, question answered
+      = pre-existing: J3 — "No, I have a question." over the same block is a REAL interruption: block cut, question answered
+      = pre-existing: J3 — "Stop for a second." over the same block is a REAL interruption: block cut, question answered
+      = pre-existing: J3 — "Wait, what about the price?" over the same block is a REAL interruption: block cut, question answered
+      = pre-existing: J4 — 'ok, but what is the price?' (acknowledgement WITH content) still interrupts — the vocabulary is not widened
+      = pre-existing: J7 — the existing 4s rule is unchanged on an UNBOUNDED transport: a short reply with <4s left is still interrupted by 'okay'
+      = pre-existing: a barge-in with no transcript at all RESUMES the unheard remainder
+      = pre-existing: a transport that reports NO energy keeps the transcript-only behaviour
+      = pre-existing: loud, confident, meaningful speech still interrupts and still wins
+test:buffered-turn                 before=15/9  after=15/9  ok
+      = pre-existing: B1. a meaningful buffered turn is answered without waiting out the block
+      = pre-existing: B3c. ...but "Hello? What is this about?" is a real question and DOES cut it
+      = pre-existing: B3f. a meaningful turn whose FIRST words are filler still interrupts
+      = pre-existing: B4. the assistant prefix is committed BEFORE the buffered caller turn
+      = pre-existing: B5. the call stays up and the conversation carries on afterwards
+      = pre-existing: D1 (spec B4). "Hello." answered by a long block, then a buffered "Hello?" — the block is CUT through the existing barge-in and the hearing question is asked at once
+      = pre-existing: D2 (spec B5). a buffered "Hello? Hello?" after a SUBSTANTIVE turn also cuts the block and enters the hearing flow
+      = pre-existing: D5. after the attention cut, "Yes, continue from where you stopped." resumes the HELD remainder — no generation, nothing restarted
+      = pre-existing: D6. after the attention cut, "Start from the beginning." replays the FULL original block — no generation
+test:confirmation-binding          before=127/0  after=127/0  ok
+test:continuity                    before=36/6  after=36/6  ok
+      = pre-existing: TEST 1 — "hello" over the middle of a block does not erase the block from history
+      = pre-existing: TEST 5 — "haan" never resets script progress
+      = pre-existing: TEST 5 — "hello hello" never resets script progress
+      = pre-existing: TEST 5 — "hello" never resets script progress
+      = pre-existing: TEST 5 — "hi" never resets script progress
+      = pre-existing: TEST 5 — "okay" never resets script progress
+test:hearing-loop                  before=16/1  after=18/1  ok
+      = pre-existing: B3 — a RESUME is progress and does not consume the cap
+test:identity                      before=62/0  after=62/0  ok
+test:identity-final                AFTER MISSING (not re-run)
+test:language-lock                 before=41/0  after=41/0  ok
+test:pickup-window                 before=11/0  after=11/0  ok
+test:post-registration-closing     before=31/0  after=31/0  ok
+test:provider-matrix               before=None/None  after=None/None  ok
+test:resume-accuracy               before=14/0  after=18/0  ok
+test:script-repetition             before=7/0  after=7/0  ok
+test:self-echo                     before=6/1  after=6/1  ok
+      = pre-existing: a genuine interruption still interrupts, and is still answered
+test:silence-recovery              before=26/1  after=26/1  ok
+      = pre-existing: M — "Wait, what is this about?" over the block interrupts it and is answered by the model; no recovery prompt intervenes
+test:speculative-llm               before=21/2  after=21/2  ok
+      = pre-existing: B7 — attention-check turns spend ZERO requests: acknowledgement, hearing confirmation and resume all stay off the model; the next real question reaches it once
+      = pre-existing: B8 — barge-in is untouched: an interruption mid-reply cancels playback exactly as before, and the interrupting turn takes the normal (committed-first) path
+test:turn-aggregation              before=9/1  after=9/1  ok
+      = pre-existing: F. a real interruption mid-block still cuts the block and is answered as its own turn

@@ -146,6 +146,11 @@ await test("A4 — the corpus covers every category the Phase 4 audit named", ()
     "name-transliteration-ambiguity",
     "name-in-context",
     "script-v6-line",
+    // Not a category the Phase 4 audit named — added when the
+    // ElevenLabs Hinglish mispronunciation was traced to the missing
+    // language tag, and required here so nobody can quietly drop the
+    // only items that put romanized Hindi in front of an engine.
+    "script-v15-hinglish-line",
     "normalization-time",
     "normalization-date",
     "normalization-amount",
@@ -196,6 +201,36 @@ await test("A7 — the live-script items are quoted from the SHIPPING registrati
     assert.ok(
       script.includes(needle),
       `${item.id}: not found verbatim in registration.v6.ts — ${JSON.stringify(needle.slice(0, 60))}`,
+    );
+  }
+});
+
+await test("A7b — the Hinglish items are quoted from the SHIPPING DEFAULT registration.v15, verbatim", () => {
+  // Same guarantee as A7, pinned to a different file, because the two
+  // scripts carry different text: v6 has no Hinglish line at all, so
+  // these cannot be checked against it.
+  //
+  // v15 is what a campaign created without naming a script runs, and
+  // these three lines are the ones a Hinglish call actually hears. If
+  // one of them is re-worded in the script, the audio in the benchmark
+  // report stops being evidence about the live call — and that has to
+  // fail here, not go unnoticed in a report nobody re-reads.
+  const scriptPath = path.join(REPO_ROOT, "src/campaign/script/scripts/registration.v15.ts");
+  const script = readFileSync(scriptPath, "utf8");
+  const quoted = CORPUS.filter((item) => item.category === "script-v15-hinglish-line");
+  assert.ok(quoted.length > 0, "there must be Hinglish live-script items");
+  for (const item of quoted) {
+    // The first reply opens on a template in the file
+    // (`main {{agent_name}}, Team FlexiFunnels se.`), so only its fixed
+    // remainder can be matched literally — the same escape, and the
+    // same reason, as `v6-opening-en` in A7.
+    const needle =
+      item.id === "v15-first-reply-hinglish"
+        ? "Sunday, 4th October ko 11 AM par humara ek free live workshop hai,"
+        : item.sourceText;
+    assert.ok(
+      script.includes(needle),
+      `${item.id}: not found verbatim in registration.v15.ts — ${JSON.stringify(needle.slice(0, 60))}`,
     );
   }
 });

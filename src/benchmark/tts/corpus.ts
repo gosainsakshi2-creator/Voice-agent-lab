@@ -54,6 +54,15 @@ import { SupportedLanguage } from "../../types/enums";
 /**
  * Bump on ANY edit to `CORPUS` below.
  *
+ * `-3`: three items ADDED — `v15-gate-hinglish`,
+ * `v15-first-reply-hinglish` and `v15-discovery-hinglish`. Nothing was
+ * removed, re-worded or re-declared. They cover ROMANIZED HINGLISH,
+ * the one shape this corpus had no item for, and the shape the
+ * ElevenLabs mispronunciation lives in — see the comment above them.
+ * A `-2` report has no rows for these ids, so the two reports are
+ * comparable on every older item and silent on the new ones, which is
+ * exactly what the version is for.
+ *
  * `-2`: no item was added, removed or re-worded. One DECLARATION moved
  * — `norm-symbol-slash-en` from `unchanged` to `transformed`, because
  * the rate-slash rule in `speech-pronunciation.ts` now rewrites it. The
@@ -61,7 +70,7 @@ import { SupportedLanguage } from "../../types/enums";
  * compared against one from after it without the difference being
  * visible.
  */
-export const CORPUS_VERSION = "phase4-evidence-2";
+export const CORPUS_VERSION = "phase4-evidence-3";
 
 /**
  * What today's transformation path does to an item.
@@ -85,6 +94,14 @@ export type CorpusCategory =
   | "name-transliteration-ambiguity"
   | "name-in-context"
   | "script-v6-line"
+  /**
+   * Romanized Hinglish quoted from the SHIPPING DEFAULT script,
+   * registration.v15. Separate from `script-v6-line` because the two
+   * are pinned to DIFFERENT files — v6 contains no Hinglish at all, so
+   * a Hinglish line filed under that category fails the verbatim
+   * check that keeps the corpus honest.
+   */
+  | "script-v15-hinglish-line"
   | "normalization-time"
   | "normalization-date"
   | "normalization-amount"
@@ -417,6 +434,55 @@ const SCRIPT_LINES: readonly CorpusItem[] = [
     language: EN,
     expectation: "unchanged",
     note: "LIVE opening line, interpolated with the female-lane agent name.",
+  },
+
+  // ── ROMANIZED HINGLISH, AS THE SCRIPTS ACTUALLY WRITE IT ───────
+  //
+  // The shape NO item in this corpus covered before, and the one the
+  // reported ElevenLabs mispronunciation lives in. Every other
+  // HINGLISH item here is either a mixed-script NAME ("Priya शर्मा")
+  // or an English sentence carried on the Hinglish path
+  // (`v6-invite-date-hinglish`) — neither of which puts a romanized
+  // Hindi VERB in front of the engine, which is precisely where an
+  // English grapheme-to-phoneme reading is audible: "hai" as "hay",
+  // "kar du" as "car doo", "aapki" as "app-key".
+  //
+  // These are v15's Hinglish lines verbatim. They deliberately keep
+  // the English nouns the script keeps (free seat, workshop, website,
+  // checkout, payments), because that mixture is the input, and it is
+  // the mixture that made auto-detection pick English.
+  //
+  // All three `unchanged` declarations were CHECKED against
+  // `formatForSpeech` + `pronounceForSpeech`, not assumed: no clock
+  // colon, no rupee figure, no Indian digit grouping and no
+  // rate-slash, so no rule in either function matches. The bare
+  // "11 AM" in the first reply is untouched for the same reason
+  // `norm-time-bare-meridiem-hi` is.
+  {
+    id: "v15-gate-hinglish",
+    category: "script-v15-hinglish-line",
+    sourceText:
+      "Iske liye koi coding ya design skill nahi chahiye. Toh kya main aapki free seat reserve kar du?",
+    language: HINGLISH,
+    expectation: "unchanged",
+    note: "LIVE gate line, Hinglish twin of `v6-gate-en` — the highest-consequence sentence on the call, in the register that mispronounces.",
+  },
+  {
+    id: "v15-first-reply-hinglish",
+    category: "script-v15-hinglish-line",
+    sourceText:
+      "Main Ishita, Team FlexiFunnels se. Sunday, 4th October ko 11 AM par humara ek free live workshop hai, jisme hum ek poora online business live banate hain — website, product, checkout aur payments — sab ek phone se.",
+    language: HINGLISH,
+    expectation: "unchanged",
+    note: "LIVE first reply, Hinglish — the longest romanized line on the call, and the one that mixes English nouns into Hindi grammar most heavily.",
+  },
+  {
+    id: "v15-discovery-hinglish",
+    category: "script-v15-hinglish-line",
+    sourceText: "Aapne pehle kabhi kuch online daalne ki try ki hai?",
+    language: HINGLISH,
+    expectation: "unchanged",
+    note: "LIVE discovery question, Hinglish — almost entirely romanized Hindi, so it isolates the engine's reading of Hindi words from the English nouns.",
   },
 ];
 

@@ -463,6 +463,14 @@ function pronounceGrouped(digits: string, lex: Lexicon): string {
  * Nobody has run it, so it is not done: an English call keeps the
  * canonical spelling and today's behaviour exactly.
  *
+ * That argument got STRONGER, not weaker, when the ElevenLabs adapter
+ * started sending `languageCode: "hi"` for HINGLISH as well as HINDI.
+ * A Hinglish utterance is now tagged Hindi at every one of the three
+ * vendors that take a tag — Cartesia `hi`, Sarvam `hi-IN`, ElevenLabs
+ * `hi` — so the Devanagari this substitutes is spoken under a Hindi
+ * tag rather than under a guess. The English bound above is unchanged
+ * and is still the thing nobody has measured.
+ *
  * Extending this to English calls is a measurement, not an edit — the
  * TTS evidence harness (`npm run bench:tts`) is what would settle it.
  *

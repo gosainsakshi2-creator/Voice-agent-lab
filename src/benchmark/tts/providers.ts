@@ -122,7 +122,7 @@ export const HARNESS_PROVIDERS: readonly HarnessProvider[] = [
       constantName: "speed",
       appliedOn: "streaming path only",
     },
-    languageMapping: "en -> en; hi -> hi; hi-en (Hinglish) -> languageCode omitted, vendor auto-detects",
+    languageMapping: "en -> en; hi -> hi; hi-en (Hinglish) -> hi",
     construct: () => new ElevenLabsTextToSpeechProvider(),
   },
   {

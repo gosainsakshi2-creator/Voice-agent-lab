@@ -124,19 +124,53 @@ else if (
 
 /**
  * ElevenLabs' `languageCode` expects an ISO 639-1 tag and is only
- * honored by models that support explicit language enforcement.
- * "hi-en" (Hinglish) has no ISO 639-1 equivalent, so it is left
- * unset and the multilingual model auto-detects instead — better
- * than inventing an unsupported tag.
+ * honored by models that support explicit language enforcement —
+ * `eleven_flash_v2_5` does; `eleven_multilingual_v2` does not, and the
+ * SDK's own request type says so.
+ *
+ * ── WHY HINGLISH SENDS "hi" AND NO LONGER SENDS NOTHING ───────────
+ *
+ * "hi-en" has no ISO 639-1 equivalent, and this function used to read
+ * that as a reason to omit the tag entirely and let the model
+ * auto-detect. That was the wrong conclusion, and it was the cause of
+ * the Hinglish mispronunciation.
+ *
+ * The Hinglish text these scripts hand to TTS is ROMANIZED — Latin
+ * letters — and it genuinely contains English nouns, because the
+ * scripts deliberately keep them: "Toh kya main aapki free seat
+ * reserve kar du?". With no tag, the model auto-detects from exactly
+ * that string, sees Latin script plus real English words, and applies
+ * ENGLISH grapheme-to-phoneme rules to the Hindi ones: "hai" read as
+ * "hay", "kar du" as "car doo", "aapki" as "app-key".
+ *
+ * The other two adapters never had this problem because neither ever
+ * asked the vendor to guess: `toCartesiaLanguage` maps HINDI and
+ * HINGLISH to the same "hi", and `toSarvamLanguage` maps both to
+ * "hi-IN". ElevenLabs was the only one of the three omitting the tag,
+ * and it is the only one that mispronounces Hinglish. So "hi" here is
+ * not a new idea — it is this adapter catching up with its siblings.
+ *
+ * WHAT THIS COSTS, stated rather than discovered later: the tag also
+ * moves the genuinely English words in a Hinglish sentence (free seat,
+ * workshop, checkout, WhatsApp) onto Hindi phonology, and switches the
+ * vendor's text normalizer to Hindi. That is what Sarvam has always
+ * done at "hi-IN", and is a large part of why Sarvam sounds right —
+ * but it IS a change in how those words sound, and the TTS evidence
+ * harness is what confirms it (`npm run bench:tts`).
+ *
+ * ENGLISH and HINDI are untouched: this changes exactly one language.
+ *
+ * Every language now carries a tag, so the return type is `string` —
+ * a `| undefined` no branch produces would only invite the caller to
+ * keep a conditional that can never be false.
  */
-function languageToIsoCode(language: SupportedLanguage): string | undefined {
+function languageToIsoCode(language: SupportedLanguage): string {
   switch (language) {
     case SupportedLanguage.ENGLISH:
       return "en";
     case SupportedLanguage.HINDI:
-      return "hi";
     case SupportedLanguage.HINGLISH:
-      return undefined;
+      return "hi";
   }
 }
 
@@ -199,7 +233,7 @@ export class ElevenLabsTextToSpeechProvider implements TextToSpeechProvider {
    stability: 0.5,
   similarityBoost: 0.9,
 },
-      ...(languageCode ? { languageCode } : {}),
+      languageCode,
     });
 
     const data = await collectStream(stream);
@@ -253,7 +287,7 @@ export class ElevenLabsTextToSpeechProvider implements TextToSpeechProvider {
   useSpeakerBoost: true,
   speed: 0.94,
 },
-      ...(languageCode ? { languageCode } : {}),
+      languageCode,
     });
 
     let sequence = 0;

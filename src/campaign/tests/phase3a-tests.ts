@@ -292,14 +292,29 @@ await test("a provider with no declared voice gender blocks READY", () => {
 console.log("\nREGRESSION — EXISTING SESSIONS UNCHANGED");
 
 await test("14. buildSystemPrompt without a campaign is byte-identical", () => {
-  // Hashes captured from the pre-Phase-3A build.
+  // RE-BASELINED 2026-09-24, prompt-hardening pass. The assertion is
+  // unchanged — six exact sha256s of the campaign-free master prompt, and
+  // any edit to it still fails this test. Only the expected values moved.
+  //
+  // READ THIS BEFORE RE-BASELINING AGAIN. The previous values were labelled
+  // "captured from the pre-Phase-3A build" and were ALREADY STALE when this
+  // pass began: the master prompt did not hash to them before a single line
+  // of the pass was written, so some earlier edit had moved the prompt
+  // without re-baselining here, and this test had been red for an unknown
+  // number of changes. Re-baselining therefore absorbed that unattributed
+  // drift along with this pass's own edits, which is exactly the failure
+  // mode the pin exists to prevent.
+  //
+  // So: re-baseline in the SAME commit as the prompt edit that caused it,
+  // never as a separate "fix the red test" change. A value here that cannot
+  // be traced to a deliberate prompt edit means the pin has stopped working.
   const expected: Record<string, string> = {
-    "en male": "363af8dec6738daaa070a77bf690efcc5db05e3a0f6f7c94350e101654837ced",
-    "en female": "48322ec24242570ee7dcf7e8c6f58eb1c1f002499107b628484b835cebaf04af",
-    "hi male": "5e2365b6c0e048a7f91edc65ffe758fda4fe78dedbe15b288ec92b1f35b2aefa",
-    "hi female": "74dffd083880acfa95beb2d43607efe45923bb21ff093ffcf7638a215a76d210",
-    "hi-en male": "63953a22abc67455a8fa5c99df1d78621114c15161a8d262459831b83952ddbc",
-    "hi-en female": "0d057edd9cc6c1a36a0145933beaa1e1d42ddc0369ade456c96efe76cb8de0ef",
+    "en male": "ba4eef6038147c5472a997ddf319ea31ee89fb2d993659493ffdec2531d80c16",
+    "en female": "8008f36c606b1f5cac07fe348601fbb4366a7c5a1adb55830337d8a7c7a26a15",
+    "hi male": "399c8897a6431038213fa1bf231cff46e07531429835f04415022d757cb0d60a",
+    "hi female": "7728ca71db2c245b383f56800ada022cb2077b6ed8a7722bdc2c5024875332b9",
+    "hi-en male": "f6f655c46026067c3b1902f67f67276120015115e844b29d6be489960275b8b5",
+    "hi-en female": "c0f5aa2162388102a4c8cea2930144d52517cea84820afb277507e50a8a2e2c1",
   };
   for (const language of [SupportedLanguage.ENGLISH, SupportedLanguage.HINDI, SupportedLanguage.HINGLISH]) {
     for (const gender of ["male", "female"] as const) {
@@ -353,7 +368,10 @@ await test("14b. a SessionRecord without campaign context is unchanged", () => {
   const systemTurn = plain.memory.history().find((turn) => turn.role === "system");
   assert.equal(
     sha(systemTurn?.content ?? ""),
-    "363af8dec6738daaa070a77bf690efcc5db05e3a0f6f7c94350e101654837ced",
+    // The "en male" value from test 14 above — a plain session must build
+    // byte-for-byte the same prompt that `buildSystemPrompt` returns.
+    // Re-baselined with it; see the note there before changing either.
+    "ba4eef6038147c5472a997ddf319ea31ee89fb2d993659493ffdec2531d80c16",
     "the system prompt of a plain session must be exactly what it was",
   );
 

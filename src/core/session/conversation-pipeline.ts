@@ -3780,6 +3780,44 @@ export class ConversationPipeline {
 
     // ── One short acknowledgement, once per episode ─────────────────
     if (isCheck && !this.attentionEpisodeOpen && remainder.length > 0) {
+      // ── A single greeting over the reply is a greeting back ────────
+      //
+      // The same rule the no-remainder branch below applies — "one
+      // greeting is a hello; two in a row is a hearing problem" — and the
+      // same expression. A lone "Hi." over a reply the caller is hearing
+      // is them answering it, most often its own opening "Hi <name>"
+      // (real call 91af2d68, 2026-09-25: "Yes." to the identity question,
+      // then "Hi." 1.4s into the pitch, answered with "Hey, can you hear
+      // me okay?"). It still cut the reply — interruption is unchanged —
+      // so the held reply is resumed from where it stopped, by the same
+      // replay path, cap and `concludeReplay` as RESUME below, without
+      // the question and without the model. The episode is NOT opened:
+      // if the line really is bad, the caller's next bare greeting
+      // follows this one and qualifies, and is asked about as before.
+      //
+      // Bare greetings only. Any other `isCheck` utterance ("haan ji",
+      // "ji", "please") and every qualifying check — a presence phrase,
+      // a doubled greeting, a second bare greeting — take the
+      // acknowledgement below exactly as before.
+      const qualifies =
+        isEmphaticHearingCheck(trimmed) ||
+        (previousTurnWasBareGreeting && isHearingCheck(trimmed));
+      if (!qualifies && isBareGreetingTurn(trimmed)) {
+        if (this.hearingLineCapReached()) return this.declineExhaustedHearingCheck(trimmed);
+        // eslint-disable-next-line no-console
+        console.log(
+          `[PIPELINE:${sid}] single greeting "${trimmed.slice(0, 40)}" over a held reply — RESUMING without a hearing check: "${remainder.slice(0, 80)}${remainder.length > 80 ? "..." : ""}"`,
+        );
+        this.heldScriptRemainder = "";
+        const spoken = await this.speakAttentionUtterance(
+          remainder,
+          loopSignal,
+          "resuming after a greeting over the reply",
+          "resume",
+        );
+        this.concludeReplay(spoken);
+        return true;
+      }
       if (this.hearingLineCapReached()) return this.declineExhaustedHearingCheck(trimmed);
       // Set BEFORE the line is spoken. A second "hello" over the
       // acknowledgement itself must find the episode already open, or

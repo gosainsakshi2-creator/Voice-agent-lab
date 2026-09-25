@@ -609,7 +609,9 @@ await test("B3 — a RESUME is progress and does not consume the cap", async () 
   try {
     await upToMidBlock(h);
 
-    h.say("Hello?");
+    // Doubled: a single greeting over a held reply is now resumed
+    // without the question (test:attention section L).
+    h.say("Hello? Hello?");
     await h.waitFor("the acknowledgement", () => spokenCount(h, ACK) === 1);
     await h.waitForReplies(3);
 

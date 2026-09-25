@@ -480,6 +480,9 @@ for (const word of ["Okay", "Achha", "Haan ji", "Hmm"]) {
 // answered as an absence, with the block never finished.
 //
 // Now that expiry resumes the held position instead.
+//
+// Doubled since 2026-09-25: a SINGLE greeting over a held reply is
+// resumed at once without the question (test:attention section L).
 // ═════════════════════════════════════════════════════════════════
 section('5/10. "Hello?" over the block — acknowledged once, then the block CARRIES ON');
 
@@ -487,7 +490,7 @@ await test('5 — "Hello?" while SPEAKING: acknowledged, then the held remainder
   const h = startHarness({ openingLine: OPENING, replies: [PITCH] });
   try {
     await blockPlaying(h);
-    utter(h, "Hello?");
+    utter(h, "Hello? Hello?");
 
     await h.waitFor("the acknowledgement", () => count(h.syntheses, ACK) === 1, 15_000);
     const ackAt = h.syntheses.find((s) => s.text === ACK)!.atMs;
@@ -509,7 +512,7 @@ await test('5 — "Hello?" while SPEAKING: acknowledged, then the held remainder
     assert.equal(count(h.syntheses, PROMPT_2), 0, "and no second prompt either");
     assert.equal(count(h.syntheses, ACK), 1, "the acknowledgement is still spoken exactly once");
     assert.equal(h.requests.length, 1, "neither the acknowledgement nor the resume reached the model");
-    assert.deepEqual(userTurns(h), ["Hi.", "Hello?"], "the presence check is recorded as the turn it was");
+    assert.deepEqual(userTurns(h), ["Hi.", "Hello? Hello?"], "the presence check is recorded as the turn it was");
     assert.equal(h.endCalls(), 0, "the call was not ended");
   } finally {
     await h.stop();
@@ -522,7 +525,7 @@ await test('10 — the reported sequence: "Okay" (absorbed) then "Hello?" -> ack
     await blockPlaying(h);
     utter(h, "Okay");
     await sleep(400);
-    utter(h, "Hello?");
+    utter(h, "Hello? Hello?");
 
     await h.waitFor("the acknowledgement", () => count(h.syntheses, ACK) === 1, 15_000);
     const ackAt = h.syntheses.find((s) => s.text === ACK)!.atMs;
@@ -535,7 +538,7 @@ await test('10 — the reported sequence: "Okay" (absorbed) then "Hello?" -> ack
     assert.equal(count(h.syntheses, PROMPT_1), 0, 'no "Hello, are you there?" after the caller spoke twice');
     assert.deepEqual(
       userTurns(h),
-      ["Hi.", "Hello?"],
+      ["Hi.", "Hello? Hello?"],
       'the "Okay" was absorbed as backchannel; only the "Hello?" is a turn',
     );
     assert.equal(h.requests.length, 1, "no language-model request for either utterance");

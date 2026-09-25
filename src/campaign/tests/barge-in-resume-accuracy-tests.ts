@@ -121,8 +121,16 @@ interface Harness {
 
 function startHarness(input: {
   readonly replies: readonly string[];
-  /** Fixed transport backlog in ms, as a bridge would report it. */
-  readonly backlogMs?: number;
+  /**
+   * Simulate a real media bridge (2026-09-25): every chunk is ENQUEUED
+   * the instant it is handed over, a pump sends it in real time after a
+   * 100ms pre-roll (idle time is not banked), a barge-in clears what is
+   * unsent, and the bridge reports that unsent queue as its backlog —
+   * the Plivo/Vobiz contract. `highWaterMs` adds Plivo's backpressure:
+   * the listener's promise holds the producer while the queue is at or
+   * above it. Omitted, no bridge is installed and no backlog is read.
+   */
+  readonly bridge?: { readonly highWaterMs?: number };
 }): Harness {
   const requests: Array<readonly ConversationTurn[]> = [];
   const synthesized: string[] = [];
@@ -223,17 +231,53 @@ function startHarness(input: {
   );
   record.loopAbortController = new AbortController();
   record.state = SessionState.CALLING;
-  record.outboundAudioListeners.add(() => undefined);
   // The one thing a bridge installs that this suite cares about. Left
   // unset (the default) the pipeline reads no backlog at all, which is
   // exactly what the in-process fallback does today.
-  if (input.backlogMs !== undefined) {
-    const backlog = input.backlogMs;
-    record.outboundBacklogMs = () => backlog;
+  const BRIDGE_PREROLL_MS = 100;
+  let bridgeQueueMs = 0;
+  let bridgeDrainFromMs = 0;
+  const drainBridge = (): void => {
+    const now = Date.now();
+    if (bridgeQueueMs > 0 && now > bridgeDrainFromMs) {
+      bridgeQueueMs = Math.max(0, bridgeQueueMs - (now - bridgeDrainFromMs));
+      bridgeDrainFromMs = now;
+    }
+  };
+  if (input.bridge === undefined) {
+    record.outboundAudioListeners.add(() => undefined);
+  } else {
+    const highWaterMs = input.bridge.highWaterMs;
+    record.outboundAudioListeners.add((audio: AudioPayload) => {
+      if (audio.data.byteLength === 0) return undefined;
+      drainBridge();
+      // An empty queue restarts the pump, after its pre-roll.
+      if (bridgeQueueMs === 0) bridgeDrainFromMs = Date.now() + BRIDGE_PREROLL_MS;
+      bridgeQueueMs += (audio.data.byteLength / audio.sampleRateHz) * 1000;
+      if (highWaterMs === undefined) return undefined;
+      drainBridge();
+      if (bridgeQueueMs < highWaterMs) return undefined;
+      return new Promise<void>((resolve) => {
+        const timer = setInterval(() => {
+          drainBridge();
+          if (closed || bridgeQueueMs < highWaterMs) {
+            clearInterval(timer);
+            resolve();
+          }
+        }, 20);
+      });
+    });
+    record.outboundBacklogMs = () => {
+      drainBridge();
+      return bridgeQueueMs;
+    };
   }
 
   const host = {
     transition: (r: InstanceType<typeof SessionRecord>, to: (typeof SessionState)[keyof typeof SessionState]) => {
+      // A bridge discards what it has not sent when SPEAKING ends on a
+      // barge-in; after a normal finish the queue has already drained.
+      if (r.state === SessionState.SPEAKING && to !== SessionState.SPEAKING) bridgeQueueMs = 0;
       r.state = to;
     },
     markError: () => undefined,
@@ -402,17 +446,28 @@ await test("A2. a sentence that fully played IS committed, and is not replayed",
   }
 });
 
-await test("A3. audio still queued in the transport is NOT counted as heard", async () => {
-  // Same instant as A2 — hand-off says S1 is long past — but the bridge
-  // reports 2800ms still queued, and a barge-in discards exactly that.
-  const h = startHarness({ replies: [BLOCK, FOLLOW_UP], backlogMs: 2800 });
+await test("A3. audio still queued in the transport is NOT counted as heard — and audio it already SENT is", async () => {
+  // Same instant as A2, behind a real-time bridge that holds up to 2.8s
+  // unsent (Plivo's high-water mark). The queue the barge-in discards is
+  // AHEAD of the play head: S2 and S3 were queued, never sent, and must
+  // not be committed. S1 had been sent in full before the cut.
+  //
+  // CHANGED 2026-09-25. This used to pin a fixed 2800ms backlog against
+  // a reply handed over instantly — a bridge that had sent >5s of audio
+  // in 3.3s — and expected S1 unheard. That expectation was the
+  // double-subtraction defect in `playedSoFarMs` (real call 4d8db0a0).
+  const h = startHarness({ replies: [BLOCK, FOLLOW_UP], bridge: { highWaterMs: 2800 } });
   try {
     await startBlock(h);
     await sleep(msFor(S1) + 500);
     h.say("Hello? Hello?");
     await h.waitFor("the acknowledgement", () => h.synthesized.some((t) => t.includes("can you hear me")));
     assert.ok(
-      !h.assistantTexts().some((t) => t.includes("interesting invitation")),
+      h.assistantTexts().some((t) => t.startsWith("Actually, I am calling you")),
+      `S1 was sent in full before the cut and must be committed, got ${JSON.stringify(h.assistantTexts())}`,
+    );
+    assert.ok(
+      !h.assistantTexts().some((t) => t.includes("Flexi Genie") || t.includes("plain instructions")),
       `queued-then-discarded audio was never heard, got ${JSON.stringify(h.assistantTexts())}`,
     );
   } finally {
@@ -812,6 +867,123 @@ await test("R4 — nothing heard at all yields the WHOLE reply as the tail", () 
   const reply = fmt("You will not need any coding or design skills for this.");
   assert.equal(tailOf(reply, ""), reply);
 });
+
+// ═════════════════════════════════════════════════════════════════
+section("SECTION E — the play head behind a REAL-TIME bridge (real call 4d8db0a0, 2026-09-25)");
+//
+// Every case above E runs with no bridge, where hand-off is delivery.
+// Production runs behind a pump that plays in real time while holding
+// the rest of the reply unsent. The play head used to subtract that
+// queue from WALL TIME, counting it twice, so a first sentence that
+// had fully played read as unheard: the caller greeted back "Hi." after
+// the introduction five times and heard it five times.
+// ═════════════════════════════════════════════════════════════════
+
+const BRIDGES: ReadonlyArray<{ readonly name: string; readonly bridge: { readonly highWaterMs?: number } }> = [
+  { name: "with 2.8s backpressure (Plivo)", bridge: { highWaterMs: 2800 } },
+  { name: "without backpressure (Vobiz)", bridge: {} },
+];
+const QUESTION = "Have you ever tried putting something online before?";
+const QUESTION_BLOCK = `${QUESTION} ${S2}`;
+const INTERRUPTION = "Wait, how much does it cost?";
+
+for (const { name, bridge } of BRIDGES) {
+  await test(`E1. ${name}: a sentence that finished playing before a real interruption is committed, and the model is shown it`, async () => {
+    const h = startHarness({ replies: [BLOCK, FOLLOW_UP], bridge });
+    try {
+      await startBlock(h);
+      await sleep(msFor(S1) + 500);
+      h.say(INTERRUPTION);
+      await h.waitForReplies(3);
+      assert.ok(
+        h.assistantTexts().some((t) => t.startsWith("Actually, I am calling you")),
+        `the played sentence must be committed, got ${JSON.stringify(h.assistantTexts())}`,
+      );
+      assert.ok(!h.assistantTexts().some((t) => t.includes("Flexi Genie")), "the unplayed rest is not");
+      const shown = (h.requests[h.requests.length - 1] ?? []).filter((t) => t.role === "assistant").map((t) => t.content);
+      assert.ok(
+        shown.some((t) => t.startsWith("Actually, I am calling you")),
+        `the model must be shown the sentence it already said, got ${JSON.stringify(shown)}`,
+      );
+    } finally {
+      await h.stop();
+    }
+  });
+
+  await test(`E2. ${name}: Fix F — a bare "Hi." after sentence 1 played resumes from sentence 2`, async () => {
+    const h = startHarness({ replies: [BLOCK, "SHOULD-NOT-BE-GENERATED"], bridge });
+    try {
+      await startBlock(h);
+      await sleep(msFor(S1) + 500);
+      const requestsBefore = h.requests.length;
+      const synthesizedBefore = h.synthesized.length;
+      h.say("Hi.");
+      await h.waitFor("the resume", () => h.synthesized.slice(synthesizedBefore).some((t) => t.startsWith("We have created")), 20000);
+      assert.equal(s1Spoken(h), 1, `sentence 1 must not be replayed, synthesized=${JSON.stringify(h.synthesized)}`);
+      assert.ok(!h.synthesized.some((t) => t.includes("can you hear me")), "no hearing question");
+      assert.equal(h.requests.length, requestsBefore, "and no language-model request");
+    } finally {
+      await h.stop();
+    }
+  });
+
+  await test(`E3. ${name}: a cut halfway through sentence 1 still commits none of it, and "Hi." replays it`, async () => {
+    const h = startHarness({ replies: [BLOCK, "SHOULD-NOT-BE-GENERATED"], bridge });
+    try {
+      await startBlock(h);
+      await sleep(msFor(S1) * 0.5);
+      h.say("Hi.");
+      await h.waitFor("the resume", () => s1Spoken(h) >= 2, 20000);
+      assert.ok(
+        !h.assistantTurns().some((t) => t.replayOf === undefined && t.content.includes("interesting invitation")),
+        `a partly played sentence is never committed as heard, got ${JSON.stringify(h.assistantTexts())}`,
+      );
+    } finally {
+      await h.stop();
+    }
+  });
+
+  await test(`E4. ${name}: a QUESTION cut before it finished playing is replayed from its first word`, async () => {
+    const h = startHarness({ replies: [QUESTION_BLOCK, "SHOULD-NOT-BE-GENERATED"], bridge });
+    try {
+      await startBlock(h);
+      await sleep(msFor(QUESTION) * 0.8);
+      const synthesizedBefore = h.synthesized.length;
+      h.say("Hi.");
+      await h.waitFor("the resume", () => h.synthesized.length > synthesizedBefore, 20000);
+      assert.ok(
+        (h.synthesized.slice(synthesizedBefore)[0] ?? "").startsWith("Have you ever tried"),
+        `the unfinished question must be replayed, got ${JSON.stringify(h.synthesized.slice(synthesizedBefore))}`,
+      );
+      assert.ok(
+        !h.assistantTurns().some((t) => t.replayOf === undefined && t.content.includes("online before")),
+        "and it was never committed as heard",
+      );
+    } finally {
+      await h.stop();
+    }
+  });
+
+  await test(`E5. ${name}: the self-echo guard reads the corrected heard text — an echo of a played sentence is ignored`, async () => {
+    // Before the fix the heard text was "" here, so the guard had
+    // nothing to compare against and this echo barged in as a turn.
+    const h = startHarness({ replies: [BLOCK, "SHOULD-NOT-BE-GENERATED"], bridge });
+    try {
+      await startBlock(h);
+      await sleep(msFor(S1) + 500);
+      const requestsBefore = h.requests.length;
+      h.say("I am calling you with a very interesting invitation");
+      await h.waitForReplies(2, 30000);
+      assert.equal(h.requests.length, requestsBefore, "the echo produced no turn");
+      assert.ok(
+        h.assistantTexts().some((t) => t.includes("interesting invitation") && t.includes("plain instructions")),
+        `the block played on uninterrupted and was committed whole, got ${JSON.stringify(h.assistantTexts())}`,
+      );
+    } finally {
+      await h.stop();
+    }
+  });
+}
 
 console.log(`\n${failures.length === 0 ? "ALL PASSED" : "FAILURES"} — ${passed} passed, ${failures.length} failed`);
 for (const name of failures) console.log(`  - ${name}`);

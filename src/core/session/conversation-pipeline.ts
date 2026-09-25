@@ -4916,7 +4916,19 @@ export class ConversationPipeline {
       // failing a barge-in. Zero is the previous behaviour.
       backlogMs = 0;
     }
-    return Math.max(0, handedOverMs - (backlogMs > 0 ? backlogMs : 0));
+    // AUDIO SENT, NOT WALL TIME MINUS THE QUEUE (2026-09-25). The bridges
+    // enqueue every chunk BEFORE returning their backpressure promise and
+    // pump in real time from the first frame, so `outboundQueuedMs` is the
+    // audio handed to them and `outboundQueuedMs - backlogMs` is the audio
+    // they have actually sent. Subtracting the queue from WALL TIME counted
+    // it twice: the play head lagged real playback by the whole queue (up
+    // to the 2.8s high-water mark and beyond, and the entire unsent reply
+    // on a bridge without backpressure), so a fully played first sentence
+    // read as unheard (real call 4d8db0a0: `playheadAtCancelMs` 0 at ~2.9s
+    // into a 2.6s sentence). Wall time stays as the cap. With no reporter
+    // this is `min(elapsed, outboundQueuedMs)`, and since no utterance ends
+    // past `outboundQueuedMs` the same utterances count as heard as before.
+    return Math.max(0, Math.min(handedOverMs, this.outboundQueuedMs - (backlogMs > 0 ? backlogMs : 0)));
   }
 
   /**

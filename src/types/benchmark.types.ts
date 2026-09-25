@@ -598,6 +598,52 @@ export interface TurnLatencyBreakdown {
    * nothing; changes no decision.
    */
   readonly bargeInTrigger?: BargeInTriggerTelemetry;
+  /**
+   * DIAGNOSTIC ONLY (2026-09-25) — the sentence a barge-in cut, as the
+   * playback accounting saw it at the instant of cancellation. Exists to
+   * measure a PROPOSED rule (credit a statement more than half played as
+   * heard) against real calls before any behaviour depends on it; real
+   * call 4641710b re-introduced the agent after the caller answered its
+   * half-played introduction. Counts, offsets, fractions and booleans
+   * only — never the sentence's words, which stay on the console line.
+   * Model replies only. Read by nothing; changes no decision.
+   */
+  readonly cutSentence?: CutSentenceTelemetry;
+}
+
+/**
+ * The first sentence of a cancelled model reply that the pipeline
+ * counts as UNHEARD, measured at cancellation. See `cutSentence`.
+ * Offsets are ms of this reply's audio from its first frame.
+ */
+export interface CutSentenceTelemetry {
+  /** 0-based index of the cut sentence among the reply's handed-over sentences. */
+  readonly sentenceIndex: number;
+  /** Sentences of the reply handed to the transport at cancellation. */
+  readonly sentencesHandedOver: number;
+  /** Safe identifying representation of the cut sentence: its length. */
+  readonly sentenceChars: number;
+  readonly sentenceWords: number;
+  /** Total audio duration of the cut sentence; absent while its audio was still being synthesized. */
+  readonly sentenceDurationMs?: number;
+  /** Whether all of the cut sentence's audio had been handed over (`complete`). */
+  readonly sentenceComplete: boolean;
+  /** Where the cut sentence starts within the reply's audio. */
+  readonly sentenceStartOffsetMs: number;
+  /** The play head at cancellation — the value `heardSoFarText` read. */
+  readonly playheadAtCancelMs: number;
+  /** Estimated audio of the cut sentence actually played, clamped to [0, its extent]. */
+  readonly playedMs: number;
+  /** `playedMs / sentenceDurationMs`, 0–1; absent when the duration is unknown. */
+  readonly playedFraction?: number;
+  /** The sentence ends with "?" or "？". */
+  readonly endsWithQuestion: boolean;
+  /** Would the PROPOSED rule (statement, complete, playedFraction > 0.5) credit it? Nothing acts on this. */
+  readonly proposedRuleQualifies: boolean;
+  /** CURRENT: characters the pipeline committed as heard (`cancelledHeardText`). */
+  readonly currentHeardChars: number;
+  /** PROPOSED: characters the rule would have credited (current plus the cut sentence when it qualifies). */
+  readonly proposedHeardChars: number;
 }
 
 /**

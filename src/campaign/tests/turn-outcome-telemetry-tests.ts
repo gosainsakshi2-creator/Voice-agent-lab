@@ -775,6 +775,110 @@ await test("E1 — no transcript, reply or prompt text appears in the recorded t
 });
 
 // ═════════════════════════════════════════════════════════════════
+section("SECTION G — cut-sentence telemetry is diagnostic only (2026-09-25)");
+// ═════════════════════════════════════════════════════════════════
+
+const BLOCK_SENTENCE_1 = "Actually, I am calling you with a very interesting invitation.";
+const QUESTION_BLOCK =
+  "Have you ever tried selling something online before? " +
+  "We can help you get started with that very quickly today.";
+const QUESTION_SENTENCE_1 = "Have you ever tried selling something online before?";
+const INTERRUPTION = "Wait, how much does it cost?";
+
+/** Cut the reply `fraction` of the way through its first sentence, with real content. */
+async function cutFirstSentenceAt(h: Harness, sentence: string, fraction: number): Promise<void> {
+  await h.waitForReplies(1);
+  h.say(FIRST_USER_TURN);
+  await h.waitFor("the agent to start the block", () => h.record.state === SessionState.SPEAKING);
+  await sleep(Math.round((sentence.length / CHARS_PER_SECOND) * 1000 * fraction));
+  h.say(INTERRUPTION);
+  await h.waitForReplies(2);
+}
+
+function cutTurn(h: Harness): TurnLatencyBreakdown | undefined {
+  return h.turns().find((t) => t.cutSentence !== undefined);
+}
+
+await test("G1 — a cut BEFORE half of a statement: recorded, does not qualify, and nothing more is committed", async () => {
+  const h = startHarness({ openingLine: OPENING, replies: [BLOCK, "It is free."], fallbackReply: "Okay." });
+  try {
+    await cutFirstSentenceAt(h, BLOCK_SENTENCE_1, 0.3);
+    const cut = cutTurn(h)?.cutSentence;
+    assert.ok(cut, `the cut sentence must be recorded, turns=${JSON.stringify(h.turns())}`);
+    assert.equal(cut.sentenceIndex, 0);
+    assert.equal(cut.sentenceChars, BLOCK_SENTENCE_1.length);
+    assert.equal(cut.endsWithQuestion, false);
+    assert.ok(cut.playedFraction !== undefined && cut.playedFraction > 0 && cut.playedFraction < 0.5, `fraction=${cut.playedFraction}`);
+    assert.equal(cut.proposedRuleQualifies, false);
+    assert.equal(cut.currentHeardChars, 0);
+    assert.equal(cut.proposedHeardChars, cut.currentHeardChars, "PROPOSED equals CURRENT when the rule does not qualify");
+    assert.deepEqual(assistantTexts(h.history()), [OPENING, "It is free."], "nothing of the cut sentence was committed (CURRENT behaviour)");
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("G2 — a cut AFTER half of a statement: the rule WOULD qualify, but CURRENT behaviour still commits nothing", async () => {
+  const h = startHarness({ openingLine: OPENING, replies: [BLOCK, "It is free."], fallbackReply: "Okay." });
+  try {
+    await cutFirstSentenceAt(h, BLOCK_SENTENCE_1, 0.8);
+    const cut = cutTurn(h)?.cutSentence;
+    assert.ok(cut, "the cut sentence must be recorded");
+    assert.ok(cut.playedFraction !== undefined && cut.playedFraction > 0.5 && cut.playedFraction < 1, `fraction=${cut.playedFraction}`);
+    assert.ok((cut.sentenceDurationMs ?? 0) > 0 && cut.playedMs > 0 && cut.playedMs < (cut.sentenceDurationMs ?? 0));
+    assert.equal(cut.proposedRuleQualifies, true, "the proposed rule would credit it");
+    assert.equal(cut.currentHeardChars, 0);
+    assert.equal(cut.proposedHeardChars, BLOCK_SENTENCE_1.length, "PROPOSED would have credited the sentence");
+    // THE POINT: logging only. The sentence is still NOT committed, and
+    // the model is still shown exactly what it was shown before.
+    assert.deepEqual(assistantTexts(h.history()), [OPENING, "It is free."], "CURRENT behaviour is unchanged");
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("G3 — a cut after half of a QUESTION: recorded as a question and never qualifies", async () => {
+  const h = startHarness({ openingLine: OPENING, replies: [QUESTION_BLOCK, "It is free."], fallbackReply: "Okay." });
+  try {
+    await cutFirstSentenceAt(h, QUESTION_SENTENCE_1, 0.8);
+    const cut = cutTurn(h)?.cutSentence;
+    assert.ok(cut, "the cut sentence must be recorded");
+    assert.equal(cut.endsWithQuestion, true);
+    assert.ok(cut.playedFraction !== undefined && cut.playedFraction > 0.5, `fraction=${cut.playedFraction}`);
+    assert.equal(cut.proposedRuleQualifies, false, "a question is never credited by the proposed rule");
+    assert.equal(cut.proposedHeardChars, cut.currentHeardChars);
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("G4 — the cut-sentence record carries no conversation text", async () => {
+  const h = startHarness({ openingLine: OPENING, replies: [BLOCK, "It is free."], fallbackReply: "Okay." });
+  try {
+    await cutFirstSentenceAt(h, BLOCK_SENTENCE_1, 0.8);
+    assert.ok(cutTurn(h), "positive control: a record exists");
+    const serialized = JSON.stringify(h.turns());
+    for (const secret of [BLOCK_SENTENCE_1, "Actually", "invitation", INTERRUPTION, OPENING]) {
+      assert.ok(!serialized.includes(secret), `turn telemetry must carry no text, but contained ${JSON.stringify(secret)}`);
+    }
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("G5 — an uninterrupted reply records no cut sentence", async () => {
+  const h = startHarness({ openingLine: OPENING, replies: ["Sure, it is free."], fallbackReply: "Okay." });
+  try {
+    await h.waitForReplies(1);
+    h.say(FIRST_USER_TURN);
+    await h.waitForReplies(2);
+    assert.equal(cutTurn(h), undefined);
+  } finally {
+    await h.stop();
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════
 console.log(`\n${failures.length === 0 ? "ALL PASS" : "FAILURES"} — ${passed} passed, ${failures.length} failed`);
 if (failures.length > 0) {
   for (const name of failures) console.log(`  - ${name}`);

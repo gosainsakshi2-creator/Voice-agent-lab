@@ -327,6 +327,11 @@ const SCRIPT_TEXT = `${OPENING}\n${BLOCK}`;
 /** How many synthesised texts carry the block's first sentence. */
 const s1Spoken = (h: Harness): number => h.synthesized.filter((t) => t.includes("interesting invitation")).length;
 
+// Every hearing episode below is opened with "Hello? Hello?": since
+// 2026-09-25 a SINGLE greeting over a held reply resumes it without the
+// question (test:attention section L). A single "Hello?" said once an
+// episode is already open is unchanged and still reaches the resume path.
+
 /** Drive past the opening line and start the block. */
 async function startBlock(h: Harness): Promise<void> {
   await h.waitForReplies(1);
@@ -343,7 +348,7 @@ await test("A1. a barge-in 600ms into a 2.8s sentence commits NONE of it", async
   try {
     await startBlock(h);
     await sleep(600);
-    h.say("Hello?");
+    h.say("Hello? Hello?");
     await h.waitFor(
       "the hearing acknowledgement",
       () => h.synthesized.some((t) => t.includes("can you hear me")),
@@ -364,7 +369,7 @@ await test("A1b. …and the resume then replays that sentence from its first wor
   try {
     await startBlock(h);
     await sleep(600);
-    h.say("Hello?");
+    h.say("Hello? Hello?");
     await h.waitFor("the acknowledgement", () => h.synthesized.some((t) => t.includes("can you hear me")));
     await h.waitFor("the agent to listen again", () => h.record.state === SessionState.LISTENING);
     const requestsBefore = h.requests.length;
@@ -382,7 +387,7 @@ await test("A2. a sentence that fully played IS committed, and is not replayed",
     await startBlock(h);
     // Past the end of S1 and well inside S2.
     await sleep(msFor(S1) + 500);
-    h.say("Hello?");
+    h.say("Hello? Hello?");
     await h.waitFor("the acknowledgement", () => h.synthesized.some((t) => t.includes("can you hear me")));
     assert.ok(
       h.assistantTexts().some((t) => t.includes("interesting invitation")),
@@ -404,7 +409,7 @@ await test("A3. audio still queued in the transport is NOT counted as heard", as
   try {
     await startBlock(h);
     await sleep(msFor(S1) + 500);
-    h.say("Hello?");
+    h.say("Hello? Hello?");
     await h.waitFor("the acknowledgement", () => h.synthesized.some((t) => t.includes("can you hear me")));
     assert.ok(
       !h.assistantTexts().some((t) => t.includes("interesting invitation")),
@@ -424,7 +429,7 @@ await test("B1. a resume cut off before any of it plays commits nothing", async 
   try {
     await startBlock(h);
     await sleep(600);
-    h.say("Hello?");
+    h.say("Hello? Hello?");
     await h.waitFor("the acknowledgement", () => h.synthesized.some((t) => t.includes("can you hear me")));
     await h.waitFor("the agent to listen again", () => h.record.state === SessionState.LISTENING);
     h.say("Yes, I can hear you.");
@@ -459,7 +464,7 @@ await test("B1b. the first zero-progress resume is still replayed, without the m
   try {
     await startBlock(h);
     await sleep(600);
-    h.say("Hello?");
+    h.say("Hello? Hello?");
     await h.waitFor("the acknowledgement", () => h.synthesized.some((t) => t.includes("can you hear me")));
     await h.waitFor("the agent to listen again", () => h.record.state === SessionState.LISTENING);
     const requestsBefore = h.requests.length;
@@ -490,7 +495,7 @@ await test("B1c. REPEATED zero-progress recovery leaves the loop through the exi
   try {
     await startBlock(h);
     await sleep(600);
-    h.say("Hello?");
+    h.say("Hello? Hello?");
     await h.waitFor("the acknowledgement", () => h.synthesized.some((t) => t.includes("can you hear me")));
     await h.waitFor("the agent to listen again", () => h.record.state === SessionState.LISTENING);
     const requestsBefore = h.requests.length;
@@ -520,7 +525,7 @@ await test("B2. a resume that plays out in full DOES reset the cap", async () =>
   try {
     await startBlock(h);
     await sleep(600);
-    h.say("Hello?");
+    h.say("Hello? Hello?");
     await h.waitFor("the acknowledgement", () => h.synthesized.some((t) => t.includes("can you hear me")));
     await h.waitFor("the agent to listen again", () => h.record.state === SessionState.LISTENING);
     h.say("Yes, I can hear you.");
@@ -571,7 +576,7 @@ await test("C1. a held remainder beginning mid-sentence is not re-capitalised", 
     );
     const firstPiece = h.synthesized.find((t) => t.includes("live reveal")) ?? "";
     await sleep(msFor(firstPiece) + 500);
-    h.say("Hello?");
+    h.say("Hello? Hello?");
     await h.waitFor("the acknowledgement", () => h.synthesized.some((t) => t.includes("can you hear me")));
     await h.waitFor("the agent to listen again", () => h.record.state === SessionState.LISTENING);
     const before = h.synthesized.length;
@@ -596,7 +601,7 @@ await test("C2. the fixed acknowledgement line is untouched by the change", asyn
   try {
     await startBlock(h);
     await sleep(600);
-    h.say("Hello?");
+    h.say("Hello? Hello?");
     await h.waitFor("the acknowledgement", () => h.synthesized.some((t) => t.includes("can you hear me")));
     assert.ok(
       h.synthesized.includes("Hey, can you hear me okay?"),
@@ -617,7 +622,7 @@ await test('D1. an automatic resume commits replayOf: "resume"', async () => {
   try {
     await startBlock(h);
     await sleep(600);
-    h.say("Hello?");
+    h.say("Hello? Hello?");
     await h.waitFor("the acknowledgement", () => h.synthesized.some((t) => t.includes("can you hear me")));
     await h.waitFor("the agent to listen again", () => h.record.state === SessionState.LISTENING);
     h.say("Yes, I can hear you.");
@@ -642,7 +647,7 @@ await test('D2. a caller-requested repeat commits replayOf: "repeat"', async () 
   try {
     await startBlock(h);
     await sleep(600);
-    h.say("Hello?");
+    h.say("Hello? Hello?");
     await h.waitFor("the acknowledgement", () => h.synthesized.some((t) => t.includes("can you hear me")));
     await h.waitFor("the agent to listen again", () => h.record.state === SessionState.LISTENING);
     h.say("Can you repeat that?");

@@ -133,6 +133,7 @@ export interface TurnLatencyInput {
   readonly continuationGraceResets?: TurnLatencyBreakdown["continuationGraceResets"];
   readonly bargeInPhase?: TurnLatencyBreakdown["bargeInPhase"];
   readonly bargeInTrigger?: TurnLatencyBreakdown["bargeInTrigger"];
+  readonly cutSentence?: TurnLatencyBreakdown["cutSentence"];
 }
 
 /**
@@ -226,6 +227,63 @@ function sanitizeBargeInTrigger(
     ...(beganBeforeReply !== undefined ? { beganBeforeReply } : {}),
     ...(replyRemainingMs !== undefined ? { replyRemainingMs } : {}),
     ...(replyFullyQueued !== undefined ? { replyFullyQueued } : {}),
+  };
+}
+
+/**
+ * DIAGNOSTIC ONLY — validates a `cutSentence` record. Every required
+ * field must be a finite number or a boolean, or the record is dropped
+ * whole; the two optional numbers are dropped alone. Numbers only and
+ * booleans only, so no text can reach the stored record through it.
+ * Nothing here is read by a decision.
+ */
+function sanitizeCutSentence(
+  input: TurnLatencyBreakdown["cutSentence"] | undefined,
+): TurnLatencyBreakdown["cutSentence"] | undefined {
+  if (input === undefined) return undefined;
+  const num = (value: unknown): number | undefined =>
+    typeof value === "number" && Number.isFinite(value) ? Math.round(value) : undefined;
+  const bool = (value: unknown): boolean | undefined => (typeof value === "boolean" ? value : undefined);
+  const sentenceIndex = num(input.sentenceIndex);
+  const sentencesHandedOver = num(input.sentencesHandedOver);
+  const sentenceChars = num(input.sentenceChars);
+  const sentenceWords = num(input.sentenceWords);
+  const sentenceComplete = bool(input.sentenceComplete);
+  const sentenceStartOffsetMs = num(input.sentenceStartOffsetMs);
+  const playheadAtCancelMs = num(input.playheadAtCancelMs);
+  const playedMs = num(input.playedMs);
+  const endsWithQuestion = bool(input.endsWithQuestion);
+  const proposedRuleQualifies = bool(input.proposedRuleQualifies);
+  const currentHeardChars = num(input.currentHeardChars);
+  const proposedHeardChars = num(input.proposedHeardChars);
+  if (
+    sentenceIndex === undefined || sentencesHandedOver === undefined || sentenceChars === undefined ||
+    sentenceWords === undefined || sentenceComplete === undefined || sentenceStartOffsetMs === undefined ||
+    playheadAtCancelMs === undefined || playedMs === undefined || endsWithQuestion === undefined ||
+    proposedRuleQualifies === undefined || currentHeardChars === undefined || proposedHeardChars === undefined
+  ) {
+    return undefined;
+  }
+  const sentenceDurationMs = num(input.sentenceDurationMs);
+  const playedFraction =
+    typeof input.playedFraction === "number" && Number.isFinite(input.playedFraction)
+      ? Math.round(input.playedFraction * 1000) / 1000
+      : undefined;
+  return {
+    sentenceIndex,
+    sentencesHandedOver,
+    sentenceChars,
+    sentenceWords,
+    ...(sentenceDurationMs !== undefined ? { sentenceDurationMs } : {}),
+    sentenceComplete,
+    sentenceStartOffsetMs,
+    playheadAtCancelMs,
+    playedMs,
+    ...(playedFraction !== undefined ? { playedFraction } : {}),
+    endsWithQuestion,
+    proposedRuleQualifies,
+    currentHeardChars,
+    proposedHeardChars,
   };
 }
 
@@ -369,6 +427,8 @@ export class SessionMetricsCollector {
     // unknown source drops the whole record, a non-finite number or a
     // non-boolean drops that field.
     const bargeInTrigger = sanitizeBargeInTrigger(input.bargeInTrigger);
+    // DIAGNOSTIC ONLY — see `CutSentenceTelemetry`. Same posture.
+    const cutSentence = sanitizeCutSentence(input.cutSentence);
     const heldTextReadsUnfinished =
       typeof input.heldTextReadsUnfinished === "boolean"
         ? input.heldTextReadsUnfinished
@@ -437,6 +497,7 @@ export class SessionMetricsCollector {
       ...(continuationGraceResets !== undefined ? { continuationGraceResets } : {}),
       ...(bargeInPhase !== undefined ? { bargeInPhase } : {}),
       ...(bargeInTrigger !== undefined ? { bargeInTrigger } : {}),
+      ...(cutSentence !== undefined ? { cutSentence } : {}),
     });
 
     this.costTotals.speechToText += input.sttCostUsd;

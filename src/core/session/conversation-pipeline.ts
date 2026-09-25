@@ -37,7 +37,7 @@ import type { AudioPayload, ConversationTurn } from "../../types/provider.types"
 import type { CompletionRequest } from "../../interfaces/providers/language-model-provider.interface";
 import type { LanguageModelProvider } from "../../interfaces/providers/language-model-provider.interface";
 import type { LlmStreamEvent } from "../../types/streaming.types";
-import type { BargeInTriggerTelemetry, TurnOutcome } from "../../types/benchmark.types";
+import type { BargeInTriggerTelemetry, CutSentenceTelemetry, TurnOutcome } from "../../types/benchmark.types";
 import type { SpeechToTextProvider } from "../../interfaces/providers/speech-to-text-provider.interface";
 import type { TextToSpeechProvider, SynthesisTaskRequest } from "../../interfaces/providers/text-to-speech-provider.interface";
 import type { TelephonyProvider } from "../../interfaces/providers/telephony-provider.interface";
@@ -421,6 +421,22 @@ const BUFFERED_TURN_DRAIN_POLL_MS = 250;
  * speaking" means here what it already means everywhere else.
  */
 const BACKCHANNEL_MIN_REMAINING_SPEECH_MS = 4_000;
+
+/**
+ * DIAGNOSTIC ONLY (2026-09-25) — the played fraction above which a
+ * PROPOSED rule would credit a cut statement as heard. Evaluated by
+ * `snapshotCutSentence` for telemetry and read by nothing else: no
+ * commit, remainder or resume depends on it. See `CutSentenceTelemetry`.
+ */
+const PROPOSED_PARTIAL_CREDIT_FRACTION = 0.5;
+
+/** DIAGNOSTIC ONLY — one `snapshotCutSentence` measurement. See `pendingCutSentence`. */
+type PendingCutSentence = {
+  readonly responseId: number;
+  readonly telemetry: CutSentenceTelemetry;
+  readonly sentenceText: string;
+  readonly proposedHeardText: string;
+};
 
 /**
  * A bare greeting and nothing else.
@@ -2334,6 +2350,14 @@ export class ConversationPipeline {
    */
   private pendingBargeInTrigger: BargeInTriggerTelemetry | undefined;
   /**
+   * DIAGNOSTIC ONLY (2026-09-25) — the cut sentence as the playback
+   * accounting saw it when `cancelledHeardText` was frozen. See
+   * `snapshotCutSentence` and `CutSentenceTelemetry`. Tagged with the
+   * response it belongs to so the model-reply commit site can reject a
+   * snapshot taken for a fixed utterance. Consulted by no decision.
+   */
+  private pendingCutSentence: PendingCutSentence | undefined;
+  /**
    * Resumes spent on this call, against `MAX_STRANDED_RESUMES`. Bounds
    * the pathological case where a noisy line barges in over and over
    * and never produces a turn.
@@ -3141,6 +3165,8 @@ export class ConversationPipeline {
         // `resumeAfterStrandedBargeIn`, which runs at the end of this
         // iteration — after the metrics below — and decides.
         let strandedRemainder = "";
+        // DIAGNOSTIC ONLY — see `CutSentenceTelemetry`. Decides nothing.
+        let cutSentence: CutSentenceTelemetry | undefined;
         if (this.isResponseCancelled(responseId)) {
           // The part that PLAYED is what the caller heard, so it is
           // what the conversation actually contains — see
@@ -3155,6 +3181,22 @@ export class ConversationPipeline {
           console.log(
             `[PIPELINE:${sid}] Response #${responseId} CANCELLED by barge-in — heard="${heard.slice(0, 80)}${heard.length > 80 ? "..." : ""}" discarded="${result.assistantText.slice(heard.length, heard.length + 80)}${result.assistantText.length > heard.length + 80 ? "..." : ""}"`,
           );
+          // DIAGNOSTIC ONLY — CURRENT vs PROPOSED for the sentence the
+          // caller was cut off in. Logged and recorded; `heard` above is
+          // what is committed and held, exactly as before.
+          const cut = this.consumeCutSentence(responseId);
+          if (cut !== undefined) {
+            cutSentence = cut.telemetry;
+            const t = cut.telemetry;
+            // eslint-disable-next-line no-console
+            console.log(
+              `[CUT-SENTENCE:${sid}] response #${responseId} sentence ${t.sentenceIndex + 1}/${t.sentencesHandedOver} "${cut.sentenceText.slice(0, 120)}"` +
+                ` durationMs=${t.sentenceDurationMs ?? "n/a"} complete=${t.sentenceComplete} startOffsetMs=${t.sentenceStartOffsetMs}` +
+                ` playheadMs=${t.playheadAtCancelMs} playedMs=${t.playedMs} playedFraction=${t.playedFraction === undefined ? "n/a" : t.playedFraction.toFixed(3)}` +
+                ` question=${t.endsWithQuestion} proposedRuleQualifies=${t.proposedRuleQualifies}` +
+                ` CURRENT heard="${heard.slice(0, 160)}" PROPOSED heard="${cut.proposedHeardText.slice(0, 160)}"`,
+            );
+          }
           if (heard.length > 0) {
             this.record.memory.recordAssistantTurn(heard);
             this.contextualReplyCommitted = true;
@@ -3304,6 +3346,9 @@ export class ConversationPipeline {
           // DIAGNOSTIC ONLY — same read-and-clear contract as the phase
           // above. See `BargeInTriggerTelemetry`.
           bargeInTrigger: this.consumeBargeInTrigger(),
+          // DIAGNOSTIC ONLY — numbers and booleans; the words are on the
+          // [CUT-SENTENCE] console line above. See `CutSentenceTelemetry`.
+          cutSentence,
         });
 
         // Last, after everything this turn owns has been committed and
@@ -5293,6 +5338,14 @@ export class ConversationPipeline {
     // still a true statement about what the caller heard. Read by the
     // commit site in the main loop — see `cancelledHeardText`.
     this.cancelledHeardText = this.heardSoFarText();
+    // DIAGNOSTIC ONLY — see `pendingCutSentence`. Read at the same
+    // instant, from the same counters, and never allowed to fail the
+    // barge-in: anything it throws is swallowed and nothing is recorded.
+    try {
+      this.pendingCutSentence = this.snapshotCutSentence(this.cancelledHeardText);
+    } catch {
+      this.pendingCutSentence = undefined;
+    }
     // DIAGNOSTIC ONLY — see `pendingBargeInTrigger`. Stamped at the one
     // instant every accepted barge-in passes through.
     this.pendingBargeInTrigger = { source, ...evidence };
@@ -5304,6 +5357,73 @@ export class ConversationPipeline {
   }
 
   /** DIAGNOSTIC ONLY — read-and-clear, mirroring `consumeBargeInPhase`. */
+  /**
+   * DIAGNOSTIC ONLY (2026-09-25) — measures the first sentence of the
+   * reply in flight that `heardSoFarText` counts as UNHEARD, at the
+   * instant a barge-in freezes `cancelledHeardText`, and what a PROPOSED
+   * rule would have credited instead: a statement (not ending in "?" or
+   * "？") whose audio was fully handed over and more than half played.
+   *
+   * Read-only over `spokenUtterances`, `playedSoFarMs` and the heard
+   * text it is handed; returns a value and writes nothing. The rule is
+   * evaluated so real calls can show whether it would have been right —
+   * no path reads the result, and `cancelledHeardText`, the committed
+   * turn, the stranded remainder and every resume are computed exactly
+   * as before, from `heardSoFarText` alone.
+   */
+  private snapshotCutSentence(heard: string): PendingCutSentence | undefined {
+    if (this.outboundPlaybackStartedAt === 0 || this.spokenUtterances.length === 0) return undefined;
+    const playheadMs = this.playedSoFarMs();
+    // The same predicate `heardSoFarText` filters on, negated: the
+    // first utterance it does NOT count is the one the caller was in.
+    const index = this.spokenUtterances.findIndex(
+      (u) => !(u.complete && u.endsAtMs > u.startsAtMs && u.endsAtMs <= playheadMs),
+    );
+    if (index < 0) return undefined;
+    const utterance = this.spokenUtterances[index]!;
+    const extentMs = Math.max(0, utterance.endsAtMs - utterance.startsAtMs);
+    const durationMs = utterance.complete && extentMs > 0 ? extentMs : undefined;
+    const playedMs = Math.min(Math.max(0, playheadMs - utterance.startsAtMs), extentMs);
+    const playedFraction = durationMs !== undefined ? playedMs / durationMs : undefined;
+    const text = utterance.text.trim();
+    const endsWithQuestion = /[?？][\s"'”’)\]]*$/u.test(text);
+    const proposedRuleQualifies =
+      !endsWithQuestion && playedFraction !== undefined && playedFraction > PROPOSED_PARTIAL_CREDIT_FRACTION;
+    const proposedHeardText = proposedRuleQualifies ? `${heard} ${text}`.trim() : heard;
+    return {
+      responseId: this.currentResponseId,
+      sentenceText: text,
+      proposedHeardText,
+      telemetry: {
+        sentenceIndex: index,
+        sentencesHandedOver: this.spokenUtterances.length,
+        sentenceChars: text.length,
+        sentenceWords: text.length === 0 ? 0 : text.split(/\s+/u).length,
+        ...(durationMs !== undefined ? { sentenceDurationMs: Math.round(durationMs) } : {}),
+        sentenceComplete: utterance.complete,
+        sentenceStartOffsetMs: Math.round(utterance.startsAtMs),
+        playheadAtCancelMs: Math.round(playheadMs),
+        playedMs: Math.round(playedMs),
+        ...(playedFraction !== undefined ? { playedFraction } : {}),
+        endsWithQuestion,
+        proposedRuleQualifies,
+        currentHeardChars: heard.length,
+        proposedHeardChars: proposedHeardText.length,
+      },
+    };
+  }
+
+  /**
+   * DIAGNOSTIC ONLY — read-and-clear, like `consumeBargeInTrigger`, and
+   * only for the response it was measured on. A snapshot taken while a
+   * fixed utterance was cut belongs to no model reply and is dropped.
+   */
+  private consumeCutSentence(responseId: number): PendingCutSentence | undefined {
+    const snapshot = this.pendingCutSentence;
+    this.pendingCutSentence = undefined;
+    return snapshot !== undefined && snapshot.responseId === responseId ? snapshot : undefined;
+  }
+
   private consumeBargeInTrigger(): BargeInTriggerTelemetry | undefined {
     const trigger = this.pendingBargeInTrigger;
     this.pendingBargeInTrigger = undefined;
@@ -6966,6 +7086,7 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
     // DIAGNOSTIC ONLY — cleared at the same boundary `beginThinking`
     // clears the barge-in phase label, for the same reason.
     this.pendingBargeInTrigger = undefined;
+    this.pendingCutSentence = undefined;
     const thinkingSignal = combineSignals([this.record.bargeIn.beginThinking(), loopSignal]);
     const request: CompletionRequest = { sessionId: this.record.id, history: this.buildRequestHistory(turnLanguage) };
     const llmProviderId = this.providers.llm.descriptor.id;

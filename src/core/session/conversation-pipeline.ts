@@ -679,17 +679,49 @@ export function bufferedTurnTakesTheFloor(text: string): boolean {
  * only in the turn immediately after the assistant asked. A bare "yes"
  * anywhere else is untouched by this and reaches the classifier and
  * the registration gate exactly as it does today.
+ *
+ * COMPANIONS. Real answers to the question carry a greeting or an
+ * honorific around the affirmation — "Yes, sir.", "Yeah, hi.", "haan ji
+ * sir", "You can, I can hear you." (real calls 837d1d3c and 43650d02,
+ * 2026-09-24). Without them each of those missed this table, took the
+ * real-contribution branch, released the held reply and reset the
+ * hearing-line counter, so the model regenerated the pitch and the
+ * caller was asked again — three times on one call. A companion is
+ * accepted only BESIDE at least one affirmation, never alone, so a bare
+ * "Hi." / "Hello." stays exactly what it was (a check, not an answer).
+ * Still a whole-utterance test: any word outside both lists — "Yes, but
+ * what is this about?" — fails it and reaches the model as before.
+ * Dashes join the separators because the STT writes "Hello—yeah.".
  */
+const HEARING_CONFIRMATION_AFFIRMATIONS =
+  "yes|yeah|yep|yup|ya|yaa|yes i can|yes i can hear you|i can hear you|" +
+  "i can hear|can hear you|i hear you|loud and clear|clear|perfectly|" +
+  "you can|yes you can|" +
+  "haan|haa|han|hanji|han ji|haan ji|ji|ji haan|theek hai|thik hai|" +
+  "sun raha hoon|sun rahi hoon|sun raha hu|haan sun raha hoon|" +
+  "sunai de raha hai|awaaz aa rahi hai|aa rahi hai|" +
+  "हाँ|हां|जी|जी हाँ|सुन रहा हूँ|सुन रही हूँ|आवाज़ आ रही है|ठीक है";
+const HEARING_CONFIRMATION_COMPANIONS =
+  "hi|hello|hey|sir|madam|ma'am|mam|हेलो|हैलो|सर";
+const HEARING_CONFIRMATION_SEPARATOR = "[\\s,.!?…।\\-–—]*";
 const HEARING_CONFIRMATION_ONLY = new RegExp(
-  "^(?:(?:yes|yeah|yep|yup|ya|yaa|yes i can|yes i can hear you|i can hear you|" +
-    "i can hear|can hear you|i hear you|loud and clear|clear|perfectly|" +
-    "haan|haa|han|hanji|han ji|haan ji|ji|ji haan|theek hai|thik hai|" +
-    "sun raha hoon|sun rahi hoon|sun raha hu|haan sun raha hoon|" +
-    "sunai de raha hai|awaaz aa rahi hai|aa rahi hai|" +
-    "हाँ|हां|जी|जी हाँ|सुन रहा हूँ|सुन रही हूँ|आवाज़ आ रही है|ठीक है)" +
-    "[\\s,.!?…।-]*)+$",
+  `^(?:(?:${HEARING_CONFIRMATION_COMPANIONS})${HEARING_CONFIRMATION_SEPARATOR})*` +
+    `(?:${HEARING_CONFIRMATION_AFFIRMATIONS})${HEARING_CONFIRMATION_SEPARATOR}` +
+    `(?:(?:${HEARING_CONFIRMATION_AFFIRMATIONS}|${HEARING_CONFIRMATION_COMPANIONS})${HEARING_CONFIRMATION_SEPARATOR})*$`,
   "iu",
 );
+
+/**
+ * `HEARING_CONFIRMATION_ONLY`, exported so a test can assert both sides
+ * of the boundary directly, for the reason `isHearingCheck` is. The one
+ * runtime reader (`confirmsHearing` in `handleAttentionCheck`) still
+ * tests the constant itself, and only inside an open episode.
+ */
+export function isHearingConfirmation(text: string): boolean {
+  const trimmed = text.trim();
+  if (trimmed.length === 0) return false;
+  return HEARING_CONFIRMATION_ONLY.test(trimmed);
+}
 
 /**
  * "Continue from where you stopped." — the caller, asked whether they

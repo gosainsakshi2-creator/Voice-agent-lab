@@ -47,7 +47,7 @@
 
 import assert from "node:assert/strict";
 
-const { ConversationPipeline, isAttentionCheck, isContinueRequest, isRestartRequest } = await import(
+const { ConversationPipeline, isAttentionCheck, isContinueRequest, isRestartRequest, isHearingConfirmation } = await import(
   "../../core/session/conversation-pipeline"
 );
 const { SessionRecord } = await import("../../core/session/session-record");
@@ -1112,6 +1112,111 @@ await test("J10 — the instruction vocabulary, asserted directly on both sides"
   // Restart wins over continue.
   assert.equal(isRestartRequest("Continue from the beginning."), true);
   assert.equal(isContinueRequest("Continue from the beginning."), true);
+});
+
+// ═════════════════════════════════════════════════════════════════
+section("SECTION K — hearing confirmations with a greeting or honorific attached (real calls, 2026-09-24)");
+// ═════════════════════════════════════════════════════════════════
+
+/**
+ * `upToMidBlock` cuts 900ms into a 2820ms first sentence, which under
+ * round-down accounting commits nothing (see the header of this file's
+ * sections B-J and the known "waiting for 3 replies" failures). Section
+ * K cuts after sentence 1 has fully played, so the held remainder starts
+ * at sentence 2 — the shape of the real calls it pins.
+ */
+async function pastFirstSentence(h: Harness): Promise<void> {
+  await h.waitForReplies(1);
+  h.say("Yes, tell me.");
+  await h.waitFor("the agent to start the block", () => h.record.state === SessionState.SPEAKING);
+  await sleep(Math.ceil((BLOCK_SENTENCE_1.length / CHARS_PER_SECOND) * 1000) + 600);
+}
+
+await test("K1 — the confirmation vocabulary, asserted directly on both sides", () => {
+  for (const u of [
+    // Unchanged forms.
+    "Yes.", "Yeah.", "Haan", "haan ji", "Yes, I can hear you.", "I can hear you", "जी हाँ",
+    // Companions beside an affirmation — the real answers that missed.
+    "Yes, sir.", "Yes sir", "Yeah, hi.", "haan ji sir", "Hi, yes.", "Hello, yes.", "Yes, madam.",
+    "You can, I can hear you.", "Yes, you can.", "जी सर",
+    // Dashes as the STT writes them.
+    "Hello—yeah.", "Yes — I can hear you.", "Yeah – yeah.",
+  ]) {
+    assert.equal(isHearingConfirmation(u), true, `should be a hearing confirmation: ${JSON.stringify(u)}`);
+  }
+  for (const u of [
+    // Substantive answers: whole-utterance, so any content word fails it.
+    "Yes, but what is this about?", "Yes, tell me.", "Yes, this is Sakshi", "Yes, I can hear you clearly.",
+    "Yeah, I know he's calling.", "Not yet, man.", "Yes, yes. Please tell me.", "Hello, who is this?",
+    // A companion on its own is NOT an answer — it stays a check.
+    "Hi.", "Hello.", "Hello? Hello?", "Sir?", "Hi sir", "हेलो।",
+    // Denials and instructions are other branches' vocabulary.
+    "No.", "No, sir.", "Start from the beginning.", "Continue.",
+    "", "   ",
+  ]) {
+    assert.equal(isHearingConfirmation(u), false, `must NOT be a hearing confirmation: ${JSON.stringify(u)}`);
+  }
+});
+
+for (const answer of ["Yes, sir.", "Yeah, hi.", "You can, I can hear you.", "haan ji sir"]) {
+  await test(`K2 — ${JSON.stringify(answer)} after the question RESUMES the block, without a language-model request`, async () => {
+    // Calls 1 and 10: each of these took the real-contribution branch,
+    // released the held reply, and the model regenerated it.
+    const h = startHarness({ openingLine: OPENING, replies: [BLOCK, "SHOULD-NOT-BE-GENERATED"] });
+    try {
+      await pastFirstSentence(h);
+      h.say("Hello?");
+      await h.waitForReplies(3);
+      const requestsAfterAck = h.requests.length;
+
+      h.say(answer);
+      await h.waitForReplies(4);
+
+      const resumed = assistantTexts(h.history())[3] ?? "";
+      assert.ok(
+        resumed.startsWith("We have created Flexi Genie"),
+        `must resume at the exact stopping point, got ${JSON.stringify(resumed.slice(0, 80))}`,
+      );
+      assert.equal(h.requests.length, requestsAfterAck, "the resume must not reach the language model");
+      assert.equal(ackCount(h.synthesized), 1, "and the caller is asked exactly once");
+    } finally {
+      await h.stop();
+    }
+  });
+}
+
+await test('K3 — "Yes, but what is this about?" after the question takes the NORMAL path and releases the held position', async () => {
+  const h = startHarness({ openingLine: OPENING, replies: [BLOCK, "It is a free live workshop."] });
+  try {
+    await pastFirstSentence(h);
+    h.say("Hello?");
+    await h.waitForReplies(3);
+    const requestsBefore = h.requests.length;
+
+    h.say("Yes, but what is this about?");
+    await h.waitForReplies(4);
+    assert.equal(h.requests.length, requestsBefore + 1, "the substantive answer reaches the model exactly once");
+    assert.ok((assistantTexts(h.history())[3] ?? "").startsWith("It is a free live workshop"), "and is answered contextually");
+    assert.equal(h.synthesized.filter((t) => t.startsWith(BLOCK_SENTENCE_3)).length, 1, "the unheard tail is not spoken later");
+  } finally {
+    await h.stop();
+  }
+});
+
+await test('K4 — "Yes, sir." OUTSIDE a hearing episode is untouched: it reaches the model', async () => {
+  const h = startHarness({ openingLine: OPENING, replies: ["Short reply.", "Okay, noted."] });
+  try {
+    await h.waitForReplies(1);
+    h.say("Tell me more.");
+    await h.waitForReplies(2);
+    const requestsBefore = h.requests.length;
+    h.say("Yes, sir.");
+    await h.waitForReplies(3);
+    assert.equal(h.requests.length, requestsBefore + 1, "with no episode open it is an ordinary turn");
+    assert.equal(ackCount(h.synthesized), 0, "and no hearing line is spoken");
+  } finally {
+    await h.stop();
+  }
 });
 
 // ═════════════════════════════════════════════════════════════════

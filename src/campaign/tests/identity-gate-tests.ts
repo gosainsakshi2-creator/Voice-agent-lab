@@ -743,6 +743,26 @@ await test('B7c. the same bare "Yes" OUTSIDE a hearing episode still confirms', 
   assert.equal(pitched(r.spoken), true, "and the pitch followed it");
 });
 
+await test('B7d. "Yes, sir" to the hearing line is a hearing answer exactly like a bare "Yes" — it must not open the gate', async () => {
+  // The hearing-confirmation table now accepts an honorific beside the
+  // affirmation (real call 837d1d3c, 2026-09-24). The safeguard B7b
+  // pins is unchanged and must cover the wider form too.
+  const r = await run(["Hello", "Hello", "Yes, sir", "Yes, this is Sakshi"]);
+  assert.equal(r.llmRequests, 1, "exactly one request in the whole call");
+  assert.equal(r.lastUserSentToLlm, "Yes, this is Sakshi", "and it carried the identity confirmation, not the hearing one");
+  assert.ok(idAsks(r.spoken) >= 2, "the unanswered identity question was put again");
+  const pitchAt = r.spoken.findIndex((t) => t.includes("free live workshop"));
+  const lastAskAt = r.spoken.map((t) => t.includes("Am I speaking with Sakshi")).lastIndexOf(true);
+  assert.ok(pitchAt > lastAskAt, "the pitch must come after the last identity question");
+});
+
+await test('B7e. the same "Yes, sir" OUTSIDE a hearing episode still confirms', async () => {
+  const r = await run(["Hello", "Yes, sir"]);
+  assert.equal(r.llmRequests, 1, "the confirmation reached the model");
+  assert.equal(r.lastUserSentToLlm, "Yes, sir");
+  assert.equal(pitched(r.spoken), true, "and the pitch followed it");
+});
+
 await test("B8. repeated interruption does not lose the identity state", async () => {
   const r = await run(["Hello", "Hello", "Hello?", "Hello", "Hello?"]);
   assert.equal(r.llmRequests, 0, "no amount of 'hello' opens the gate");

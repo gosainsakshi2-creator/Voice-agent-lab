@@ -983,6 +983,72 @@ for (const { name, bridge } of BRIDGES) {
       await h.stop();
     }
   });
+
+  // ── B (2026-09-25, real call e9d149e6): the Devanagari "हाय" and a
+  // trailing long dash are bare greetings to Fix F, and nothing else.
+  for (const greeting of ["हाय", "हाय—", "Hi—", "Hello—"]) {
+    await test(`E6. ${name}: a bare ${JSON.stringify(greeting)} after sentence 1 played takes Fix F and resumes from sentence 2`, async () => {
+      const h = startHarness({ replies: [BLOCK, "SHOULD-NOT-BE-GENERATED"], bridge });
+      try {
+        await startBlock(h);
+        await sleep(msFor(S1) + 500);
+        const requestsBefore = h.requests.length;
+        const synthesizedBefore = h.synthesized.length;
+        h.say(greeting);
+        await h.waitFor("the resume", () => h.synthesized.slice(synthesizedBefore).some((t) => t.startsWith("We have created")), 20000);
+        assert.equal(s1Spoken(h), 1, `the introduction sentence must not be replayed, synthesized=${JSON.stringify(h.synthesized)}`);
+        assert.ok(!h.synthesized.some((t) => t.includes("can you hear me")), "no hearing question");
+        assert.equal(h.requests.length, requestsBefore, "the greeting never reaches the language model");
+      } finally {
+        await h.stop();
+      }
+    });
+  }
+
+  await test(`E7. ${name}: "हाय—" halfway through sentence 1 still replays it from its first word`, async () => {
+    const h = startHarness({ replies: [BLOCK, "SHOULD-NOT-BE-GENERATED"], bridge });
+    try {
+      await startBlock(h);
+      await sleep(msFor(S1) * 0.5);
+      const requestsBefore = h.requests.length;
+      h.say("हाय—");
+      await h.waitFor("the resume", () => s1Spoken(h) >= 2, 20000);
+      assert.ok(
+        !h.assistantTurns().some((t) => t.replayOf === undefined && t.content.includes("interesting invitation")),
+        `a partly played sentence is never committed as heard, got ${JSON.stringify(h.assistantTexts())}`,
+      );
+      assert.equal(h.requests.length, requestsBefore, "and the greeting never reaches the language model");
+    } finally {
+      await h.stop();
+    }
+  });
+
+  await test(`E8. ${name}: with NO held reply, "Hello" then "हाय" is unchanged — the model answers it, no hearing question`, async () => {
+    // The scope boundary of the "हाय" / trailing-dash reading: Fix F's
+    // held-reply decision only. With the block finished there is nothing
+    // held, so "हाय" is read exactly as before it existed — not a second
+    // bare greeting, so the repeated-greeting hearing check never fires.
+    const h = startHarness({ replies: [BLOCK, "Reply to hello.", "Reply to haay."], bridge });
+    try {
+      await startBlock(h);
+      await h.waitFor("the block to finish", () => h.record.state === SessionState.LISTENING, 30000);
+      h.say("Hello");
+      await h.waitFor("the reply to hello", () => h.synthesized.some((t) => t.includes("Reply to hello")), 20000);
+      await h.waitFor("the agent to listen again", () => h.record.state === SessionState.LISTENING, 30000);
+      await sleep(500);
+      const synthesizedBefore = h.synthesized.length;
+      const answered = (t: string) => t.includes("Reply to haay") || t.includes("hear me") || t.includes("सुनाई");
+      h.say("हाय");
+      await h.waitFor("an answer to हाय", () => h.synthesized.slice(synthesizedBefore).some(answered), 20000);
+      const after = h.synthesized.slice(synthesizedBefore);
+      assert.ok(
+        after.some((t) => t.includes("Reply to haay")) && !after.some((t) => t.includes("hear me") || t.includes("सुनाई")),
+        `the model answers it and no hearing question is asked, synthesized=${JSON.stringify(after)}`,
+      );
+    } finally {
+      await h.stop();
+    }
+  });
 }
 
 console.log(`\n${failures.length === 0 ? "ALL PASSED" : "FAILURES"} — ${passed} passed, ${failures.length} failed`);

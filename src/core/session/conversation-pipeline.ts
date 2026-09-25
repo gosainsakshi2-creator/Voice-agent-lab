@@ -1438,6 +1438,32 @@ export function isRepeatedGreeting(text: string): boolean {
  * boundary is the safety case, and a test must be able to assert both
  * sides of it directly.
  */
+/**
+ * The utterance as `handleAttentionCheck`'s GREETING predicates read it
+ * (2026-09-25, real call e9d149e6): a trailing long dash dropped — the
+ * STT writes a cut-off "Hi—" / "हाय—", and no separator class accepts
+ * "—" or "–" — and the Devanagari "हाय" read as the "hi" it is.
+ *
+ * Deliberately NOT a change to any table. `BARE_GREETING_ONLY`,
+ * `ATTENTION_FILLER` and `HEARING_GREETINGS` are also read by the pickup
+ * drop, supersession, the backchannel test, language lock and silence
+ * recovery; this is read in ONE place — Fix F's held-reply decision in
+ * `handleAttentionCheck` (a bare greeting over a held reply, outside an
+ * episode, resumes it). Every other test there — `isAttentionCheck`, both
+ * `qualifies`, `lastTurnWasBareGreeting`, hearing confirmation, restart,
+ * continue — reads the caller's words unchanged, so "हाय" never confirms
+ * hearing, never opens a hearing check, and the identity gate never sees
+ * this form at all.
+ *
+ * Exported so a test can assert the mapping directly.
+ */
+export function greetingFormForAttention(text: string): string {
+  return text
+    .trim()
+    .replace(/[\s]*[—–]+[\s]*$/u, "")
+    .replace(/(^|[\s,.!?…।-])हाय(?=$|[\s,.!?…।-])/gu, "$1hi");
+}
+
 export function isBareGreetingTurn(text: string): boolean {
   const trimmed = text.trim();
   if (trimmed.length === 0) return false;
@@ -3632,6 +3658,14 @@ export class ConversationPipeline {
     const sid = this.record.id;
     const trimmed = userText.trim();
     const isCheck = isAttentionCheck(trimmed);
+    // Fix F's held-reply decision ONLY — see `greetingFormForAttention`.
+    // A bare greeting in the form the STT writes it ("हाय", "Hi—") over a
+    // reply that is held, outside an episode. Every other test in this
+    // method, and every other path, reads `trimmed` as before.
+    const bareGreetingOverHeldReply =
+      !this.attentionEpisodeOpen &&
+      this.heldScriptRemainder.length > 0 &&
+      isBareGreetingTurn(greetingFormForAttention(trimmed));
     // ── Cross-turn greeting repetition — see `lastTurnWasBareGreeting`.
     //
     // Read BEFORE it is updated, so `repeatedGreeting` below describes
@@ -3660,7 +3694,7 @@ export class ConversationPipeline {
     const wantsRestart = replyOnRecord && isRestartRequest(trimmed);
     const wantsContinue = replyOnRecord && !wantsRestart && isContinueRequest(trimmed);
 
-    if (!isCheck && !confirmsHearing && !wantsRestart && !wantsContinue) {
+    if (!isCheck && !bareGreetingOverHeldReply && !confirmsHearing && !wantsRestart && !wantsContinue) {
       // A real contribution. The episode is over and the held position
       // is released — an unheard remainder must never be spoken into a
       // conversation that has moved on to something else.
@@ -3824,7 +3858,7 @@ export class ConversationPipeline {
     }
 
     // ── One short acknowledgement, once per episode ─────────────────
-    if (isCheck && !this.attentionEpisodeOpen && remainder.length > 0) {
+    if ((isCheck || bareGreetingOverHeldReply) && !this.attentionEpisodeOpen && remainder.length > 0) {
       // ── A single greeting over the reply is a greeting back ────────
       //
       // The same rule the no-remainder branch below applies — "one
@@ -3847,7 +3881,7 @@ export class ConversationPipeline {
       const qualifies =
         isEmphaticHearingCheck(trimmed) ||
         (previousTurnWasBareGreeting && isHearingCheck(trimmed));
-      if (!qualifies && isBareGreetingTurn(trimmed)) {
+      if (!qualifies && (isBareGreetingTurn(trimmed) || bareGreetingOverHeldReply)) {
         if (this.hearingLineCapReached()) return this.declineExhaustedHearingCheck(trimmed);
         // eslint-disable-next-line no-console
         console.log(

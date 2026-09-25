@@ -763,6 +763,19 @@ await test('B7e. the same "Yes, sir" OUTSIDE a hearing episode still confirms', 
   assert.equal(pitched(r.spoken), true, "and the pitch followed it");
 });
 
+for (const said of ["हाय", "हाय—"]) {
+  await test(`B7f. ${JSON.stringify(said)} to the identity question is a greeting, not a confirmation — the gate stays shut`, async () => {
+    // 2026-09-25: Fix F now reads "हाय" / a trailing long dash as a bare
+    // greeting. That reading is local to the attention handler; the gate
+    // classifies the caller's words unchanged, and a greeting is not
+    // "yes, this is me".
+    const r = await run(["Hello", said]);
+    assert.equal(r.llmRequests, 0, "never reached the model");
+    assert.equal(pitched(r.spoken), false, "and never pitched");
+    assert.ok(idAsks(r.spoken) >= 2, "the identity question was put again");
+  });
+}
+
 await test("B8. repeated interruption does not lose the identity state", async () => {
   const r = await run(["Hello", "Hello", "Hello?", "Hello", "Hello?"]);
   assert.equal(r.llmRequests, 0, "no amount of 'hello' opens the gate");

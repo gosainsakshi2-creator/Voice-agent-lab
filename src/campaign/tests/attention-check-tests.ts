@@ -47,7 +47,15 @@
 
 import assert from "node:assert/strict";
 
-const { ConversationPipeline, isAttentionCheck, isContinueRequest, isRestartRequest, isHearingConfirmation } = await import(
+const {
+  ConversationPipeline,
+  isAttentionCheck,
+  isContinueRequest,
+  isRestartRequest,
+  isHearingConfirmation,
+  isBareGreetingTurn,
+  greetingFormForAttention,
+} = await import(
   "../../core/session/conversation-pipeline"
 );
 const { SessionRecord } = await import("../../core/session/session-record");
@@ -1286,6 +1294,37 @@ for (const check of ["Hello? Hello?", "Can you hear me?"]) {
     }
   });
 }
+
+// ═════════════════════════════════════════════════════════════════
+section('SECTION M — "हाय" and a trailing long dash are bare greetings to Fix F only (real call e9d149e6, 2026-09-25)');
+// ═════════════════════════════════════════════════════════════════
+
+await test("M1 — हाय, हाय—, Hi— and Hello— are bare greetings as handleAttentionCheck reads them", () => {
+  for (const u of ["हाय", "हाय—", "हाय।", "Hi—", "Hello—", "Hi –", "हाय हाय", "Hi.", "Hello."]) {
+    const form = greetingFormForAttention(u);
+    assert.equal(isAttentionCheck(form), true, `should be an attention check: ${JSON.stringify(u)} -> ${JSON.stringify(form)}`);
+    assert.equal(isBareGreetingTurn(form), true, `should be a bare greeting: ${JSON.stringify(u)} -> ${JSON.stringify(form)}`);
+  }
+  // Content with a greeting in front of it is still content.
+  for (const u of ["हाय, इशिता।", "हाय, कैसे हो?", "Hi— what is this about?", "Hello—yeah.", "Yes—", "हायर करना है"]) {
+    assert.equal(isBareGreetingTurn(greetingFormForAttention(u)), false, `must NOT be a bare greeting: ${JSON.stringify(u)}`);
+  }
+});
+
+await test("M2 — the SHARED tables are untouched: the raw forms still fail the exported predicates", () => {
+  // The mapping lives in `handleAttentionCheck` only. The pickup drop,
+  // supersession, backchannel, language lock and silence recovery read
+  // the tables directly and must see exactly what they saw before.
+  for (const u of ["हाय", "हाय—", "Hi—", "Hello—"]) {
+    assert.equal(isAttentionCheck(u), false, `the shared table must not accept the raw form ${JSON.stringify(u)}`);
+  }
+});
+
+await test('M3 — "हाय" is never a hearing confirmation', () => {
+  for (const u of ["हाय", "हाय—", "हाय।", "हाय हाय"]) {
+    assert.equal(isHearingConfirmation(u), false, `must NOT confirm hearing: ${JSON.stringify(u)}`);
+  }
+});
 
 // ═════════════════════════════════════════════════════════════════
 console.log(

@@ -1808,6 +1808,11 @@ function openingLineAsksIdentity(openingLine: string | undefined, identityLine: 
  */
 const MAX_IDENTITY_REASKS = 2;
 
+/** `holdWhileCallerIsSpeaking`: words this recent mean the caller is still talking. */
+const CALLER_STILL_SPEAKING_MS = 700;
+/** ...and the most a reply's first audio ever waits for them. */
+const MAX_START_HOLD_MS = 1_200;
+
 /**
  * A bare "Hello?" to the identity question is the caller not having
  * HEARD it, not a non-answer. On 26 Sep 2026 greetings were the commonest
@@ -3130,6 +3135,9 @@ export class ConversationPipeline {
         // t0 for this turn's latency trace: the turn detector has just
         // endpointed, i.e. the caller has stopped speaking as far as
         // the pipeline is concerned. Everything after this is ours.
+        // See `holdWhileCallerIsSpeaking`: words after this instant are the
+        // caller carrying on past the turn this reply answers.
+        this.currentTurnReleasedAt = turn.turnReleasedAtMs ?? Date.now();
         const timer = new TurnTimer(sid, `TURN#${this.record.turnIndex}`, turn.turnReleasedAtMs);
         timer.mark("turn-detected");
         // The trace above starts at turn RELEASE, so everything the
@@ -5972,6 +5980,11 @@ export class ConversationPipeline {
           // restarts the offset is `0` and every value is identical to
           // the raw one.
           const segmentEndedAtStreamMs = this.sttStreamMsOf(segment);
+          // Read only by `holdWhileCallerIsSpeaking`: when the caller last
+          // said words (not a "haan"/"okay"/"बोलिए", which never delays us).
+          if (segment.text.trim().length > 0 && !isContinuationCue(segment.text)) {
+            this.lastCallerWordsAt = Date.now();
+          }
 
           // ── The pickup greeting Deepgram delivered LATE ───────────
           //
@@ -7899,6 +7912,10 @@ await this.drainPlayback(speakingSignal, true);
   private lastReplyAudioStartedAt = 0;
   /** The most recent reply was cut by a barge-in (so the turn after it is that interruption). */
   private lastReplyWasCut = false;
+  /** Wall clock of the caller's last non-cue words. See `holdWhileCallerIsSpeaking`. */
+  private lastCallerWordsAt = 0;
+  /** Wall clock at which the turn now being answered was released. */
+  private currentTurnReleasedAt = 0;
   /**
    * Every utterance handed to the transport this speaking phase, with
    * the playback offsets (ms into this phase's audio) it occupies.
@@ -8222,6 +8239,14 @@ await this.drainPlayback(speakingSignal, true);
     break;
   }
 
+  if (chunkCount === 0) {
+    await this.holdWhileCallerIsSpeaking(speakingSignal);
+    if (speakingSignal.aborted) {
+      await this.record.mediaStream?.interruptPlayback();
+      break;
+    }
+  }
+
   chunkCount += 1;
   generatedAudioSeconds += estimateAudioSeconds(chunk.audio);
 
@@ -8273,7 +8298,8 @@ await this.drainPlayback(speakingSignal, true);
         this.markedTtsThisTurn = true;
         this.markTiming("tts-first-chunk");
       }
-      await this.playAudioChunk(audio);
+      await this.holdWhileCallerIsSpeaking(speakingSignal);
+      if (!speakingSignal.aborted) await this.playAudioChunk(audio);
 
       // ── Do NOT wait out this clip's playback here ──────────────────
       //
@@ -8375,6 +8401,37 @@ await this.drainPlayback(speakingSignal, true);
         `[PLAYBACK:${this.record.id}] Outbound delivery path ready: hasMediaStream=${!!this.record.mediaStream} listenerCount=${this.record.outboundAudioListeners.size}`,
       );
     }
+  }
+
+  /**
+   * Do not START a reply over a caller who is still talking.
+   *
+   * 26 Sep 2026: 17 of 342 replies began playing while the caller, who had
+   * paused ~1s, was already speaking again — their words were still interim,
+   * so the supersession check (which reads finals) could not see them — and
+   * each was then cut with nothing heard. Release, generation and synthesis
+   * are untouched; only the FIRST audio frame of a reply waits, and only
+   * while the caller has said words since the turn was released and within
+   * the last `CALLER_STILL_SPEAKING_MS`. A silent caller — nearly every
+   * turn — adds 0ms. Bounded by `MAX_START_HOLD_MS`. While held, their words
+   * reach the existing barge-in path exactly as before, which cancels the
+   * reply before any of it is heard.
+   */
+  private async holdWhileCallerIsSpeaking(signal: AbortSignal): Promise<void> {
+    if (!this.greetingDone || this.outboundPlaybackStartedAt !== 0) return;
+    const startedAt = Date.now();
+    const stillSpeaking = () =>
+      this.lastCallerWordsAt > this.currentTurnReleasedAt &&
+      Date.now() - this.lastCallerWordsAt < CALLER_STILL_SPEAKING_MS;
+    if (!stillSpeaking()) return;
+    while (!signal.aborted && stillSpeaking() && Date.now() - startedAt < MAX_START_HOLD_MS) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    // eslint-disable-next-line no-console
+    console.log(
+      `[PLAYBACK:${this.record.id}] held the reply's first audio ${Date.now() - startedAt}ms — the caller was still speaking` +
+        (signal.aborted ? " (reply cancelled by their words)" : ""),
+    );
   }
 
   private async playAudioChunk(audio: AudioPayload): Promise<void> {

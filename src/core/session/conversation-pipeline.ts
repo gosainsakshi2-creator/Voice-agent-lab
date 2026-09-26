@@ -47,7 +47,7 @@ import { detectLanguage, isLockGradeEvidence, type LanguageDetectionResult } fro
 import { currentTurnNote, languageHintFor, openingLineFor } from "./system-prompt";
 import { asksWhoIsCalling, classifyIdentityAnswer } from "../../campaign/domain/identity-answer";
 import { SentenceChunker } from "./sentence-chunker";
-import { isBareAcknowledgement, readsAsUnfinishedThought } from "./turn-detection";
+import { isBareAcknowledgement, isContinuationCue, readsAsUnfinishedThought } from "./turn-detection";
 import type { ContinuationHoldEvent, EndpointMarkerOutcome, TurnReleaseTrace } from "./turn-detection";
 import { voicemailPhraseIn } from "./voicemail-detection";
 import { combineSignals, abortableSleep } from "./abort-utils";
@@ -674,6 +674,10 @@ export function bufferedTurnTakesTheFloor(text: string): boolean {
   const trimmed = text.trim();
   if (trimmed.length === 0) return false;
   if (utteranceTakesNoFloor(trimmed)) return false;
+  // "बोलिए" / "Yes, sir." — the caller inviting us on (see
+  // `isContinuationCue`). Here and not in `utteranceTakesNoFloor`, which
+  // also decides language moves.
+  if (isContinuationCue(trimmed)) return false;
 
   const words = trimmed.split(/\s+/u);
   if (words.length > MAX_BUFFERED_TURN_SPLIT_WORDS) return true;
@@ -1805,6 +1809,27 @@ function openingLineAsksIdentity(openingLine: string | undefined, identityLine: 
 const MAX_IDENTITY_REASKS = 2;
 
 /**
+ * A bare "Hello?" to the identity question is the caller not having
+ * HEARD it, not a non-answer. On 26 Sep 2026 greetings were the commonest
+ * trigger of a re-ask (~20), and each one spent a strike, so a caller on a
+ * bad line was given up on. These re-asks spend their own, separate
+ * budget instead. Deliberately excludes "haan ji", which is an answer.
+ */
+const IDENTITY_GREETING_ONLY =
+  /^(?:(?:hello|hallo|helo|hullo|hi|hey|हैलो|हेलो|हलो|हॅलो|हल्लो)[\s,.!?…।–—-]*)+$/iu;
+const MAX_IDENTITY_GREETING_REASKS = 2;
+
+/**
+ * A phone's call-screening assistant ("If you record your name and reason
+ * for calling, I'll see if this person is available", "Please stay on the
+ * line"). 6 calls on 26 Sep 2026 looped the identity question at one and
+ * were given up on — then redialled. The assistant needs a name and a
+ * reason, once; after that the agent waits in silence for the person.
+ */
+const CALL_SCREENING =
+  /(record (your )?name|reason for (your )?call|if you record|see if (this|the) person is available|stay on the line|who is calling and why)/i;
+
+/**
  * ---------------- The STT stream clock can rewind ----------------
  *
  * The interruption test below asks "did these words happen AFTER I
@@ -2468,6 +2493,10 @@ export class ConversationPipeline {
   private identityState: "unasked" | "outstanding" | "confirmed" | "denied";
   /** Re-asks spent, against `MAX_IDENTITY_REASKS`. */
   private identityReAsks = 0;
+  /** Re-asks answered by a bare greeting, against `MAX_IDENTITY_GREETING_REASKS`. */
+  private identityGreetingReAsks = 0;
+  /** The name-and-reason line has been said to a call-screening assistant. */
+  private screeningIntroSpent = false;
   /** The one extra re-ask a "who is this?" may earn once the cap is spent. At most once per call. */
   private identityFinalIntroSpent = false;
   private attentionEpisodeOpen = false;
@@ -3651,6 +3680,25 @@ export class ConversationPipeline {
       return true;
     }
 
+    // ── A call-screening assistant, not the person ────────────────
+    if (CALL_SCREENING.test(userText)) {
+      if (!this.screeningIntroSpent) {
+        this.screeningIntroSpent = true;
+        const campaign = this.record.request.campaign;
+        const agentName = campaign?.agent.name.trim() || "Rohan";
+        const firstName = (campaign?.customer.name ?? "").trim().split(/\s+/u)[0] ?? "";
+        const screeningLine = `This is ${agentName} from Team FlexiFunnels${firstName ? `, calling ${firstName}` : ""} about a free live workshop invitation.`;
+        // eslint-disable-next-line no-console
+        console.log(`[PIPELINE:${sid}] identity gate — call-screening assistant; giving name and reason once: "${screeningLine}"`);
+        this.abandonSpeculation("answering a call-screening assistant without the language model");
+        await this.speakAttentionUtterance(screeningLine, loopSignal, "answering a call-screening assistant");
+      } else {
+        // eslint-disable-next-line no-console
+        console.log(`[PIPELINE:${sid}] identity gate — call-screening assistant again; waiting silently for the person`);
+      }
+      return true;
+    }
+
     // ── Asked, and this turn is the answer ───────────────────────
     //
     // ...unless it is the answer to the OTHER question we asked. A bare
@@ -3683,6 +3731,20 @@ export class ConversationPipeline {
       // and nothing is registered.
       this.identityState = "denied";
       return false;
+    }
+
+    // ── A bare "Hello?": they did not hear the question ──────────
+    if (IDENTITY_GREETING_ONLY.test(userText.trim()) && this.identityGreetingReAsks < MAX_IDENTITY_GREETING_REASKS) {
+      this.identityGreetingReAsks += 1;
+      // eslint-disable-next-line no-console
+      console.log(`[PIPELINE:${sid}] identity gate — a bare greeting; asking again without spending a strike (${this.identityGreetingReAsks}/${MAX_IDENTITY_GREETING_REASKS})`);
+      this.abandonSpeculation("the identity question is re-asked without the language model");
+      await this.speakAttentionUtterance(
+        identityReAskFor(this.record.memory.currentLanguage, line, undefined),
+        loopSignal,
+        "re-asking who picked up after a bare greeting",
+      );
+      return true;
     }
 
     // ── Unclear: ask again, or give up ──────────────────────────
@@ -5197,7 +5259,7 @@ export class ConversationPipeline {
     const resumed = this.record.turnDetector.getPendingTurnText().trim();
     if (resumed.length === 0) return false;
     if (BARE_GREETING_ONLY.test(resumed)) return false;
-    return !isBareAcknowledgement(resumed);
+    return !isContinuationCue(resumed);
   }
 
   /**
@@ -5304,7 +5366,9 @@ export class ConversationPipeline {
     if (this.outboundPlaybackStartedAt === 0 && BARE_GREETING_ONLY.test(utterance.trim())) {
       return true;
     }
-    if (!isBareAcknowledgement(utterance)) return false;
+    // `isContinuationCue` is a bare acknowledgement OR an invitation to
+    // carry on ("बोलिए", "Yes, sir.") — both mean "keep talking".
+    if (!isContinuationCue(utterance)) return false;
     // FIX 1 (natural backchanneling) — `!replyFullyQueued` is the second
     // way of knowing the assistant still has more to say. The
     // remaining-audio test below measures how far ahead the TRANSPORT
@@ -6154,7 +6218,7 @@ export class ConversationPipeline {
             const pending = this.record.turnDetector.getPendingTurnText();
             const utterance =
               pending.length > 0 ? `${pending} ${segment.text}` : segment.text;
-            if (isBareAcknowledgement(utterance)) {
+            if (isContinuationCue(utterance)) {
               this.backchannelInFlight = false;
               this.record.liveUserTranscript = "";
               // eslint-disable-next-line no-console

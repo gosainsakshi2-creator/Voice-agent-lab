@@ -661,7 +661,7 @@ await test("A8d. Soniox's Devanagari spellings of right / correct / speaking con
 await test("A8e. an invitation to go on (\"बोलिए मैडम\") confirms identity", () => {
   for (const said of [
     "बोलिए मैडम।", "बोलिए।", "जी, बोलिए।", "हाँ, बताइए।", "बोलो।",
-    "Boliye madam.", "Haan boliye.", "Bolo.", "Tell me.", "Yes, tell me.", "Go ahead.",
+    "Boliye madam.", "Haan boliye.", "Bolo.", "Tell me.", "Yes, tell me.", "Go ahead.", "बोलें।", "हाँ, बताएं।",
   ]) {
     assert.equal(classifyIdentityAnswer(said, "Sakshi"), "confirmed", `"${said}"`);
   }
@@ -853,6 +853,32 @@ await test("B9c. ...but only ONCE per call: a second unanswered \"Who is this?\"
   assert.equal(r.llmRequests, 0, "never reached the model");
   assert.equal(pitched(r.spoken), false, "and never pitched");
   assert.equal(idAsks(r.spoken), 4, "no fifth ask: the final introduction is bounded");
+});
+
+await test("B9d. bare greetings do not spend strikes: four 'Hello.' then 'Yes.' still opens the gate", async () => {
+  const r = await run(["Hello", "Hello.", "Hello.", "Hello.", "Hello.", "Yes."]);
+  assert.equal(pitched(r.spoken), true, "the caller who finally heard the question is pitched");
+  assert.equal(r.llmRequests, 1);
+});
+
+await test("B9e. ...but greetings are bounded: a caller who only ever says hello is still given up on", async () => {
+  const r = await run(["Hello", "Hello.", "Hello.", "Hello.", "Hello.", "Hello.", "Hello."]);
+  assert.equal(pitched(r.spoken), false);
+  assert.equal(r.llmRequests, 0);
+});
+
+await test("B9f. a call-screening assistant gets the name and reason ONCE, is then waited on, and the person is pitched", async () => {
+  const r = await run([
+    "Hello",
+    "Hi, if you record your name and reason for calling, I'll see if this person is available.",
+    "Thanks. Please stay on the line.",
+    "Hello?",
+    "Yes.",
+  ]);
+  const intros = r.spoken.filter((t) => t.includes("from Team FlexiFunnels") && t.includes("free live workshop invitation"));
+  assert.equal(intros.length, 1, `the name-and-reason line is said exactly once, spoken=${JSON.stringify(r.spoken)}`);
+  assert.equal(pitched(r.spoken), true, "the person who then answers is pitched");
+  assert.equal(r.llmRequests, 1, "no model request was spent on the assistant");
 });
 
 await test("B10. a call with NO identity line is unchanged", async () => {

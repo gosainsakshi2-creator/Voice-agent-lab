@@ -554,6 +554,41 @@ export function isBareAcknowledgement(text: string): boolean {
 }
 
 /**
+ * The caller inviting the agent to carry on: "बोलिए", "हाँ, बताइए",
+ * "Yes, sir.", "ओके, मैडम जी", "go ahead". On 26 Sep 2026 these cut or
+ * superseded a reply in 17 of 123 calls, and the pitch was regenerated
+ * (intro twice in 3 calls).
+ *
+ * READ ONLY BY THE "may this stop the reply?" CHECKS (backchannel,
+ * supersession, drain). Deliberately NOT part of `isBareAcknowledgement`,
+ * which also decides whether a turn may move the reply language: "Ji
+ * boliye" must still switch a call to Hindi (language-lock D3).
+ *
+ * Honorifics count only beside another cue — a bare "Sir?" is someone
+ * calling for attention and still interrupts. Anything with content
+ * ("बताइए, कितने का है?") is not matched.
+ */
+const CONTINUATION_TOKENS = [
+  "go ahead", "go on", "carry on", "please continue", "continue", "tell me", "please tell",
+  "boliye", "bolie", "bolo", "bolen", "bataiye", "bataie", "batao", "bataen",
+  "बोलिए", "बोलिये", "बोलें", "बोलो", "बताइए", "बताइये", "बताएं", "बताएँ", "बताओ",
+];
+const CONTINUATION_HONORIFICS = ["sir", "madam", "ma'am", "ma’am", "maam", "mam", "सर", "मैडम", "मैम"];
+const CUE_SEPARATOR = "[\\s,.!?…।–—-]*";
+const CONTINUATION_ONLY = new RegExp(
+  `^(?:(?:${[...CONTINUATION_TOKENS, ...ACKNOWLEDGEMENT_TOKENS, ...CONTINUATION_HONORIFICS].join("|")})${CUE_SEPARATOR})+$`,
+  "iu",
+);
+const HONORIFICS_ONLY = new RegExp(`^(?:(?:${CONTINUATION_HONORIFICS.join("|")})${CUE_SEPARATOR})+$`, "iu");
+
+export function isContinuationCue(text: string): boolean {
+  const trimmed = text.trim();
+  if (trimmed.length === 0) return false;
+  if (isBareAcknowledgement(trimmed)) return true;
+  return CONTINUATION_ONLY.test(trimmed) && !HONORIFICS_ONLY.test(trimmed);
+}
+
+/**
  * READ-ONLY, ADDITIVE. Does `text` read as a thought the caller has not
  * finished — a dangling conjunction, a fragment comma, a trailing
  * preposition — and NOT as a hesitation sound or a request for a

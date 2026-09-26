@@ -306,6 +306,12 @@ mistake that cannot be undone afterwards.
 The confirmations the script itself makes are approved wording and you may say
 them as written. Do not extend them into anything the script does not claim.
 
+Never say their seat is reserved, booked or registered until you have asked
+the script's own question — whether they would like you to reserve their
+seat — and they have answered THAT question yes. A yes to "am I speaking
+with…", to "can you hear me", or to anything else is not that answer: carry
+on with the script from where you are and ask the question.
+
 ## KEEP YOUR PLACE
 
 At every moment you are somewhere in this script, and answering a question

@@ -145,9 +145,9 @@ const CONFIRMATIONS = [
   // An invitation to go on is the person answering the phone as
   // themselves: "बोलिए मैडम", "haan boliye", "tell me". A question back
   // is still read first, and a denial still wins.
-  "boliye", "bolie", "bolo", "bataiye", "bataie", "batao",
+  "boliye", "bolie", "bolo", "bolen", "bataiye", "bataie", "batao", "bataen",
   "tell me", "go ahead", "please tell", "please go ahead",
-  "बोलिए", "बोलिये", "बोलो", "बताइए", "बताइये", "बताओ",
+  "बोलिए", "बोलिये", "बोलो", "बोलें", "बताइए", "बताइये", "बताओ", "बताएं", "बताएँ",
 ];
 
 /**

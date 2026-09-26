@@ -971,7 +971,7 @@ await test("J4 — 'ok, but what is the price?' (acknowledgement WITH content) s
 });
 
 // Issue 2 (real call 6c76c123): Soniox writes a cut-off "yeah" as "Yeah—".
-for (const ack of ["Yeah—", "Yeah –", "yeah— yeah", "ओके।"]) {
+for (const ack of ["Yeah—", "Yeah –", "yeah— yeah", "ओके।", "हाँ, बताइए।", "Yes, sir.", "ओके, मैडम जी।"]) {
   await test(`J1d — "${ack}" (Soniox dash form) over the block: no interruption, no request, no user turn, block intact`, async () => {
     const h = startHarness({ openingLine: OPENING, replies: [LONG_BLOCK, "SHOULD-NOT-BE-GENERATED"], backpressure: true });
     try {

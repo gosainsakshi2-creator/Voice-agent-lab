@@ -63,7 +63,7 @@ import { classifyOutcome } from "../outcome/classifier";
 import { dispositionFor } from "../outcome/disposition";
 import { isFinalYes } from "../integrations/final-yes-sheet";
 import { definitiveAnswerIn } from "../dispatch/call-runner";
-import { isBareAcknowledgement } from "../../core/session/turn-detection";
+import { isBareAcknowledgement, isContinuationCue } from "../../core/session/turn-detection";
 
 import type { ConversationTurn } from "../../types/provider.types";
 
@@ -753,6 +753,21 @@ test("L11 — ...and the negated forms never register", () => {
   ]) {
     expectNotARegistration(atGate(line, "Okay, no problem."), `"${line}" must not register`);
   }
+});
+
+test("L12 — an invitation to carry on is a continuation cue (barge-in only)", () => {
+  for (const line of ["बोलिए।", "हाँ, बताइए।", "हाँ जी, बताइए।", "बोलें।", "Yes, sir.", "ओके, मैडम जी।", "Go ahead.", "Ji boliye", "Okay."]) {
+    assert.equal(isContinuationCue(line), true, `"${line}" must be a continuation cue`);
+  }
+});
+
+test("L13 — ...never an honorific alone, a greeting, a negation or content; and NOT a bare acknowledgement (language)", () => {
+  for (const line of ["Sir?", "Madam.", "मैडम?", "Hello, sir.", "No, sir.", "नहीं।", "हेलो।", "बताइए, कितने का है?", "Yes sir, what is the fee?"]) {
+    assert.equal(isContinuationCue(line), false, `"${line}" must NOT be a continuation cue`);
+  }
+  // The language-move predicate is untouched: "Ji boliye" still moves the language.
+  assert.equal(isBareAcknowledgement("Ji boliye"), false);
+  assert.equal(isBareAcknowledgement("हाँ, बताइए।"), false);
 });
 
 test('L6 — "ओके।" at the gate is a yes, like "Okay." (real call 33d97c5c)', () => {

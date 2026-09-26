@@ -629,7 +629,10 @@ await test("H5. the config frame sends language_hints_strict, on, for every sess
 await test("H5b. keyword boosting: `context` is sent when enabled, and absent when not", async () => {
   const frameFor = async (contextEnabled: boolean | undefined) => {
     const sock = new MockSocket();
-    const p2 = new SonioxSpeechToTextProvider({ ...CONFIGURED, contextEnabled }, () => sock);
+    const p2 = new SonioxSpeechToTextProvider(
+      contextEnabled === undefined ? CONFIGURED : { ...CONFIGURED, contextEnabled },
+      () => sock,
+    );
     const held = heldAudio();
     const done = (async () => {
       for await (const _seg of p2.transcribeStream({

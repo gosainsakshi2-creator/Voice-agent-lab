@@ -217,6 +217,34 @@ export const SONIOX_DEFAULT_ENDPOINT_SENSITIVITY = 0.3;
  */
 export const SONIOX_DEFAULT_LANGUAGE_HINTS_STRICT = true;
 
+/**
+ * ── KEYWORD BOOSTING (`context`) ─────────────────────────────────────
+ *
+ * Sent once, in the connection config. Soniox reads `terms` to recognise
+ * listed words and keep their spelling and casing consistent, and
+ * `general` as short domain guidance. Added 2026-09-26 because callers'
+ * English words were coming back in Devanagari ("ओके", "राइट", "यस"): the
+ * aim is that listed English words are written in Latin. A BIAS, not a
+ * guarantee — the vendor says accented English can still be read as
+ * Hindi. Hindi words are not listed, so Hindi speech is untouched.
+ *
+ * Rollback lever: `SONIOX_CONTEXT_ENABLED=false`.
+ */
+export const SONIOX_CONTEXT = {
+  general: [
+    { key: "domain", value: "Outbound phone call inviting the listener to a free live webinar" },
+    { key: "organization", value: "FlexiFunnels" },
+    { key: "languages", value: "Indian English and Hindi, often mixed in one sentence; English words are written in English" },
+  ],
+  terms: [
+    "okay", "OK", "yes", "yeah", "right", "correct", "speaking", "hello", "hi",
+    "sorry", "thank you", "thanks", "please", "sure", "fine", "no", "sir", "madam", "ma'am",
+    "FlexiFunnels", "webinar", "workshop", "free seat", "reserve", "register", "registration",
+    "WhatsApp", "email", "link", "online business", "website", "product", "checkout", "payments",
+    "coding", "design", "Sunday", "October", "Launch-In-A-Day Starter Kit", "Q&A",
+  ],
+} as const;
+
 export interface SonioxEnvConfig {
   /** Empty string means "not configured" — see `checkHealth`. */
   readonly apiKey: string;
@@ -228,6 +256,8 @@ export interface SonioxEnvConfig {
    * `SONIOX_DEFAULT_LANGUAGE_HINTS_STRICT`.
    */
   readonly languageHintsStrict: boolean;
+  /** Send `SONIOX_CONTEXT` (keyword boosting). Omitted means off, so configs built by hand in tests are unchanged. */
+  readonly contextEnabled?: boolean;
   /** Documented range 500-3000ms. Vendor default 2000; we ship 1500. */
   readonly maxEndpointDelayMs: number;
   /** Documented range 0-3, higher returns endpoints sooner. Vendor default 0; we ship 2. */
@@ -270,6 +300,7 @@ export function loadSonioxEnvConfig(): SonioxEnvConfig {
         "SONIOX_LANGUAGE_HINTS_STRICT",
         SONIOX_DEFAULT_LANGUAGE_HINTS_STRICT ? "true" : "false",
       ) === "true",
+    contextEnabled: optionalEnv("SONIOX_CONTEXT_ENABLED", "true") === "true",
     maxEndpointDelayMs: rangedEnv(
       "SONIOX_MAX_ENDPOINT_DELAY_MS",
       SONIOX_DEFAULT_MAX_ENDPOINT_DELAY_MS,
@@ -623,6 +654,8 @@ export class SonioxSpeechToTextProvider implements SpeechToTextProvider {
             // `SONIOX_DEFAULT_LANGUAGE_HINTS_STRICT` for the measured
             // failure and the vendor's own stated limits.
             language_hints_strict: this.config.languageHintsStrict,
+            // Keyword boosting — see `SONIOX_CONTEXT`.
+            ...(this.config.contextEnabled === true ? { context: SONIOX_CONTEXT } : {}),
             enable_endpoint_detection: this.config.enableEndpointDetection,
             // The three latency knobs, sent explicitly rather than left
             // to Soniox's conservative transcription defaults. See the

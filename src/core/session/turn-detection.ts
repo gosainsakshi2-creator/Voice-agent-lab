@@ -513,6 +513,12 @@ const ACKNOWLEDGEMENT_TOKENS = [
   // per-turn language — the re-ask came back "माफ़ कीजिए — …" (real
   // call 9636aa69, 2026-09-24). Same word as "yes" above.
   "यस", "येस",
+  // ...and "okay" the same way ("ओके।"). Over a playing reply it was a
+  // barge-in that restarted the block (26 Sep 2026 calls). The Hindi
+  // "go on" ("बोलिए", "बताइए") is deliberately NOT here: this table also
+  // decides which turns may move the reply language, and "Ji boliye"
+  // must still switch a call to Hindi (language-lock D3).
+  "ओके",
 ];
 
 /**

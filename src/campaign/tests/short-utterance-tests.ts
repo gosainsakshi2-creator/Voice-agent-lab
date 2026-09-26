@@ -716,6 +716,44 @@ test("L4 — an assistant \"Sure—\" is stepped over in the gate look-back exac
   assert.equal(A.live, B.live);
 });
 
+test("L8 — Soniox's Devanagari 'okay' is a bare acknowledgement, like 'Okay.'", () => {
+  for (const line of ["ओके।", "ओके, ओके।", "ओके—"]) {
+    assert.equal(isBareAcknowledgement(line), true, `"${line}" must be a bare acknowledgement`);
+  }
+});
+
+test("L9 — ...but content, a greeting, and the Hindi 'go on' (which must still move the language) are not", () => {
+  for (const line of [
+    "ओके, price kya hai?", "बताइए, कितने का है?", "हेलो।", "Sir?",
+    "Ji boliye", "हाँ, बताइए।", "नहीं।",
+  ]) {
+    assert.equal(isBareAcknowledgement(line), false, `"${line}" must NOT be a bare acknowledgement`);
+  }
+});
+
+test('L6 — "ओके।" at the gate is a yes, like "Okay." (real call 33d97c5c)', () => {
+  const plain = settle(atGate("Okay."));
+  const devanagari = settle(atGate("ओके।"));
+  assert.equal(devanagari.outcomeType, "registered_confirmed");
+  assert.equal(devanagari.live, plain.live);
+  assert.equal(devanagari.sheet, plain.sheet);
+});
+
+test('L7 — the real call: "नहीं, नहीं" to the discovery question, then "ओके।" at the gate, registers', () => {
+  const r = settle([
+    agent("Hi Shabanabanu, मैं Ishita, Team FlexiFunnels से।"),
+    caller("ओके।"),
+    agent("Sunday, 4th October को 11 AM पर हमारा एक free live workshop है। आपने पहले कभी कुछ online डालने की try की है?"),
+    caller("नहीं, नहीं।"),
+    agent("ठीक है, कोई बात नहीं। इसके लिए कोई coding या design skill नहीं चाहिए। तो क्या मैं आपकी free seat reserve कर दूँ?"),
+    caller("ओके।"),
+    agent("Perfect, Shabanabanu — आपकी free seat webinar के लिए reserve हो गयी है।"),
+  ]);
+  assert.equal(r.outcomeType, "registered_confirmed", `${r.outcomeType}/${r.primaryReason}`);
+  assert.equal(r.live, "FINAL_YES");
+  assert.equal(r.sheet, true);
+});
+
 // ═════════════════════════════════════════════════════════════════
 console.log(
   failures.length === 0

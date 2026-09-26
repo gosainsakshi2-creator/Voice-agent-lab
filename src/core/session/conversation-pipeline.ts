@@ -1590,7 +1590,10 @@ const VOICEMAIL_TRANSCRIPT_CAP = 400;
  *   speaker identity from the transport or the STT — not a rule
  *   here.
  */
-const BARGE_IN_ENERGY_WINDOW_MS = 2_000;
+// Tightened from 2_000 on 2026-09-26 (background noise interrupting):
+// 90% of accepted real-call barge-ins had loud near-end energy within
+// 835ms, so a transcript with no loud energy for 1.2s is not the caller.
+const BARGE_IN_ENERGY_WINDOW_MS = 1_200;
 /**
  * Confidence floor for a segment allowed to interrupt.
  *
@@ -5542,6 +5545,19 @@ export class ConversationPipeline {
    * threshold, no state.
    */
   private interruptionCorroborated(segment: TranscriptSegment): boolean {
+    // ── One word still in flight is not yet the caller ─────────────
+    //
+    // 26 Sep 2026: 36 of 44 transcript barge-ins on real calls were a
+    // single word, 27 of them still interim — the shape a television,
+    // a second voice in the room or line noise produces. A single-word
+    // INTERIM therefore waits for its own final (or for the utterance to
+    // grow a second word) before it may stop the reply. A real "wait" /
+    // "no" still interrupts, one STT finalisation (~0.5s) later; turn
+    // release and reply latency are untouched.
+    if (!segment.isFinal) {
+      const text = segment.text.trim();
+      if (text.length === 0 || text.split(/\s+/u).length <= 1) return false;
+    }
     // A transport that never reports energy at all — the in-process
     // audio fallback, the test harnesses — keeps exactly the
     // transcript-only behaviour this had before the energy gate existed.

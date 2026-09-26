@@ -971,7 +971,7 @@ await test("J4 — 'ok, but what is the price?' (acknowledgement WITH content) s
 });
 
 // Issue 2 (real call 6c76c123): Soniox writes a cut-off "yeah" as "Yeah—".
-for (const ack of ["Yeah—", "Yeah –", "yeah— yeah"]) {
+for (const ack of ["Yeah—", "Yeah –", "yeah— yeah", "ओके।"]) {
   await test(`J1d — "${ack}" (Soniox dash form) over the block: no interruption, no request, no user turn, block intact`, async () => {
     const h = startHarness({ openingLine: OPENING, replies: [LONG_BLOCK, "SHOULD-NOT-BE-GENERATED"], backpressure: true });
     try {
@@ -1003,6 +1003,23 @@ await test("J4d — 'Yeah— but what is the price?' (dash form WITH content) st
     // out at HEAD for a reason unrelated to this vocabulary.
     await h.waitForReplies(2);
     assert.ok(h.assistantTexts()[1]!.length < LONG_BLOCK.length, "the block must have been cut short");
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("J4n — a single-word INTERIM (background noise shape) does not cut the block; the same word's FINAL still does", async () => {
+  const h = startHarness({ openingLine: OPENING, replies: [LONG_BLOCK, "Sure, go ahead."], backpressure: true });
+  try {
+    await upToMidBlock(h);
+    const requestsBefore = h.requests.length;
+    h.say("Wait", { isFinal: false });
+    await sleep(500);
+    assert.equal(h.record.state, SessionState.SPEAKING, "a lone interim word must not stop the reply");
+    assert.equal(h.requests.length, requestsBefore, "and must not open a request");
+    h.say("Wait.", { isFinal: true });
+    await h.waitForReplies(2);
+    assert.ok(h.assistantTexts()[1]!.length < LONG_BLOCK.length, "its final is a real interruption: the block is cut");
   } finally {
     await h.stop();
   }

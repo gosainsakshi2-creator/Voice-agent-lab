@@ -34,6 +34,7 @@ const {
   SONIOX_DEFAULT_LATENCY_ADJUSTMENT_LEVEL,
   SONIOX_DEFAULT_ENDPOINT_SENSITIVITY,
   SONIOX_DEFAULT_LANGUAGE_HINTS_STRICT,
+  SONIOX_CONTEXT,
   sonioxLanguageHints,
 } = await import("../../providers/speech-to-text/soniox.provider");
 const { bootstrapProviderRegistry } = await import("../../providers/registry/bootstrap");
@@ -623,6 +624,35 @@ await test("H5. the config frame sends language_hints_strict, on, for every sess
     held.release();
     await done;
   }
+});
+
+await test("H5b. keyword boosting: `context` is sent when enabled, and absent when not", async () => {
+  const frameFor = async (contextEnabled: boolean | undefined) => {
+    const sock = new MockSocket();
+    const p2 = new SonioxSpeechToTextProvider({ ...CONFIGURED, contextEnabled }, () => sock);
+    const held = heldAudio();
+    const done = (async () => {
+      for await (const _seg of p2.transcribeStream({
+        sessionId: "context-test" as SessionId,
+        audio: held.iterable,
+        language: SupportedLanguage.ENGLISH,
+      })) void _seg;
+    })();
+    sock.emit("open");
+    await sleep(10);
+    const frame = sock.config!;
+    held.release();
+    await done;
+    return frame;
+  };
+  const on = await frameFor(true);
+  assert.deepEqual(on["context"], SONIOX_CONTEXT, "the context is sent verbatim");
+  const terms = (SONIOX_CONTEXT.terms as readonly string[]);
+  for (const word of ["okay", "yes", "right", "speaking", "FlexiFunnels", "webinar"]) {
+    assert.ok(terms.includes(word), `"${word}" is boosted`);
+  }
+  assert.equal("context" in (await frameFor(false)), false, "the rollback lever removes it");
+  assert.equal("context" in (await frameFor(undefined)), false, "a hand-built config without the flag is unchanged");
 });
 
 await test("H6. the restricted set always contains the caller's OTHER language", () => {

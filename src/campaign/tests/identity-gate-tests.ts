@@ -658,6 +658,20 @@ await test("A8d. Soniox's Devanagari spellings of right / correct / speaking con
   assert.equal(classifyIdentityAnswer("नहीं।", "Sakshi"), "denied");
 });
 
+await test("A8e. an invitation to go on (\"बोलिए मैडम\") confirms identity", () => {
+  for (const said of [
+    "बोलिए मैडम।", "बोलिए।", "जी, बोलिए।", "हाँ, बताइए।", "बोलो।",
+    "Boliye madam.", "Haan boliye.", "Bolo.", "Tell me.", "Yes, tell me.", "Go ahead.",
+  ]) {
+    assert.equal(classifyIdentityAnswer(said, "Sakshi"), "confirmed", `"${said}"`);
+  }
+  // A question back with nothing else, and a denial, are unchanged.
+  assert.equal(classifyIdentityAnswer("कौन बोल रहा है?", "Sakshi"), "unclear");
+  assert.equal(classifyIdentityAnswer("Kaun bol raha hai?", "Sakshi"), "unclear");
+  assert.equal(classifyIdentityAnswer("Wrong number.", "Sakshi"), "denied");
+  assert.equal(classifyIdentityAnswer("नहीं, गलत नंबर।", "Sakshi"), "denied");
+});
+
 await test("A8c. ...and nothing that is only a question, a greeting or a denial confirms", () => {
   for (const said of [
     "Who's this?",

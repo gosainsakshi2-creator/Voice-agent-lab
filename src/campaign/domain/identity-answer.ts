@@ -142,6 +142,12 @@ const CONFIRMATIONS = [
   // ...and "right" / "correct" / "speaking", entries above, the same way.
   // Real call 6d25ea34 (2026-09-26): "राइट।" read `unclear` and cost a re-ask.
   "राइट", "करेक्ट", "स्पीकिंग",
+  // An invitation to go on is the person answering the phone as
+  // themselves: "बोलिए मैडम", "haan boliye", "tell me". A question back
+  // is still read first, and a denial still wins.
+  "boliye", "bolie", "bolo", "bataiye", "bataie", "batao",
+  "tell me", "go ahead", "please tell", "please go ahead",
+  "बोलिए", "बोलिये", "बोलो", "बताइए", "बताइये", "बताओ",
 ];
 
 /**

@@ -106,6 +106,11 @@ const AFFIRMATIONS = [
   // English "yes" in Devanagari, as Soniox writes it. A spelling of
   // "yes" above: without it a "यस" at the gate settled `unclear`.
   "यस", "येस",
+  // ...and "okay" above, the same way. Real call 33d97c5c (2026-09-26):
+  // "ओके।" answered the seat question, the agent confirmed the seat, and
+  // the call settled `declined` on an earlier "नहीं" because this
+  // spelling was invisible.
+  "ओके",
 ];
 
 const NEGATIONS = [

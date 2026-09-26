@@ -139,6 +139,9 @@ const CONFIRMATIONS = [
   // (2026-09-24): "यस।" twice read `unclear`, drew two re-asks, and the
   // caller had to repeat themselves in Hindi before the gate opened.
   "यस", "येस", "यप",
+  // ...and "right" / "correct" / "speaking", entries above, the same way.
+  // Real call 6d25ea34 (2026-09-26): "राइट।" read `unclear` and cost a re-ask.
+  "राइट", "करेक्ट", "स्पीकिंग",
 ];
 
 /**

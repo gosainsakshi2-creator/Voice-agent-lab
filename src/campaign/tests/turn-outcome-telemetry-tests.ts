@@ -689,10 +689,16 @@ await test("F1 — a buffered turn that does NOT take the floor no longer discar
       "the kept reply must be committed exactly once",
     );
 
-    // Nothing is stranded: the acknowledgement the reply was NOT
-    // discarded for is still picked up as the next turn.
-    await h.waitForTurns(2);
-    assert.equal(h.turns().length >= 2, true, "the buffered turn must still be answered afterwards");
+    // Since 2026-09-26 (real call 6d25ea34) the acknowledgement is NOT
+    // answered afterwards: it was said before this reply began to play,
+    // so it cannot be an answer to it, and committing it after the reply
+    // is what turned a hearing "yeah, yeah" into a seat registration.
+    await sleep(1500);
+    assert.equal(h.turns().length, 1, "the stale acknowledgement must not open a second request");
+    assert.ok(
+      !h.history().some((t) => t.role === "user" && t.content.includes("haan ji")),
+      "the stale acknowledgement must not be committed as a user turn",
+    );
   } finally {
     await h.stop();
   }

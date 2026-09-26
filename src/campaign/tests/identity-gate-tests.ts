@@ -650,6 +650,14 @@ await test("A8b. whatever confirms ALONE confirms beside a question back (real c
   }
 });
 
+await test("A8d. Soniox's Devanagari spellings of right / correct / speaking confirm (real call 6d25ea34)", () => {
+  for (const said of ["राइट।", "राइट", "करेक्ट।", "स्पीकिंग।", "राइट, who is this?"]) {
+    assert.equal(classifyIdentityAnswer(said, "Sakshi"), "confirmed", `"${said}"`);
+  }
+  // ...and a Devanagari denial still denies.
+  assert.equal(classifyIdentityAnswer("नहीं।", "Sakshi"), "denied");
+});
+
 await test("A8c. ...and nothing that is only a question, a greeting or a denial confirms", () => {
   for (const said of [
     "Who's this?",

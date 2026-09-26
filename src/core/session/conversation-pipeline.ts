@@ -98,6 +98,8 @@ interface AcquiredTurn {
   readonly sttLagMs: number | undefined;
   /** Wall clock at which the caller's audio actually ended, back-dated by the recognition lag. */
   readonly userSpeechEndedAtMs: number | undefined;
+  /** Wall clock at which this turn's last final transcript arrived. No lag estimate involved. */
+  readonly lastFinalArrivedAtMs?: number;
   readonly sttCostUsd: number;
   /**
    * FIX #7A — wall clock at which the turn detector's `emitTurnEnd`
@@ -3033,6 +3035,38 @@ export class ConversationPipeline {
             );
             continue;
           }
+        }
+
+        // ── An acknowledgement of something OLDER than the last reply ──
+        //
+        // Real call 6d25ea34 (2026-09-26): "Yeah, yeah." answered "can
+        // you hear me clearly now?" and ended ~2.5s BEFORE the next reply
+        // (the seat question) began to play. As a bare acknowledgement it
+        // did not supersede that reply, so it waited in the detector,
+        // was committed AFTER the seat question, and the classifier read
+        // it as the answer to it: a registration nobody gave.
+        //
+        // Speech whose final transcript had ALREADY ARRIVED before the last
+        // reply's first audio frame cannot be an answer to that reply (the
+        // arrival time needs no recognition-lag estimate). A bare acknowledgement of
+        // this kind is dropped: no turn, no request, and the agent waits
+        // for the real answer. Anything with content, and any
+        // acknowledgement said once the reply was playing, is untouched.
+        if (
+          this.greetingDone &&
+          this.lastReplyAudioStartedAt > 0 &&
+          turn.lastFinalArrivedAtMs !== undefined &&
+          turn.lastFinalArrivedAtMs < this.lastReplyAudioStartedAt &&
+          this.record.memory.history().at(-1)?.role === "assistant" &&
+          isBareAcknowledgement(turn.text)
+        ) {
+          this.abandonSpeculation("a stale acknowledgement from before the last reply — no reply is generated");
+          this.record.liveUserTranscript = "";
+          // eslint-disable-next-line no-console
+          console.log(
+            `[PIPELINE:${sid}] stale acknowledgement ignored (its transcript arrived ${this.lastReplyAudioStartedAt - turn.lastFinalArrivedAtMs}ms before the last reply began): "${turn.text.trim().slice(0, 40)}"`,
+          );
+          continue;
         }
 
         // t0 for this turn's latency trace: the turn detector has just
@@ -6680,6 +6714,7 @@ export class ConversationPipeline {
           userSpeechMs: event.turnDurationMs,
           sttLagMs,
           userSpeechEndedAtMs,
+          ...(lastSegmentAtMs !== undefined ? { lastFinalArrivedAtMs: lastSegmentAtMs } : {}),
           sttCostUsd: estimateSttCost(providerId, audioSeconds),
           turnReleasedAtMs,
           endpointEvidenceAtMs,
@@ -7747,6 +7782,12 @@ await this.drainPlayback(speakingSignal, true);
   /** Wall clock at which the transport began playing this speaking phase. */
   private outboundPlaybackStartedAt = 0;
   /**
+   * Wall clock of the most recent reply's first audio frame. Unlike
+   * `outboundPlaybackStartedAt` it survives the reply's end, so the next
+   * turn can be told apart from speech that came before that reply.
+   */
+  private lastReplyAudioStartedAt = 0;
+  /**
    * Every utterance handed to the transport this speaking phase, with
    * the playback offsets (ms into this phase's audio) it occupies.
    * Read only by `heardSoFarText`, to tell the part of an interrupted
@@ -8236,6 +8277,7 @@ await this.drainPlayback(speakingSignal, true);
     if (audio.data.byteLength > 0) {
       if (this.outboundPlaybackStartedAt === 0) {
         this.outboundPlaybackStartedAt = Date.now();
+        this.lastReplyAudioStartedAt = this.outboundPlaybackStartedAt;
       }
       if (!this.markedAudioThisTurn) {
         this.markedAudioThisTurn = true;

@@ -3055,6 +3055,32 @@ export class ConversationPipeline {
         // this kind is dropped: no turn, no request, and the agent waits
         // for the real answer. Anything with content, and any
         // acknowledgement said once the reply was playing, is untouched.
+        // (b), 2026-09-26, real call 830a7337: "हां जी? Yes." ENDED before
+        // the pitch began (its transcript arrived 0.16s after, so the check
+        // below missed it) and was then taken as the answer to the pitch's
+        // closing question: "Got it." ANY utterance whose last word ended
+        // before the last reply began speaking — on the same stream clock
+        // `spokeOverTheAssistant` uses, so the two leave no gap — is not an
+        // answer to that reply, when that reply was spoken WITHOUT being
+        // cut. A turn that cut the reply is the interruption and is always
+        // answered. The caller can say it again if it still matters.
+        const endedBeforeLastReply =
+          this.greetingDone &&
+          !this.lastReplyWasCut &&
+          this.speakingStartedAtStreamMs > 0 &&
+          turn.lastFinalWordEndStreamMs !== undefined &&
+          turn.lastFinalWordEndStreamMs > 0 &&
+          turn.lastFinalWordEndStreamMs <= this.speakingStartedAtStreamMs &&
+          this.record.memory.history().at(-1)?.role === "assistant";
+        if (endedBeforeLastReply) {
+          this.abandonSpeculation("a turn spoken before the last reply began — no reply is generated");
+          this.record.liveUserTranscript = "";
+          // eslint-disable-next-line no-console
+          console.log(
+            `[PIPELINE:${sid}] stale turn ignored (ended ${this.speakingStartedAtStreamMs - (turn.lastFinalWordEndStreamMs ?? 0)}ms of stream before the last reply began): "${turn.text.trim().slice(0, 40)}"`,
+          );
+          continue;
+        }
         if (
           this.greetingDone &&
           this.lastReplyAudioStartedAt > 0 &&
@@ -5454,6 +5480,10 @@ export class ConversationPipeline {
     // DIAGNOSTIC ONLY — see `pendingBargeInTrigger`. Stamped at the one
     // instant every accepted barge-in passes through.
     this.pendingBargeInTrigger = { source, ...evidence };
+    // The reply now in flight was CUT, so a turn that follows it is the
+    // interruption itself and must be answered — see the stale-turn check
+    // in the main loop.
+    this.lastReplyWasCut = true;
     this.record.bargeIn.triggerBargeIn();
     if (this.record.state === SessionState.SPEAKING) {
       this.host.transition(this.record, SessionState.LISTENING, "external barge-in signal");
@@ -7803,6 +7833,8 @@ await this.drainPlayback(speakingSignal, true);
    * turn can be told apart from speech that came before that reply.
    */
   private lastReplyAudioStartedAt = 0;
+  /** The most recent reply was cut by a barge-in (so the turn after it is that interruption). */
+  private lastReplyWasCut = false;
   /**
    * Every utterance handed to the transport this speaking phase, with
    * the playback offsets (ms into this phase's audio) it occupies.
@@ -7854,6 +7886,8 @@ await this.drainPlayback(speakingSignal, true);
     // this is the stream-clock mark the barge-in check above compares
     // incoming transcript segments against.
     this.speakingStartedAtStreamMs = this.inboundStreamMs;
+    // A new reply: not cut (yet). See `lastReplyWasCut`.
+    this.lastReplyWasCut = false;
     // A backchannel judgement belongs to one utterance during one
     // reply. If Deepgram never sent the final that would have closed it
     // (a dropped socket mid-"okay"), it must not carry into the next

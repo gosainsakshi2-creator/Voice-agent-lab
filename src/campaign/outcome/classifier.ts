@@ -111,6 +111,15 @@ const AFFIRMATIONS = [
   // the call settled `declined` on an earlier "नहीं" because this
   // spelling was invisible.
   "ओके",
+  // Wanting to come IS agreeing to be registered. Real call 830a7337
+  // (2026-09-26): "...but I would like to attend, no problem." to the seat
+  // question; the agent reserved the seat and the call settled
+  // interested_not_confirmed because none of these were listed.
+  // NOT "want to attend": "I don't want to attend" normalises to "don t
+  // want to attend", which the "dont want" negation does not match, so it
+  // would register. "would like to" has no such negated twin.
+  "would like to attend", "would like to join",
+  "would love to attend", "would love to join",
 ];
 
 const NEGATIONS = [

@@ -731,6 +731,30 @@ test("L9 — ...but content, a greeting, and the Hindi 'go on' (which must still
   }
 });
 
+test('L10 — "I would like to attend" at the gate registers (real call 830a7337)', () => {
+  for (const line of [
+    "I— I don't need any coding and all that, but I would like to attend, no problem.",
+    "I would like to attend.",
+    "I would like to join.",
+    "Would love to attend.",
+  ]) {
+    const r = settle(atGate(line));
+    assert.equal(r.outcomeType, "registered_confirmed", `"${line}" → ${r.outcomeType}/${r.primaryReason}`);
+    assert.equal(r.live, "FINAL_YES", `"${line}"`);
+  }
+});
+
+test("L11 — ...and the negated forms never register", () => {
+  for (const line of [
+    "I don't want to attend.",
+    "No, I would not like to attend.",
+    "I don't want to join.",
+    "Not interested, I don't want to attend.",
+  ]) {
+    expectNotARegistration(atGate(line, "Okay, no problem."), `"${line}" must not register`);
+  }
+});
+
 test('L6 — "ओके।" at the gate is a yes, like "Okay." (real call 33d97c5c)', () => {
   const plain = settle(atGate("Okay."));
   const devanagari = settle(atGate("ओके।"));

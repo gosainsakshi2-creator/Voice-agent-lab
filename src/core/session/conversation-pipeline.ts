@@ -4506,7 +4506,11 @@ export class ConversationPipeline {
   private async handleScriptedClosing(userText: string, loopSignal: AbortSignal): Promise<boolean> {
     if (!this.scriptedClosingArmed || this.scriptedClosingSpoken) return false;
     const trimmed = userText.trim();
-    if (!isClosingAcknowledgement(trimmed)) return false;
+    // ...or a bare continuation cue ("Tell me, sir. Okay.", "ओके", "हाँ जी"):
+    // after a confirmed registration the model answered each one by saying
+    // the confirmation again — three times on real call c343e150
+    // (2026-09-26). The not-a-question guard below still applies.
+    if (!isClosingAcknowledgement(trimmed) && !isContinuationCue(trimmed)) return false;
     // The person's turn has just been recorded, so the assistant's
     // latest turn is the confirmation (or an answer) they are closing on.
     const lastAssistant = [...this.record.memory.history()]
@@ -4948,7 +4952,7 @@ export class ConversationPipeline {
     // closing, a bare closing acknowledgement is answered by the fixed
     // goodbye (`handleScriptedClosing`) and never reaches the model, so
     // a request pre-opened for it could only ever be abandoned.
-    if (this.scriptedClosingArmed && !this.scriptedClosingSpoken && isClosingAcknowledgement(text)) return;
+    if (this.scriptedClosingArmed && !this.scriptedClosingSpoken && (isClosingAcknowledgement(text) || isContinuationCue(text))) return;
 
     if (this.speculation !== undefined) {
       // The same pending turn re-announced (e.g. `speech_final` on the
@@ -5193,7 +5197,7 @@ export class ConversationPipeline {
    * `remainingSpeechMs`. Nothing here changes what is synthesized,
    * queued, played or cancelled.
    */
-  private heardSoFarText(): string {
+  private heardSoFarText(allowPartialCredit = true): string {
     if (this.outboundPlaybackStartedAt === 0 || this.spokenUtterances.length === 0) return "";
     const playedMs = this.playedSoFarMs();
     const heard: string[] = [];
@@ -5213,7 +5217,7 @@ export class ConversationPipeline {
       const extentMs = utterance.endsAtMs - utterance.startsAtMs;
       const playedOfIt = Math.min(Math.max(0, playedMs - utterance.startsAtMs), extentMs);
       const isQuestion = /[?？][\s"'”’)\]]*$/u.test(utterance.text.trim());
-      if (!isQuestion && playedOfIt / extentMs > PROPOSED_PARTIAL_CREDIT_FRACTION) heard.push(utterance.text);
+      if (allowPartialCredit && !isQuestion && playedOfIt / extentMs > PROPOSED_PARTIAL_CREDIT_FRACTION) heard.push(utterance.text);
       break;
     }
     return heard.join(" ").trim();
@@ -5530,6 +5534,9 @@ export class ConversationPipeline {
     source: BargeInTriggerTelemetry["source"] = "external",
     evidence: Omit<BargeInTriggerTelemetry, "source"> = {},
   ): boolean {
+    // Read and cleared FIRST, so a declined barge-in cannot leave it for the next one.
+    const cutText = this.pendingCutText;
+    this.pendingCutText = undefined;
     // THE OPENING LINE IS NOT INTERRUPTIBLE.
     //
     // `greetingDone` has always gated the transcript-confirmed barge-in
@@ -5593,7 +5600,10 @@ export class ConversationPipeline {
     // the last instant at which "how much of the reply has played" is
     // still a true statement about what the caller heard. Read by the
     // commit site in the main loop — see `cancelledHeardText`.
-    this.cancelledHeardText = this.heardSoFarText();
+    // A cut made by "Hello? / can you hear me?" says the caller could NOT
+    // hear: the sentence they were in is not credited, so it is replayed.
+    const cutByHearingProblem = cutText !== undefined && isAttentionCheck(cutText);
+    this.cancelledHeardText = this.heardSoFarText(!cutByHearingProblem);
     // DIAGNOSTIC ONLY — see `pendingCutSentence`. Read at the same
     // instant, from the same counters, and never allowed to fail the
     // barge-in: anything it throws is swallowed and nothing is recorded.
@@ -6380,6 +6390,7 @@ export class ConversationPipeline {
                 ` energyAgeMs=${energyAgeMs ?? "n/a"} beganBeforeReply=${beganBeforeReply} replyRemainingMs=${evidence.replyRemainingMs} replyFullyQueued=${this.replyFullyQueued}` +
                 ` endsWithDash=${evidence.endsWithDash} pendingWordCount=${pendingWordsAtTrigger}`,
             );
+            this.pendingCutText = text;
             this.triggerExternalBargeIn("transcript", evidence);
           }
 
@@ -7968,6 +7979,8 @@ await this.drainPlayback(speakingSignal, true);
   private lastReplyWasCut = false;
   /** The last cut landed inside a question (see `triggerExternalBargeIn`). */
   private cutInsideQuestion = false;
+  /** The words that are about to cut the reply, read once by `triggerExternalBargeIn`. */
+  private pendingCutText: string | undefined;
   /**
    * Every utterance handed to the transport this speaking phase, with
    * the playback offsets (ms into this phase's audio) it occupies.
@@ -8162,6 +8175,7 @@ await this.drainPlayback(speakingSignal, true);
       // Accepted: the signal is now aborted, the part the caller heard
       // is frozen for the commit site, and the buffered turn is picked
       // up on the next loop iteration. Declined: keep draining.
+      this.pendingCutText = buffered;
       if (this.triggerExternalBargeIn("buffered_turn")) return;
     }
   }

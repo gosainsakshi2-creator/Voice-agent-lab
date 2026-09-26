@@ -451,6 +451,27 @@ await test("C1. armed, a bare 'Okay, thank you.' is answered with the fixed good
   }
 });
 
+for (const cue of ["Tell me, sir. Okay.", "हाँ जी।", "ओके।"]) {
+  await test(`C1c. armed, a bare continuation cue ("${cue}") also gets the fixed goodbye — the confirmation is NOT said again (real call c343e150)`, async () => {
+    const h = startHarness({ replies: [GATE, CONFIRMED, "SHOULD-NOT-BE-GENERATED"] });
+    try {
+      await h.waitForReplies(1);
+      h.say("Yes, tell me.");
+      await h.waitForReplies(2);
+      h.say("Yes, please.");
+      await h.waitForReplies(3);
+      h.pipeline.armScriptedClosing();
+      h.say(cue);
+      await h.waitForReplies(4);
+      assert.equal(h.requests.length, 2, "the cue made NO language-model request");
+      assert.equal(assistantTexts(h)[3], GOODBYE, "the fixed goodbye, not a second confirmation");
+      assert.ok(!h.synthesized.includes("SHOULD-NOT-BE-GENERATED"));
+    } finally {
+      await h.stop();
+    }
+  });
+}
+
 await test("C2. a QUESTION after arming still goes to the language model; the closing comes after its answer", async () => {
   const h = startHarness({ replies: [GATE, CONFIRMED, ANSWER] });
   try {

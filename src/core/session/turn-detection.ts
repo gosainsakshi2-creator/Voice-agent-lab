@@ -449,7 +449,31 @@ const QUESTION_ENDING = /\?["')\]]?$/u;
  * releasing: ~2.7s to answer a six-word question, measured. Ending a
  * question on a preposition is ordinary speech, not a trailing off.
  */
+/**
+ * A short turn that is complete in itself — a greeting and/or a
+ * continuation cue — whatever punctuation Soniox put after it. Soniox
+ * ends cut-off speech with "—" or ",", and "Hello, yeah, right—tell me —"
+ * / "हेलो," were each held ~3s as unfinished thoughts on real call
+ * 1a13c4fd (2026-09-26). Anything with content ("Haan, but—", "I want
+ * to—") is not matched and still waits exactly as before.
+ */
+const CUTOFF_TAIL = /[\s,—–\-…]+$/u;
+const EDGE_SEPARATORS = /^[\s,.!?…।–—-]+|[\s,.!?…।–—-]+$/gu;
+const GREETING_WORDS =
+  /(^|[\s,.!?…।–—-])(?:hello|hallo|hi|hey|हेलो|हलो|हैलो|हॅलो|namaste|नमस्ते)(?=$|[\s,.!?…।–—-])/giu;
+function isCompleteShortTurn(text: string): boolean {
+  const core = text.replace(CUTOFF_TAIL, "").trim();
+  if (core.length === 0 || core.split(/\s+/u).length > 6) return false;
+  const rest = core.replace(GREETING_WORDS, "$1").replace(EDGE_SEPARATORS, "").trim();
+  if (rest.length === 0) return true; // a bare greeting, however it ends
+  // A trailing COMMA after "haan ji," can mean the caller is going on, so
+  // only a dash (Soniox's cut-off mark) releases a cue early.
+  if (/,\s*$/u.test(text.trim())) return false;
+  return isContinuationCue(rest);
+}
+
 function looksIncomplete(text: string): boolean {
+  if (isCompleteShortTurn(text)) return false;
   // A comma, a dash or a trailing ellipsis ends a fragment, never a
   // thought — the caller is still adding to it. Still checked first, so
   // fragment punctuation keeps precedence over everything below it.

@@ -675,6 +675,10 @@ export interface BargeInTriggerTelemetry {
   readonly replyRemainingMs?: number;
   /** Whether every utterance of the reply had already been handed to the transport. */
   readonly replyFullyQueued?: boolean;
+  /** The accepted segment ends with an em- or en-dash (Soniox's cut-off form, "Yeah—"). Shape only, never the words. */
+  readonly endsWithDash?: boolean;
+  /** Words the turn detector already held for this utterance, which `isBackchannel` prefixes to the segment. A count, never the words. */
+  readonly pendingWordCount?: number;
 }
 
 /**

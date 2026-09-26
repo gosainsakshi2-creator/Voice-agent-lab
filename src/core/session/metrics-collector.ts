@@ -218,6 +218,8 @@ function sanitizeBargeInTrigger(
   const beganBeforeReply = bool(input.beganBeforeReply);
   const replyRemainingMs = num(input.replyRemainingMs);
   const replyFullyQueued = bool(input.replyFullyQueued);
+  const endsWithDash = bool(input.endsWithDash);
+  const pendingWordCount = num(input.pendingWordCount);
   return {
     source: input.source,
     ...(words !== undefined ? { words } : {}),
@@ -227,6 +229,8 @@ function sanitizeBargeInTrigger(
     ...(beganBeforeReply !== undefined ? { beganBeforeReply } : {}),
     ...(replyRemainingMs !== undefined ? { replyRemainingMs } : {}),
     ...(replyFullyQueued !== undefined ? { replyFullyQueued } : {}),
+    ...(endsWithDash !== undefined ? { endsWithDash } : {}),
+    ...(pendingWordCount !== undefined ? { pendingWordCount } : {}),
   };
 }
 

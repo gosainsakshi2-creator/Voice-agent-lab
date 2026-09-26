@@ -970,6 +970,44 @@ await test("J4 — 'ok, but what is the price?' (acknowledgement WITH content) s
   }
 });
 
+// Issue 2 (real call 6c76c123): Soniox writes a cut-off "yeah" as "Yeah—".
+for (const ack of ["Yeah—", "Yeah –", "yeah— yeah"]) {
+  await test(`J1d — "${ack}" (Soniox dash form) over the block: no interruption, no request, no user turn, block intact`, async () => {
+    const h = startHarness({ openingLine: OPENING, replies: [LONG_BLOCK, "SHOULD-NOT-BE-GENERATED"], backpressure: true });
+    try {
+      await upToMidBlock(h);
+      const requestsBefore = h.requests.length;
+      h.say(ack, { isFinal: false });
+      await sleep(250);
+      h.say(ack, { isFinal: true });
+      await h.waitForReplies(2);
+      assert.equal(h.assistantTexts()[1], LONG_BLOCK, `"${ack}" must not truncate or restart the block`);
+      assert.equal(h.requests.length, requestsBefore, `"${ack}" must not reach the language model`);
+      assert.deepEqual(userTurns(h), ["Yes, tell me."], `"${ack}" must not become a user turn`);
+    } finally {
+      await h.stop();
+    }
+  });
+}
+
+await test("J4d — 'Yeah— but what is the price?' (dash form WITH content) still interrupts", async () => {
+  const h = startHarness({ openingLine: OPENING, replies: [LONG_BLOCK, "It is free."], backpressure: true });
+  try {
+    await upToMidBlock(h);
+    h.say("Yeah—", { isFinal: false });
+    await sleep(150);
+    h.say("Yeah— but what is the price?", { isFinal: false });
+    await sleep(100);
+    h.say("Yeah— but what is the price?", { isFinal: true });
+    // Waits for the CUT only, not the answer: J4's "3 replies" wait times
+    // out at HEAD for a reason unrelated to this vocabulary.
+    await h.waitForReplies(2);
+    assert.ok(h.assistantTexts()[1]!.length < LONG_BLOCK.length, "the block must have been cut short");
+  } finally {
+    await h.stop();
+  }
+});
+
 await test("J5 — the transport's ENERGY-ONLY fallback cannot cut the block while a recognised backchannel is in flight; with no transcript at all it still can", async () => {
   const h = startHarness({ openingLine: OPENING, replies: [LONG_BLOCK, "SHOULD-NOT-BE-GENERATED"], backpressure: true });
   try {

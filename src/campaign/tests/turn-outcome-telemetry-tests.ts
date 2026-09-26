@@ -879,6 +879,62 @@ await test("G5 — an uninterrupted reply records no cut sentence", async () => 
 });
 
 // ═════════════════════════════════════════════════════════════════
+section("SECTION H — barge-in trigger text SHAPE (Issue 2, 2026-09-26)");
+// ═════════════════════════════════════════════════════════════════
+
+async function cutWith(h: Harness, interruption: string): Promise<void> {
+  await h.waitForReplies(1);
+  h.say(FIRST_USER_TURN);
+  await h.waitFor("the agent to start the block", () => h.record.state === SessionState.SPEAKING);
+  await sleep(400);
+  h.say(interruption);
+  await h.waitForReplies(2);
+}
+
+const triggerOf = (h: Harness) => h.turns().find((t) => t.bargeInTrigger?.source === "transcript")?.bargeInTrigger;
+
+await test("H1 — a trigger ending in an em-dash records endsWithDash=true and pendingWordCount=0", async () => {
+  const h = startHarness({ openingLine: OPENING, replies: [BLOCK, "Sure."], fallbackReply: "Okay." });
+  try {
+    await cutWith(h, "Wait—");
+    const trigger = triggerOf(h);
+    assert.ok(trigger, `a transcript barge-in must be recorded, turns=${JSON.stringify(h.turns())}`);
+    assert.equal(trigger.endsWithDash, true);
+    assert.equal(trigger.pendingWordCount, 0);
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("H2 — a dash inside a trigger with content records endsWithDash=false", async () => {
+  const h = startHarness({ openingLine: OPENING, replies: [BLOCK, "It is free."], fallbackReply: "Okay." });
+  try {
+    await cutWith(h, "Yeah— but how much does it cost?");
+    const trigger = triggerOf(h);
+    assert.ok(trigger, "a transcript barge-in must be recorded");
+    assert.equal(trigger.endsWithDash, false);
+    assert.equal(typeof trigger.pendingWordCount, "number");
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("H3 — the trigger shape fields carry no caller text", async () => {
+  const INTERRUPTION_TEXT = "Yeah— but how much does it cost?";
+  const h = startHarness({ openingLine: OPENING, replies: [BLOCK, "It is free."], fallbackReply: "Okay." });
+  try {
+    await cutWith(h, INTERRUPTION_TEXT);
+    assert.ok(triggerOf(h), "positive control: a record exists");
+    const serialized = JSON.stringify(h.turns());
+    for (const secret of [INTERRUPTION_TEXT, "Yeah", "cost", OPENING]) {
+      assert.ok(!serialized.includes(secret), `turn telemetry must carry no text, but contained ${JSON.stringify(secret)}`);
+    }
+  } finally {
+    await h.stop();
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════
 console.log(`\n${failures.length === 0 ? "ALL PASS" : "FAILURES"} — ${passed} passed, ${failures.length} failed`);
 if (failures.length > 0) {
   for (const name of failures) console.log(`  - ${name}`);

@@ -520,11 +520,16 @@ const ACKNOWLEDGEMENT_TOKENS = [
  * ("ok ok", "haan haan") and optionally stacked with a hesitation sound
  * ("hmm okay") — both of which are how people actually backchannel.
  *
+ * Em- and en-dashes separate like any other punctuation: Soniox writes a
+ * cut-off word as "Yeah—", and without them a bare "Yeah—" over a long
+ * reply was a barge-in (real call 6c76c123, 2026-09-24). The whole
+ * utterance is still tested, so "Yeah— but what's the price?" still fails.
+ *
  * `FILLER_ONLY` still covers a pure hesitation on its own, so the two
  * tables do not need to duplicate each other.
  */
 const ACKNOWLEDGEMENT_ONLY = new RegExp(
-  `^(?:(?:${ACKNOWLEDGEMENT_TOKENS.join("|")})[\\s,.!?…।-]*)+$`,
+  `^(?:(?:${ACKNOWLEDGEMENT_TOKENS.join("|")})[\\s,.!?…।–—-]*)+$`,
   "iu",
 );
 

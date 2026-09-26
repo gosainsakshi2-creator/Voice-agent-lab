@@ -670,6 +670,53 @@ test("I4 — a hedge attached to a short yes reads the same in every spelling", 
 });
 
 // ═════════════════════════════════════════════════════════════════
+section("L. Soniox's dash forms of a bare acknowledgement (Issue 2, call 6c76c123)");
+
+/**
+ * Soniox writes a cut-off word as "Yeah—". The acknowledgement check
+ * now treats em- and en-dashes as separators; content after one still
+ * disqualifies the whole utterance.
+ */
+test("L1 — plain and dash forms of \"yeah\" are bare acknowledgements", () => {
+  for (const line of ["Yeah", "Yeah.", "Yeah!", "Yeah—", "Yeah –", "Yeah, yeah—", "Okay–"]) {
+    assert.equal(isBareAcknowledgement(line), true, `"${line}" must be a bare acknowledgement`);
+  }
+});
+
+test("L2 — an acknowledgement WITH content is never bare, dash or not", () => {
+  for (const line of [
+    "Yeah, but what's the price?",
+    "Yeah— but what's the price?",
+    "Yeah – but what's the price?",
+    "Yeah, I have a question.",
+    "Yes, I'm—",
+    "No—",
+    "Hello—",
+  ]) {
+    assert.equal(isBareAcknowledgement(line), false, `"${line}" must NOT be a bare acknowledgement`);
+  }
+});
+
+test("L3 — plain yes answers at the gate still register (FINAL_YES, sheet) — the classifier's caller path does not read this predicate", () => {
+  for (const line of ["Yeah.", "Yes.", "Haan ji."]) {
+    const r = settle(atGate(line));
+    assert.equal(r.outcomeType, "registered_confirmed", `"${line}"`);
+    assert.equal(r.live, "FINAL_YES", `"${line}"`);
+    assert.equal(r.sheet, true, `"${line}"`);
+  }
+});
+
+test("L4 — an assistant \"Sure—\" is stepped over in the gate look-back exactly like \"Sure.\"", () => {
+  const withTurn = (ack: string) =>
+    settle([agent("Hi Priya, this is Ishita from Team FlexiFunnels."), agent(GATE), agent(ack), caller("Yes."), agent(CONFIRMED)]);
+  const A = withTurn("Sure—");
+  const B = withTurn("Sure.");
+  assert.equal(A.outcomeType, B.outcomeType);
+  assert.equal(A.sheet, B.sheet);
+  assert.equal(A.live, B.live);
+});
+
+// ═════════════════════════════════════════════════════════════════
 console.log(
   failures.length === 0
     ? `\nALL PASSED — ${passed} passed, 0 failed`

@@ -6128,6 +6128,8 @@ export class ConversationPipeline {
             const beganBeforeReply =
               segment.startedAtMs > 0 &&
               this.sttClockOffsetMs + segment.startedAtMs <= this.speakingStartedAtStreamMs;
+            const pendingText = this.record.turnDetector.getPendingTurnText().trim();
+            const pendingWordsAtTrigger = pendingText.length === 0 ? 0 : pendingText.split(/\s+/).length;
             const evidence: Omit<BargeInTriggerTelemetry, "source"> = {
               words: text.length === 0 ? 0 : text.split(/\s+/).length,
               confidence: segment.confidence,
@@ -6136,11 +6138,14 @@ export class ConversationPipeline {
               beganBeforeReply,
               replyRemainingMs: Math.max(0, Math.round(this.remainingSpeechMs())),
               replyFullyQueued: this.replyFullyQueued,
+              endsWithDash: /[–—]$/u.test(text),
+              pendingWordCount: pendingWordsAtTrigger,
             };
             // eslint-disable-next-line no-console
             console.log(
               `[TURN:${this.record.id}] barge-in ACCEPTED on transcript: "${text.slice(0, 60)}" — words=${evidence.words} confidence=${segment.confidence} isFinal=${segment.isFinal}` +
-                ` energyAgeMs=${energyAgeMs ?? "n/a"} beganBeforeReply=${beganBeforeReply} replyRemainingMs=${evidence.replyRemainingMs} replyFullyQueued=${this.replyFullyQueued}`,
+                ` energyAgeMs=${energyAgeMs ?? "n/a"} beganBeforeReply=${beganBeforeReply} replyRemainingMs=${evidence.replyRemainingMs} replyFullyQueued=${this.replyFullyQueued}` +
+                ` endsWithDash=${evidence.endsWithDash} pendingWordCount=${pendingWordsAtTrigger}`,
             );
             this.triggerExternalBargeIn("transcript", evidence);
           }

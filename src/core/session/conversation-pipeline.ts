@@ -1820,6 +1820,15 @@ const IDENTITY_GREETING_ONLY =
 const MAX_IDENTITY_GREETING_REASKS = 2;
 
 /**
+ * "Call me later" / "busy hoon" / "abhi nahi" to the identity question.
+ * Real call 7bd16476 (2026-09-26): "Call me again later." read `unclear`
+ * and was answered with the identity question again. It is a request to
+ * be called back, answered with the fixed give-up line and ended.
+ */
+const CALLBACK_REQUEST =
+  /(call (me )?(back|later|again)|call later|later please|not now|i('| a)?m busy|busy (right )?now|in a meeting|baad mein|baad me|abhi nahi|abhi nahin|abhi busy|busy hoon|busy hu|बाद में|अभी नहीं|अभी बिज़ी|बिज़ी हूँ|बिजी हूँ|मीटिंग में)/iu;
+
+/**
  * A phone's call-screening assistant ("If you record your name and reason
  * for calling, I'll see if this person is available", "Please stay on the
  * line"). 6 calls on 26 Sep 2026 looped the identity question at one and
@@ -3714,6 +3723,20 @@ export class ConversationPipeline {
       return true;
     }
 
+    // ── "Call me later": a callback, not a non-answer ─────────────
+    if (CALLBACK_REQUEST.test(userText)) {
+      // eslint-disable-next-line no-console
+      console.log(`[PIPELINE:${sid}] identity gate — the caller asked to be called later; closing politely: "${userText.trim().slice(0, 60)}"`);
+      this.abandonSpeculation("closing a call whose caller asked to be called back");
+      await this.speakAttentionUtterance(
+        identityGiveUpFor(this.record.memory.currentLanguage),
+        loopSignal,
+        "closing a call whose caller asked to be called back",
+      );
+      void this.host.end(this.record.id);
+      return true;
+    }
+
     // ── Asked, and this turn is the answer ───────────────────────
     //
     // ...unless it is the answer to the OTHER question we asked. A bare
@@ -5444,14 +5467,18 @@ export class ConversationPipeline {
     // that restarted the block. While the reply is still being
     // generated and handed over sentence by sentence there is, by
     // construction, more speech to come, whatever the buffer holds.
-    // The 4s rule is unchanged and still decides the end of the block,
-    // once everything has been queued: an answer to the closing question
-    // is heard exactly as before.
-    return (
-      this.backchannelInFlight ||
-      !this.replyFullyQueued ||
-      this.remainingSpeechMs() > BACKCHANNEL_MIN_REMAINING_SPEECH_MS
-    );
+    //
+    // ── THE WHOLE REPLY, END INCLUDED (2026-09-26, the user's rule) ──
+    //
+    // The 4s rule used to let an acknowledgement in the LAST seconds of a
+    // reply through as a barge-in, so that "haan" answering the closing
+    // question counted. On real call 6a94d637 that turned an "अच्छा" said
+    // while the pitch's question was still playing into its answer
+    // ("Got it."). The rule is now: while the agent is speaking, every
+    // acknowledgement is ignored; the answer is what the caller says
+    // AFTER the question. So an acknowledgement is backchannel for the
+    // whole reply. (BACKCHANNEL_MIN_REMAINING_SPEECH_MS no longer decides.)
+    return true;
   }
 
   /** Records a stage on the in-flight turn's trace, if one is active. */

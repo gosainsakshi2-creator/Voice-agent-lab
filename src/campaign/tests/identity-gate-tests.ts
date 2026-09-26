@@ -1208,7 +1208,11 @@ await test("D10k. the pickup window still holds under the SONIOX LANGUAGE RESTRI
 await test("D11. a repeated 'Yes.' does not ask, introduce or pitch twice", async () => {
   const r = await idFirst(["Yes.", "Yes."]);
   assert.equal(idAsks(r.spoken), 0, "the confirmed gate never asks again");
-  assert.equal(r.llmRequests, 2, "the second turn is ordinary conversation, answered once");
+  // Since 2026-09-26 an acknowledgement said WHILE the agent is speaking is
+  // ignored for the whole reply (the user's rule), and the second "Yes."
+  // lands during the pitch — so it opens no request at all.
+  assert.equal(r.llmRequests, 1, "the second 'Yes.', said over the pitch, is not a turn");
+  assert.equal(pitched(r.spoken), true);
 });
 
 await test("D12. silence after the opening leaves the gate shut", async () => {

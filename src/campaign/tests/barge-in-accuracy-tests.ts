@@ -1050,7 +1050,7 @@ for (const ack of ["okay", "बताओ।", "हाँ, पता चला।
   });
 }
 
-await test("J6q — an 'okay' that cuts a QUESTION is still an answer: it reaches the model (FINAL_YES path unchanged)", async () => {
+await test("J6q — an 'okay' said WHILE a question plays is ignored; the answer said AFTER it reaches the model (user's rule, 2026-09-26)", async () => {
   const QUESTION = "Shall I reserve your free seat?";
   const h = startHarness({ openingLine: OPENING, replies: [QUESTION, "Done, your seat is reserved."] });
   try {
@@ -1060,7 +1060,12 @@ await test("J6q — an 'okay' that cuts a QUESTION is still an answer: it reache
     await sleep(300);
     const requestsBefore = h.requests.length;
     h.say("okay", { isFinal: true });
-    await h.waitFor("the answer to be handled", () => h.requests.length > requestsBefore, 15000);
+    await h.waitForReplies(2);
+    await sleep(800);
+    assert.equal(h.requests.length, requestsBefore, "an acknowledgement over the question is not its answer");
+    assert.equal(h.assistantTexts()[1], QUESTION, "the question is spoken in full");
+    h.say("Yes, please.");
+    await h.waitFor("the answer to reach the model", () => h.requests.length > requestsBefore, 15000);
   } finally {
     await h.stop();
   }

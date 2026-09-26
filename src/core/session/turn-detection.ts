@@ -572,6 +572,10 @@ const CONTINUATION_TOKENS = [
   "go ahead", "go on", "carry on", "please continue", "continue", "tell me", "please tell",
   "boliye", "bolie", "bolo", "bolen", "bataiye", "bataie", "batao", "bataen",
   "बोलिए", "बोलिये", "बोलें", "बोलो", "बताइए", "बताइये", "बताएं", "बताएँ", "बताओ",
+  // "I know / got it, go on" — "हाँ, पता चला" cut and restarted the pitch
+  // on a real call (e4a78ae0, 2026-09-26).
+  "pata chala", "pata hai", "pata chal gaya", "samajh aa gaya", "samajh gayi",
+  "पता चला", "पता चल गया", "पता है", "समझ आ गया", "समझ गयी", "got it",
 ];
 const CONTINUATION_HONORIFICS = ["sir", "madam", "ma'am", "ma’am", "maam", "mam", "सर", "मैडम", "मैम"];
 const CUE_SEPARATOR = "[\\s,.!?…।–—-]*";

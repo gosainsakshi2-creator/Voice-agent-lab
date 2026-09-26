@@ -824,7 +824,7 @@ await test("G1 — a cut BEFORE half of a statement: recorded, does not qualify,
   }
 });
 
-await test("G2 — a cut AFTER half of a statement: the rule WOULD qualify, but CURRENT behaviour still commits nothing", async () => {
+await test("G2 — a cut AFTER half of a statement: the partial-credit rule (LIVE since 2026-09-26) commits the sentence", async () => {
   const h = startHarness({ openingLine: OPENING, replies: [BLOCK, "It is free."], fallbackReply: "Okay." });
   try {
     await cutFirstSentenceAt(h, BLOCK_SENTENCE_1, 0.8);
@@ -832,12 +832,14 @@ await test("G2 — a cut AFTER half of a statement: the rule WOULD qualify, but 
     assert.ok(cut, "the cut sentence must be recorded");
     assert.ok(cut.playedFraction !== undefined && cut.playedFraction > 0.5 && cut.playedFraction < 1, `fraction=${cut.playedFraction}`);
     assert.ok((cut.sentenceDurationMs ?? 0) > 0 && cut.playedMs > 0 && cut.playedMs < (cut.sentenceDurationMs ?? 0));
-    assert.equal(cut.proposedRuleQualifies, true, "the proposed rule would credit it");
-    assert.equal(cut.currentHeardChars, 0);
-    assert.equal(cut.proposedHeardChars, BLOCK_SENTENCE_1.length, "PROPOSED would have credited the sentence");
-    // THE POINT: logging only. The sentence is still NOT committed, and
-    // the model is still shown exactly what it was shown before.
-    assert.deepEqual(assistantTexts(h.history()), [OPENING, "It is free."], "CURRENT behaviour is unchanged");
+    assert.equal(cut.proposedRuleQualifies, true, "the rule credits it");
+    assert.equal(cut.currentHeardChars, BLOCK_SENTENCE_1.length, "the sentence is now counted as heard");
+    assert.equal(cut.proposedHeardChars, cut.currentHeardChars, "and never credited twice");
+    // THE POINT: the more-than-half-played statement is committed, so the
+    // next reply carries on after it instead of saying it again. (The cut
+    // commit is now a turn of its own, so wait for the answer after it.)
+    await h.waitForReplies(3);
+    assert.deepEqual(assistantTexts(h.history()), [OPENING, BLOCK_SENTENCE_1, "It is free."], "the heard sentence is committed");
   } finally {
     await h.stop();
   }

@@ -3663,6 +3663,21 @@ export class ConversationPipeline {
    * Returns true when it answered the turn itself, exactly like
    * `handleAttentionCheck`, and the main loop then continues.
    */
+  /**
+   * The re-ask, never word-for-word what the agent just said. "Sorry — am
+   * I speaking with X?" said twice in a row sounded like a loop on real
+   * calls (26 Sep 2026); when the plain form would repeat the last line,
+   * the agent's name is put in front of it instead.
+   */
+  private identityReAskLine(line: string, askedWhoIsCalling: boolean): string {
+    const language = this.record.memory.currentLanguage;
+    const name = this.record.request.campaign?.agent.name.trim();
+    const plain = identityReAskFor(language, line);
+    const lastAssistant = [...this.record.memory.history()].reverse().find((t) => t.role === "assistant")?.content.trim();
+    const introduce = askedWhoIsCalling || lastAssistant === plain.trim();
+    return introduce && name ? identityReAskFor(language, line, name) : plain;
+  }
+
   private async handleIdentityGate(userText: string, loopSignal: AbortSignal): Promise<boolean> {
     const sid = this.record.id;
     const line = this.record.campaignIdentityLine;
@@ -3740,7 +3755,7 @@ export class ConversationPipeline {
       console.log(`[PIPELINE:${sid}] identity gate — a bare greeting; asking again without spending a strike (${this.identityGreetingReAsks}/${MAX_IDENTITY_GREETING_REASKS})`);
       this.abandonSpeculation("the identity question is re-asked without the language model");
       await this.speakAttentionUtterance(
-        identityReAskFor(this.record.memory.currentLanguage, line, undefined),
+        this.identityReAskLine(line, false),
         loopSignal,
         "re-asking who picked up after a bare greeting",
       );
@@ -3790,10 +3805,9 @@ export class ConversationPipeline {
     console.log(`[PIPELINE:${sid}] identity gate — no clear answer; asking again (${this.identityReAsks}/${MAX_IDENTITY_REASKS})`);
     this.abandonSpeculation("the identity question is re-asked without the language model");
     await this.speakAttentionUtterance(
-      identityReAskFor(
-        this.record.memory.currentLanguage,
+      this.identityReAskLine(
         line,
-        asksWhoIsCalling(userText) ? this.record.request.campaign?.agent.name.trim() : undefined,
+        asksWhoIsCalling(userText),
       ),
       loopSignal,
       "returning to the unanswered identity question",
@@ -5149,16 +5163,27 @@ export class ConversationPipeline {
   private heardSoFarText(): string {
     if (this.outboundPlaybackStartedAt === 0 || this.spokenUtterances.length === 0) return "";
     const playedMs = this.playedSoFarMs();
-    return this.spokenUtterances
-      .filter(
-        (utterance) =>
-          utterance.complete &&
-          utterance.endsAtMs > utterance.startsAtMs &&
-          utterance.endsAtMs <= playedMs,
-      )
-      .map((utterance) => utterance.text)
-      .join(" ")
-      .trim();
+    const heard: string[] = [];
+    for (const utterance of this.spokenUtterances) {
+      if (!utterance.complete || utterance.endsAtMs <= utterance.startsAtMs) break;
+      if (utterance.endsAtMs <= playedMs) {
+        heard.push(utterance.text);
+        continue;
+      }
+      // PARTIAL CREDIT (2026-09-26, the rule `snapshotCutSentence` had been
+      // measuring): the ONE sentence the caller was cut off in counts as
+      // heard when it is a statement and more than half of it has played.
+      // Hindi pitch sentences run 8-13s, so rounding down restarted the
+      // whole pitch on any interjection — 21 of 32 cuts committed nothing
+      // on real calls. A QUESTION is never credited, so a half-heard
+      // commitment question is always asked again in full.
+      const extentMs = utterance.endsAtMs - utterance.startsAtMs;
+      const playedOfIt = Math.min(Math.max(0, playedMs - utterance.startsAtMs), extentMs);
+      const isQuestion = /[?？][\s"'”’)\]]*$/u.test(utterance.text.trim());
+      if (!isQuestion && playedOfIt / extentMs > PROPOSED_PARTIAL_CREDIT_FRACTION) heard.push(utterance.text);
+      break;
+    }
+    return heard.join(" ").trim();
   }
 
   /**
@@ -5588,7 +5613,9 @@ export class ConversationPipeline {
     const endsWithQuestion = /[?？][\s"'”’)\]]*$/u.test(text);
     const proposedRuleQualifies =
       !endsWithQuestion && playedFraction !== undefined && playedFraction > PROPOSED_PARTIAL_CREDIT_FRACTION;
-    const proposedHeardText = proposedRuleQualifies ? `${heard} ${text}`.trim() : heard;
+    // The rule is now LIVE in `heardSoFarText`, so a qualifying sentence is
+    // already inside `heard`; never append it twice.
+    const proposedHeardText = proposedRuleQualifies && !heard.endsWith(text) ? `${heard} ${text}`.trim() : heard;
     return {
       responseId: this.currentResponseId,
       sentenceText: text,

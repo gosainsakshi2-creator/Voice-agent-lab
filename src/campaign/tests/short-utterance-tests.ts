@@ -756,7 +756,7 @@ test("L11 — ...and the negated forms never register", () => {
 });
 
 test("L12 — an invitation to carry on is a continuation cue (barge-in only)", () => {
-  for (const line of ["बोलिए।", "हाँ, बताइए।", "हाँ जी, बताइए।", "बोलें।", "Yes, sir.", "ओके, मैडम जी।", "Go ahead.", "Ji boliye", "Okay."]) {
+  for (const line of ["बोलिए।", "हाँ, बताइए।", "हाँ जी, बताइए।", "बोलें।", "Yes, sir.", "ओके, मैडम जी।", "Go ahead.", "Ji boliye", "Okay.", "हाँ, पता चला।", "हाँ, पता चला, पता चला।", "पता है।", "Got it."]) {
     assert.equal(isContinuationCue(line), true, `"${line}" must be a continuation cue`);
   }
 });

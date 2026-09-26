@@ -47,7 +47,7 @@ import { detectLanguage, isLockGradeEvidence, type LanguageDetectionResult } fro
 import { currentTurnNote, languageHintFor, openingLineFor } from "./system-prompt";
 import { asksWhoIsCalling, classifyIdentityAnswer } from "../../campaign/domain/identity-answer";
 import { SentenceChunker } from "./sentence-chunker";
-import { isBareAcknowledgement, isContinuationCue, readsAsUnfinishedThought } from "./turn-detection";
+import { isBareAcknowledgement, isContinuationCue, isContinuationCuePrefix, readsAsUnfinishedThought } from "./turn-detection";
 import type { ContinuationHoldEvent, EndpointMarkerOutcome, TurnReleaseTrace } from "./turn-detection";
 import { voicemailPhraseIn } from "./voicemail-detection";
 import { combineSignals, abortableSleep } from "./abort-utils";
@@ -3843,6 +3843,39 @@ export class ConversationPipeline {
     // Only ever read inside an open episode: this is the caller
     // confirming the line after OUR acknowledgement, not a bare "yes"
     // in open conversation, which is never seen by this method.
+    // ── D: an acknowledgement cut the reply → carry on from there ─────
+    //
+    // Real call e6ee0339 (2026-09-26): "बताओ।" (go on) cut the pitch in its
+    // last seconds; the branch below cleared the held remainder, the model
+    // read "बताओ" as "tell me again" and the whole pitch was spoken twice.
+    // A turn that is NOTHING but a continuation cue ("ओके", "हाँ जी",
+    // "बताओ", "हाँ, पता चला") over a held reply is the caller saying "go
+    // on": the unheard remainder is spoken straight away, by the same
+    // replay path, cap and `concludeReplay` the greeting RESUME uses, and
+    // no model request is made — so it is faster than before, not slower.
+    //
+    // NEVER when the cut landed inside a QUESTION: then the cue may be its
+    // answer ("haan" to the seat question is FINAL_YES) and takes the
+    // normal path exactly as before. Bare greetings keep their own branch.
+    if (
+      !this.attentionEpisodeOpen &&
+      this.heldScriptRemainder.length > 0 &&
+      !this.cutInsideQuestion &&
+      isContinuationCue(trimmed) &&
+      !isBareGreetingTurn(greetingFormForAttention(trimmed))
+    ) {
+      if (this.hearingLineCapReached()) return this.declineExhaustedHearingCheck(trimmed);
+      const held = this.heldScriptRemainder;
+      // eslint-disable-next-line no-console
+      console.log(
+        `[PIPELINE:${sid}] acknowledgement "${trimmed.slice(0, 40)}" over a held reply — RESUMING from where it stopped: "${held.slice(0, 80)}${held.length > 80 ? "..." : ""}"`,
+      );
+      this.heldScriptRemainder = "";
+      const spoken = await this.speakAttentionUtterance(held, loopSignal, "resuming after an acknowledgement over the reply", "resume");
+      this.concludeReplay(spoken);
+      return true;
+    }
+
     const confirmsHearing =
       this.attentionEpisodeOpen && HEARING_CONFIRMATION_ONLY.test(trimmed);
     // The caller's INSTRUCTION after the question, read only while a
@@ -5393,7 +5426,10 @@ export class ConversationPipeline {
     }
     // `isContinuationCue` is a bare acknowledgement OR an invitation to
     // carry on ("बोलिए", "Yes, sir.") — both mean "keep talking".
-    if (!isContinuationCue(utterance)) return false;
+    // ...or an INTERIM that is still on its way to one ("हाँ, पता" before
+    // "चला" arrives) — see `isContinuationCuePrefix`. Its final is judged
+    // on its own, so content still interrupts.
+    if (!isContinuationCue(utterance) && !(!segment.isFinal && isContinuationCuePrefix(utterance))) return false;
     // FIX 1 (natural backchanneling) — `!replyFullyQueued` is the second
     // way of knowing the assistant still has more to say. The
     // remaining-audio test below measures how far ahead the TRANSPORT
@@ -5569,6 +5605,10 @@ export class ConversationPipeline {
     // DIAGNOSTIC ONLY — see `pendingBargeInTrigger`. Stamped at the one
     // instant every accepted barge-in passes through.
     this.pendingBargeInTrigger = { source, ...evidence };
+    // Whether the caller cut in the MIDDLE of a question — then whatever
+    // they said may be its answer, and must not be resumed over. See the
+    // continuation-cue RESUME in `handleAttentionCheck`.
+    this.cutInsideQuestion = this.pendingCutSentence?.telemetry.endsWithQuestion ?? false;
     // The reply now in flight was CUT, so a turn that follows it is the
     // interruption itself and must be answered — see the stale-turn check
     // in the main loop.
@@ -7926,6 +7966,8 @@ await this.drainPlayback(speakingSignal, true);
   private lastReplyAudioStartedAt = 0;
   /** The most recent reply was cut by a barge-in (so the turn after it is that interruption). */
   private lastReplyWasCut = false;
+  /** The last cut landed inside a question (see `triggerExternalBargeIn`). */
+  private cutInsideQuestion = false;
   /**
    * Every utterance handed to the transport this speaking phase, with
    * the playback offsets (ms into this phase's audio) it occupies.

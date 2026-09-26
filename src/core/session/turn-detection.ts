@@ -592,6 +592,29 @@ export function isContinuationCue(text: string): boolean {
   return CONTINUATION_ONLY.test(trimmed) && !HONORIFICS_ONLY.test(trimmed);
 }
 
+/** First words of the multi-word cues ("पता" of "पता चला", "go" of "go ahead"). */
+const CUE_FIRST_WORDS = new Set(
+  [...CONTINUATION_TOKENS, ...ACKNOWLEDGEMENT_TOKENS]
+    .filter((token) => token.includes(" "))
+    .map((token) => token.split(" ")[0]!.toLowerCase()),
+);
+
+/**
+ * An INTERIM transcript that is a continuation cue so far, followed by
+ * the first word of a longer one: "हाँ, पता" on its way to "हाँ, पता चला"
+ * (real call e6ee0339, 2026-09-26, cut the pitch on exactly that). Read
+ * only for interims: the final that completes the utterance is judged by
+ * `isContinuationCue` on its own, so content still interrupts.
+ */
+export function isContinuationCuePrefix(text: string): boolean {
+  const words = text.trim().split(/\s+/u).filter((w) => w.length > 0);
+  if (words.length === 0) return false;
+  const last = words[words.length - 1]!.replace(/[,.!?…।–—-]+$/u, "").toLowerCase();
+  if (!CUE_FIRST_WORDS.has(last)) return false;
+  const rest = words.slice(0, -1).join(" ");
+  return rest.length === 0 || isContinuationCue(rest);
+}
+
 /**
  * READ-ONLY, ADDITIVE. Does `text` read as a thought the caller has not
  * finished — a dangling conjunction, a fragment comma, a trailing

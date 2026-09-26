@@ -1025,6 +1025,47 @@ await test("J4n — a single-word INTERIM (background noise shape) does not cut 
   }
 });
 
+// D (2026-09-26): a reply shorter than the 4s backchannel window, so an
+// "okay" over it IS a barge-in — then the rest must be RESUMED, not
+// regenerated: no model request, and the model's reply is never spoken.
+for (const ack of ["okay", "बताओ।", "हाँ, पता चला।"]) {
+  await test(`J6d — "${ack}" that cuts a short reply RESUMES the rest without the model`, async () => {
+    const SHORT = "We have created Flexi Genie now. It runs your whole business well.";
+    const h = startHarness({ openingLine: OPENING, replies: [SHORT, "SHOULD-NOT-BE-GENERATED"] });
+    try {
+      await h.waitForReplies(1);
+      h.say("Yes, tell me.");
+      await h.waitFor("the reply to start", () => h.record.state === SessionState.SPEAKING);
+      await sleep(300);
+      const requestsBefore = h.requests.length;
+      h.say(ack, { isFinal: true });
+      await sleep(6000);
+      assert.equal(h.requests.length, requestsBefore, "an acknowledgement must not reach the model");
+      assert.ok(!h.synthesized.includes("SHOULD-NOT-BE-GENERATED"), "no regenerated reply is spoken");
+      const spoken = h.assistantTexts().join(" ");
+      assert.ok(spoken.includes("It runs your whole business well."), `the rest of the reply is resumed, got ${JSON.stringify(h.assistantTexts())}`);
+    } finally {
+      await h.stop();
+    }
+  });
+}
+
+await test("J6q — an 'okay' that cuts a QUESTION is still an answer: it reaches the model (FINAL_YES path unchanged)", async () => {
+  const QUESTION = "Shall I reserve your free seat?";
+  const h = startHarness({ openingLine: OPENING, replies: [QUESTION, "Done, your seat is reserved."] });
+  try {
+    await h.waitForReplies(1);
+    h.say("Yes, tell me.");
+    await h.waitFor("the question to start", () => h.record.state === SessionState.SPEAKING);
+    await sleep(300);
+    const requestsBefore = h.requests.length;
+    h.say("okay", { isFinal: true });
+    await h.waitFor("the answer to be handled", () => h.requests.length > requestsBefore, 15000);
+  } finally {
+    await h.stop();
+  }
+});
+
 await test("J5 — the transport's ENERGY-ONLY fallback cannot cut the block while a recognised backchannel is in flight; with no transcript at all it still can", async () => {
   const h = startHarness({ openingLine: OPENING, replies: [LONG_BLOCK, "SHOULD-NOT-BE-GENERATED"], backpressure: true });
   try {

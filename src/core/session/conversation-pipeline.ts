@@ -2463,6 +2463,8 @@ export class ConversationPipeline {
   private identityState: "unasked" | "outstanding" | "confirmed" | "denied";
   /** Re-asks spent, against `MAX_IDENTITY_REASKS`. */
   private identityReAsks = 0;
+  /** The one extra re-ask a "who is this?" may earn once the cap is spent. At most once per call. */
+  private identityFinalIntroSpent = false;
   private attentionEpisodeOpen = false;
   /**
    * FIX 2 — how many silence-recovery prompts have been spoken since the
@@ -3621,6 +3623,26 @@ export class ConversationPipeline {
     }
 
     // ── Unclear: ask again, or give up ──────────────────────────
+    //
+    // Never hang up on an unanswered "who is this?". Real call dcd398b4
+    // (2026-09-26): the caller's last turn asked who was calling, the cap
+    // was already spent, and the close was the only answer they got. Once
+    // per call, with the cap spent, a turn that asks who is calling gets
+    // the agent's name and the question one final time. Bounded by the
+    // flag, so it can never loop.
+    const asksWho = asksWhoIsCalling(userText);
+    if (this.identityReAsks >= MAX_IDENTITY_REASKS && asksWho && !this.identityFinalIntroSpent) {
+      this.identityFinalIntroSpent = true;
+      // eslint-disable-next-line no-console
+      console.log(`[PIPELINE:${sid}] identity gate — re-asks spent but the caller asked who is calling; introducing once more before giving up`);
+      this.abandonSpeculation("the identity question is re-asked without the language model");
+      await this.speakAttentionUtterance(
+        identityReAskFor(this.record.memory.currentLanguage, line, this.record.request.campaign?.agent.name.trim()),
+        loopSignal,
+        "answering who is calling before the identity question is given up",
+      );
+      return true;
+    }
     if (this.identityReAsks >= MAX_IDENTITY_REASKS) {
       // Three asks with no answer. The gate must not open on a guess,
       // so the call ends instead of continuing into a pitch aimed at

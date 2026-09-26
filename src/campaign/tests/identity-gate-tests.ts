@@ -620,12 +620,12 @@ await test("A7b. ...and every genuine denial still denies", () => {
   }
 });
 
-await test('A8. "Right, who\'s this?" is a question back, not a confirmation', () => {
+await test('A8. "Who\'s this?" alone is a question back, not a confirmation', () => {
   // `normaliseText` turns "who's" into "who s", which matched neither
-  // spelling in `QUESTIONS_BACK` — so the turn fell through to
-  // `CONFIRMATIONS`, where "right" is an entry, and a caller asking who
-  // was calling CONFIRMED their own identity.
-  for (const said of ["Right, who's this?", "Who's this?", "Sorry, who's this?"]) {
+  // spelling in `QUESTIONS_BACK`. "Right, who's this?" USED to be pinned
+  // unclear here too; since 2026-09-26 (real call dcd398b4) the clause
+  // "Right" confirms exactly as "Right." alone does — see A8b.
+  for (const said of ["Who's this?", "Sorry, who's this?"]) {
     assert.equal(classifyIdentityAnswer(said, "Sakshi"), "unclear", `"${said}"`);
   }
   // The spellings that already worked, asserted alongside so the three
@@ -634,6 +634,36 @@ await test('A8. "Right, who\'s this?" is a question back, not a confirmation', (
   assert.equal(classifyIdentityAnswer("Whos this?", "Sakshi"), "unclear");
   // ...and a bare "Right." is still the confirmation A6 pins.
   assert.equal(classifyIdentityAnswer("That's right.", "Sakshi"), "confirmed");
+});
+
+await test("A8b. whatever confirms ALONE confirms beside a question back (real call dcd398b4)", () => {
+  for (const said of [
+    "Right. Who's this?",
+    "Right, who's this?",
+    "Correct, who is speaking?",
+    "Haan bolo, kaun hai?",
+    "Bilkul. Kaun bol raha hai?",
+    "Speaking. Who is this?",
+    "Right— who's this?",
+  ]) {
+    assert.equal(classifyIdentityAnswer(said, "Sakshi"), "confirmed", `"${said}"`);
+  }
+});
+
+await test("A8c. ...and nothing that is only a question, a greeting or a denial confirms", () => {
+  for (const said of [
+    "Who's this?",
+    "Kaun bol raha hai?",
+    "Hello, who is this?",
+    "Who is this, sir?",
+    "Sorry, who's this?",
+    "No, who's this?",
+    "Nahi, kaun hai?",
+    "Wrong number. Who is this?",
+    "Right who's this",
+  ]) {
+    assert.equal(classifyIdentityAnswer(said, "Sakshi"), "unclear", `"${said}"`);
+  }
 });
 
 await test("A5. one turn that answers BOTH questions confirms identity", () => {
@@ -787,6 +817,20 @@ await test("B9. the gate gives up rather than pitching at an unknown caller", as
   const r = await run(["Hello", "Kya chahiye?", "Kaun bol raha hai?", "Hmm."]);
   assert.equal(r.llmRequests, 0, "never reached the model");
   assert.equal(pitched(r.spoken), false, "and never pitched");
+});
+
+await test("B9b. re-asks spent, then \"Who is this?\": the agent introduces itself once more, and a yes opens the gate", async () => {
+  const r = await run(["Hello", "Kya chahiye?", "Kaun bol raha hai?", "Who is this?", "Yes."]);
+  assert.equal(pitched(r.spoken), true, "the caller who confirmed after the introduction is pitched");
+  assert.equal(r.llmRequests, 1, "exactly one model request: the pitch");
+  assert.equal(idAsks(r.spoken), 4, "ask + two re-asks + the one final introduction");
+});
+
+await test("B9c. ...but only ONCE per call: a second unanswered \"Who is this?\" still ends the call", async () => {
+  const r = await run(["Hello", "Kya chahiye?", "Kaun bol raha hai?", "Who is this?", "Who is this?"]);
+  assert.equal(r.llmRequests, 0, "never reached the model");
+  assert.equal(pitched(r.spoken), false, "and never pitched");
+  assert.equal(idAsks(r.spoken), 4, "no fifth ask: the final introduction is bounded");
 });
 
 await test("B10. a call with NO identity line is unchanged", async () => {
@@ -1128,6 +1172,13 @@ await test("D12. silence after the opening leaves the gate shut", async () => {
 });
 
 // ═════════════════════════════════════════════════════════════════
+await test("D-dcd398b4. identity-first: \"Right. Who's this?\" opens the gate at once and the pitch is spoken", async () => {
+  const r = await idFirst(["Right. Who's this?"]);
+  assert.equal(pitched(r.spoken), true, "the right person, who confirmed, is pitched");
+  assert.equal(r.llmRequests, 1);
+  assert.equal(r.identityDenied, false);
+});
+
 section("E. THE v8 SCRIPT — identity first, introduction in the first reply");
 // ═════════════════════════════════════════════════════════════════
 

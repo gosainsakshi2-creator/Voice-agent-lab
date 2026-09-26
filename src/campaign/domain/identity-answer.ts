@@ -254,6 +254,20 @@ function contains(haystack: string, needles: readonly string[]): boolean {
 }
 
 /**
+ * The turn without the clauses that ask a question back: "Right. Who's
+ * this?" → "Right". Clauses are split on sentence and clause punctuation
+ * (dashes included, which is how Soniox marks a cut-off). Returns "" when
+ * every clause asks the question.
+ */
+function answerClausesOf(text: string): string {
+  return (text ?? "")
+    .split(/[.,?!।;:—–]+/u)
+    .map((clause) => clause.trim())
+    .filter((clause) => clause.length > 0 && !contains(normaliseText(clause), QUESTIONS_BACK))
+    .join(". ");
+}
+
+/**
  * Did the caller ask who is calling? Read by the gate only, to put the
  * agent's own name in front of the re-ask (`identityReAskFor`).
  */
@@ -300,7 +314,19 @@ export function classifyIdentityAnswer(
       contains(normalised, AFFIRMATIONS_BESIDE_A_QUESTION) ||
       (name.length > 1 && contains(normalised, [name])) ||
       (firstName.length > 2 && contains(normalised, [firstName]));
-    return !deniesToo && saysYes ? "confirmed" : "unclear";
+    if (deniesToo) return "unclear";
+    if (saysYes) return "confirmed";
+    // ...and whatever confirms ON ITS OWN confirms beside a question too.
+    // Real call dcd398b4 (2026-09-26): "Right. Who's this?" twice read
+    // `unclear` while "Right." alone confirms, and the call was closed on
+    // the right person. The clauses that ask the question are dropped and
+    // the rest is read by this same function, so one vocabulary decides
+    // both and no second table can drift from `CONFIRMATIONS`. A turn that
+    // is nothing but the question leaves no remainder and stays `unclear`.
+    const answer = answerClausesOf(text);
+    return answer.length > 0 && classifyIdentityAnswer(answer, customerName) === "confirmed"
+      ? "confirmed"
+      : "unclear";
   }
 
   // 2. A denial wins outright, whatever else is in the turn — but a

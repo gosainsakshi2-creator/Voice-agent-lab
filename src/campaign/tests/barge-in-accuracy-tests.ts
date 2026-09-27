@@ -1071,6 +1071,42 @@ await test("J6q — an 'okay' said WHILE a question plays is ignored; the answer
   }
 });
 
+// 2026-09-26: after a yes/no question that is NOT the seat question, a bare
+// listening sound is not its answer — the question is re-asked once, with
+// no model request. The seat question keeps "okay" as a yes.
+await test("J7a — 'अच्छा, okay.' after a yes/no question re-asks it once, without the model", async () => {
+  const Q = "It is a free workshop. Have you tried putting something online before?";
+  const h = startHarness({ openingLine: OPENING, replies: [Q, "SHOULD-NOT-BE-GENERATED", "Great, then this is a good start."] });
+  try {
+    await h.waitForReplies(1);
+    h.say("Yes, tell me.");
+    await h.waitForReplies(2);
+    const requestsBefore = h.requests.length;
+    h.say("अच्छा, okay.");
+    await h.waitForReplies(3);
+    assert.equal(h.requests.length, requestsBefore, "the listening sound opened no model request");
+    assert.ok(h.assistantTexts()[2]!.endsWith("Have you tried putting something online before?"), `re-asked, got ${JSON.stringify(h.assistantTexts()[2])}`);
+    h.say("No.");
+    await h.waitFor("the real answer to reach the model", () => h.requests.length > requestsBefore, 15000);
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("J7b — ...but 'okay' after the SEAT question is still a yes for the model (not re-asked)", async () => {
+  const h = startHarness({ openingLine: OPENING, replies: ["Shall I reserve your free seat?", "Done, your seat is reserved."] });
+  try {
+    await h.waitForReplies(1);
+    h.say("Yes, tell me.");
+    await h.waitForReplies(2);
+    const requestsBefore = h.requests.length;
+    h.say("Okay.");
+    await h.waitFor("the answer to reach the model", () => h.requests.length > requestsBefore, 15000);
+  } finally {
+    await h.stop();
+  }
+});
+
 await test("J5 — the transport's ENERGY-ONLY fallback cannot cut the block while a recognised backchannel is in flight; with no transcript at all it still can", async () => {
   const h = startHarness({ openingLine: OPENING, replies: [LONG_BLOCK, "SHOULD-NOT-BE-GENERATED"], backpressure: true });
   try {

@@ -836,7 +836,7 @@ await test("D4 — the documented English fall-through is NOT made permanent (au
   }
 });
 
-await test("D4b — an explicit request for Hindi does NOT lock the call into English", async () => {
+await test("D4b — an explicit request for Hindi locks the call to HINDI at once (user's rule, 2026-09-26)", async () => {
   // The adversarial case in full. Before the refusal, this session
   // ended with `languageLock === "en"` — the caller asks for Hindi and
   // the hint, the synthesis language and every fixed line contradict
@@ -845,12 +845,10 @@ await test("D4b — an explicit request for Hindi does NOT lock the call into En
   try {
     await greetingDone(h);
     await h.settle(ASKS_FOR_HINDI);
-    assert.equal(h.lock(), undefined, "an explicit request is not the caller choosing a language by speaking it");
-    assert.equal(
-      h.lastHint(),
-      EN,
-      "and the per-turn hint is untouched — the model still sees the request and answers it, exactly as today",
-    );
+    // Since 2026-09-26 the request itself decides (real call 22f44aab asked
+    // for English and drifted back to Hindi on a later "हेलो।").
+    assert.equal(h.lock(), HI, "the caller asked for Hindi: the call is locked to Hindi");
+    assert.equal(h.lastHint(), HI, "and this very reply is already in Hindi");
 
     // Their next turn, spoken in what they actually wanted, decides.
     await h.settle(HI_MEANINGFUL);
@@ -1214,8 +1212,8 @@ await test("G6 — the floor-taking cases keep EXACTLY their existing per-turn b
   try {
     await greetingDone(asks);
     await asks.settle(ASKS_FOR_HINDI);
-    assert.equal(asks.lock(), undefined);
-    assert.equal(asks.lastHint(), EN, "D4b unchanged: the model still sees the request with the detected hint");
+    assert.equal(asks.lock(), HI, "D4b (2026-09-26): an explicit request locks at once");
+    assert.equal(asks.lastHint(), HI);
   } finally {
     await asks.stop();
   }

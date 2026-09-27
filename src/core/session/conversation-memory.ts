@@ -177,6 +177,17 @@ export class ConversationMemory {
     return true;
   }
 
+  /**
+   * The caller ASKED for a language ("please speak in English", "हिंदी में
+   * बोलो"). That is the one thing allowed to move a lock already taken:
+   * the first-write-wins rule exists so detection cannot drift the call,
+   * not to override what the person explicitly asked for.
+   */
+  overrideLanguageLock(language: SupportedLanguage): void {
+    this.lockedLanguage = language;
+    this.language = language;
+  }
+
   /** Full turn history in Language-Model-ready order, including the leading system turn. */
   history(): readonly ConversationTurn[] {
     return this.turns;

@@ -1820,6 +1820,37 @@ const IDENTITY_GREETING_ONLY =
 const MAX_IDENTITY_GREETING_REASKS = 2;
 
 /**
+ * The caller explicitly asking for a language. Real call 22f44aab
+ * (2026-09-26): "can you please speak to me in English now?" was
+ * followed, and a later "हेलो।" drifted the replies back to Hindi. The
+ * request now fixes the language for the rest of the call.
+ */
+const ASKS_FOR_ENGLISH =
+  /(\b(speak|talk|reply|continue|say it)\b[^.?!]{0,20}\benglish\b|\benglish\b[^.?!]{0,12}\b(mein|me)\b[^.?!]{0,12}\b(bolo|boliye|baat)\b|\benglish\b\s*(में|मे)\s*(बोलो|बोलिए|बात)|(अंग्रेज़ी|अंग्रेजी|इंग्लिश)\s*(में|मे)\s*(बोलो|बोलिए|बात))/iu;
+const ASKS_FOR_HINDI =
+  /(\b(speak|talk|reply|continue|say it)\b[^.?!]{0,20}\bhindi\b|\bhindi\b[^.?!]{0,12}\b(mein|me)\b[^.?!]{0,12}\b(bolo|boliye|baat)\b|\bhindi\b\s*(में|मे)\s*(बोलो|बोलिए|बात)|(हिंदी|हिन्दी)\s*(में|मे)\s*(बोलो|बोलिए|बात))/iu;
+export function explicitLanguageRequest(text: string): SupportedLanguage | undefined {
+  const english = ASKS_FOR_ENGLISH.test(text);
+  const hindi = ASKS_FOR_HINDI.test(text);
+  if (english === hindi) return undefined;
+  return (english ? "en" : "hi") as SupportedLanguage;
+}
+
+/**
+ * After a yes/no question that is NOT the seat question, a reply that is
+ * only a listening sound ("अच्छा", "okay", "hmm") is not its answer. Real
+ * call 22f44aab: "अच्छा, okay." to "...try की है?" was taken as an answer
+ * and the agent moved on. Words that DO answer a yes/no question are
+ * excluded, so "haan" / "nahi" / "yes" still go to the model as before.
+ */
+const YES_NO_ANSWER_WORDS = new Set([
+  "yes", "yeah", "yep", "yup", "ya", "haan", "han", "haa", "hanji", "haanji", "ji", "jee",
+  "no", "nope", "nahi", "nahin", "nai", "correct", "right", "sure", "bilkul",
+  "यस", "हाँ", "हां", "जी", "नहीं", "नही", "बिल्कुल", "सही",
+]);
+const SEAT_QUESTION = /(reserve|register|seat|सीट|रिज़र्व|रिजर्व|आरक्षित|book)/iu;
+
+/**
  * "Call me later" / "busy hoon" / "abhi nahi" to the identity question.
  * Real call 7bd16476 (2026-09-26): "Call me again later." read `unclear`
  * and was answered with the identity question again. It is a request to
@@ -3238,6 +3269,12 @@ export class ConversationPipeline {
         // returns false for everything with content of its own, so a
         // question after the confirmation reaches `runThinkingAndSpeaking`
         // on exactly the path it takes today.
+        if (await this.handleAckAfterQuestion(turn.text, loopSignal)) {
+          this.abandonSpeculation("the question was re-asked without the language model");
+          timer.summarize();
+          this.activeTimer = undefined;
+          continue;
+        }
         if (await this.handleScriptedClosing(turn.text, loopSignal)) {
           this.abandonSpeculation("the closing was spoken without the language model");
           timer.summarize();
@@ -4526,6 +4563,53 @@ export class ConversationPipeline {
    * hangup. Nothing here ends the call; the hangup stays where it has
    * always been.
    */
+  /** The question last re-asked by `handleAckAfterQuestion`, so it is re-asked once only. */
+  private lastReaskedQuestion = "";
+
+  /**
+   * A bare listening sound after a yes/no question → re-ask that question
+   * once, briefly, with no model request. See `YES_NO_ANSWER_WORDS`.
+   * Never for the seat question (there "okay" is a yes), never once the
+   * registration closing is armed, and only for the agent's latest turn.
+   */
+  /** The question `handleAckAfterQuestion` would re-ask for this turn, or undefined. Pure. */
+  private questionToReask(userText: string): string | undefined {
+    if (this.scriptedClosingArmed) return undefined;
+    const trimmed = userText.trim();
+    if (!isContinuationCue(trimmed)) return undefined;
+    const words = trimmed.toLowerCase().split(/[\s,.!?…।–—-]+/u).filter((w) => w.length > 0);
+    if (words.some((w) => YES_NO_ANSWER_WORDS.has(w))) return undefined;
+    const lastAssistant = [...this.record.memory.history()].reverse().find((t) => t.role === "assistant")?.content.trim() ?? "";
+    const sentences = lastAssistant.split(/(?<=[.!?।？])\s+/u).map((s) => s.trim()).filter((s) => s.length > 0);
+    const question = sentences[sentences.length - 1] ?? "";
+    if (!/[?？]$/u.test(question) || SEAT_QUESTION.test(question)) return undefined;
+    if (question === this.lastReaskedQuestion) return undefined;
+    return question;
+  }
+
+  private async handleAckAfterQuestion(userText: string, loopSignal: AbortSignal): Promise<boolean> {
+    if (this.scriptedClosingArmed) return false;
+    const trimmed = userText.trim();
+    if (!isContinuationCue(trimmed)) return false;
+    const words = trimmed.toLowerCase().split(/[\s,.!?…।–—-]+/u).filter((w) => w.length > 0);
+    if (words.some((w) => YES_NO_ANSWER_WORDS.has(w))) return false;
+    const history = this.record.memory.history();
+    // The caller's turn is already recorded, so the agent's turn is the one before it.
+    const lastAssistant = [...history].reverse().find((t) => t.role === "assistant")?.content.trim() ?? "";
+    const sentences = lastAssistant.split(/(?<=[.!?।？])\s+/u).map((s) => s.trim()).filter((s) => s.length > 0);
+    const question = sentences[sentences.length - 1] ?? "";
+    if (!/[?？]$/u.test(question) || SEAT_QUESTION.test(question)) return false;
+    if (question === this.lastReaskedQuestion) return false;
+    this.lastReaskedQuestion = question;
+    const language = this.record.memory.currentLanguage;
+    const lead = language === "hi" ? "तो — " : language === "hi-en" ? "Toh — " : "So — ";
+    const line = `${lead}${question}`;
+    // eslint-disable-next-line no-console
+    console.log(`[PIPELINE:${this.record.id}] "${trimmed.slice(0, 30)}" is not an answer to "${question.slice(0, 60)}" — re-asking it once: "${line}"`);
+    await this.speakAttentionUtterance(line, loopSignal, "re-asking a question answered only with a listening sound");
+    return true;
+  }
+
   private async handleScriptedClosing(userText: string, loopSignal: AbortSignal): Promise<boolean> {
     if (!this.scriptedClosingArmed || this.scriptedClosingSpoken) return false;
     const trimmed = userText.trim();
@@ -4976,6 +5060,9 @@ export class ConversationPipeline {
     // goodbye (`handleScriptedClosing`) and never reaches the model, so
     // a request pre-opened for it could only ever be abandoned.
     if (this.scriptedClosingArmed && !this.scriptedClosingSpoken && (isClosingAcknowledgement(text) || isContinuationCue(text))) return;
+    // ...and a listening sound after a yes/no question, which
+    // `handleAckAfterQuestion` answers by re-asking it without the model.
+    if (this.questionToReask(text) !== undefined) return;
 
     if (this.speculation !== undefined) {
       // The same pending turn re-announced (e.g. `speech_final` on the
@@ -7114,6 +7201,8 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
    * done.
    */
   private effectiveLanguageFor(text: string): SupportedLanguage {
+    const requested = explicitLanguageRequest(text);
+    if (requested !== undefined) return requested;
     const locked = this.record.memory.languageLock;
     if (locked !== undefined) return locked;
     const current = this.record.memory.currentLanguage;
@@ -7145,6 +7234,13 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
    * both paths return.
    */
   private commitTurnLanguage(text: string): SupportedLanguage {
+    const requested = explicitLanguageRequest(text);
+    if (requested !== undefined) {
+      this.record.memory.overrideLanguageLock(requested);
+      // eslint-disable-next-line no-console
+      console.log(`[LANGUAGE:${this.record.id}] the caller asked for ${requested}; locked for the rest of the call: "${text.trim().slice(0, 80)}"`);
+      return requested;
+    }
     const locked = this.record.memory.languageLock;
     if (locked !== undefined) return locked;
 

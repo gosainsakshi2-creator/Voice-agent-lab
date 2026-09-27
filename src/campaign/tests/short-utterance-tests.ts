@@ -64,6 +64,7 @@ import { dispositionFor } from "../outcome/disposition";
 import { isFinalYes } from "../integrations/final-yes-sheet";
 import { definitiveAnswerIn } from "../dispatch/call-runner";
 import { isBareAcknowledgement, isContinuationCue, isContinuationCuePrefix } from "../../core/session/turn-detection";
+import { explicitLanguageRequest } from "../../core/session/conversation-pipeline";
 
 import type { ConversationTurn } from "../../types/provider.types";
 
@@ -773,6 +774,18 @@ test("L13 — ...never an honorific alone, a greeting, a negation or content; an
 test("L14 — an INTERIM on its way to a cue is a cue prefix; content is not", () => {
   for (const t of ["हाँ, पता", "पता", "हाँ जी, समझ", "okay, got", "go"]) assert.equal(isContinuationCuePrefix(t), true, `"${t}"`);
   for (const t of ["हाँ, price", "कितने", "wait", "no, go", "हेलो, पता"]) assert.equal(isContinuationCuePrefix(t), false, `"${t}"`);
+});
+
+test("L15 — an explicit language request is recognised, and nothing else is", () => {
+  for (const t of ["Can you please speak in English? I don't know about Hindi.", "Okay, can you please speak to me in English now?", "English mein bolo", "इंग्लिश में बात करो"]) {
+    assert.equal(explicitLanguageRequest(t), "en", `"${t}"`);
+  }
+  for (const t of ["Please talk in Hindi.", "हिंदी में बोलो", "Hindi mein baat karo"]) {
+    assert.equal(explicitLanguageRequest(t), "hi", `"${t}"`);
+  }
+  for (const t of ["हेलो।", "Okay, thank you.", "I know English.", "नहीं, कुछ नहीं। बोलो, बोलो तुम।", "Speak in English or Hindi, anything."]) {
+    assert.equal(explicitLanguageRequest(t), undefined, `"${t}"`);
+  }
 });
 
 test('L6 — "ओके।" at the gate is a yes, like "Okay." (real call 33d97c5c)', () => {

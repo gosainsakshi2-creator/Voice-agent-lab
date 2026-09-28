@@ -103,6 +103,10 @@ const AFFIRMATIONS = [
   // "haa" above already covers the elongated form.
   "haanji", "hanji", "han",
   "हाँ", "हां", "जी", "जी हाँ", "बिल्कुल", "ज़रूर", "जरूर", "ठीक है", "पक्का",
+  // "kar dijiye" / "kar do" above, as Soniox writes them. Real call ed2d09ec
+  // (2026-09-28): "कर दीजिए" to the seat question, the seat was reserved,
+  // and the call settled interested_not_confirmed — no sheet row.
+  "कर दीजिए", "कर दीजिये", "कर दीजिएगा", "कर दीजियेगा", "कर दो", "कर दें", "करा दीजिए",
   // English "yes" in Devanagari, as Soniox writes it. A spelling of
   // "yes" above: without it a "यस" at the gate settled `unclear`.
   "यस", "येस",

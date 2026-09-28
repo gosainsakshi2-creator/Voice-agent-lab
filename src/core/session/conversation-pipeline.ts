@@ -331,10 +331,18 @@ const NOT_A_BARE_CONFIRMATION =
 /** A confirmation said in Hindi: any Devanagari, or the romanized words of one. */
 const HINDI_CONFIRMATION = /[ऀ-ॿ]|\b(?:haan|haa|han|haanji|hanji|ji|jee|bilkul|boliye|bolo|bataiye|batao|theek)\b/iu;
 
-/** The bare confirmation each prepared reply answers, and the language its request is hinted in. */
+/**
+ * The bare confirmation each prepared reply answers, and the language its
+ * request is hinted in. The Hindi reply takes the HINDI hint ("Hindi words
+ * in Devanagari, the normal English terms left in English" — the scripts'
+ * own Hinglish style), NOT the Hinglish one, which says "mirror their mix":
+ * a bare "हाँ जी।" is no mix, and under that hint the model wrote an
+ * English first sentence and a Hinglish rest (real call fb81f0b9,
+ * 2026-09-28).
+ */
 const PREPARED_CONFIRMATIONS = [
   { variant: "en", text: "Yes.", language: "en" },
-  { variant: "hinglish", text: "हाँ जी।", language: "hi-en" },
+  { variant: "hinglish", text: "हाँ जी।", language: "hi" },
 ] as const;
 
 /**

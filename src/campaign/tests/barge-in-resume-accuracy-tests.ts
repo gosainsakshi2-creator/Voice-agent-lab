@@ -1028,6 +1028,36 @@ for (const { name, bridge } of BRIDGES) {
     }
   });
 
+  // 2026-09-28 (real call 640c46c6): the resume is ONE chunk; a "Hello"
+  // in its last sentence committed none of it, so the model re-pitched
+  // from the top. The sentences that played are now committed.
+  await test(`E6i. ${name}: "Hello" late in the RESUME still commits the resumed sentences the caller heard`, async () => {
+    const h = startHarness({ replies: [BLOCK, "SHOULD-NOT-BE-GENERATED"], bridge });
+    try {
+      await startBlock(h);
+      await sleep(msFor(S1) + 500);
+      h.say("Hello—");
+      await h.waitFor("the hearing question", () => h.synthesized.some((t) => t.includes("can you hear me")), 20000);
+      await sleep(1500);
+      const synthesizedBefore = h.synthesized.length;
+      h.say("Yes.");
+      await h.waitFor("the resume", () => h.synthesized.slice(synthesizedBefore).some((t) => t.includes("We have created")), 20000);
+      await sleep(msFor(`Okay, so I was telling you that — ${S2}`) + msFor(S3) * 0.3);
+      h.say("Hello.");
+      await h.waitFor(
+        "the resumed sentence committed",
+        () => h.assistantTurns().some((t) => t.replayOf === "resume" && t.content.includes("Flexi Genie")),
+        20000,
+      );
+      assert.ok(
+        !h.assistantTurns().some((t) => t.replayOf === "resume" && t.content.includes("plain instructions")),
+        "the sentence the caller was cut off in is not committed",
+      );
+    } finally {
+      await h.stop();
+    }
+  });
+
   await test(`E7. ${name}: "हाय—" halfway through sentence 1 still replays it from its first word`, async () => {
     const h = startHarness({ replies: [BLOCK, "SHOULD-NOT-BE-GENERATED"], bridge });
     try {

@@ -5374,8 +5374,32 @@ export class ConversationPipeline {
       // commitment question is always asked again in full.
       const extentMs = utterance.endsAtMs - utterance.startsAtMs;
       const playedOfIt = Math.min(Math.max(0, playedMs - utterance.startsAtMs), extentMs);
-      const isQuestion = /[?？][\s"'”’)\]]*$/u.test(utterance.text.trim());
-      if (allowPartialCredit && !isQuestion && playedOfIt / extentMs > PROPOSED_PARTIAL_CREDIT_FRACTION) heard.push(utterance.text);
+      // A fixed utterance (a RESUME, a REPEAT) is queued as ONE chunk of
+      // several sentences, so rounding down per utterance committed nothing
+      // of a resume cut in its last question — the model then re-pitched
+      // from the top (call 640c46c6, 2026-09-28). Credit its sentences one
+      // by one, timed by length, with the same rules as separate sentences.
+      const sentences = utterance.text.match(/[^.!?।？]+(?:[.!?।？]+["'”’)\]]*\s*|$)/gu) ?? [utterance.text];
+      const playedFraction = playedOfIt / extentMs;
+      const totalChars = utterance.text.length;
+      let creditedChars = 0;
+      let sentenceStart = 0;
+      for (const sentence of sentences) {
+        const sentenceEnd = sentenceStart + sentence.length;
+        const endFraction = sentenceEnd / totalChars;
+        if (endFraction <= playedFraction) {
+          creditedChars = sentenceEnd;
+        } else {
+          const startFraction = sentenceStart / totalChars;
+          const ofSentence = (playedFraction - startFraction) / (endFraction - startFraction);
+          const isQuestion = /[?？][\s"'”’)\]]*$/u.test(sentence.trim());
+          if (allowPartialCredit && !isQuestion && ofSentence > PROPOSED_PARTIAL_CREDIT_FRACTION) creditedChars = sentenceEnd;
+          break;
+        }
+        sentenceStart = sentenceEnd;
+      }
+      const credited = utterance.text.slice(0, creditedChars).trim();
+      if (credited.length > 0) heard.push(credited);
       break;
     }
     return heard.join(" ").trim();

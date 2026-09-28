@@ -164,6 +164,9 @@ const NEGATIONS = [
   "नहीं", "नही", "मुझे नहीं चाहिए",
 ];
 
+/** The NEGATIONS that are only a "no" — they refuse only at the gate. See rule 6. */
+const BARE_NO_PHRASES = new Set(["no", "nope", "nah", "nahi", "nahin", "nai", "नहीं", "नही"]);
+
 /**
  * Phrases that contain a negation token but are not a refusal. Removed
  * from the text before negations are matched, so "no problem" does not
@@ -832,6 +835,10 @@ export function classifyOutcome(input: ClassifyOutcomeInput): OutcomeClassificat
   // ── 2. Every phrase that matters, with its position ─────────────
   const signals: OutcomeSignal[] = [];
   const positions = new Map<OutcomeSignal, number>();
+  // Negations that can decline: said at the commitment question, or to
+  // anything that was not some other question. `atGate` is kept for
+  // affirmations only (stored rows read it), so rule 6 reads this.
+  const decliningNegations = new Set<OutcomeSignal>();
   const anchors = COMMIT_ANCHORS[input.campaignType] ?? COMMIT_ANCHORS["registration"] ?? [];
   /**
    * Where, in the ordering key below, each turn that TAKES BACK a yes
@@ -867,6 +874,17 @@ export function classifyOutcome(input: ClassifyOutcomeInput): OutcomeClassificat
 
     const commitContext = commitQuestionContext(input.transcript, turnIndex, anchors);
     const atGate = commitContext.answering === "ANCHOR";
+    // The agent's latest turn before this one ends on a question that is NOT
+    // the commitment question: a bare "no" here answers that question.
+    let previousAgentText = "";
+    for (let i = turnIndex - 1; i >= 0; i -= 1) {
+      const earlier = input.transcript[i];
+      if (earlier?.role === "assistant") {
+        previousAgentText = earlier.text.trim();
+        break;
+      }
+    }
+    const answersAnotherQuestion = !atGate && /[?？]["'”’)\]]*$/u.test(previousAgentText);
 
     // Was this turn an ANSWER at all? A question and a sentence that was
     // cut off are conversational events, not verdicts — the phrases in
@@ -944,6 +962,7 @@ export function classifyOutcome(input: ClassifyOutcomeInput): OutcomeClassificat
         };
         signals.push(signal);
         positions.set(signal, positionOf(turnIndex, hit.offset));
+        if (kind === "negation" && (atGate || !answersAnotherQuestion)) decliningNegations.add(signal);
       }
     };
 
@@ -1064,7 +1083,14 @@ export function classifyOutcome(input: ClassifyOutcomeInput): OutcomeClassificat
   const negations = of("negation").filter(isDecisive);
   const callbacks = of("callback");
 
-  const lastNegationPosition = negations.reduce(
+  // A BARE "no" away from the gate answers some other question ("Have you
+  // tried putting something online before?" -> "No, I have not, but I was
+  // planning to"), not the invitation. Real call d36615e6 (2026-09-28)
+  // settled declined on exactly that. Rule 6 now reads only refusals: any
+  // negation at the gate, and the phrases that refuse on their own ("not
+  // interested", "dont want", ...) wherever they are said.
+  const refusals = negations.filter((signal) => decliningNegations.has(signal) || !BARE_NO_PHRASES.has(signal.phrase));
+  const lastNegationPosition = refusals.reduce(
     (latest, signal) => Math.max(latest, positionFor(signal)),
     -1,
   );
@@ -1110,14 +1136,14 @@ export function classifyOutcome(input: ClassifyOutcomeInput): OutcomeClassificat
     (latest, signal) => Math.max(latest, positionFor(signal)),
     -1,
   );
-  if (negations.length > 0 && lastNegationPosition > lastAffirmationPosition) {
+  if (refusals.length > 0 && lastNegationPosition > lastAffirmationPosition) {
     return build({
       ...shared,
       outcomeType: "declined",
       succeeded: false,
       primaryReason: "explicit_no",
       confidence: "high",
-      explanation: `The person declined ("${negations[negations.length - 1]?.phrase}") and said nothing positive after it.`,
+      explanation: `The person declined ("${refusals[refusals.length - 1]?.phrase}") and said nothing positive after it.`,
     });
   }
 

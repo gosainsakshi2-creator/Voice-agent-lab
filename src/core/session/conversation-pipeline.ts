@@ -3748,8 +3748,11 @@ export class ConversationPipeline {
     const language = this.record.memory.currentLanguage;
     const name = this.record.request.campaign?.agent.name.trim();
     const plain = identityReAskFor(language, line);
-    const lastAssistant = [...this.record.memory.history()].reverse().find((t) => t.role === "assistant")?.content.trim();
-    const introduce = askedWhoIsCalling || lastAssistant === plain.trim();
+    // Never a line already spoken on this call, not only the last one.
+    const alreadySaid = this.record.memory
+      .history()
+      .some((t) => t.role === "assistant" && t.content.trim() === plain.trim());
+    const introduce = askedWhoIsCalling || alreadySaid;
     return introduce && name ? identityReAskFor(language, line, name) : plain;
   }
 
@@ -3823,6 +3826,9 @@ export class ConversationPipeline {
 
     if (verdict === "confirmed") {
       this.identityState = "confirmed";
+      // "बताइए" confirms identity AND is a listening sound; it must not then
+      // re-ask the identity question (call d33295b1). See `handleAckAfterQuestion`.
+      this.identityConfirmedThisTurn = true;
       // The turn itself still goes to the language model, which is what
       // carries the conversation on into the campaign from here.
       return false;
@@ -4234,9 +4240,13 @@ export class ConversationPipeline {
       // second one. Nothing here widens the vocabulary, and the
       // before-a-block rule is untouched: a single "Hi." after our
       // opening line is still the caller answering the phone.
+      // While the identity question is outstanding a second "Hi" is not a
+      // hearing problem: the gate's re-ask already checks the line, and
+      // "can you hear me?" on top made the agent ask the same thing four
+      // times (call 6d485b80, 2026-09-28). "Hello? Hello?" still qualifies.
       const qualifies =
         isEmphaticHearingCheck(trimmed) ||
-        (previousTurnWasBareGreeting && isHearingCheck(trimmed));
+        (previousTurnWasBareGreeting && isHearingCheck(trimmed) && this.identityState !== "outstanding");
       if (qualifies) {
         if (this.hearingLineCapReached()) return this.declineExhaustedHearingCheck(trimmed);
         this.attentionEpisodeOpen = true;
@@ -4625,6 +4635,8 @@ export class ConversationPipeline {
 
   /** The question last re-asked by `handleAckAfterQuestion`, so it is re-asked once only. */
   private lastReaskedQuestion = "";
+  /** The identity gate confirmed on the turn in hand; read and cleared by `handleAckAfterQuestion`. */
+  private identityConfirmedThisTurn = false;
 
   /**
    * A bare listening sound after a yes/no question → re-ask that question
@@ -4635,6 +4647,8 @@ export class ConversationPipeline {
   /** The question `handleAckAfterQuestion` would re-ask for this turn, or undefined. Pure. */
   private questionToReask(userText: string): string | undefined {
     if (this.scriptedClosingArmed) return undefined;
+    // The identity question is the gate's to answer, never re-asked here.
+    if (this.identityState === "outstanding") return undefined;
     const trimmed = userText.trim();
     if (!isContinuationCue(trimmed)) return undefined;
     const words = trimmed.toLowerCase().split(/[\s,.!?…।–—-]+/u).filter((w) => w.length > 0);
@@ -4648,6 +4662,9 @@ export class ConversationPipeline {
   }
 
   private async handleAckAfterQuestion(userText: string, loopSignal: AbortSignal): Promise<boolean> {
+    const identityJustConfirmed = this.identityConfirmedThisTurn;
+    this.identityConfirmedThisTurn = false;
+    if (identityJustConfirmed || this.identityState === "outstanding") return false;
     if (this.scriptedClosingArmed) return false;
     const trimmed = userText.trim();
     if (!isContinuationCue(trimmed)) return false;
@@ -5861,6 +5878,26 @@ export class ConversationPipeline {
    * turn, the stranded remainder and every resume are computed exactly
    * as before, from `heardSoFarText` alone.
    */
+  /**
+   * A sentence that greets and names the agent ("Hi Rakesh, I'm Ishita from
+   * Team FlexiFunnels.", "Hi Rakesh, मैं Ishita…"), when the caller has
+   * already heard such a sentence on this call.
+   */
+  private isRepeatedIntroduction(sentence: string): boolean {
+    const agentName = this.record.request.campaign?.agent.name.trim().toLowerCase();
+    if (!agentName) return false;
+    const introduces = (text: string): boolean =>
+      OPENS_WITH_GREETING.test(text.trim()) && text.toLowerCase().includes(agentName);
+    if (!introduces(sentence)) return false;
+    return this.record.memory
+      .history()
+      .some(
+        (t) =>
+          t.role === "assistant" &&
+          t.content.split(/(?<=[.!?।？])\s+/u).some((s) => introduces(s)),
+      );
+  }
+
   /** One bare greeting word ("हेलो।", "Hi", "Hello—"), not a doubled "Hello? Hello?". */
   private isSingleGreeting(utterance: string): boolean {
     const form = greetingFormForAttention(utterance);
@@ -7778,6 +7815,10 @@ await this.drainPlayback(speakingSignal, true);
     const chunker = new SentenceChunker();
     let fullText = "";
     let finalText: string | undefined;
+    // The reply's first sentence, when it only re-introduces the agent —
+    // see `isRepeatedIntroduction`. Not spoken, and not committed.
+    let skippedIntro = "";
+    let sentencesSeen = 0;
     let ttsSynthesisMs = 0;
     let ttsCostUsd = 0;
     let speakingSignal: AbortSignal | undefined;
@@ -7854,6 +7895,16 @@ await this.drainPlayback(speakingSignal, true);
           for (const sentence of readySentences) {
             const cleaned = toSpokenText(sentence);
             if (cleaned.length === 0) continue;
+            sentencesSeen += 1;
+            // "Hi Rakesh, I'm Ishita from Team FlexiFunnels." again, after the
+            // caller already heard it: the model restarts its script block on
+            // every interruption (call 28dd0eee said it three times). Skip it.
+            if (sentencesSeen === 1 && this.isRepeatedIntroduction(cleaned)) {
+              skippedIntro = cleaned;
+              // eslint-disable-next-line no-console
+              console.log(`[PIPELINE:${this.record.id}] repeated introduction skipped: "${cleaned.slice(0, 60)}"`);
+              continue;
+            }
 
             // FIX #7A — the chunker has just produced a TTS-ready
             // sentence. Marked here, before the contamination/
@@ -8050,7 +8101,13 @@ await this.drainPlayback(speakingSignal, true);
     }
 
     const rawRemainder = chunker.flush();
-    const remainder = rawRemainder ? toSpokenText(rawRemainder) : "";
+    let remainder = rawRemainder ? toSpokenText(rawRemainder) : "";
+    // The skipped introduction was the whole reply: say it after all rather
+    // than leave the caller in silence.
+    if (skippedIntro.length > 0 && remainder.length === 0 && ttsChunkCount === 0) {
+      remainder = skippedIntro;
+      skippedIntro = "";
+    }
     // The same supersession test, for the reply that never reached a
     // sentence cut and so arrives here whole. Same two conditions:
     // nothing spoken yet, and the caller has already moved on.
@@ -8107,7 +8164,12 @@ await this.drainPlayback(speakingSignal, true);
     // invisible until every one of them had played out.
     if (speakingSignal) await this.drainPlayback(speakingSignal, true);
 
-    const assistantText = toSpokenText(finalText ?? fullText);
+    let assistantText = toSpokenText(finalText ?? fullText);
+    // What was spoken starts after the skipped introduction; heard/unheard
+    // accounting (`unspokenTail`) needs the committed text to match it.
+    if (skippedIntro.length > 0 && assistantText.startsWith(skippedIntro)) {
+      assistantText = assistantText.slice(skippedIntro.length).trim();
+    }
 
     // If nothing was ever spoken (e.g. immediate barge-in), still
     // make sure we transitioned through SPEAKING at least nominally

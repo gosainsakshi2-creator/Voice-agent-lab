@@ -771,7 +771,7 @@ await test('B7b. a BARE "Yes" to the hearing line is a hearing answer too — it
   // speaking with Sakshi?" identically, told apart only by which
   // question was actually asked — which the pipeline knows and the
   // classifier does not.
-  const r = await run(["Hello", "Hello", "Yes", "Yes, this is Sakshi"]);
+  const r = await run(["Hello", "Hello? Hello?", "Yes", "Yes, this is Sakshi"]);
   assert.equal(r.llmRequests, 1, "exactly one request in the whole call");
   assert.equal(
     r.lastUserSentToLlm,
@@ -799,13 +799,31 @@ await test('B7d. "Yes, sir" to the hearing line is a hearing answer exactly like
   // The hearing-confirmation table now accepts an honorific beside the
   // affirmation (real call 837d1d3c, 2026-09-24). The safeguard B7b
   // pins is unchanged and must cover the wider form too.
-  const r = await run(["Hello", "Hello", "Yes, sir", "Yes, this is Sakshi"]);
+  const r = await run(["Hello", "Hello? Hello?", "Yes, sir", "Yes, this is Sakshi"]);
   assert.equal(r.llmRequests, 1, "exactly one request in the whole call");
   assert.equal(r.lastUserSentToLlm, "Yes, this is Sakshi", "and it carried the identity confirmation, not the hearing one");
   assert.ok(idAsks(r.spoken) >= 2, "the unanswered identity question was put again");
   const pitchAt = r.spoken.findIndex((t) => t.includes("free live workshop"));
   const lastAskAt = r.spoken.map((t) => t.includes("Am I speaking with Sakshi")).lastIndexOf(true);
   assert.ok(pitchAt > lastAskAt, "the pitch must come after the last identity question");
+});
+
+await test('B7f. "Hello", "Hi", "Yeah" (real call 6d485b80): no hearing line during the identity question, no line said twice', async () => {
+  // 2026-09-28: the agent asked the same thing four times ("Sorry — am I
+  // speaking…", "Hey, can you hear me?", "Sorry — am I speaking…" again).
+  const r = await run(["Hello", "Hi", "Yeah"]);
+  assert.ok(!r.spoken.some((t) => t.toLowerCase().includes("can you hear me")), `no hearing line, spoken=${JSON.stringify(r.spoken)}`);
+  const asks = r.spoken.filter((t) => t.includes("Am I speaking with Sakshi") || t.includes("am I speaking with Sakshi"));
+  assert.equal(new Set(asks).size, asks.length, `no identity line repeated word for word, asks=${JSON.stringify(asks)}`);
+  assert.equal(r.lastUserSentToLlm, "Yeah", "the answer to the re-ask confirms");
+  assert.equal(pitched(r.spoken), true, "and the pitch followed it");
+});
+
+await test('B7g. "बताइए।" to the identity question confirms and pitches — the question is never re-asked (real call d33295b1)', async () => {
+  const r = await run(["Hello", "बताइए।"]);
+  assert.ok(!r.spoken.some((t) => /^(So|तो|Toh) — /u.test(t)), `no listening-sound re-ask, spoken=${JSON.stringify(r.spoken)}`);
+  assert.equal(r.llmRequests, 1, "the confirmation reached the model");
+  assert.equal(pitched(r.spoken), true, "and the pitch followed it");
 });
 
 await test('B7e. the same "Yes, sir" OUTSIDE a hearing episode still confirms', async () => {

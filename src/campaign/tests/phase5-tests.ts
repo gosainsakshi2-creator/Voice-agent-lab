@@ -310,9 +310,16 @@ await test("8f. a call with no gate yes is classified exactly as it was before",
   // unchanged last-negation position, so nothing about an ordinary
   // refusal, or a no to a non-gate question, has moved.
   assert.equal(classifyConnected([agent(REGISTRATION_GATE), caller("No.")]).outcomeType, "declined");
+  // 2026-09-28 (real call d36615e6): a bare "No." to a DIFFERENT question
+  // answers that question, not the invitation, so it no longer declines.
   assert.equal(
     classifyConnected([agent("Have you heard about the live event?"), caller("No.")]).outcomeType,
+    "unclear",
+  );
+  assert.equal(
+    classifyConnected([agent("Have you heard about the live event?"), caller("No, not interested.")]).outcomeType,
     "declined",
+    "a refusal in its own words still declines wherever it is said",
   );
   assert.equal(
     classifyConnected([

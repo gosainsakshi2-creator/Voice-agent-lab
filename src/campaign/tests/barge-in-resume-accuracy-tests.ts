@@ -1099,6 +1099,33 @@ for (const { name, bridge } of BRIDGES) {
     }
   });
 
+  // 2026-09-28 (real call c811aa95): "Hello" after the agent's question
+  // went to the model, which re-explained the pitch and skipped the
+  // question. Now: the hearing question, and "Yes" re-asks the question.
+  await test(`E6l. ${name}: "Hello" after the agent's question asks the hearing question; "Yes" re-asks that question, no model`, async () => {
+    const question = "Have you tried putting something online before?";
+    const h = startHarness({ replies: [`${S1} ${question}`, "SHOULD-NOT-BE-GENERATED"], bridge });
+    try {
+      await startBlock(h);
+      await h.waitFor("the question committed", () => h.assistantTexts().some((t) => t.includes(question)), 30000);
+      const requestsBefore = h.requests.length;
+      h.say("Hello.");
+      await h.waitFor("the hearing question", () => h.synthesized.some((t) => t.includes("can you hear me")), 20000);
+      await sleep(1500);
+      const synthesizedBefore = h.synthesized.length;
+      h.say("Yes.");
+      await h.waitFor("the question re-asked", () => h.synthesized.slice(synthesizedBefore).some((t) => t.includes(question)), 20000);
+      assert.ok(
+        h.synthesized.slice(synthesizedBefore).some((t) => t.startsWith("Okay, so I was asking — ")),
+        `re-asked with the lead-in, synthesized=${JSON.stringify(h.synthesized.slice(synthesizedBefore))}`,
+      );
+      assert.equal(s1Spoken(h), 1, "the statement before the question is not repeated");
+      assert.equal(h.requests.length, requestsBefore, "no language-model request");
+    } finally {
+      await h.stop();
+    }
+  });
+
   await test(`E7. ${name}: "हाय—" halfway through sentence 1 still replays it from its first word`, async () => {
     const h = startHarness({ replies: [BLOCK, "SHOULD-NOT-BE-GENERATED"], bridge });
     try {

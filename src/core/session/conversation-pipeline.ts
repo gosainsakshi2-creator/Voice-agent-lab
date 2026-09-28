@@ -4260,6 +4260,32 @@ export class ConversationPipeline {
         await this.speakAttentionUtterance(line, loopSignal, "acknowledging a hearing check");
         return true;
       }
+      // A lone "Hello" straight after the agent's own QUESTION, nothing held
+      // (call c811aa95, 2026-09-28: the model re-explained the pitch and
+      // skipped the question). Asked about exactly like a "Hello" mid-pitch:
+      // "Hey, can you hear me?", and "Yes" re-asks that question with
+      // "Okay, so I was asking — ". "Hi" stays a greeting back.
+      const hangingQuestion = this.questionLeftHanging();
+      if (
+        hangingQuestion !== undefined &&
+        isBareGreetingTurn(trimmed) &&
+        !GREETING_BACK_ONLY.test(trimmed) &&
+        this.identityState !== "outstanding" &&
+        !this.scriptedClosingArmed
+      ) {
+        if (this.hearingLineCapReached()) return this.declineExhaustedHearingCheck(trimmed);
+        this.heldScriptRemainder = hangingQuestion;
+        this.heldScriptFull = hangingQuestion;
+        this.cutInsideQuestion = true;
+        this.attentionEpisodeOpen = true;
+        this.hearingEpisodeBeforeBlock = false;
+        this.hearingLinesWithoutProgress += 1;
+        const line = attentionAcknowledgementFor(this.record.memory.currentLanguage);
+        // eslint-disable-next-line no-console
+        console.log(`[PIPELINE:${sid}] "${trimmed.slice(0, 20)}" after our question "${hangingQuestion.slice(0, 60)}" — asking once: "${line}"`);
+        await this.speakAttentionUtterance(line, loopSignal, "acknowledging a hello after a question");
+        return true;
+      }
       // A bare "haan ji"/"ji"/"Hi." — an answer or a pickup, not a
       // hearing problem. The contextual path (and the classifier) see
       // it exactly as today.
@@ -5896,6 +5922,24 @@ export class ConversationPipeline {
           t.role === "assistant" &&
           t.content.split(/(?<=[.!?।？])\s+/u).some((s) => introduces(s)),
       );
+  }
+
+  /**
+   * The question the agent's latest turn ended on, when the caller's turn in
+   * hand is the only thing said since. Undefined otherwise.
+   */
+  private questionLeftHanging(): string | undefined {
+    const history = this.record.memory.history();
+    const current = history[history.length - 1];
+    const previous = history[history.length - 2];
+    if (current?.role !== "user" || previous?.role !== "assistant") return undefined;
+    const sentences = previous.content
+      .trim()
+      .split(/(?<=[.!?।？])\s+/u)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+    const question = sentences[sentences.length - 1] ?? "";
+    return /[?？]$/u.test(question) ? question : undefined;
   }
 
   /** One bare greeting word ("हेलो।", "Hi", "Hello—"), not a doubled "Hello? Hello?". */

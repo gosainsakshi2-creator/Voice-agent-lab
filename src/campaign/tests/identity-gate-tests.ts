@@ -1178,7 +1178,12 @@ await test("D10i. a 'Hello' LATER in the call is not a pickup: it is committed a
       h.history().some((t) => t.role === "user" && t.content === "Hello."),
     );
     await h.waitForReplies(3);
-    assert.equal(h.requests.length, 2, "the later hello took the ordinary path (one request for it)");
+    // 2026-09-28: a lone "Hello" straight after the agent's QUESTION is now
+    // asked about ("Hey, can you hear me?") without the model — see
+    // `questionLeftHanging`. It is still committed, never dropped as a pickup.
+    const pitchAsks = /[?？]\s*$/u.test(PITCH.trim());
+    assert.equal(h.requests.length, pitchAsks ? 1 : 2, "the later hello took the normal path for what the agent last said");
+    if (pitchAsks) assert.ok(h.synthesized.some((t) => t.toLowerCase().includes("can you hear me")), "and was asked about");
     assert.equal(idAsks(h.synthesized), 0, "the confirmed gate never re-asks");
   } finally {
     await h.stop();

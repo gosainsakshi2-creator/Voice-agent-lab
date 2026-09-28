@@ -1063,7 +1063,9 @@ for (const { name, bridge } of BRIDGES) {
   // a greeting back: the pitch plays on, once, and is committed whole.
   for (const greeting of ["हेलो।", "Hello."]) {
     await test(`E6j. ${name}: one ${JSON.stringify(greeting)} over the pitch's greeting sentence does not cut it`, async () => {
-      const pitch = `Hi Ankit, I am Rohan from Team FlexiFunnels. ${S2} ${S3}`;
+      // No agent name: OPENING already introduced Rohan, so "I am Rohan…"
+      // here would be skipped as a repeated introduction (E6k).
+      const pitch = `Hi Ankit, thanks for picking up. ${S2} ${S3}`;
       const h = startHarness({ replies: [pitch, "SHOULD-NOT-BE-GENERATED"], bridge });
       try {
         await startBlock(h);
@@ -1079,6 +1081,23 @@ for (const { name, bridge } of BRIDGES) {
       }
     });
   }
+
+  // 2026-09-28 (real call 28dd0eee): the model re-introduced the agent on
+  // every turn. The caller heard OPENING ("…this is Rohan…"), so a reply
+  // opening "Hi Sakshi, I am Rohan…" skips that sentence and speaks on.
+  await test(`E6k. ${name}: a reply that re-introduces the agent skips that sentence, and commits the rest`, async () => {
+    const reply = `Hi Sakshi, I am Rohan from Team FlexiFunnels. ${S2} ${S3}`;
+    const h = startHarness({ replies: [reply, "SHOULD-NOT-BE-GENERATED"], bridge });
+    try {
+      await startBlock(h);
+      await h.waitFor("the reply committed", () => h.assistantTexts().some((t) => t.includes("plain instructions")), 30000);
+      assert.ok(!h.synthesized.some((t) => t.includes("I am Rohan")), `the re-introduction is not spoken, synthesized=${JSON.stringify(h.synthesized)}`);
+      const committed = h.assistantTexts().find((t) => t.includes("plain instructions")) ?? "";
+      assert.ok(committed.startsWith("We have created"), `and not committed, got ${JSON.stringify(committed)}`);
+    } finally {
+      await h.stop();
+    }
+  });
 
   await test(`E7. ${name}: "हाय—" halfway through sentence 1 still replays it from its first word`, async () => {
     const h = startHarness({ replies: [BLOCK, "SHOULD-NOT-BE-GENERATED"], bridge });

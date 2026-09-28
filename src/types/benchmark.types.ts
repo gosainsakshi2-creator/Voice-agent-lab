@@ -532,6 +532,13 @@ export interface TurnLatencyBreakdown {
    * (`superseded_*` + absent, and `spoken` + `true`, are unreachable.)
    */
   readonly supersederTakesFloor?: boolean;
+  /**
+   * `"prepared"` when this turn's reply was generated while the identity
+   * question played and served on the confirmation (see `prepareFirstReply`).
+   * Absent on every other turn. Telemetry only: it is what separates the
+   * prepared first reply from requested ones when their latency is compared.
+   */
+  readonly replySource?: "prepared";
 
   // ── TURN-RELEASE TRACE (2026-09-21) ───────────────────────────────
   //

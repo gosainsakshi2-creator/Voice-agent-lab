@@ -40,6 +40,37 @@ import { SessionRecord } from "./session-record";
 import { ConversationPipeline, type PipelineHost, type ResolvedProviderStack } from "./conversation-pipeline";
 import { toSessionErrorInfo } from "./error-recovery";
 import { assignEndpointing } from "./stt-endpointing-experiment";
+import { optionalEnv, optionalEnvNumber } from "../../providers/shared/env";
+import { PostgresTtsAudioStore, TtsAudioCache } from "./tts-audio-cache";
+import { getDbPool } from "../../campaign/db/client";
+
+/** `undefined` until first asked for; `null` once switched off. */
+let ttsAudioCacheSingleton: TtsAudioCache | null | undefined;
+
+/**
+ * ONE TTS audio cache per process, shared by every session: the memory
+ * tier is only worth having if call N+1 can hit what call N synthesized.
+ * Backed by Postgres (`tts_audio_cache`, migration 007) when a database is
+ * configured; memory-only otherwise, and memory-only after one warning if
+ * the migration has not been run. `TTS_AUDIO_CACHE=false` switches it off
+ * entirely, and every line is then synthesized live as before.
+ */
+function processTtsAudioCache(): TtsAudioCache | undefined {
+  if (ttsAudioCacheSingleton !== undefined) return ttsAudioCacheSingleton ?? undefined;
+  if (optionalEnv("TTS_AUDIO_CACHE", "true").trim().toLowerCase() === "false") {
+    ttsAudioCacheSingleton = null;
+    return undefined;
+  }
+  const hasDatabase = optionalEnv("DATABASE_URL", "").trim().length > 0;
+  const store = hasDatabase
+    ? new PostgresTtsAudioStore({ query: (text, params) => getDbPool().query(text, params) })
+    : undefined;
+  ttsAudioCacheSingleton = new TtsAudioCache(store, {
+    maxMemoryBytes: optionalEnvNumber("TTS_AUDIO_CACHE_MEMORY_MB", 64) * 1024 * 1024,
+    readTimeoutMs: optionalEnvNumber("TTS_AUDIO_CACHE_READ_TIMEOUT_MS", 120),
+  });
+  return ttsAudioCacheSingleton;
+}
 
 let sessionCounter = 0;
 function generateSessionId(): SessionId {
@@ -297,7 +328,15 @@ export class DefaultVoiceSessionManager implements VoiceSessionManager, Pipeline
     );
 
     record.loopAbortController = new AbortController();
-    const pipeline = new ConversationPipeline(record, providers, this);
+    // The reply to a bare identity confirmation is prepared while the
+    // identity question plays (see `prepareFirstReply`). On by default;
+    // `PREPARE_FIRST_REPLY=false` switches it off without a deploy of code.
+    const ttsCache = processTtsAudioCache();
+    const pipeline = new ConversationPipeline(record, providers, this, {
+      prepareFirstReply: optionalEnv("PREPARE_FIRST_REPLY", "true").trim().toLowerCase() !== "false",
+      // Fixed lines served from audio kept across calls; see `processTtsAudioCache`.
+      ...(ttsCache !== undefined ? { ttsCache } : {}),
+    });
     this.pipelines.set(record.id, pipeline);
     record.loopPromise = pipeline.run();
   }

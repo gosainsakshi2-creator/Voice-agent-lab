@@ -113,6 +113,13 @@ export class CartesiaTextToSpeechProvider implements TextToSpeechProvider {
     };
   }
 
+  /** The request body minus its text — see `TextToSpeechProvider.cacheIdentity`. */
+  cacheIdentity(task: SynthesisTaskRequest): string {
+    const { transcript: _text, ...identity } = this.requestBody(task);
+    void _text;
+    return JSON.stringify(identity);
+  }
+
   async synthesize(task: SynthesisTaskRequest): Promise<AudioPayload> {
     const response = await this.client.tts.generate(this.requestBody(task));
 

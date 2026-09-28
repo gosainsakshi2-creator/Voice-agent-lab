@@ -298,6 +298,13 @@ export class SmallestAiTextToSpeechProvider implements TextToSpeechProvider {
     };
   }
 
+  /** The request body minus its text, plus the endpoints that pick the model — see `TextToSpeechProvider.cacheIdentity`. */
+  cacheIdentity(task: SynthesisTaskRequest): string {
+    const { text: _text, ...identity } = this.requestBody(task);
+    void _text;
+    return JSON.stringify({ ...identity, baseUrl: this.config.baseUrl, streamBaseUrl: this.config.streamBaseUrl });
+  }
+
   async synthesize(task: SynthesisTaskRequest): Promise<AudioPayload> {
     const wavBytes = await postJsonForBinary(
       this.descriptor.id,

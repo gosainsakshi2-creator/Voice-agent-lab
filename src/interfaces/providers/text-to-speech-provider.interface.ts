@@ -82,6 +82,19 @@ export interface TextToSpeechProvider {
   disposeSession?(sessionId: SessionId): void;
 
   /**
+   * OPTIONAL, ADDITIVE. Everything about the request this provider would
+   * send for `task` EXCEPT its text — model, voice, speed, voice
+   * settings, sample rate, output format — as one stable string. It is
+   * the TTS audio cache's guarantee that a changed voice or setting can
+   * never be answered with old audio: the cache keys on it, so any
+   * change is a different key. Build it from the SAME code that builds
+   * the real request, never from a copy of its values. A provider that
+   * does not implement it is simply never cached. Must be pure and must
+   * never throw.
+   */
+  cacheIdentity?(task: SynthesisTaskRequest): string;
+
+  /**
    * Report whether the provider's upstream connection is currently
    * reachable and authenticated.
    */

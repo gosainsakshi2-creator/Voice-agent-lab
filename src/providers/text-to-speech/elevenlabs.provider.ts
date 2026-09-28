@@ -221,6 +221,34 @@ export class ElevenLabsTextToSpeechProvider implements TextToSpeechProvider {
     this.client = new ElevenLabsClient({ apiKey: config.apiKey });
   }
 
+  /**
+   * The `stream()` request options — the streaming path's own voice
+   * settings, unchanged. One function so `synthesizeStream` and
+   * `cacheIdentity` cannot drift apart.
+   */
+  private streamOptions(task: SynthesisTaskRequest) {
+    return {
+      text: task.request.text,
+      modelId: this.config.modelId,
+      outputFormat: toPcmOutputFormat(this.config.sampleRateHz),
+      voiceSettings: {
+        stability: 0.42,
+        similarityBoost: 0.88,
+        style: 0,
+        useSpeakerBoost: true,
+        speed: 0.94,
+      },
+      languageCode: languageToIsoCode(task.request.language),
+    };
+  }
+
+  /** The streaming request minus its text, plus the voice — see `TextToSpeechProvider.cacheIdentity`. */
+  cacheIdentity(task: SynthesisTaskRequest): string {
+    const { text: _text, ...identity } = this.streamOptions(task);
+    void _text;
+    return JSON.stringify({ voiceId: task.request.voiceId ?? this.config.defaultVoiceId, ...identity });
+  }
+
   async synthesize(task: SynthesisTaskRequest): Promise<AudioPayload> {
     const voiceId = task.request.voiceId ?? this.config.defaultVoiceId;
     const languageCode = languageToIsoCode(task.request.language);
@@ -250,7 +278,6 @@ export class ElevenLabsTextToSpeechProvider implements TextToSpeechProvider {
     signal?: AbortSignal,
   ): AsyncIterable<TtsAudioChunk> {
     const voiceId = task.request.voiceId ?? this.config.defaultVoiceId;
-    const languageCode = languageToIsoCode(task.request.language);
 
     // ── Must be `stream()`, NOT `convert()` ─────────────────────────
     //
@@ -276,19 +303,7 @@ export class ElevenLabsTextToSpeechProvider implements TextToSpeechProvider {
     // that costs a full 2s+ re-synthesis with zero bytes arriving drains
     // the pump dry — heard as a 1-3s silence in the middle of a sentence
     // and as a slow start on the first one.
-    const stream = await this.client.textToSpeech.stream(voiceId, {
-      text: task.request.text,
-      modelId: this.config.modelId,
-      outputFormat: toPcmOutputFormat(this.config.sampleRateHz),
-      voiceSettings: {
-  stability: 0.42,
-  similarityBoost: 0.88,
-  style: 0,
-  useSpeakerBoost: true,
-  speed: 0.94,
-},
-      languageCode,
-    });
+    const stream = await this.client.textToSpeech.stream(voiceId, this.streamOptions(task));
 
     let sequence = 0;
 

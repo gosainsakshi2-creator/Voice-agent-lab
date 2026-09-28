@@ -122,6 +122,8 @@ export interface TurnLatencyInput {
   readonly ttsChunkCount?: number | undefined;
   /** Did the newer caller utterance observed at the supersession check take the floor? */
   readonly supersederTakesFloor?: boolean | undefined;
+  /** `"prepared"` when the reply was prepared while the identity question played. */
+  readonly replySource?: TurnLatencyBreakdown["replySource"] | undefined;
   // TURN-RELEASE TRACE (2026-09-21) — see `TurnLatencyBreakdown` for
   // what each one is and why it exists. Indexed access rather than a
   // re-declared union, matching `endpointMarkerOutcome` and
@@ -494,6 +496,7 @@ export class SessionMetricsCollector {
       ...(charsGenerated !== undefined ? { charsGenerated } : {}),
       ...(ttsChunkCount !== undefined ? { ttsChunkCount } : {}),
       ...(supersederTakesFloor !== undefined ? { supersederTakesFloor } : {}),
+      ...(input.replySource === "prepared" ? { replySource: "prepared" as const } : {}),
       ...(releaseReason !== undefined ? { releaseReason } : {}),
       ...(heldTextReadsUnfinished !== undefined ? { heldTextReadsUnfinished } : {}),
       ...(continuationGracesAtRelease !== undefined ? { continuationGracesAtRelease } : {}),

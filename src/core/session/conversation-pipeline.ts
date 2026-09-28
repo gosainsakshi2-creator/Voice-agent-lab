@@ -47,6 +47,7 @@ import { detectLanguage, isLockGradeEvidence, type LanguageDetectionResult } fro
 import { currentTurnNote, languageHintFor, openingLineFor } from "./system-prompt";
 import { asksWhoIsCalling, classifyIdentityAnswer } from "../../campaign/domain/identity-answer";
 import { SentenceChunker } from "./sentence-chunker";
+import { joinAudioChunks, ttsCacheKey, type TtsAudioCache } from "./tts-audio-cache";
 import { isBareAcknowledgement, isContinuationCue, isContinuationCuePrefix, readsAsUnfinishedThought } from "./turn-detection";
 import type { ContinuationHoldEvent, EndpointMarkerOutcome, TurnReleaseTrace } from "./turn-detection";
 import { voicemailPhraseIn } from "./voicemail-detection";
@@ -279,6 +280,134 @@ interface ThinkingAndSpeakingResult {
   readonly llmRetryOverheadMs?: number;
   /** Compact non-sensitive reasons, e.g. `"500,500"`. */
   readonly llmRetryReasons?: string;
+  /**
+   * `"prepared"` when the reply was generated while the identity question
+   * was still playing and served on the confirmation — see
+   * `prepareFirstReply`. Absent for a reply requested at release.
+   * Telemetry only.
+   */
+  readonly replySource?: "prepared";
+}
+
+/** Additive, optional pipeline behaviour, switched on by the session manager. */
+export interface ConversationPipelineOptions {
+  /**
+   * Generate the reply to a bare identity confirmation WHILE the identity
+   * question plays — see `prepareFirstReply`. Off by default, so a
+   * pipeline built without options (every test harness) behaves exactly
+   * as before; the production manager turns it on.
+   */
+  readonly prepareFirstReply?: boolean;
+  /**
+   * Serve fixed lines from synthesized audio kept across calls — see
+   * `TtsAudioCache`. Absent (every test harness) means every line is
+   * synthesized live, exactly as before.
+   */
+  readonly ttsCache?: TtsAudioCache;
+}
+
+// ------------------------------------------------------------------
+// The prepared first reply — see `prepareFirstReply`
+// ------------------------------------------------------------------
+
+/**
+ * The most a confirmation may say and still be answered by the reply
+ * prepared for a bare "Yes.". "Yes." / "Haan ji, boliye." / "Yes, this is
+ * Sakshi speaking." fit; a turn long enough to carry anything else is
+ * answered by a request made for it.
+ */
+const PREPARED_REPLY_MAX_WORDS = 6;
+
+/**
+ * Anything in a confirming turn the prepared reply would talk straight
+ * past: a question, a "not now", a "not interested". Any of these and the
+ * turn gets its own request, exactly as before. Deliberately broad — a
+ * miss costs one second of latency; a false pass pitches at someone who
+ * just said they are driving.
+ */
+const NOT_A_BARE_CONFIRMATION =
+  /[?？]|\b(?:not|no|nahi|nahin|nhi|busy|later|driving|meeting|call|interested|wait|minute|who|what|kaun|kya|kaise|kyun)\b|नहीं|नही|बाद|बिज़ी|बिजी|रुको|रुकिए|कौन|क्या/iu;
+
+/** A confirmation said in Hindi: any Devanagari, or the romanized words of one. */
+const HINDI_CONFIRMATION = /[ऀ-ॿ]|\b(?:haan|haa|han|haanji|hanji|ji|jee|bilkul|boliye|bolo|bataiye|batao|theek)\b/iu;
+
+/** The bare confirmation each prepared reply answers, and the language its request is hinted in. */
+const PREPARED_CONFIRMATIONS = [
+  { variant: "en", text: "Yes.", language: "en" },
+  { variant: "hinglish", text: "हाँ जी।", language: "hi-en" },
+] as const;
+
+/**
+ * One prepared reply: the provider stream, read ahead into a buffer as it
+ * arrives, and replayable once from the start — so the confirming turn
+ * gets every token already generated at once and the rest as it comes,
+ * whether generation finished during the question or is still running.
+ */
+class PreparedReply {
+  private readonly deltas: string[] = [];
+  private final: LlmStreamEvent | undefined;
+  private finished = false;
+  private error: unknown;
+  private wake: (() => void) | undefined;
+  readonly openedAtMs = Date.now();
+  firstTokenAtMs: number | undefined;
+
+  constructor(
+    readonly variant: "en" | "hinglish",
+    readonly abort: AbortController,
+  ) {}
+
+  /** The text generated so far. */
+  get text(): string {
+    return this.deltas.join("");
+  }
+
+  /** Reads the provider stream to its end, then calls `onDone`. Never throws. */
+  async pump(stream: AsyncIterable<LlmStreamEvent>, onDelta: (delta: string) => void, onDone: () => void): Promise<void> {
+    try {
+      for await (const event of stream) {
+        if (event.type === "token") {
+          if (event.delta.length === 0) continue;
+          this.firstTokenAtMs ??= Date.now();
+          this.deltas.push(event.delta);
+          onDelta(event.delta);
+        } else {
+          this.final = event;
+        }
+        this.wake?.();
+      }
+    } catch (error) {
+      this.error = error;
+    } finally {
+      this.finished = true;
+      this.wake?.();
+      onDone();
+    }
+  }
+
+  /** Usable for the turn in hand: not aborted, and has not failed. */
+  get usable(): boolean {
+    return !this.abort.signal.aborted && this.error === undefined;
+  }
+
+  async *replay(): AsyncGenerator<LlmStreamEvent> {
+    let index = 0;
+    for (;;) {
+      while (index < this.deltas.length) {
+        yield { type: "token", delta: this.deltas[index] ?? "", index };
+        index += 1;
+      }
+      if (this.error !== undefined) throw this.error;
+      if (this.finished) {
+        if (this.final !== undefined) yield this.final;
+        return;
+      }
+      await new Promise<void>((resolve) => {
+        this.wake = resolve;
+      });
+      this.wake = undefined;
+    }
+  }
 }
 
 // ------------------------------------------------------------------
@@ -2794,6 +2923,7 @@ export class ConversationPipeline {
     private readonly record: SessionRecord,
     private readonly providers: ResolvedProviderStack,
     private readonly host: PipelineHost,
+    private readonly options: ConversationPipelineOptions = {},
   ) {
     // The gate is CLOSED only when this call actually has somebody to
     // check. Everything else keeps the behaviour it has always had.
@@ -2909,6 +3039,9 @@ export class ConversationPipeline {
         // after the greeting so the prefill overlaps greeting playback
         // instead of the caller's first reply.
         this.primeLlmPrefixCache(loopSignal);
+        // An opening that asks who picked up: its bare "yes" is answered
+        // from a reply prepared while it plays. See `prepareFirstReply`.
+        this.prepareFirstReply(greetingText, loopSignal);
         await this.speakFixedUtterance(greetingText, loopSignal);
         this.activeTimer = undefined;
         timer.summarize();
@@ -3518,6 +3651,7 @@ export class ConversationPipeline {
           charsGenerated: result.charsGenerated,
           ttsChunkCount: result.ttsChunkCount,
           supersederTakesFloor: result.supersederTakesFloor,
+          replySource: result.replySource,
           // TURN-RELEASE TRACE — spread so a turn with no trace (batch
           // STT) omits all five rather than storing nulls. Counts and
           // enums only; the transcript stays on the console line.
@@ -3766,6 +3900,7 @@ export class ConversationPipeline {
       // eslint-disable-next-line no-console
       console.log(`[PIPELINE:${sid}] identity gate — asking who picked up: "${line}"`);
       this.abandonSpeculation("the identity question is asked without the language model");
+      this.prepareFirstReply(line, loopSignal);
       await this.speakAttentionUtterance(line, loopSignal, "asking who picked up");
       return true;
     }
@@ -3826,6 +3961,10 @@ export class ConversationPipeline {
       // "बताइए" confirms identity AND is a listening sound; it must not then
       // re-ask the identity question (call d33295b1). See `handleAckAfterQuestion`.
       this.identityConfirmedThisTurn = true;
+      // Read by `runThinkingAndSpeaking` on this same turn, to decide
+      // whether the script's first reply can be spoken in place of the
+      // model's — see `scriptedFirstReplyFor`.
+      this.identityConfirmedOnText = userText;
       // The turn itself still goes to the language model, which is what
       // carries the conversation on into the campaign from here.
       return false;
@@ -3837,6 +3976,7 @@ export class ConversationPipeline {
       // apology-and-close the script already owns. Nothing is pitched
       // and nothing is registered.
       this.identityState = "denied";
+      this.discardPreparedReplies("the caller is not the person we called");
       return false;
     }
 
@@ -4662,6 +4802,258 @@ export class ConversationPipeline {
   private lastReaskedQuestion = "";
   /** The identity gate confirmed on the turn in hand; read and cleared by `handleAckAfterQuestion`. */
   private identityConfirmedThisTurn = false;
+  /** The text of the turn the gate confirmed identity on; read and cleared by `runThinkingAndSpeaking`. */
+  private identityConfirmedOnText: string | undefined;
+  /**
+   * ---------------- THE PREPARED FIRST REPLY ----------------
+   *
+   * The longest silence on a campaign call is the one after "haan ji":
+   * real calls (2026-09-28) measured p50 2.35s from the end of the
+   * confirmation to reply audio — ~0.95s endpointing, ~0.96s model
+   * time-to-first-token, then TTS — with the prompt prefix ALREADY cached.
+   * The model wait cannot be cached away, because every reply carries the
+   * contact's name and every customer's script is different.
+   *
+   * So it is moved instead: while the identity question plays, the reply
+   * to a bare "Yes." (and to a bare "हाँ जी।") is requested from the
+   * customer's own script, exactly as the confirming turn would request
+   * it, and its first sentence is synthesized. A bare confirmation is then
+   * answered from what is already in hand; anything else — a question, a
+   * "not now", a re-ask, a hearing check in between — discards it and the
+   * turn makes its own request, exactly as before. No script needs
+   * anything added for this: it reads whatever the script says.
+   *
+   * Set once per call by `prepareFirstReply`, cleared by `takePreparedReply`
+   * (served or discarded) or by the call ending (the loop signal).
+   */
+  private preparedReplies: readonly PreparedReply[] | undefined;
+  /** The identity question the replies were prepared for, and the memory length once it is committed. */
+  private preparedAfter: { readonly question: string; readonly historyLength: number } | undefined;
+  /** First-sentence audio of a prepared reply, consumed by `synthesizeAndPlay` on an exact text + language match. */
+  private preparedAudio: Array<{ readonly text: string; readonly language: SupportedLanguage; readonly audio: Promise<AudioPayload[] | undefined> }> = [];
+  /** A prepared synthesis still running, so a live one never overlaps it on the same provider session. */
+  private preparedAudioInFlight: Promise<unknown> = Promise.resolve();
+
+  /**
+   * Start preparing the reply to a bare confirmation of `question`, which
+   * is about to be spoken. Never awaited and never throws: a preparation
+   * that fails, or never finishes, leaves the confirming turn on the path
+   * it always took.
+   */
+  private prepareFirstReply(question: string, loopSignal: AbortSignal): void {
+    if (this.options.prepareFirstReply !== true || this.preparedReplies !== undefined) return;
+    if (this.identityState !== "outstanding" || this.voicemailDetected) return;
+    const generate = this.providers.llm.generateCompletionStream;
+    if (typeof generate !== "function") return;
+    const sid = this.record.id;
+    // What memory will hold once the question is committed, plus the
+    // pending confirmation — the same window `previewRecentHistory` gives
+    // speculation, with the question turn it cannot see yet.
+    const recent = this.record.memory.recentHistory();
+    const lastAssistant = [...recent].reverse().find((turn) => turn.role !== "user");
+    const questionPending = !(lastAssistant?.role === "assistant" && lastAssistant.content === question);
+    const base: ConversationTurn[] = [
+      ...recent,
+      ...(questionPending ? [{ role: "assistant" as const, content: question, timestamp: new Date() }] : []),
+    ];
+    this.preparedAfter = {
+      question,
+      historyLength: this.record.memory.history().length + (questionPending ? 1 : 0),
+    };
+    const replies: PreparedReply[] = [];
+    for (const confirmation of PREPARED_CONFIRMATIONS) {
+      const abort = new AbortController();
+      const signal = combineSignals([abort.signal, loopSignal]);
+      try {
+        const history = this.buildRequestHistory(confirmation.language as SupportedLanguage, [
+          ...base,
+          { role: "user", content: confirmation.text, timestamp: new Date() },
+        ]);
+        const stream = generate.call(this.providers.llm, { sessionId: sid, history }, signal);
+        if (!stream) continue;
+        const reply = new PreparedReply(confirmation.variant, abort);
+        // The first sentence exactly as `runStreamingCompletion` will cut
+        // and clean it, so the audio prepared for it is found by text.
+        const chunker = new SentenceChunker();
+        let firstSentence: string | undefined;
+        const promptTokens = history.reduce((sum, turn) => sum + estimateTokenCount(turn.content), 0);
+        void reply.pump(
+          stream,
+          (delta) => {
+            if (firstSentence !== undefined) return;
+            const sentence = chunker.push(delta).map((s) => toSpokenText(s)).find((s) => s.length > 0);
+            if (sentence === undefined) return;
+            firstSentence = sentence;
+            this.prepareSentenceAudio(sentence, signal);
+          },
+          // Every preparation is charged to the call, used or not — the
+          // served one's turn then reports 0, so nothing is counted twice.
+          () =>
+            this.record.metrics.recordAuxiliaryCost({
+              languageModel: estimateLlmCost(this.providers.llm.descriptor.id, promptTokens, estimateTokenCount(reply.text)),
+            }),
+        );
+        replies.push(reply);
+      } catch (error) {
+        // eslint-disable-next-line no-console
+        console.warn(`[PREPARE:${sid}] could not prepare the ${confirmation.variant} first reply — the confirming turn will request its own: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+    if (replies.length === 0) return;
+    this.preparedReplies = replies;
+    // eslint-disable-next-line no-console
+    console.log(`[PREPARE:${sid}] preparing the first reply to a bare confirmation of "${question.slice(0, 60)}" (${replies.map((r) => r.variant).join(", ")})`);
+  }
+
+  /** Synthesize one prepared sentence in the voice and language live synthesis would use now. */
+  private prepareSentenceAudio(text: string, signal: AbortSignal): void {
+    const language = this.record.memory.currentLanguage;
+    const tts = this.providers.tts;
+    const task: SynthesisTaskRequest = {
+      sessionId: this.record.id,
+      request: { text: pronounceForSpeech(text, language, this.spokenNames), language },
+    };
+    // Queued behind any preparation already running: one synthesis at a
+    // time per provider session, as live playback already guarantees.
+    const audio = this.preparedAudioInFlight.then(async (): Promise<AudioPayload[] | undefined> => {
+      if (signal.aborted) return undefined;
+      try {
+        const chunks: AudioPayload[] = [];
+        if (tts.synthesizeStream) {
+          for await (const chunk of tts.synthesizeStream(task, signal)) chunks.push(chunk.audio);
+        } else {
+          chunks.push(await tts.synthesize(task));
+        }
+        if (signal.aborted || chunks.length === 0) return undefined;
+        const seconds = chunks.reduce((sum, chunk) => sum + estimateAudioSeconds(chunk), 0);
+        // Charged whether or not it is played: it was synthesized.
+        this.record.metrics.recordAuxiliaryCost({ textToSpeech: estimateTtsCost(tts.descriptor.id, text.length, seconds) });
+        return chunks;
+      } catch {
+        return undefined;
+      }
+    });
+    this.preparedAudioInFlight = audio;
+    this.preparedAudio.push({ text, language, audio });
+  }
+
+  /** Drop every prepared reply and its audio. Idempotent. */
+  private discardPreparedReplies(reason: string): void {
+    const replies = this.preparedReplies;
+    this.preparedAudio = [];
+    if (replies === undefined) return;
+    this.preparedReplies = undefined;
+    for (const reply of replies) reply.abort.abort();
+    // eslint-disable-next-line no-console
+    console.log(`[PREPARE:${this.record.id}] prepared first reply DISCARDED (${reason})`);
+  }
+
+  /**
+   * The prepared reply that answers this turn, or undefined when the turn
+   * must request its own. With `peek` (from `startSpeculation`) nothing is
+   * consumed; without it (the release path) the preparation is spent
+   * either way — served, or discarded.
+   *
+   * Every condition is a reason the reply prepared for a bare "Yes." would
+   * not be the reply this turn gets:
+   *   - it is not the turn identity was just confirmed on;
+   *   - memory is not exactly the question plus this turn (a re-ask, a
+   *     hearing check, anything said or committed in between);
+   *   - the turn says more than a bare confirmation;
+   *   - the reply for the language they answered in failed or was aborted.
+   */
+  private takePreparedReply(userText: string, turnLanguage: SupportedLanguage, peek: boolean): PreparedReply | undefined {
+    const replies = this.preparedReplies;
+    const after = this.preparedAfter;
+    if (replies === undefined || after === undefined) return undefined;
+    const pick = (): PreparedReply | "discard" => {
+      const trimmed = userText.trim();
+      const words = trimmed.split(/\s+/u).filter((word) => word.length > 0).length;
+      if (words === 0 || words > PREPARED_REPLY_MAX_WORDS) return "discard";
+      if (NOT_A_BARE_CONFIRMATION.test(trimmed) || asksWhoIsCalling(trimmed)) return "discard";
+      // The language they ANSWERED in — read off the confirmation itself,
+      // because a bare "हाँ जी।" is a no-floor utterance that never moves
+      // the call's language lock off English. Left to a request made at
+      // release, that turn got the English reply 24 times and the
+      // Hinglish one 18 times in 42 real calls (2026-09-28).
+      const variant = turnLanguage !== "en" || HINDI_CONFIRMATION.test(trimmed) ? "hinglish" : "en";
+      const reply = replies.find((r) => r.variant === variant);
+      return reply !== undefined && reply.usable ? reply : "discard";
+    };
+    if (peek) {
+      const reply = pick();
+      return reply === "discard" ? undefined : reply;
+    }
+    const confirmedOn = this.identityConfirmedOnText;
+    this.identityConfirmedOnText = undefined;
+    if (confirmedOn !== userText) return undefined;
+    const history = this.record.memory.history();
+    const question = history[after.historyLength - 1];
+    const inPlace =
+      history.length === after.historyLength + 1 &&
+      question?.role === "assistant" &&
+      question.content === after.question &&
+      history[after.historyLength]?.content === userText;
+    const reply = inPlace ? pick() : "discard";
+    if (reply === "discard") {
+      this.discardPreparedReplies(inPlace ? "the confirmation says more than yes" : "the conversation moved on since it was prepared");
+      return undefined;
+    }
+    // Keep the audio for the served reply's language; abort the other one.
+    this.preparedReplies = undefined;
+    for (const other of replies) if (other !== reply) other.abort.abort();
+    return reply;
+  }
+
+  /** Set by `speakFixedUtterance` for the one `synthesizeAndPlay` it makes; read by `ttsCacheKeyFor`. */
+  private fixedLineCacheable = false;
+
+  /** Does this line carry any part of the contact's name? Such a line is never cached. */
+  private mentionsContactName(text: string): boolean {
+    const name = (this.record.request.campaign?.customer.name ?? "").trim().toLowerCase();
+    if (name.length === 0) return false;
+    const lower = text.toLowerCase();
+    return name.split(/\s+/u).some((part) => part.length >= 2 && lower.includes(part));
+  }
+
+  /**
+   * The cache key for this synthesis, or undefined when it must not be
+   * cached: not a fixed line (every generated reply), a line with the
+   * contact's name, or a provider that does not state its request
+   * fingerprint (`cacheIdentity`) — without one, a changed voice could be
+   * answered with old audio, so nothing is cached at all.
+   */
+  private ttsCacheKeyFor(task: SynthesisTaskRequest): string | undefined {
+    if (!this.fixedLineCacheable || this.options.ttsCache === undefined) return undefined;
+    const tts = this.providers.tts;
+    if (typeof tts.cacheIdentity !== "function") return undefined;
+    try {
+      return ttsCacheKey(tts.descriptor.id, tts.cacheIdentity(task), task.request.text);
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** The prepared first-sentence audio for exactly this text and language, consumed; undefined otherwise. */
+  private takePreparedAudio(text: string, language: SupportedLanguage): Promise<AudioPayload[] | undefined> | undefined {
+    const index = this.preparedAudio.findIndex((entry) => entry.text === text && entry.language === language);
+    if (index < 0) return undefined;
+    const entry = this.preparedAudio[index];
+    this.preparedAudio = [];
+    return entry?.audio;
+  }
+
+  /**
+   * Would the identity gate read this pending turn as `confirmed` and
+   * pass it on to the model? Mirrors `handleIdentityGate`'s branches in
+   * order: a screening assistant and a call-back request are answered
+   * before the verdict is read, and only `confirmed` reaches the model
+   * with the reply that follows. Read only by `startSpeculation`.
+   */
+  private pendingTurnConfirmsIdentity(text: string): boolean {
+    if (CALL_SCREENING.test(text) || CALLBACK_REQUEST.test(text)) return false;
+    return classifyIdentityAnswer(text, this.record.request.campaign?.customer.name) === "confirmed";
+  }
 
   /**
    * A bare listening sound after a yes/no question → re-ask that question
@@ -5146,7 +5538,17 @@ export class ConversationPipeline {
     // adopted: the tokens are paid for and thrown away, and the
     // "zero language-model requests" the attention and continuity
     // suites assert would stop being true of the opening.
-    if (this.identityState === "unasked" || this.identityState === "outstanding") return;
+    //
+    // EXCEPT the one outstanding turn that is not answered from a fixed
+    // line: the one that CONFIRMS. The gate hands that turn to the model
+    // unchanged (see `handleIdentityGate`), and the request it builds does
+    // not read `identityState` at all, so a request pre-opened for it
+    // while the state still says "outstanding" is the request built at
+    // release and is adopted like any other. Every other outstanding turn
+    // — unclear, denied, a greeting, a screening assistant, a call-back —
+    // still pre-opens nothing.
+    if (this.identityState === "unasked") return;
+    if (this.identityState === "outstanding" && !this.pendingTurnConfirmsIdentity(text)) return;
     const generate = this.providers.llm.generateCompletionStream;
     if (typeof generate !== "function") return;
     const loopSignal = this.record.loopAbortController?.signal;
@@ -5184,6 +5586,9 @@ export class ConversationPipeline {
       // raw detection is what keeps the pre-opened request identical to
       // the one built at release, so `adoptSpeculation` still matches.
       const turnLanguage = this.effectiveLanguageFor(text);
+      // A confirmation the prepared first reply will answer needs no
+      // request: `runThinkingAndSpeaking` would only abandon it.
+      if (this.identityState === "outstanding" && this.takePreparedReply(text, turnLanguage, true) !== undefined) return;
       const request: CompletionRequest = {
         sessionId: sid,
         history: this.buildRequestHistory(turnLanguage, this.record.memory.previewRecentHistory(text)),
@@ -7677,10 +8082,19 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
     const speakingSignal = this.enterSpeaking();
     if (speakingSignal.aborted || loopSignal.aborted) return;
 
-    const spoken = await this.synthesizeAndPlay(
-      alreadyFormatted ? text : toSpokenText(text),
-      speakingSignal,
-    );
+    // A fixed line is the same audio on every call — unless it carries
+    // the contact's name, or is a slice of a generated reply being
+    // re-spoken (`alreadyFormatted`). See `ttsCacheKeyFor`.
+    this.fixedLineCacheable = !alreadyFormatted && !this.mentionsContactName(text);
+    let spoken: Awaited<ReturnType<ConversationPipeline["synthesizeAndPlay"]>>;
+    try {
+      spoken = await this.synthesizeAndPlay(
+        alreadyFormatted ? text : toSpokenText(text),
+        speakingSignal,
+      );
+    } finally {
+      this.fixedLineCacheable = false;
+    }
     // The greeting is a startup action, not a turn, so it is correctly
     // absent from `turnLatencies` — but it still consumes real TTS
     // characters, and that cost used to be dropped on the floor.
@@ -7708,6 +8122,40 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
     const thinkingSignal = combineSignals([this.record.bargeIn.beginThinking(), loopSignal]);
     const request: CompletionRequest = { sessionId: this.record.id, history: this.buildRequestHistory(turnLanguage) };
     const llmProviderId = this.providers.llm.descriptor.id;
+
+    // ── THE PREPARED FIRST REPLY ────────────────────────────────────
+    // See `prepareFirstReply`. Handed to the SAME streaming path a
+    // generated reply takes, as a stream that was opened while the
+    // identity question played, so everything after the model —
+    // chunking, per-sentence TTS, barge-in, the heard-text commit, the
+    // held remainder, supersession — is the code that runs today.
+    const prepared = !isGreeting ? this.takePreparedReply(userText, turnLanguage, false) : undefined;
+    if (prepared !== undefined) {
+      this.abandonSpeculation("the prepared first reply answers this turn");
+      // eslint-disable-next-line no-console
+      console.log(
+        `[PREPARE:${sid}] identity confirmed by "${userText.trim().slice(0, 40)}" — serving the ${prepared.variant} reply prepared ${Date.now() - prepared.openedAtMs}ms ago` +
+          ` (first token ${prepared.firstTokenAtMs !== undefined ? "already in hand" : "not yet"})`,
+      );
+      this.markTiming("llm-request");
+      if (thinkingSignal.aborted) prepared.abort.abort();
+      else thinkingSignal.addEventListener("abort", () => prepared.abort.abort(), { once: true });
+      const iterator = prepared.replay();
+      const promptTokens = request.history.reduce((sum, turn) => sum + estimateTokenCount(turn.content), 0);
+      const result = await this.runStreamingCompletion(request, thinkingSignal, loopSignal, promptTokens, llmProviderId, {
+        text: userText,
+        request,
+        openedAtMs: prepared.openedAtMs,
+        evidenceAtMs: undefined,
+        abort: prepared.abort,
+        iterator,
+        first: iterator.next(),
+        firstTokenAtMs: prepared.firstTokenAtMs,
+      });
+      // Its model cost was charged when the preparation finished.
+      return { ...result, llmCostUsd: 0, replySource: "prepared" };
+    }
+
     // FIX #8 — the request above is STILL built, exactly as before, and
     // is the reference a pre-opened request must match to be adopted.
     // Anything else falls through to sending `request` as today.
@@ -8625,6 +9073,64 @@ await this.drainPlayback(speakingSignal, true);
     };
     const startedAt = Date.now();
 
+    // ── PREPARED AUDIO — see `prepareFirstReply` ────────────────────
+    // The first sentence of a prepared reply, synthesized while the
+    // identity question played: same text, same language, same
+    // pronunciation rewrite, so it is the clip this call would make now.
+    // Played through the same `playAudioChunk`, so playback accounting,
+    // backpressure and barge-in are unchanged. Anything missing or failed
+    // falls through to live synthesis below.
+    if (this.options.prepareFirstReply === true) {
+      const prepared = this.takePreparedAudio(text, language);
+      const audio = prepared !== undefined ? await prepared : undefined;
+      if (audio !== undefined && !speakingSignal.aborted) {
+        if (!this.markedTtsThisTurn) {
+          this.markedTtsThisTurn = true;
+          this.markTiming("tts-first-chunk");
+        }
+        const readyMs = Date.now() - startedAt;
+        // eslint-disable-next-line no-console
+        console.log(`[PREPARE:${sid}] playing prepared audio for "${text.slice(0, 60)}" (ready in ${readyMs}ms)`);
+        for (const chunk of audio) {
+          if (speakingSignal.aborted) {
+            await this.record.mediaStream?.interruptPlayback();
+            break;
+          }
+          await this.playAudioChunk(chunk);
+        }
+        // Its cost was charged when it was synthesized.
+        return { ttsMs: readyMs, ttsCostUsd: 0, firstChunkMs: readyMs };
+      }
+      // Never two syntheses at once on one provider session.
+      await this.preparedAudioInFlight;
+    }
+
+    // ── CACHED AUDIO — see `TtsAudioCache` ─────────────────────────
+    // A fixed line already synthesized with this exact provider request
+    // (voice, model, settings, text). Played through the same
+    // `playAudioChunk`, so playback accounting, backpressure and barge-in
+    // are unchanged. A miss, a slow store or any error synthesizes live
+    // below, and the live clip is kept for next time.
+    const cacheKey = this.ttsCacheKeyFor(task);
+    if (cacheKey !== undefined && this.options.ttsCache !== undefined) {
+      const hit = await this.options.ttsCache.get(cacheKey);
+      if (hit !== undefined && !speakingSignal.aborted) {
+        if (!this.markedTtsThisTurn) {
+          this.markedTtsThisTurn = true;
+          this.markTiming("tts-first-chunk");
+        }
+        const readyMs = Date.now() - startedAt;
+        // eslint-disable-next-line no-console
+        console.log(`[TTS-CACHE:${sid}] HIT (${hit.tier}, ${readyMs}ms) "${text.slice(0, 60)}"`);
+        await this.playAudioChunk(hit.audio);
+        if (speakingSignal.aborted) await this.record.mediaStream?.interruptPlayback();
+        return { ttsMs: readyMs, ttsCostUsd: 0, firstChunkMs: readyMs };
+      }
+      // eslint-disable-next-line no-console
+      console.log(`[TTS-CACHE:${sid}] MISS "${text.slice(0, 60)}" — synthesizing live`);
+    }
+    const toCache: AudioPayload[] | undefined = cacheKey !== undefined && this.options.ttsCache !== undefined ? [] : undefined;
+
     if (this.providers.tts.synthesizeStream) {
       let chunkCount = 0;
       // Synthesis time-to-first-chunk for THIS utterance. Independent
@@ -8660,7 +9166,10 @@ await this.drainPlayback(speakingSignal, true);
   generatedAudioSeconds += estimateAudioSeconds(chunk.audio);
 
   await this.playAudioChunk(chunk.audio);
+  toCache?.push(chunk.audio);
 }
+        const clip = toCache !== undefined && !speakingSignal.aborted ? joinAudioChunks(toCache) : undefined;
+        if (clip !== undefined && cacheKey !== undefined) this.options.ttsCache?.put(cacheKey, ttsProviderId, clip);
       } catch (err) {
         if (!speakingSignal.aborted) {
           // eslint-disable-next-line no-console
@@ -8708,6 +9217,9 @@ await this.drainPlayback(speakingSignal, true);
         this.markTiming("tts-first-chunk");
       }
       await this.playAudioChunk(audio);
+      if (toCache !== undefined && cacheKey !== undefined && !speakingSignal.aborted) {
+        this.options.ttsCache?.put(cacheKey, ttsProviderId, audio);
+      }
 
       // ── Do NOT wait out this clip's playback here ──────────────────
       //

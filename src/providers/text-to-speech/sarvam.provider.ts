@@ -491,6 +491,23 @@ export class SarvamTextToSpeechProvider implements TextToSpeechProvider {
     return entry.socket;
   }
 
+  /** The streaming socket's per-utterance config message. One function so `synthesizeStream` and `cacheIdentity` cannot drift apart. */
+  private streamConfig(task: SynthesisTaskRequest, speaker: string) {
+    return {
+      speaker,
+      target_language_code: toSarvamLanguage(task.request.language),
+      output_audio_codec: "wav",
+      speech_sample_rate: this.config.sampleRateHz,
+      pace: SARVAM_PACE,
+    };
+  }
+
+  /** The streaming config plus the model in the socket URL — see `TextToSpeechProvider.cacheIdentity`. */
+  cacheIdentity(task: SynthesisTaskRequest): string {
+    const speaker = task.request.voiceId ?? this.config.defaultSpeaker;
+    return JSON.stringify({ model: this.config.model, baseUrl: this.config.baseUrl, ...this.streamConfig(task, speaker) });
+  }
+
   async synthesize(task: SynthesisTaskRequest): Promise<AudioPayload> {
     const speaker = task.request.voiceId ?? this.config.defaultSpeaker;
     const response = await postJson<SarvamTtsResponse>(
@@ -734,13 +751,7 @@ export class SarvamTextToSpeechProvider implements TextToSpeechProvider {
       socket.send(
         JSON.stringify({
           type: "config",
-          data: {
-            speaker,
-            target_language_code: toSarvamLanguage(task.request.language),
-            output_audio_codec: "wav",
-            speech_sample_rate: this.config.sampleRateHz,
-            pace: SARVAM_PACE,
-          },
+          data: this.streamConfig(task, speaker),
         }),
       );
       socket.send(JSON.stringify({ type: "text", data: { text: task.request.text } }));

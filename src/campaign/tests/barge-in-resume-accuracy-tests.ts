@@ -1058,6 +1058,28 @@ for (const { name, bridge } of BRIDGES) {
     }
   });
 
+  // 2026-09-28 (real call d9257578): "हेलो" over the pitch's own greeting
+  // sentence cut it mid-generation and the pitch was spoken twice. It is
+  // a greeting back: the pitch plays on, once, and is committed whole.
+  for (const greeting of ["हेलो।", "Hello."]) {
+    await test(`E6j. ${name}: one ${JSON.stringify(greeting)} over the pitch's greeting sentence does not cut it`, async () => {
+      const pitch = `Hi Ankit, I am Rohan from Team FlexiFunnels. ${S2} ${S3}`;
+      const h = startHarness({ replies: [pitch, "SHOULD-NOT-BE-GENERATED"], bridge });
+      try {
+        await startBlock(h);
+        await sleep(1000);
+        const requestsBefore = h.requests.length;
+        h.say(greeting);
+        await h.waitFor("the pitch committed whole", () => h.assistantTexts().some((t) => t.includes("plain instructions")), 30000);
+        assert.equal(h.synthesized.filter((t) => t.includes("Hi Ankit")).length, 1, `the pitch is spoken once, synthesized=${JSON.stringify(h.synthesized)}`);
+        assert.ok(!h.synthesized.some((t) => t.includes("can you hear me")), "no hearing question");
+        assert.equal(h.requests.length, requestsBefore, "the greeting never reaches the language model");
+      } finally {
+        await h.stop();
+      }
+    });
+  }
+
   await test(`E7. ${name}: "हाय—" halfway through sentence 1 still replays it from its first word`, async () => {
     const h = startHarness({ replies: [BLOCK, "SHOULD-NOT-BE-GENERATED"], bridge });
     try {

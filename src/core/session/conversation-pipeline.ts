@@ -3385,6 +3385,18 @@ export class ConversationPipeline {
             this.contextualReplyCommitted = true;
           }
           strandedRemainder = unspokenTail(result.assistantText, heard);
+          // Generation was aborted by the cut, so the text can end mid-sentence
+          // ("… सब एक phone से। आपने"). Resuming that fragment stops the agent
+          // mid-sentence and draws a "hello?" (call d9257578). Hold only the
+          // complete sentences; the model carries on from them next turn.
+          if (this.cutBeforeReplyFullyQueued) {
+            const lastEnd = Math.max(
+              ...[".", "!", "?", "।", "？"].map((mark) => strandedRemainder.lastIndexOf(mark)),
+            );
+            if (lastEnd >= 0 && lastEnd < strandedRemainder.trimEnd().length - 1) {
+              strandedRemainder = strandedRemainder.slice(0, lastEnd + 1).trim();
+            }
+          }
         } else if (result.assistantText.trim().length > 0) {
           this.record.memory.recordAssistantTurn(result.assistantText);
           this.contextualReplyCommitted = true;
@@ -5610,6 +5622,15 @@ export class ConversationPipeline {
     if (this.outboundPlaybackStartedAt === 0 && BARE_GREETING_ONLY.test(utterance.trim())) {
       return true;
     }
+    // ONE greeting while the reply's own greeting sentence ("Hi Ankit, I'm
+    // Rohan…") is playing is the caller greeting back. Cutting it aborted
+    // the reply mid-generation, the resume spoke a fragment ending "आपने",
+    // and the next "हेलो" re-pitched from the top (call d9257578,
+    // 2026-09-28). The pitch carries on instead; "Hello? Hello?" and a
+    // "Hello" over any later sentence still interrupt.
+    if (this.isSingleGreeting(utterance) && this.playingSentenceOpensWithGreeting()) {
+      return true;
+    }
     // `isContinuationCue` is a bare acknowledgement OR an invitation to
     // carry on ("बोलिए", "Yes, sir.") — both mean "keep talking".
     // ...or an INTERIM that is still on its way to one ("हाँ, पता" before
@@ -5811,6 +5832,9 @@ export class ConversationPipeline {
     // No snapshot (nothing had played yet) keeps the old greeting-back default.
     this.cutSentenceOpensWithGreeting =
       this.pendingCutSentence === undefined || OPENS_WITH_GREETING.test(this.pendingCutSentence.sentenceText.trim());
+    // Cut while the model was still writing: the reply's text stops wherever
+    // generation was aborted. See the stranded-remainder trim in the main loop.
+    this.cutBeforeReplyFullyQueued = !this.replyFullyQueued;
     // The reply now in flight was CUT, so a turn that follows it is the
     // interruption itself and must be answered — see the stale-turn check
     // in the main loop.
@@ -5837,6 +5861,23 @@ export class ConversationPipeline {
    * turn, the stranded remainder and every resume are computed exactly
    * as before, from `heardSoFarText` alone.
    */
+  /** One bare greeting word ("हेलो।", "Hi", "Hello—"), not a doubled "Hello? Hello?". */
+  private isSingleGreeting(utterance: string): boolean {
+    const form = greetingFormForAttention(utterance);
+    if (!isBareGreetingTurn(form)) return false;
+    return form.split(/[^\p{L}\p{M}]+/u).filter((word) => word.length > 0).length === 1;
+  }
+
+  /** Does the sentence at the play head open with a greeting? See `OPENS_WITH_GREETING`. */
+  private playingSentenceOpensWithGreeting(): boolean {
+    if (this.outboundPlaybackStartedAt === 0 || this.spokenUtterances.length === 0) return false;
+    const playheadMs = this.playedSoFarMs();
+    const playing = this.spokenUtterances.find(
+      (u) => !(u.complete && u.endsAtMs > u.startsAtMs && u.endsAtMs <= playheadMs),
+    );
+    return playing !== undefined && OPENS_WITH_GREETING.test(playing.text.trim());
+  }
+
   private snapshotCutSentence(heard: string): PendingCutSentence | undefined {
     if (this.outboundPlaybackStartedAt === 0 || this.spokenUtterances.length === 0) return undefined;
     const playheadMs = this.playedSoFarMs();
@@ -8182,6 +8223,8 @@ await this.drainPlayback(speakingSignal, true);
   private cutInsideQuestion = false;
   /** The sentence the last cut landed in opens with a greeting ("Hi Sakshi, …"). See `OPENS_WITH_GREETING`. */
   private cutSentenceOpensWithGreeting = true;
+  /** The last cut landed before the reply was fully generated and queued. */
+  private cutBeforeReplyFullyQueued = false;
   /** The words that are about to cut the reply, read once by `triggerExternalBargeIn`. */
   private pendingCutText: string | undefined;
   /**

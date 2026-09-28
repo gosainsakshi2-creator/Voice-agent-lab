@@ -765,8 +765,27 @@ await test("I4 — before any block, a single \"Hello.\" is the caller answering
 // ═════════════════════════════════════════════════════════════════
 section("I5-I8. a single greeting vs. a repeated one");
 
-await test("I5 — after a block, a SINGLE \"Hello?\" is answered by the model, NOT by the hearing check", async () => {
+// I5/I6 pin a block that ends on a STATEMENT. Since 2026-09-28 a lone
+// "Hello?" straight after the agent's QUESTION is asked about instead (I5b).
+const BLOCK_STATEMENT = BLOCK.slice(0, BLOCK.lastIndexOf(" Would you like"));
+
+await test("I5b — after a block that ends on a QUESTION, a single \"Hello?\" is asked about, without the model", async () => {
   const h = startHarness({ openingLine: OPENING, replies: [BLOCK, REPLY] });
+  try {
+    await greetingDone(h);
+    h.say("Yes, tell me.");
+    await h.waitForReplies(2, 20_000);
+    h.say("Hello?");
+    await h.waitForReplies(3, 20_000);
+    assert.equal(count(h.syntheses, ACK), 1, "the hearing question, once");
+    assert.equal(h.requests.length, 1, "and no language-model request for it");
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("I5 — after a block, a SINGLE \"Hello?\" is answered by the model, NOT by the hearing check", async () => {
+  const h = startHarness({ openingLine: OPENING, replies: [BLOCK_STATEMENT, REPLY] });
   try {
     await greetingDone(h);
     // A real contribution, so the block is delivered WITHOUT a greeting
@@ -786,7 +805,7 @@ await test("I5 — after a block, a SINGLE \"Hello?\" is answered by the model, 
 });
 
 await test("I6 — the SECOND \"Hello?\" in succession IS the hearing check, and the existing flow is unchanged", async () => {
-  const h = startHarness({ openingLine: OPENING, replies: [BLOCK, REPLY] });
+  const h = startHarness({ openingLine: OPENING, replies: [BLOCK_STATEMENT, REPLY] });
   try {
     await greetingDone(h);
     h.say("Yes, tell me.");

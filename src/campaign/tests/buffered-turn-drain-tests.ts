@@ -1088,7 +1088,7 @@ section("SECTION D — a REPEATED hello behind a playing block demands attention
 // the EXISTING hearing flow (`test:attention` sections B/C/J).
 
 /** The fixed hearing question, as the pipeline speaks it. */
-const HEARING_QUESTION = "Hey, can you hear me okay?";
+const HEARING_QUESTION = "Hey, can you hear me?";
 
 /** Whitespace-insensitive equality, the way `unspokenTail` compares text. */
 const sameWords = (a: string, b: string): boolean => a.replace(/\s+/gu, "") === b.replace(/\s+/gu, "");

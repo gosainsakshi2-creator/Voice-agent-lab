@@ -4,7 +4,7 @@
  * PHASE 1.2: THE HEARING CHECK THAT NEVER ENDS.
  *
  * `handleAttentionCheck` answers a presence check with one of two FIXED
- * lines — the acknowledgement ("Hey, can you hear me okay?") and the
+ * lines — the acknowledgement ("Hey, can you hear me?") and the
  * follow-up ("I just want to make sure you can hear me...") — and
  * neither says anything new: no script content, no language-model
  * request, nothing that advances the call. Nothing counted them, and
@@ -83,7 +83,7 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
  * The two fixed lines, restated here so a change to either one fails a
  * test rather than silently making the cap uncountable.
  */
-const ACK = "Hey, can you hear me okay?";
+const ACK = "Hey, can you hear me?";
 const FOLLOW_UP = "I just want to make sure you can hear me. Did you catch what I was saying?";
 /**
  * EVERY language variant of those two lines. The cap counts the agent's
@@ -984,7 +984,7 @@ await test('D2 — a REPEATED "Hello?" after a block still gets exactly one ackn
   //
   // This test used to say "a single Hello? after a block". That rule is
   // gone: one greeting out of a clear sky is a person saying hello, and
-  // being answered with "Hey, can you hear me okay?" on the spot is the
+  // being answered with "Hey, can you hear me?" on the spot is the
   // robotic reading. The qualifying test is now an UNMISTAKABLE check
   // (a presence phrase, or the greeting doubled in one utterance) or a
   // bare greeting whose PREVIOUS turn was a bare greeting too.

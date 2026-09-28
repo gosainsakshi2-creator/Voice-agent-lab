@@ -99,7 +99,7 @@ const ALL_LANGUAGES: readonly Lang[] = [EN, HI, HI_EN];
  * unobservable. Same reason `test:hearing-loop` restates them.
  */
 const HEARING_ACK: Readonly<Record<string, string>> = {
-  [EN]: "Hey, can you hear me okay?",
+  [EN]: "Hey, can you hear me?",
   [HI]: "हाँ, क्या आपको मेरी आवाज़ ठीक से सुनाई दे रही है?",
   [HI_EN]: "Haan, aap mujhe theek se sun paa rahe ho?",
 };

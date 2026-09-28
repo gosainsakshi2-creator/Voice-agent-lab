@@ -569,7 +569,7 @@ const SHORT_BLOCK = "We have created Flexi Genie, which automates your whole onl
 //
 // A SINGLE "hi" / "hello" is no longer one of them. One greeting out of
 // a clear sky is a person saying hello, and answering it on the spot
-// with "Hey, can you hear me okay?" is the robotic reading; it now
+// with "Hey, can you hear me?" is the robotic reading; it now
 // takes the contextual path exactly as "okay" and "haan" do. What
 // qualifies is an unmistakable check — a presence phrase, or the
 // greeting doubled — or a bare greeting whose PREVIOUS turn was a bare

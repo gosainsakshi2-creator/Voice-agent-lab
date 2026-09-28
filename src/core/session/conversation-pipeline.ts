@@ -694,7 +694,7 @@ export function bufferedTurnTakesTheFloor(text: string): boolean {
 
 /**
  * "Yes, I can hear you." — the caller answering the acknowledgement's
- * own question ("Hey, can you hear me okay?"), which is the cue to carry
+ * own question ("Hey, can you hear me?"), which is the cue to carry
  * on from where the reply stopped.
  *
  * Read at ONE place and only while an attention episode is open, i.e.
@@ -749,7 +749,7 @@ export function isHearingConfirmation(text: string): boolean {
  * "Continue from where you stopped." — the caller, asked whether they
  * can hear, telling us to carry on. Read ONLY inside an open attention
  * episode that has a cut-off reply on record (`heldScriptFull`), i.e.
- * in the turn right after "Hey, can you hear me okay?". Anywhere else
+ * in the turn right after "Hey, can you hear me?". Anywhere else
  * the same words reach the language model exactly as they do today.
  *
  * A CONTAINS test, not a whole-utterance one, because the answer to a
@@ -831,7 +831,7 @@ function attentionAcknowledgementFor(language: SupportedLanguage): string {
     case "hi-en":
       return "Haan, aap mujhe theek se sun paa rahe ho?";
     default:
-      return "Hey, can you hear me okay?";
+      return "Hey, can you hear me?";
   }
 }
 
@@ -1315,10 +1315,10 @@ function scriptedClosingFor(language: SupportedLanguage): string {
  * presence check, which the same branches answer with another fixed
  * line. Nothing in the handler counted them, so:
  *
- *   caller "Hello? Hello?"  -> "Hey, can you hear me okay?"
- *   caller "Hello? Hello?"  -> "Hey, can you hear me okay?"          (before a block)
+ *   caller "Hello? Hello?"  -> "Hey, can you hear me?"
+ *   caller "Hello? Hello?"  -> "Hey, can you hear me?"          (before a block)
  *   caller "Hello?"         -> "I just want to make sure..."          (after one)
- *   caller "Hello?"         -> "Hey, can you hear me okay?"
+ *   caller "Hello?"         -> "Hey, can you hear me?"
  *   ... for as long as the caller keeps saying it
  *
  * — the caller-sustainable hearing loop the audit records as an open
@@ -2577,7 +2577,7 @@ export class ConversationPipeline {
    * `lastTurnWasBareGreeting` above.
    *
    * WHY THE GATE CANNOT WORK THIS OUT FOR ITSELF. "Yes." is a complete
-   * answer to "Hey, can you hear me okay?" and a complete answer to "Am
+   * answer to "Hey, can you hear me?" and a complete answer to "Am
    * I speaking with Sakshi?", and no reading of those four letters can
    * separate them — only knowing which question was asked can, and the
    * pipeline is the only thing that knows. `identity-answer.ts` already
@@ -2628,7 +2628,7 @@ export class ConversationPipeline {
    * no predicate could see the repetition. So after a block had been
    * delivered the qualifying test fell back to `isHearingCheck`, which
    * a SINGLE bare greeting satisfies, and one "Hello" out of a clear
-   * sky was answered with "Hey, can you hear me okay?".
+   * sky was answered with "Hey, can you hear me?".
    *
    * That is the robotic reading. One greeting is a person saying hello;
    * the same greeting twice in a row is a person who cannot hear us.
@@ -3777,7 +3777,7 @@ export class ConversationPipeline {
     // ── Asked, and this turn is the answer ───────────────────────
     //
     // ...unless it is the answer to the OTHER question we asked. A bare
-    // "Yes." said straight after "Hey, can you hear me okay?" answers
+    // "Yes." said straight after "Hey, can you hear me?" answers
     // that, and `classifyIdentityAnswer` cannot see the difference
     // because there is no difference in the words — so the pipeline,
     // which does know, says so. Treated as `unclear`, which is what the
@@ -4056,7 +4056,7 @@ export class ConversationPipeline {
       );
       this.heldScriptRemainder = "";
       const spoken = await this.speakAttentionUtterance(
-        remainder,
+        `${this.resumeLeadIn(remainder)}${remainder}`,
         loopSignal,
         "resuming after an attention check",
         "resume",
@@ -4135,7 +4135,11 @@ export class ConversationPipeline {
       const qualifies =
         isEmphaticHearingCheck(trimmed) ||
         (previousTurnWasBareGreeting && isHearingCheck(trimmed));
-      if (!qualifies && (isBareGreetingTurn(trimmed) || bareGreetingOverHeldReply)) {
+      // Only a greeting that cut the reply's FIRST sentence is a greeting
+      // back. Later in the pitch a lone "Hello" is the caller checking the
+      // line (the user's rule, 2026-09-26): it falls through to the
+      // hearing question below, and "Yes" then resumes with a lead-in.
+      if (!qualifies && (isBareGreetingTurn(trimmed) || bareGreetingOverHeldReply) && this.cutSentenceIndex === 0) {
         if (this.hearingLineCapReached()) return this.declineExhaustedHearingCheck(trimmed);
         // eslint-disable-next-line no-console
         console.log(
@@ -4194,7 +4198,7 @@ export class ConversationPipeline {
       //
       // What changes is only this: after a block, a SINGLE bare "Hello"
       // used to qualify by `isHearingCheck` alone and was answered with
-      // "Hey, can you hear me okay?" on the spot. One greeting out of a
+      // "Hey, can you hear me?" on the spot. One greeting out of a
       // clear sky is a person saying hello, so it now takes the
       // contextual path — where the model answers it naturally and the
       // conversation carries on — and the hearing check waits for the
@@ -4563,6 +4567,33 @@ export class ConversationPipeline {
    * hangup. Nothing here ends the call; the hangup stays where it has
    * always been.
    */
+  /**
+   * The few words a person puts in front of what they were saying when
+   * the line cut out: "Okay, so I was telling you that — …". Only for the
+   * RESUME after a hearing check (the caller missed something); never for
+   * a resume after "okay". "asking" when what follows is a question; none
+   * when it starts with a greeting. Gendered like the agent in Hindi.
+   */
+  private resumeLeadIn(remainder: string): string {
+    const text = remainder.trim();
+    if (text.length === 0 || /^(hi|hello|hey|हाय|हेलो|हैलो)(?=$|[\s,.!?—–-])/iu.test(text)) return "";
+    const firstSentence = text.split(/(?<=[.!?।？])\s+/u)[0] ?? text;
+    const asking = /[?？]$/u.test(firstSentence.trim());
+    const female = this.record.request.campaign?.agent.gender === "female";
+    switch (this.record.memory.currentLanguage) {
+      case "hi":
+        return asking
+          ? `ठीक है, तो मैं पूछ ${female ? "रही थी" : "रहा था"} — `
+          : `ठीक है, तो मैं बता ${female ? "रही थी" : "रहा था"} कि — `;
+      case "hi-en":
+        return asking
+          ? `Theek hai, toh main pooch ${female ? "rahi thi" : "raha tha"} — `
+          : `Theek hai, toh main bata ${female ? "rahi thi" : "raha tha"} ki — `;
+      default:
+        return asking ? "Okay, so I was asking — " : "Okay, so I was telling you that — ";
+    }
+  }
+
   /** The question last re-asked by `handleAckAfterQuestion`, so it is re-asked once only. */
   private lastReaskedQuestion = "";
 
@@ -5733,6 +5764,10 @@ export class ConversationPipeline {
     // they said may be its answer, and must not be resumed over. See the
     // continuation-cue RESUME in `handleAttentionCheck`.
     this.cutInsideQuestion = this.pendingCutSentence?.telemetry.endsWithQuestion ?? false;
+    // ...and WHICH sentence: a greeting back during the first one ("Hi
+    // Sakshi, I'm…" → "Hi.") is not a hearing problem. See the single-
+    // greeting branch of `handleAttentionCheck`.
+    this.cutSentenceIndex = this.pendingCutSentence?.telemetry.sentenceIndex ?? 0;
     // The reply now in flight was CUT, so a turn that follows it is the
     // interruption itself and must be answered — see the stale-turn check
     // in the main loop.
@@ -7305,7 +7340,7 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
    *
    *   1. NOT INSIDE A HEARING EPISODE. The same two flags
    *      `startSpeculation` declines on. Inside an episode the agent
-   *      has just spoken a FIXED line — "Hey, can you hear me okay?" —
+   *      has just spoken a FIXED line — "Hey, can you hear me?" —
    *      and the natural answer to a fixed line repeats its words, in
    *      its language. Locking there would let the agent's own script
    *      choose the call's language, and a Hindi caller answering an
@@ -8102,6 +8137,8 @@ await this.drainPlayback(speakingSignal, true);
   private lastReplyWasCut = false;
   /** The last cut landed inside a question (see `triggerExternalBargeIn`). */
   private cutInsideQuestion = false;
+  /** Index of the sentence the last cut landed in (0 = the reply's first). */
+  private cutSentenceIndex = 0;
   /** The words that are about to cut the reply, read once by `triggerExternalBargeIn`. */
   private pendingCutText: string | undefined;
   /**

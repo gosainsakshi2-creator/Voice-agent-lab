@@ -115,7 +115,7 @@ const STEP_WAIT_MS = INTERVAL_MS + 5_000;
 
 const PROMPT_1 = "Hello, are you there?";
 const PROMPT_2 = "Hello, is anyone there?";
-const ACK = "Hey, can you hear me okay?";
+const ACK = "Hey, can you hear me?";
 const FOLLOW_UP = "I just want to make sure you can hear me. Did you catch what I was saying?";
 
 // ═════════════════════════════════════════════════════════════════

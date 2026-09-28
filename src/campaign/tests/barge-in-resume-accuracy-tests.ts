@@ -7,7 +7,7 @@
  *
  *   agent:  "I am calling you to invite you to a webinar we are…"
  *   caller: "Hello?"            (a few hundred ms in)
- *   agent:  "Hey, can you hear me okay?"
+ *   agent:  "Hey, can you hear me?"
  *   caller: "Yes"
  *   agent:  "…we are doing tomorrow."      <- a whole sentence skipped
  *
@@ -659,7 +659,7 @@ await test("C2. the fixed acknowledgement line is untouched by the change", asyn
     h.say("Hello? Hello?");
     await h.waitFor("the acknowledgement", () => h.synthesized.some((t) => t.includes("can you hear me")));
     assert.ok(
-      h.synthesized.includes("Hey, can you hear me okay?"),
+      h.synthesized.includes("Hey, can you hear me?"),
       `the fixed line is spoken verbatim, got ${JSON.stringify(h.synthesized)}`,
     );
     assert.ok(h.synthesized.includes(OPENING), "the opening line is still spoken verbatim");

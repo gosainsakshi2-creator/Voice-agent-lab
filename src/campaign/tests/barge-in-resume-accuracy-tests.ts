@@ -986,7 +986,7 @@ for (const { name, bridge } of BRIDGES) {
 
   // ── B (2026-09-25, real call e9d149e6): the Devanagari "हाय" and a
   // trailing long dash are bare greetings to Fix F, and nothing else.
-  for (const greeting of ["हाय", "हाय—", "Hi—", "Hello—"]) {
+  for (const greeting of ["हाय", "हाय—", "Hi—"]) {
     await test(`E6. ${name}: a bare ${JSON.stringify(greeting)} after sentence 1 played takes Fix F and resumes from sentence 2`, async () => {
       const h = startHarness({ replies: [BLOCK, "SHOULD-NOT-BE-GENERATED"], bridge });
       try {
@@ -1004,6 +1004,29 @@ for (const { name, bridge } of BRIDGES) {
       }
     });
   }
+
+  // 2026-09-28 (the user's rule): "Hello" over the pitch's second sentence
+  // is the caller checking the line, not greeting back — it is asked about,
+  // and "Yes" resumes from sentence 2 with "so I was telling you that".
+  await test(`E6h. ${name}: a bare "Hello—" after sentence 1 played asks the hearing question; "Yes" resumes from sentence 2`, async () => {
+    const h = startHarness({ replies: [BLOCK, "SHOULD-NOT-BE-GENERATED"], bridge });
+    try {
+      await startBlock(h);
+      await sleep(msFor(S1) + 500);
+      const requestsBefore = h.requests.length;
+      h.say("Hello—");
+      await h.waitFor("the hearing question", () => h.synthesized.some((t) => t.includes("can you hear me")), 20000);
+      await sleep(1500);
+      const synthesizedBefore = h.synthesized.length;
+      h.say("Yes.");
+      await h.waitFor("the resume", () => h.synthesized.slice(synthesizedBefore).some((t) => t.includes("We have created")), 20000);
+      assert.equal(s1Spoken(h), 1, `the introduction sentence must not be replayed, synthesized=${JSON.stringify(h.synthesized)}`);
+      assert.ok(h.synthesized.slice(synthesizedBefore).some((t) => t.startsWith("Okay, so I was telling you that")), "the resume opens with the lead-in");
+      assert.equal(h.requests.length, requestsBefore, "neither the question nor the resume reaches the language model");
+    } finally {
+      await h.stop();
+    }
+  });
 
   await test(`E7. ${name}: "हाय—" halfway through sentence 1 still replays it from its first word`, async () => {
     const h = startHarness({ replies: [BLOCK, "SHOULD-NOT-BE-GENERATED"], bridge });

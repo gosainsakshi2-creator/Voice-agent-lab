@@ -661,7 +661,7 @@ await test("B7 — attention-check turns spend ZERO requests: acknowledgement, h
     h.say("Hello?", { isSpeechFinal: true });
     await h.waitForReplies(3);
     assert.equal(h.requests.length, before, "the acknowledgement must not open a request — not even a pre-opened one");
-    assert.ok(h.synthesized.some((t) => t.includes("hear me okay")), "the acknowledgement was spoken");
+    assert.ok(h.synthesized.some((t) => t.includes("can you hear me")), "the acknowledgement was spoken");
 
     h.say("Yes, I can hear you.", { isSpeechFinal: true });
     await h.waitForReplies(4);

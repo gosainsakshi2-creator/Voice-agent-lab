@@ -1820,6 +1820,23 @@ const IDENTITY_GREETING_ONLY =
 const MAX_IDENTITY_GREETING_REASKS = 2;
 
 /**
+ * A sentence that opens with a greeting ("Hi Sakshi, I'm Ishita…"). A lone
+ * "Hi"/"Hello" that cuts THIS sentence is the caller greeting back; one
+ * that cuts any other sentence is them checking the line. Judged on the
+ * sentence itself, not its index: a RESUME is spoken as one chunk, so every
+ * cut inside it used to read as "the first sentence" (real call a30bbc53,
+ * 2026-09-28: three "हेलो" over the resume were each resumed silently).
+ */
+const OPENS_WITH_GREETING = /^(hi|hello|hey|namaste|हाय|हेलो|हैलो|नमस्ते)(?=$|[\s,.!?—–-])/iu;
+
+/**
+ * "Hi" / "हाय" / "Hey" / "Namaste" is a greeting BACK, whenever it lands —
+ * callers answer the pitch's "Hi Sakshi" late, over its second sentence
+ * (resume-accuracy E2/E6). Only "Hello" asks whether the line is working.
+ */
+const GREETING_BACK_ONLY = /^(?:(?:hi+|hey|namaste|namaskar|हाय|नमस्ते|नमस्कार)[\s,.!?…।—–-]*)+$/iu;
+
+/**
  * The caller explicitly asking for a language. Real call 22f44aab
  * (2026-09-26): "can you please speak to me in English now?" was
  * followed, and a later "हेलो।" drifted the replies back to Hindi. The
@@ -4139,7 +4156,7 @@ export class ConversationPipeline {
       // back. Later in the pitch a lone "Hello" is the caller checking the
       // line (the user's rule, 2026-09-26): it falls through to the
       // hearing question below, and "Yes" then resumes with a lead-in.
-      if (!qualifies && (isBareGreetingTurn(trimmed) || bareGreetingOverHeldReply) && this.cutSentenceIndex === 0) {
+      if (!qualifies && (isBareGreetingTurn(trimmed) || bareGreetingOverHeldReply) && (this.cutSentenceOpensWithGreeting || GREETING_BACK_ONLY.test(trimmed))) {
         if (this.hearingLineCapReached()) return this.declineExhaustedHearingCheck(trimmed);
         // eslint-disable-next-line no-console
         console.log(
@@ -5767,7 +5784,9 @@ export class ConversationPipeline {
     // ...and WHICH sentence: a greeting back during the first one ("Hi
     // Sakshi, I'm…" → "Hi.") is not a hearing problem. See the single-
     // greeting branch of `handleAttentionCheck`.
-    this.cutSentenceIndex = this.pendingCutSentence?.telemetry.sentenceIndex ?? 0;
+    // No snapshot (nothing had played yet) keeps the old greeting-back default.
+    this.cutSentenceOpensWithGreeting =
+      this.pendingCutSentence === undefined || OPENS_WITH_GREETING.test(this.pendingCutSentence.sentenceText.trim());
     // The reply now in flight was CUT, so a turn that follows it is the
     // interruption itself and must be answered — see the stale-turn check
     // in the main loop.
@@ -8137,8 +8156,8 @@ await this.drainPlayback(speakingSignal, true);
   private lastReplyWasCut = false;
   /** The last cut landed inside a question (see `triggerExternalBargeIn`). */
   private cutInsideQuestion = false;
-  /** Index of the sentence the last cut landed in (0 = the reply's first). */
-  private cutSentenceIndex = 0;
+  /** The sentence the last cut landed in opens with a greeting ("Hi Sakshi, …"). See `OPENS_WITH_GREETING`. */
+  private cutSentenceOpensWithGreeting = true;
   /** The words that are about to cut the reply, read once by `triggerExternalBargeIn`. */
   private pendingCutText: string | undefined;
   /**

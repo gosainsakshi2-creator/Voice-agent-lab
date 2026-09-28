@@ -370,7 +370,9 @@ const LONG_BLOCK =
   "It builds funnels, pages, products, checkout, courses and emails from plain instructions.";
 
 /** How many times a fixed line was handed to the TTS provider. */
-const spokenCount = (h: Harness, text: string): number => h.synthesized.filter((t) => t === text).length;
+/** Strips the resume lead-in (2026-09-28) so a resumed block still counts as that block. */
+const stripLeadIn = (text: string): string => text.replace(/^Okay, so I was (telling you that|asking) — /, "");
+const spokenCount = (h: Harness, text: string): number => h.synthesized.filter((t) => stripLeadIn(t) === text).length;
 /** Every fixed hearing line spoken, of either kind, in any language. */
 const hearingLinesSpoken = (h: Harness): number =>
   h.synthesized.filter((t) => ALL_HEARING_LINES.includes(t)).length;

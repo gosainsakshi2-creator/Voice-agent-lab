@@ -984,12 +984,12 @@ await test("C6 — the Hello attention check still answers once, with no languag
     h.say("Hello?");
     await h.waitFor(
       "the acknowledgement was spoken",
-      () => h.synthesized.some((t) => t.includes("hear me okay")),
+      () => h.synthesized.some((t) => t.includes("can you hear me")),
       20000,
     );
 
     assert.equal(
-      h.synthesized.filter((t) => t.includes("hear me okay")).length,
+      h.synthesized.filter((t) => t.includes("can you hear me")).length,
       1,
       "acknowledged exactly once",
     );
@@ -1018,7 +1018,7 @@ await test("C7 — confirmation after Hello resumes the unheard remainder, still
     h.say("Hello?");
     await h.waitFor(
       "acknowledgement",
-      () => h.synthesized.some((t) => t.includes("hear me okay")),
+      () => h.synthesized.some((t) => t.includes("can you hear me")),
       20000,
     );
     const requestsBefore = h.requests.length;

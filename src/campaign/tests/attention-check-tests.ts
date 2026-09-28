@@ -338,10 +338,13 @@ function assistantTexts(history: readonly ConversationTurn[]): string[] {
 
 /** The fixed English acknowledgement, as the pipeline speaks it. */
 const ACK = "Hey, can you hear me?";
+/** The resume after a hearing confirmation now opens with a lead-in (2026-09-28); tests compare what follows it. */
+const stripLeadIn = (text: string): string =>
+  text.replace(/^(Okay, so I was (telling you that|asking)|ठीक है, तो मैं (बता|पूछ) (रही|रहा) (थी|था)( कि)?|Theek hai, toh main (bata|pooch) (rahi|raha) (thi|tha)( ki)?) — /u, "");
 
 /** How many times the acknowledgement was actually SPOKEN. */
 function ackCount(synthesized: readonly string[]): number {
-  return synthesized.filter((text) => text.includes("hear me okay")).length;
+  return synthesized.filter((text) => text.includes("can you hear me")).length;
 }
 
 // The approved script's own shape: an opening the caller has already
@@ -490,7 +493,7 @@ await test('B3 — "Hello? Hello? Hello?" produces exactly ONE acknowledgement',
       1,
       `the acknowledgement must be spoken exactly once, spoken=${JSON.stringify(h.synthesized)}`,
     );
-    const committedAcks = assistantTexts(h.history()).filter((t) => t.includes("hear me okay")).length;
+    const committedAcks = assistantTexts(h.history()).filter((t) => t.includes("can you hear me")).length;
     assert.equal(committedAcks, 1, "and committed exactly once");
   } finally {
     await h.stop();
@@ -959,7 +962,7 @@ await test('J2 — "Hello? Hello? Can you hear me?" over the block: cut, asked o
   }
 });
 
-await test('J3 — a single "Hello" over the block still interrupts it, and is RESUMED without being asked about', async () => {
+await test('J3 — a single "Hello" over the block (after its first sentence) asks the hearing question; "Yes." resumes with a lead-in, no model (the user rule, 2026-09-28)', async () => {
   // Scenario 6, decision reversed 2026-09-25 (real call 91af2d68). The
   // interruption is unchanged — a lone "hello" still cuts the block — but
   // one greeting is a greeting, not a hearing problem: the same rule the
@@ -971,11 +974,12 @@ await test('J3 — a single "Hello" over the block still interrupts it, and is R
     const requestsBefore = h.requests.length;
     h.say("Hello");
     await h.waitForReplies(3);
-    assert.ok(
-      (assistantTexts(h.history())[2] ?? "").startsWith("We have created Flexi Genie"),
-      `the block resumes where it stopped, got ${JSON.stringify(assistantTexts(h.history())[2]?.slice(0, 80))}`,
-    );
-    assert.equal(ackCount(h.synthesized), 0, "no hearing question");
+    assert.equal(ackCount(h.synthesized), 1, "a lone Hello mid-pitch is the caller checking the line: asked once");
+    h.say("Yes.");
+    await h.waitForReplies(4);
+    const resumed = assistantTexts(h.history())[3] ?? "";
+    assert.ok(resumed.startsWith("Okay, so I was telling you that — "), `the resume opens with the lead-in, got ${JSON.stringify(resumed.slice(0, 80))}`);
+    assert.ok(stripLeadIn(resumed).startsWith("We have created Flexi Genie"), "and carries on where the block stopped");
     assert.equal(h.requests.length, requestsBefore, "and no language-model request");
   } finally {
     await h.stop();
@@ -1186,7 +1190,7 @@ for (const answer of ["Yes, sir.", "Yeah, hi.", "You can, I can hear you.", "haa
 
       const resumed = assistantTexts(h.history())[3] ?? "";
       assert.ok(
-        resumed.startsWith("We have created Flexi Genie"),
+        stripLeadIn(resumed).startsWith("We have created Flexi Genie"),
         `must resume at the exact stopping point, got ${JSON.stringify(resumed.slice(0, 80))}`,
       );
       assert.equal(h.requests.length, requestsAfterAck, "the resume must not reach the language model");
@@ -1235,7 +1239,8 @@ await test('K4 — "Yes, sir." OUTSIDE a hearing episode is untouched: it reache
 section("SECTION L — a single greeting over a held reply is a greeting, not a hearing problem (real call 91af2d68, 2026-09-25)");
 // ═════════════════════════════════════════════════════════════════
 
-for (const greeting of ["Hi.", "Hello."]) {
+// "Hello." is no longer a greeting back mid-pitch (see J3); "Hi." still is.
+for (const greeting of ["Hi."]) {
   await test(`L1 — a single ${JSON.stringify(greeting)} over the block RESUMES the held reply: no hearing question, no language-model request`, async () => {
     const h = startHarness({ openingLine: OPENING, replies: [BLOCK, "SHOULD-NOT-BE-GENERATED"] });
     try {

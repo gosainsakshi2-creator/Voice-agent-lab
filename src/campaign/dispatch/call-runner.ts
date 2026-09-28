@@ -1705,6 +1705,10 @@ export function agentClosedIn(turns: readonly ConversationTurn[]): boolean {
   const wordCount = normalised.trim().length === 0 ? 0 : normalised.trim().split(/\s+/).length;
   if (wordCount === 0 || wordCount > AGENT_CLOSING_MAX_WORDS) return false;
 
+  // The pipeline's fixed goodbye, "Okay, thank you." (2026-09-28). A bare
+  // "thank you" is said mid-call too, so only the WHOLE turn counts.
+  if (normalised.trim() === "okay thank you") return true;
+
   return endsWithClosing(normalised);
 }
 

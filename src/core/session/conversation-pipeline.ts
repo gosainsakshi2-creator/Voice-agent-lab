@@ -1285,23 +1285,20 @@ export function isClosingAcknowledgement(text: string): boolean {
 }
 
 /**
- * The one fixed goodbye. Short, asks nothing, restates nothing, and
- * ends on a sign-off the campaign layer's `agentClosedIn` already
- * recognises. Every form survives `toSpokenText` unchanged — which is
- * why none of them opens with "Okay, thank you": the speech formatter
- * collapses that stack to a bare "Okay." on its way to the synthesiser,
- * and the thanks is the part that must be heard.
+ * The one fixed goodbye: "Okay, thank you." in every language — the
+ * user's rule (2026-09-28): "Have a great day. Bye!" sounded robotic.
+ *
+ * Spoken PREFORMATTED: the speech formatter collapses "Okay, thank you."
+ * to a bare "Okay." on its way to the synthesiser, and the thanks is the
+ * part that must be heard. `agentClosedIn` in the campaign layer
+ * recognises this exact line as a closing, so the call still ends on it.
  */
-function scriptedClosingFor(language: SupportedLanguage): string {
-  switch (language) {
-    case "hi":
-      return "शुक्रिया। आपका दिन शुभ हो। बाय!";
-    case "hi-en":
-      return "Thank you. Aapka din shubh ho. Bye!";
-    default:
-      return "Thank you. Have a great day. Bye!";
-  }
+function scriptedClosingFor(_language: SupportedLanguage): string {
+  return SCRIPTED_GOODBYE;
 }
+
+/** Exported so the campaign layer's closing check reads the same words. */
+export const SCRIPTED_GOODBYE = "Okay, thank you.";
 
 /**
  * ---------------- The hearing check that never ends ----------------
@@ -4530,6 +4527,8 @@ export class ConversationPipeline {
      */
     replayOf?: "resume" | "repeat",
     timerLabel = "ATTENTION",
+    /** Speak `text` exactly as written — see `scriptedClosingFor`. */
+    preformatted = false,
   ): Promise<{ readonly heard: string; readonly unheard: string }> {
     const responseId = this.beginAssistantResponse();
     const timer = new TurnTimer(this.record.id, timerLabel);
@@ -4541,7 +4540,7 @@ export class ConversationPipeline {
       // acknowledgement, the follow-up, the identity question, the
       // silence prompts, the closing) leaves it unset and is formatted
       // here exactly as before.
-      await this.speakFixedUtterance(text, loopSignal, transitionReason, replayOf !== undefined);
+      await this.speakFixedUtterance(text, loopSignal, transitionReason, replayOf !== undefined || preformatted);
     } finally {
       this.activeTimer = undefined;
       timer.summarize();
@@ -4734,7 +4733,7 @@ export class ConversationPipeline {
     console.log(
       `[PIPELINE:${this.record.id}] closing acknowledgement "${trimmed.slice(0, 40)}" after a confirmed registration — speaking the fixed goodbye: "${line}"`,
     );
-    await this.speakAttentionUtterance(line, loopSignal, "closing after a confirmed registration", undefined, "CLOSING");
+    await this.speakAttentionUtterance(line, loopSignal, "closing after a confirmed registration", undefined, "CLOSING", true);
     return true;
   }
 

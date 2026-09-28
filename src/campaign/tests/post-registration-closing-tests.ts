@@ -103,7 +103,8 @@ const caller = (text: string) => turn("user", text);
 const GREETING = "Hi Priya, this is Ishita from Team FlexiFunnels.";
 const GATE = "So Priya, would you like me to reserve your free seat?";
 const CONFIRMED = "Perfect, I'll get your free seat reserved. Hope to see you there!";
-const GOODBYE = "Thank you. Have a great day. Bye!";
+// The fixed goodbye (2026-09-28, the user's rule): "Okay, thank you." in every language.
+const GOODBYE = "Okay, thank you.";
 const ANSWER = "It runs ten to twelve in the morning and one to three in the afternoon, both days.";
 const REFUSAL_CLOSE = "No problem at all. Thanks for your time. Have a great day!";
 
@@ -440,8 +441,8 @@ await test("C1. armed, a bare 'Okay, thank you.' is answered with the fixed good
     assert.equal(h.requests.length, 2, "the closing word made NO language-model request");
     const texts = assistantTexts(h);
     assert.equal(texts[3], GOODBYE, "the fixed goodbye, committed as the agent's turn");
-    // Spoken through the same speech formatter every reply goes through.
-    assert.ok(h.synthesized.some((t) => t.includes("Have a great day")), `...and actually spoken: ${JSON.stringify(h.synthesized)}`);
+    // Spoken exactly as written: the formatter would have collapsed it to "Okay.".
+    assert.ok(h.synthesized.includes(GOODBYE), `...and actually spoken, thanks included: ${JSON.stringify(h.synthesized)}`);
     assert.ok(!texts[3]!.includes("?"), "the goodbye asks nothing");
     assert.equal(agentClosedIn(h.history()), true, "it reads as a closing to the campaign layer too");
     assert.equal(definitiveAnswerIn(h.history(), "registration"), "FINAL_YES", "and the hangup is released");

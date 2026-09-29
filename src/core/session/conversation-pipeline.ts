@@ -288,6 +288,8 @@ interface ThinkingAndSpeakingResult {
    * Telemetry only.
    */
   readonly replySource?: "prepared";
+  /** True when a latency filler was spoken before this reply — see `armFiller`. Telemetry only. */
+  readonly fillerSpoken?: true;
 }
 
 /** Additive, optional pipeline behaviour, switched on by the session manager. */
@@ -311,6 +313,13 @@ export interface ConversationPipelineOptions {
    * every harness keeps "a generated reply is always synthesized".
    */
   readonly cacheGeneratedSentences?: boolean;
+  /**
+   * Speak a short filler ("Okay, I see…", "जी, बताती हूँ…") when a
+   * reply is slow to start — see `armFiller`. Needs `ttsCache`: a filler
+   * is only ever played from cached audio. Off by default: every harness
+   * keeps "nothing is spoken before the reply".
+   */
+  readonly fillers?: boolean;
   /**
    * Pre-open a turn's LLM request on a SETTLED INTERIM transcript — see
    * `scheduleInterimSpeculation`. Off by default: every harness keeps
@@ -594,6 +603,153 @@ const MIN_CACHED_MS_PER_CHAR = 25;
 function cacheableClip(entry: { mode: "fixed" | "generated" } | undefined, clip: AudioPayload, text: string): boolean {
   if (entry?.mode !== "generated") return true;
   return estimateAudioSeconds(clip) * 1000 >= text.trim().length * MIN_CACHED_MS_PER_CHAR;
+}
+
+/**
+ * ── LATENCY FILLERS — see `armFiller` ────────────────────────────
+ *
+ * How long after a reply's request opens, with no sentence of it ready,
+ * a short filler is spoken. Real calls, 3 days to 2026-09-29, 614 spoken
+ * turns, request → first audio: p50 1191ms, p90 2010ms; 10.1% of turns
+ * over 2s. So this fires on roughly one turn in ten — the slow ones —
+ * and never on a normal turn. (Published voice agents that sound
+ * natural sit near 16% of turns; ones that filler on most turns talk
+ * over their callers.)
+ */
+const FILLER_AFTER_MS = 2_000;
+/** At most this many fillers in one call, never two turns running, and never the same one twice. */
+const MAX_FILLERS_PER_CALL = 3;
+/** How long after a filler ends an STT result made only of its words is read as its echo. */
+const FILLER_ECHO_WINDOW_MS = 1_500;
+/** No filler starts within this long of loud caller speech. */
+const FILLER_CALLER_QUIET_MS = 700;
+/** How often a playing filler checks whether the caller has started talking. */
+const FILLER_POLL_MS = 50;
+/** Fillers synthesized per quiet moment (after a reply has played), until every filler is cached. */
+const FILLERS_WARMED_PER_TURN = 2;
+
+export type FillerKind = "question" | "concern" | "decline" | "agreement" | "statement";
+type FillerSet = Record<FillerKind, readonly string[]>;
+
+/**
+ * Short, soft, trailing ("…" lets the voice fall, as a person thinking
+ * does). Words, never "umm"/"uh" — a synthesized "umm" sounds like a
+ * glitch. No bare "yes"/"haan", nothing that promises what the reply
+ * may not say. Hindi is written in Devanagari so every voice pronounces
+ * it as Hindi. The pipeline's own lines, never a script's: every script
+ * gets them. Chosen by what the caller just said — see `fillerKindFor`.
+ */
+const FILLERS: { readonly en: FillerSet; readonly hi: Record<"female" | "male", FillerSet> } = {
+  en: {
+    question: ["Sure, so…", "Right, so…", "Okay, so…"],
+    concern: ["Ah, I understand…", "I hear you…"],
+    decline: ["Okay, I understand…", "Right, I get it…"],
+    agreement: ["Okay, great…", "Nice…"],
+    statement: ["Okay, I see…", "Got it…", "Right, okay…"],
+  },
+  hi: {
+    female: {
+      question: ["जी, बताती हूँ…", "जी, देखिए…", "अच्छा, तो…"],
+      concern: ["जी, समझ सकती हूँ…", "जी, बिल्कुल…"],
+      decline: ["जी, समझ गई…", "अच्छा, जी…"],
+      agreement: ["अच्छा, बढ़िया…", "बढ़िया…"],
+      statement: ["अच्छा, अच्छा…", "हम्म, समझ गई…"],
+    },
+    male: {
+      question: ["जी, बताता हूँ…", "जी, देखिए…", "अच्छा, तो…"],
+      concern: ["जी, समझ सकता हूँ…", "जी, बिल्कुल…"],
+      decline: ["जी, समझ गया…", "अच्छा, जी…"],
+      agreement: ["अच्छा, बढ़िया…", "बढ़िया…"],
+      statement: ["अच्छा, अच्छा…", "हम्म, समझ गया…"],
+    },
+  },
+};
+
+/** Not interested / not now: a gentle acknowledgement, never a cheerful one. */
+const CALLER_DECLINES =
+  /\b(?:not interested|no thanks|no thank you|don'?t want|not now|no time|don'?t have (?:the )?time|not available|busy|nahi chahiye|interest nahi|interested nahi|time nahi|rehne do)\b|नहीं चाहिए|इंटरेस्ट नहीं|इंटरेस्टेड नहीं|रहने दो|रहने दीजिए|जरूरत नहीं|ज़रूरत नहीं|टाइम नहीं|समय नहीं|वक्त नहीं|बिज़ी|बिजी/iu;
+
+/**
+ * A turn that tells of a problem or a doubt gets an empathetic filler.
+ * A plain "no" is an answer, not a concern, so "nahi"/"don't" are
+ * deliberately not here.
+ */
+const CALLER_CONCERN =
+  /\b(?:problem|issue|worried|confus\w*|not sure|difficult|dikkat|pareshan\w*|mushkil|tension)\b|दिक्कत|परेशान|मुश्किल|प्रॉब्लम|समस्या|टेंशन/iu;
+
+/** "No problem" is reassurance, not a problem. */
+const NO_PROBLEM = /\bno problem\b|कोई (?:प्रॉब्लम|दिक्कत|समस्या) नहीं/giu;
+
+/** "Tell me" / "go ahead": an invitation to speak, answered like a question. */
+const CALLER_INVITES = /\b(?:tell me|go ahead|bataiye|batao|boliye|bolo)\b|बताइए|बताइये|बताओ|बोलिए|बोलो/iu;
+
+/**
+ * Turns no filler may answer, because anything but the real reply is
+ * wrong there: who is calling (the reply is the introduction), a hearing
+ * problem (the pipeline's hearing line answers it), a goodbye, an angry
+ * caller (a breezy "Sure, so…" there makes it worse).
+ */
+const NO_FILLER_AFTER =
+  /\b(?:who (?:is|are) (?:this|you)|who's this|who is speaking|can'?t hear|cannot hear|not audible|awaaz nahi|aawaz nahi|sunai nahi|bye|goodbye|stupid|idiot|nonsense|pagal)\b|कौन|कोण|आवाज़ नहीं|आवाज नहीं|सुनाई नहीं|बाय|पागल|दिमाग ख़राब|दिमाग खराब|बकवास/iu;
+
+/** Words of a short, plain "yes" — the whole turn must be made of these and address words. */
+const AGREEMENT_WORDS = new Set([
+  "yes", "yeah", "yep", "yup", "ok", "okay", "sure", "right", "correct", "absolutely", "definitely", "haan", "han", "ha", "haa",
+  "theek", "thik", "hai", "bilkul", "zaroor", "jarur", "हाँ", "हां", "हा", "ठीक", "है", "बिल्कुल", "ज़रूर", "जरूर", "ओके", "यस", "श्योर",
+]);
+const ADDRESS_WORDS = new Set(["ji", "sir", "ma'am", "maam", "madam", "जी", "सर", "मैम", "मैडम"]);
+
+/**
+ * Which kind of filler fits what the caller just said. Checked in order:
+ * a refusal, a problem or doubt, a question, a short plain yes, anything
+ * else. Pure; exported for its tests.
+ */
+export function fillerKindFor(callerSaid: string): FillerKind | undefined {
+  const said = callerSaid.trim();
+  if (said.length === 0 || NO_FILLER_AFTER.test(said) || BARE_GREETING_ONLY.test(said) || /^[\p{L}\p{M}]+[?？]$/u.test(said)) return undefined;
+  if (CALLER_DECLINES.test(said)) return "decline";
+  if (CALLER_CONCERN.test(said.replace(NO_PROBLEM, " "))) return "concern";
+  if (CALLER_ASKED.test(said) || CALLER_INVITES.test(said)) return "question";
+  const words = said.toLowerCase().match(/[\p{L}\p{M}\p{N}']+/gu) ?? [];
+  if (
+    words.length > 0 &&
+    words.length <= 5 &&
+    words.some((w) => AGREEMENT_WORDS.has(w)) &&
+    words.every((w) => AGREEMENT_WORDS.has(w) || ADDRESS_WORDS.has(w))
+  ) {
+    return "agreement";
+  }
+  return "statement";
+}
+
+/** A filler longer than this after `trimSilence` is not kept: the reply would wait on it. */
+const MAX_FILLER_SECONDS = 1.5;
+
+/**
+ * `clip` without its leading and trailing silence (16-bit PCM only;
+ * anything else is returned as is), keeping 60ms either side so no word
+ * is clipped. Synthesized fillers measured 0.8-2.1s on ElevenLabs,
+ * mostly trailing silence after the "…".
+ */
+function trimSilence(clip: AudioPayload): AudioPayload {
+  if (clip.encoding !== "PCM_16" || clip.data.length < 4) return clip;
+  const view = new DataView(clip.data.buffer, clip.data.byteOffset, clip.data.byteLength);
+  const samples = Math.floor(clip.data.length / 2);
+  const loud = (i: number) => Math.abs(view.getInt16(i * 2, true)) > 600;
+  let first = 0;
+  while (first < samples && !loud(first)) first += 1;
+  let last = samples - 1;
+  while (last > first && !loud(last)) last -= 1;
+  if (first >= last) return clip;
+  const pad = Math.round(clip.sampleRateHz * 0.06);
+  const from = Math.max(0, first - pad);
+  const to = Math.min(samples, last + 1 + pad);
+  return { ...clip, data: clip.data.slice(from * 2, to * 2) };
+}
+
+/** First word of `text`, for "the filler must not open with the reply's own first word". */
+function firstWordOf(text: string): string {
+  return (text.trim().toLowerCase().match(/[\p{L}\p{M}\p{N}']+/u) ?? [""])[0];
 }
 
 /** `clip` cut into consecutive slices of about `seconds`, on sample boundaries. */
@@ -3121,7 +3277,7 @@ export class ConversationPipeline {
         // Generated sentences read memory only; this fills it from the
         // shared store while the greeting plays. Never awaited, never
         // throws, at most one small query per provider per 10 minutes.
-        if (this.options.cacheGeneratedSentences === true) this.options.ttsCache?.warm(this.providers.tts.descriptor.id);
+        if (this.options.cacheGeneratedSentences === true || this.options.fillers === true) this.options.ttsCache?.warm(this.providers.tts.descriptor.id);
         // An opening that asks who picked up: its bare "yes" is answered
         // from a reply prepared while it plays. See `prepareFirstReply`.
         this.prepareFirstReply(greetingText, loopSignal);
@@ -3735,6 +3891,7 @@ export class ConversationPipeline {
           ttsChunkCount: result.ttsChunkCount,
           supersederTakesFloor: result.supersederTakesFloor,
           replySource: result.replySource,
+          fillerSpoken: result.fillerSpoken,
           // TURN-RELEASE TRACE — spread so a turn with no trace (batch
           // STT) omits all five rather than storing nulls. Counts and
           // enums only; the transcript stays on the console line.
@@ -5154,6 +5311,215 @@ export class ConversationPipeline {
     const entry = this.preparedAudio[index];
     this.preparedAudio = [];
     return entry?.audio;
+  }
+
+  // ── LATENCY FILLERS — see `FILLER_AFTER_MS` ─────────────────────
+  /** Every filler spoken on this call; none is spoken twice. */
+  private readonly fillersSpoken = new Set<string>();
+  /** The previous model reply had a filler: this one gets none. */
+  private fillerLastTurn = false;
+  /** The words of the last filler, and until when an STT result made only of them is its echo. */
+  private fillerWords = new Set<string>();
+  private fillerEchoUntil = 0;
+
+  /** The fillers for this call's current language and voice. */
+  private fillerSet(): FillerSet {
+    return this.record.memory.currentLanguage === "en" ? FILLERS.en : FILLERS.hi[this.record.voiceGender];
+  }
+
+  /** The synthesis request and cache key a filler is stored under — the same request `synthesizeAndPlay` would make. */
+  private fillerCacheEntry(text: string): { key: string; task: SynthesisTaskRequest } | undefined {
+    const tts = this.providers.tts;
+    if (typeof tts.cacheIdentity !== "function") return undefined;
+    const language = this.record.memory.currentLanguage;
+    const task: SynthesisTaskRequest = {
+      sessionId: this.record.id,
+      request: { text: pronounceForSpeech(text, language, this.spokenNames), language },
+    };
+    try {
+      return { key: ttsCacheKey(tts.descriptor.id, tts.cacheIdentity(task), task.request.text), task };
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * The filler to speak now, with its audio, or undefined when none may
+   * be. Every "no" is a moment a filler would be wrong:
+   *   - the caller is talking again (a filler would talk over them);
+   *   - the identity answer, a declined identity, the seat question's
+   *     answer, the closing, an attention episode or a held resume —
+   *     where the next words are the pipeline's, or an "achha" could be
+   *     heard as agreement;
+   *   - three already this call, or one on the previous reply;
+   *   - no unused filler is CACHED: a filler is only ever played from
+   *     memory, never synthesized while the caller waits.
+   * The kind follows what the caller just said; a filler never opens
+   * with the word the reply has already begun with.
+   */
+  private pickFiller(replySoFar: string): { text: string; audio: AudioPayload } | undefined {
+    const cache = this.options.ttsCache;
+    if (cache === undefined || this.record.state !== SessionState.THINKING) return undefined;
+    if (this.callerIsSpeaking()) return undefined;
+    // Loud near-end speech the STT has not written yet: the caller's
+    // first word takes ~0.3-0.5s to reach a transcript.
+    if (this.record.lastCallerEnergyAt !== 0 && Date.now() - this.record.lastCallerEnergyAt < FILLER_CALLER_QUIET_MS) return undefined;
+    if (this.identityState === "outstanding" || this.identityState === "denied") return undefined;
+    if (this.scriptedClosingArmed || this.scriptedClosingSpoken || this.attentionEpisodeOpen) return undefined;
+    if (this.heldScriptRemainder.length > 0) return undefined;
+    if (this.fillerLastTurn || this.fillersSpoken.size >= MAX_FILLERS_PER_CALL) return undefined;
+    const history = this.record.memory.history();
+    const lastAssistant = [...history].reverse().find((t) => t.role === "assistant")?.content.trim() ?? "";
+    const lastSentence = lastAssistant.split(/(?<=[.!?।？])\s+/u).pop() ?? "";
+    if (/[?？]/u.test(lastSentence) && SEAT_QUESTION.test(lastSentence)) return undefined;
+    const callerSaid = [...history].reverse().find((t) => t.role === "user")?.content ?? "";
+    const kind = fillerKindFor(callerSaid);
+    if (kind === undefined) return undefined;
+    const replyOpensWith = firstWordOf(replySoFar);
+    const candidates: Array<{ text: string; audio: AudioPayload }> = [];
+    for (const text of this.fillerSet()[kind]) {
+      if (this.fillersSpoken.has(text)) continue;
+      if (replyOpensWith.length > 0 && firstWordOf(text) === replyOpensWith) continue;
+      const entry = this.fillerCacheEntry(text);
+      const audio = entry !== undefined ? cache.peek(entry.key) : undefined;
+      if (audio !== undefined) candidates.push({ text, audio });
+    }
+    return candidates[Math.floor(Math.random() * candidates.length)];
+  }
+
+  /**
+   * Plays a filler straight to the transport, OUTSIDE the reply's
+   * playback accounting: it is not an utterance of the reply, so it is
+   * never in `heardSoFarText`, history, the transcript or the latency
+   * figures, and the state stays THINKING. Resolves once it has played
+   * out, so the reply that follows starts on an empty transport and its
+   * accounting is exact. A reply cancelled meanwhile (`signal`) stops it.
+   */
+  private async playFiller(text: string, audio: AudioPayload, signal: AbortSignal): Promise<void> {
+    this.fillersSpoken.add(text);
+    this.fillerWords = new Set(selfEchoWords(text));
+    const durationMs = estimateAudioSeconds(audio) * 1000;
+    const startedAt = Date.now();
+    this.fillerEchoUntil = startedAt + durationMs + FILLER_ECHO_WINDOW_MS;
+    // eslint-disable-next-line no-console
+    console.log(`[FILLER:${this.record.id}] reply slow to start — speaking "${text}" (${Math.round(durationMs)}ms)`);
+    for (const slice of audioSlices(audio, CACHED_SLICE_SECONDS)) {
+      if (signal.aborted) break;
+      if (this.record.mediaStream) await this.record.mediaStream.sendAudio(slice);
+      for (const listener of this.record.outboundAudioListeners) {
+        const pending = listener(slice);
+        if (pending) await pending;
+      }
+    }
+    if (signal.aborted) {
+      await this.record.mediaStream?.interruptPlayback();
+      return;
+    }
+    // Played out — unless the caller starts talking, which stops it at
+    // once: a filler never talks over them.
+    while (!signal.aborted && Date.now() < startedAt + durationMs) {
+      if (this.callerIsSpeaking()) {
+        // eslint-disable-next-line no-console
+        console.log(`[FILLER:${this.record.id}] caller started speaking — filler stopped`);
+        await this.record.mediaStream?.interruptPlayback();
+        return;
+      }
+      await abortableSleep(Math.min(FILLER_POLL_MS, startedAt + durationMs - Date.now()), signal);
+    }
+    if (signal.aborted) await this.record.mediaStream?.interruptPlayback();
+  }
+
+  /** The caller has said something since the turn in hand was released (their own words; a filler's echo is dropped before it gets here). */
+  private callerIsSpeaking(): boolean {
+    return this.resumedCallerText().length > 0 || this.record.liveUserTranscript.trim().length > 0;
+  }
+
+  /**
+   * Arms the filler for one model reply: if no sentence of it is ready
+   * `FILLER_AFTER_MS` after its request opened, `pickFiller` may speak
+   * one. `settle` — called before the reply's first audio, and once the
+   * stream has ended — stops any later filler and waits for one that is
+   * playing to finish. A reply that is ready in time never hears of it.
+   */
+  private armFiller(thinkingSignal: AbortSignal, replySoFar: () => string): { readonly armed: boolean; settle(): Promise<void>; spoken(): boolean } {
+    let settled = false;
+    let spoken = false;
+    let playing: Promise<void> | undefined;
+    const timer =
+      this.options.fillers === true && this.options.ttsCache !== undefined
+        ? setTimeout(() => {
+            if (settled || thinkingSignal.aborted) return;
+            const pick = this.pickFiller(replySoFar());
+            if (pick === undefined) return;
+            spoken = true;
+            playing = this.playFiller(pick.text, pick.audio, thinkingSignal).catch(() => undefined);
+          }, FILLER_AFTER_MS)
+        : undefined;
+    return {
+      // Fillers off: nothing is awaited anywhere, exactly as before.
+      armed: timer !== undefined,
+      settle: async () => {
+        settled = true;
+        if (timer !== undefined) clearTimeout(timer);
+        if (playing !== undefined) await playing;
+      },
+      spoken: () => spoken,
+    };
+  }
+
+  /**
+   * Synthesizes up to `FILLERS_WARMED_PER_TURN` fillers of the current
+   * language and voice that are not cached yet, once a reply has played
+   * — the quietest moment of a turn — queued behind any other off-clock
+   * synthesis so a provider session never has two at once. Stored in
+   * the shared cache, so after the first calls on a voice this finds
+   * nothing to do. Never awaited, never throws.
+   */
+  private warmFillers(): void {
+    const cache = this.options.ttsCache;
+    if (this.options.fillers !== true || cache === undefined) return;
+    const set = this.fillerSet();
+    const missing = [...set.question, ...set.statement, ...set.agreement, ...set.concern, ...set.decline]
+      .filter((text, index, all) => all.indexOf(text) === index)
+      .map((text) => ({ text, entry: this.fillerCacheEntry(text) }))
+      .filter((f): f is { text: string; entry: { key: string; task: SynthesisTaskRequest } } => f.entry !== undefined && cache.peek(f.entry.key) === undefined)
+      .slice(0, FILLERS_WARMED_PER_TURN);
+    if (missing.length === 0) return;
+    const tts = this.providers.tts;
+    const signal = this.record.loopAbortController?.signal ?? new AbortController().signal;
+    this.preparedAudioInFlight = this.preparedAudioInFlight.then(async () => {
+      for (const { text, entry } of missing) {
+        if (signal.aborted) return;
+        try {
+          const chunks: AudioPayload[] = [];
+          if (tts.synthesizeStream) {
+            for await (const chunk of tts.synthesizeStream(entry.task, signal)) chunks.push(chunk.audio);
+          } else {
+            chunks.push(await tts.synthesize(entry.task));
+          }
+          const joined = joinAudioChunks(chunks);
+          if (joined === undefined || signal.aborted) continue;
+          this.record.metrics.recordAuxiliaryCost({ textToSpeech: estimateTtsCost(tts.descriptor.id, text.length, estimateAudioSeconds(joined)) });
+          // The reply waits for a filler to finish, so its leading and
+          // trailing silence is cut; a filler still too long is never kept.
+          const clip = trimSilence(joined);
+          const seconds = estimateAudioSeconds(clip);
+          if (seconds >= 0.2 && seconds <= MAX_FILLER_SECONDS) cache.put(entry.key, tts.descriptor.id, clip);
+        } catch {
+          // Not cached: that filler is simply not available yet.
+        }
+      }
+    });
+  }
+
+  /** An STT result made only of the words of a filler that just played: our own audio back up the line. */
+  private isFillerEcho(segment: TranscriptSegment): boolean {
+    if (Date.now() > this.fillerEchoUntil) return false;
+    const words = selfEchoWords(segment.text);
+    if (words.length === 0 || !words.every((word) => this.fillerWords.has(word))) return false;
+    // eslint-disable-next-line no-console
+    console.log(`[FILLER:${this.record.id}] echo of the filler ignored: "${segment.text.trim()}"`);
+    return true;
   }
 
   /**
@@ -7309,6 +7675,11 @@ export class ConversationPipeline {
           // must not cut our own reply off. Genuine caller speech does
           // not reach `isSelfEcho`'s thresholds, so it falls through to
           // the identical barge-in call below, unchanged.
+          // A filler's own words back up the line: dropped the same way.
+          if (this.isFillerEcho(segment)) {
+            this.record.liveUserTranscript = "";
+            continue;
+          }
           if (this.isSelfEcho(segment)) {
             // Same reason as the two filters above: no turn will replace
             // this preview, and `getTranscript` appends a stale one as a
@@ -8622,6 +8993,8 @@ await this.drainPlayback(speakingSignal, true);
     let outcome: TurnOutcome | undefined;
     let supersederTakesFloor: boolean | undefined;
     const startedAt = preOpened?.openedAtMs ?? Date.now();
+    // A short filler if no sentence is ready in time — see `armFiller`.
+    const filler = this.armFiller(thinkingSignal, () => fullText);
 
     try {
       const stream =
@@ -8740,6 +9113,12 @@ await this.drainPlayback(speakingSignal, true);
               }
             }
 
+            if (speakingSignal === undefined && filler.armed) {
+              // A filler playing now finishes first; none starts after this.
+              const fillerWaitStartedAt = Date.now();
+              await filler.settle();
+              ttsBlockedDuringStreamMs += Date.now() - fillerWaitStartedAt;
+            }
             speakingSignal ??= this.enterSpeaking();
             if (speakingSignal.aborted) break;
             const synthesisStartedAt = Date.now();
@@ -8804,6 +9183,12 @@ await this.drainPlayback(speakingSignal, true);
       0,
       llmStreamEndedAtMs - startedAt - ttsBlockedDuringStreamMs,
     );
+    // The stream is over: no filler from here on, and one still playing
+    // finishes before the fallback or the tail below is spoken.
+    if (filler.armed) {
+      await filler.settle();
+      this.fillerLastTurn = filler.spoken();
+    }
 
     if (contaminated) {
       // eslint-disable-next-line no-console
@@ -8848,6 +9233,7 @@ await this.drainPlayback(speakingSignal, true);
         ...(llmRetries !== undefined ? { llmRetries } : {}),
         ...(llmRetryOverheadMs !== undefined ? { llmRetryOverheadMs } : {}),
         ...(llmRetryReasons !== undefined ? { llmRetryReasons } : {}),
+        ...(filler.spoken() ? { fillerSpoken: true as const } : {}),
       };
     }
 
@@ -8914,6 +9300,8 @@ await this.drainPlayback(speakingSignal, true);
     // the caller completed into the THINKING gap would otherwise be
     // invisible until every one of them had played out.
     if (speakingSignal) await this.drainPlayback(speakingSignal, true);
+    // The reply has played: the quiet moment to cache fillers not yet cached.
+    this.warmFillers();
 
     let assistantText = toSpokenText(finalText ?? fullText);
     // What was spoken starts after the skipped introduction; heard/unheard
@@ -8963,6 +9351,7 @@ await this.drainPlayback(speakingSignal, true);
       ...(llmRetries !== undefined ? { llmRetries } : {}),
       ...(llmRetryOverheadMs !== undefined ? { llmRetryOverheadMs } : {}),
       ...(llmRetryReasons !== undefined ? { llmRetryReasons } : {}),
+      ...(filler.spoken() ? { fillerSpoken: true as const } : {}),
     };
   }
 
@@ -9362,6 +9751,9 @@ await this.drainPlayback(speakingSignal, true);
         return { ttsMs: readyMs, ttsCostUsd: 0, firstChunkMs: readyMs };
       }
       // Never two syntheses at once on one provider session.
+      await this.preparedAudioInFlight;
+    } else if (this.options.fillers === true) {
+      // The same rule for a filler being synthesized off the clock (`warmFillers`).
       await this.preparedAudioInFlight;
     }
 

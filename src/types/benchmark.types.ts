@@ -539,6 +539,12 @@ export interface TurnLatencyBreakdown {
    * prepared first reply from requested ones when their latency is compared.
    */
   readonly replySource?: "prepared";
+  /**
+   * True when a short latency filler ("Okay, I see…") was spoken because
+   * this reply was slow to start. Absent otherwise. Telemetry only; the
+   * turn's latency figures are the reply's own, not the filler's.
+   */
+  readonly fillerSpoken?: true;
 
   // ── TURN-RELEASE TRACE (2026-09-21) ───────────────────────────────
   //

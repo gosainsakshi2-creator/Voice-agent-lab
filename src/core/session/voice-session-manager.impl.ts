@@ -342,6 +342,9 @@ export class DefaultVoiceSessionManager implements VoiceSessionManager, Pipeline
       // Model-reply sentences served from that cache too (memory only, so
       // a miss never waits); `TTS_CACHE_GENERATED=false` switches it off.
       cacheGeneratedSentences: optionalEnv("TTS_CACHE_GENERATED", "true").trim().toLowerCase() !== "false",
+      // A short filler when a reply is slow to start (~1 turn in 10), played
+      // only from cached audio; `LATENCY_FILLERS=false` switches it off.
+      fillers: optionalEnv("LATENCY_FILLERS", "true").trim().toLowerCase() !== "false",
     });
     this.pipelines.set(record.id, pipeline);
     record.loopPromise = pipeline.run();

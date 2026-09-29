@@ -26,7 +26,7 @@ import { config as loadEnvFile } from "dotenv";
 loadEnvFile({ path: ".env.local", quiet: true });
 
 const { TtsAudioCache, PostgresTtsAudioStore, ttsCacheKey, joinAudioChunks } = await import("../../core/session/tts-audio-cache");
-const { ConversationPipeline } = await import("../../core/session/conversation-pipeline");
+const { ConversationPipeline, fillerKindFor } = await import("../../core/session/conversation-pipeline");
 const { SessionRecord } = await import("../../core/session/session-record");
 const { SessionState, SupportedLanguage, CallDirection, ProviderCategory } = await import("../../types/enums");
 
@@ -275,7 +275,7 @@ const healthy = (identifier: { category: unknown; id: string }) => ({ provider: 
 const OPENING = "Hello, this is Rohan from Team FlexiFunnels.";
 const GENERATED = "Sure, happy to help with that.";
 
-function startCall(input: { cache?: InstanceType<typeof TtsAudioCache>; identity?: boolean; customerName?: string; generated?: boolean; reply?: string; shortClip?: boolean }) {
+function startCall(input: { cache?: InstanceType<typeof TtsAudioCache>; identity?: boolean; customerName?: string; generated?: boolean; reply?: string; shortClip?: boolean; fillers?: boolean; llmDelayMs?: number }) {
   const reply = input.reply ?? GENERATED;
   const synthesized: string[] = [];
   const segments: TranscriptSegment[] = [];
@@ -306,6 +306,7 @@ function startCall(input: { cache?: InstanceType<typeof TtsAudioCache>; identity
         yield { type: "token" as const, delta: "", index: 0 };
         return;
       }
+      if (input.llmDelayMs) await sleep(input.llmDelayMs);
       yield { type: "token" as const, delta: reply, index: 0 };
       yield { type: "final" as const, turn: { role: "assistant" as const, content: reply, timestamp: new Date() }, latencyMs: 1 };
     },
@@ -362,6 +363,7 @@ function startCall(input: { cache?: InstanceType<typeof TtsAudioCache>; identity
   const pipeline = new ConversationPipeline(record, { telephony, stt, llm, tts } as never, host as never, {
     ...(input.cache ? { ttsCache: input.cache } : {}),
     ...(input.generated === true ? { cacheGeneratedSentences: true } : {}),
+    ...(input.fillers === true ? { fillers: true } : {}),
   });
   const loop = pipeline.run();
   return {
@@ -477,6 +479,141 @@ await test("P9. a generated sentence NEVER waits on the store: a slow store is n
   assert.ok(first.includes(GENERATED));
   // Only the opening (a fixed line) may read the store.
   assert.ok(s.gets() <= 1, `store reads: ${s.gets()}`);
+});
+
+// ═════════════════════════════════════════════════════════════════
+section("F. LATENCY FILLERS");
+
+/** Console lines tagged [FILLER: while `fn` runs. */
+let capturedFillerLines: string[] = [];
+async function fillerLines<T>(fn: () => Promise<T>): Promise<{ result: T; lines: string[]; echoes: string[] }> {
+  const lines: string[] = [];
+  const echoes: string[] = [];
+  capturedFillerLines = lines;
+  const original = console.log;
+  console.log = (...args: unknown[]) => {
+    const line = args.map(String).join(" ");
+    if (line.includes("[FILLER:") && line.includes("speaking")) lines.push(line);
+    if (line.includes("[FILLER:") && line.includes("echo")) echoes.push(line);
+    original(...args);
+  };
+  try {
+    return { result: await fn(), lines, echoes };
+  } finally {
+    console.log = original;
+  }
+}
+
+/** One call answering a question; `echo` is said ~0.5s into a filler. */
+async function fillerCall(input: Parameters<typeof startCall>[0], echo?: string) {
+  const c = startCall(input);
+  try {
+    await openingDone(c);
+    await sleep(200);
+    c.say("What is this about?");
+    if (echo !== undefined) {
+      await c.waitFor("the filler", () => capturedFillerLines.length > 0);
+      await sleep(100);
+      c.say(echo);
+    }
+    await c.waitFor("the reply", () => c.assistantTurns().length >= 2 && c.record.state === SessionState.LISTENING);
+    await sleep(300);
+    return {
+      synthesized: [...c.synthesized],
+      assistant: c.assistantTurns(),
+      user: c.record.memory.history().filter((t) => t.role === "user").map((t) => t.content),
+    };
+  } finally {
+    await c.stop();
+  }
+}
+
+await test("F1. fillers are cached after a reply, then one is spoken before a SLOW reply — and kept out of history", async () => {
+  const cache = new TtsAudioCache(undefined);
+  const first = await fillerLines(() => fillerCall({ cache, fillers: true }));
+  assert.equal(first.lines.length, 0, "a fast reply gets no filler");
+  assert.ok(first.result.synthesized.includes("Sure, so…") && first.result.synthesized.includes("Right, so…"), first.result.synthesized.join(" | "));
+  const second = await fillerLines(() => fillerCall({ cache, fillers: true, llmDelayMs: 2600 }));
+  assert.equal(second.lines.length, 1, second.lines.join(" | "));
+  assert.deepEqual(second.result.assistant, [OPENING, GENERATED], "the filler is not an assistant turn");
+});
+
+await test("F2. fillers OFF (the default): a slow reply gets no filler and nothing extra is synthesized", async () => {
+  const cache = new TtsAudioCache(undefined);
+  const run = await fillerLines(() => fillerCall({ cache, llmDelayMs: 2600 }));
+  assert.equal(run.lines.length, 0);
+  assert.ok(!run.result.synthesized.some((t) => t.includes("…")), run.result.synthesized.join(" | "));
+});
+
+await test("F3. a filler that is not cached yet is never synthesized while the caller waits", async () => {
+  const cache = new TtsAudioCache(undefined);
+  const run = await fillerLines(() => fillerCall({ cache, fillers: true, llmDelayMs: 2600 }));
+  assert.equal(run.lines.length, 0, "nothing cached, so nothing played");
+  assert.deepEqual(run.result.assistant, [OPENING, GENERATED]);
+});
+
+await test("F4. a reply that is ready in time never gets a filler, even with fillers cached", async () => {
+  const cache = new TtsAudioCache(undefined);
+  await fillerCall({ cache, fillers: true });
+  const run = await fillerLines(() => fillerCall({ cache, fillers: true }));
+  assert.equal(run.lines.length, 0);
+});
+
+await test("F5. the filler's own words coming back up the line are not a caller turn and do not cancel the reply", async () => {
+  const cache = new TtsAudioCache(undefined);
+  await fillerCall({ cache, fillers: true });
+  const run = await fillerLines(() => fillerCall({ cache, fillers: true, llmDelayMs: 2600 }, "so"));
+  assert.equal(run.lines.length, 1);
+  assert.deepEqual(run.result.assistant, [OPENING, GENERATED]);
+  assert.deepEqual(run.result.user, ["What is this about?"], run.result.user.join(" | "));
+  assert.equal(run.echoes.length, 1, "the echo was recognised as the filler's");
+});
+
+await test("F6. the caller starting to talk during a filler stops it at once", async () => {
+  const cache = new TtsAudioCache(undefined);
+  await fillerCall({ cache, fillers: true });
+  const stopped: string[] = [];
+  const original = console.log;
+  console.log = (...args: unknown[]) => {
+    const line = args.map(String).join(" ");
+    if (line.includes("filler stopped")) stopped.push(line);
+    original(...args);
+  };
+  try {
+    await fillerLines(() => fillerCall({ cache, fillers: true, llmDelayMs: 2600 }, "and one more thing about the timing"));
+  } finally {
+    console.log = original;
+  }
+  assert.equal(stopped.length, 1, "the filler was stopped by the caller");
+});
+
+await test("F7. the filler matches what the caller said", () => {
+  const cases: Array<[string, string]> = [
+    ["What is this about?", "question"],
+    ["Webinar kitne baje hai", "question"],
+    ["यह कब है?", "question"],
+    ["I'm not interested.", "decline"],
+    ["नहीं चाहिए।", "decline"],
+    ["Mujhe abhi interest nahi hai", "decline"],
+    ["I have a problem with the timing.", "concern"],
+    ["मुझे थोड़ी दिक्कत है", "concern"],
+    ["Yes.", "agreement"],
+    ["हाँ जी।", "agreement"],
+    ["Okay sir", "agreement"],
+    ["No, I haven't tried.", "statement"],
+    ["I run a small bakery in Pune.", "statement"],
+    ["Yes, I tried Instagram but it did not work out.", "statement"],
+    ["Yeah, tell me.", "question"],
+    ["हाँ, बोलिए।", "question"],
+    ["I will attend the program, no problem.", "statement"],
+    ["I'm busy right now, ma'am. I'll call you later.", "decline"],
+    ["नहीं, थैंक यू। मेरे पास अभी टाइम नहीं है।", "decline"],
+  ];
+  for (const [said, kind] of cases) assert.equal(fillerKindFor(said), kind, said);
+  // Where only the real reply is right: no filler at all.
+  for (const said of ["Who is this?", "Right. Who is this?", "आप कौन?", "हेलो।", "Hello?", "Yes?", "आवाज़ नहीं आ रही, मैडम।", "ओके, बाय।", "तू पागल है क्या?"]) {
+    assert.equal(fillerKindFor(said), undefined, said);
+  }
 });
 
 console.log(`\n${passed} passed, ${failures.length} failed${skipped ? `, ${skipped} skipped` : ""}`);

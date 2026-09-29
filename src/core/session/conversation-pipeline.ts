@@ -2836,6 +2836,8 @@ export class ConversationPipeline {
    * abandoned by the sites listed there.
    */
   private speculation: SpeculativeCompletion | undefined;
+  /** The caller's live interim since the last release; see `resumedCallerText`. */
+  private interimSinceRelease = "";
   /** Armed on each interim that reads finished; see `scheduleInterimSpeculation`. */
   private interimSpeculationTimer: ReturnType<typeof setTimeout> | undefined;
   /**
@@ -6062,10 +6064,30 @@ export class ConversationPipeline {
       // supersedes, and only the acknowledgement alone stops doing so.
     }
 
-    const resumed = this.record.turnDetector.getPendingTurnText().trim();
+    const resumed = this.resumedCallerText();
     if (resumed.length === 0) return false;
     if (BARE_GREETING_ONLY.test(resumed)) return false;
     return !isContinuationCue(resumed);
+  }
+
+  /**
+   * What the caller has said since the turn in hand was released: the
+   * detector's held finals AND the live interim.
+   *
+   * THE INTERIM IS THE ONLY SIGN OF IT ON SONIOX. Soniox finalizes words
+   * only with its end-of-speech marker (last final → marker p50 0ms over
+   * 367 real turns), so a caller who resumes after a pause shows NO finals
+   * for the whole ~1s the reply is being generated — only interims. Read
+   * finals-only, this check said "nobody is talking" and the reply was
+   * spoken straight over them: "Yes. We have already tried 2-3 times." →
+   * reply → cut by "But not successful…" (real call d7f25cb6, 2026-09-29);
+   * f1494c20 and e21f370f the same. With the interim, a reply the caller
+   * is already talking past is superseded BEFORE its first word, exactly
+   * as a held final supersedes it, and their whole thought is answered.
+   * Nothing waits: a caller who is silent leaves this empty.
+   */
+  private resumedCallerText(): string {
+    return `${this.record.turnDetector.getPendingTurnText()} ${this.interimSinceRelease}`.trim();
   }
 
   /**
@@ -6134,7 +6156,7 @@ export class ConversationPipeline {
     return {
       supersedes: true,
       outcome: "superseded_pending",
-      takesFloor: bufferedTurnTakesTheFloor(detector.getPendingTurnText()),
+      takesFloor: bufferedTurnTakesTheFloor(this.resumedCallerText()),
     };
   }
 
@@ -7313,6 +7335,8 @@ export class ConversationPipeline {
           // interim — is not the caller resuming, and keeps the request
           // opened on those words. Off, this is exactly the old line.
           const textAfterSegment = `${this.record.turnDetector.getPendingTurnText()} ${segment.text}`.trim();
+          // See `resumedCallerText`. A final covers every interim before it.
+          this.interimSinceRelease = segment.isFinal ? "" : segment.text.trim();
           if (this.speculation !== undefined && !this.sameSpeculatedText(textAfterSegment, this.speculation.text)) {
             this.abandonSpeculation("caller resumed speaking");
           }
@@ -7718,6 +7742,9 @@ export class ConversationPipeline {
         // `AdaptiveTurnDetector.emitTurnEnd` invokes synchronously, so
         // this IS the turn-release instant, not an approximation of it.
         const turnReleasedAtMs = Date.now();
+        // Everything heard up to here is this turn's; only what follows
+        // is the caller resuming. See `resumedCallerText`.
+        this.interimSinceRelease = "";
         // Where the release falls on the STT stream clock — the
         // reference point that separates "the tail of THIS turn, still
         // extending" from "a new utterance begun after it". Read only

@@ -665,6 +665,50 @@ await test("R3. \"No, cancel it.\" after the close is NOT a goodbye — the mode
 });
 
 // ═════════════════════════════════════════════════════════════════
+section("W. THE CALLER RESUMES WHILE THE REPLY IS BEING GENERATED (real call d7f25cb6)");
+
+await test("W1. \"We have already tried 2-3 times.\" … (pause) … \"but not successful\": the first reply is NEVER spoken; the whole thought is answered", async () => {
+  const h = startHarness({ prepare: true, replyDelayMs: 900 });
+  try {
+    await pastIdentity(h);
+    const spokenBefore = h.synthesized.length;
+    h.say("Yes. We have already tried 2-3 times.");
+    // Released; the model is still generating when the caller carries on.
+    await sleep(500);
+    h.sayInterim("but not successful");
+    await sleep(300);
+    h.say("But not successful, I wait.");
+    await awaitReply(h, 3);
+    const lastUserInRequest = h.requests[h.requests.length - 1]?.lastUser ?? "";
+    assert.ok(/not successful/iu.test(lastUserInRequest), `the reply answered the whole thought, got "${lastUserInRequest}"`);
+    const replies = h.assistantTurns().slice(2);
+    assert.equal(replies.length, 1, `one reply, not one per fragment: ${JSON.stringify(replies)}`);
+    const spoken = h.synthesized.slice(spokenBefore).map((s) => s.text);
+    assert.equal(spoken.filter((t) => t.startsWith("Sure.")).length, 1, `the reply was spoken once: ${JSON.stringify(spoken)}`);
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("W2. a bare \"haan\" while the reply is being generated does NOT cancel it", async () => {
+  const h = startHarness({ prepare: true, replyDelayMs: 900 });
+  try {
+    await pastIdentity(h);
+    const spokenBefore = h.synthesized.length;
+    h.say("We have already tried it before.");
+    await sleep(500);
+    h.sayInterim("haan");
+    await awaitReply(h, 3);
+    assert.equal(h.assistantTurns()[2], GENERATED, "the reply was kept and committed");
+    const spoken = h.synthesized.slice(spokenBefore).map((s) => s.text);
+    assert.equal(spoken.filter((t) => t.startsWith("Sure.")).length, 1, `spoken once: ${JSON.stringify(spoken)}`);
+    assert.equal(h.requests[h.requests.length - 1]?.lastUser, "We have already tried it before.", "answered as said — the haan did not join the turn");
+  } finally {
+    await h.stop();
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════
 section("A. A CONFIRMING TURN PRE-OPENS ITS REQUEST (preparation off)");
 
 await test("A1. 'Yes.' pre-opens the request before the turn is committed, and ONE request is spent", async () => {

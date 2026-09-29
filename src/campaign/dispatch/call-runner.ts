@@ -125,6 +125,12 @@ export interface ManagerLike {
    */
   armScriptedClosing?(sessionId: SessionId): unknown;
   /**
+   * OPTIONAL, and read-only. True once the pipeline has spoken and
+   * played out the fixed goodbye that `armScriptedClosing` readied.
+   * Optional so a manager without it behaves exactly as before.
+   */
+  scriptedGoodbyeDelivered?(sessionId: SessionId): boolean;
+  /**
    * OPTIONAL, and read-only. The identity gate's own verdict: the
    * person on the line said they are NOT the person we called.
    * `DefaultVoiceSessionManager` exposes it from the state the
@@ -691,6 +697,19 @@ export async function runCall(
           if (live.registrationConfirmed && !closingArmed) {
             closingArmed = true;
             armScriptedClosing(manager, sessionId as SessionId);
+          }
+          // ── The goodbye has been said: the call is over ──
+          //
+          // The pipeline answered the person's closing word with its fixed
+          // goodbye and it has played. That is the end of this call, read
+          // from the pipeline itself rather than from the transcript's
+          // last turn — which a voice in the caller's room keeps from
+          // ever being the goodbye (real call c68383c8: the line stayed up
+          // 67s and the agent answered the room). Named as the reading
+          // names it, FINAL_YES unless something since has changed it.
+          if (closingArmed && scriptedGoodbyeDeliveredSoFar(manager, sessionId as SessionId)) {
+            finalAnswer = live.verdict ?? "FINAL_YES";
+            return "FINAL_ANSWER" as const;
           }
           // ── A confirmed registration waits for the person's closing word ──
           //
@@ -1783,6 +1802,16 @@ function liveRegistrationReadingSoFar(
  * way every other optional manager call here is: a manager without the
  * method, or a session that is gone, changes nothing.
  */
+/** Has the pipeline spoken and played its fixed goodbye? Contained like the reads above. */
+function scriptedGoodbyeDeliveredSoFar(manager: ManagerLike, sessionId: SessionId): boolean {
+  if (typeof manager.scriptedGoodbyeDelivered !== "function") return false;
+  try {
+    return manager.scriptedGoodbyeDelivered(sessionId) === true;
+  } catch {
+    return false;
+  }
+}
+
 function armScriptedClosing(manager: ManagerLike, sessionId: SessionId): void {
   if (typeof manager.armScriptedClosing !== "function") return;
   try {

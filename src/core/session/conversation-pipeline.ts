@@ -3086,6 +3086,8 @@ export class ConversationPipeline {
    */
   private scriptedClosingArmed = false;
   private scriptedClosingSpoken = false;
+  /** Set once that fixed goodbye has been spoken and played out — see `scriptedGoodbyeDelivered`. */
+  private scriptedGoodbyeDone = false;
   /**
    * ---------------- Metrics bookkeeping (read-only observers) ----------------
    * Everything below is written from points that already exist in the
@@ -5630,7 +5632,25 @@ export class ConversationPipeline {
       `[PIPELINE:${this.record.id}] closing acknowledgement "${trimmed.slice(0, 40)}" after a confirmed registration — speaking the fixed goodbye: "${line}"`,
     );
     await this.speakAttentionUtterance(line, loopSignal, "closing after a confirmed registration", undefined, "CLOSING", true);
+    this.scriptedGoodbyeDone = true;
     return true;
+  }
+
+  /**
+   * Has the fixed goodbye to a confirmed registration been spoken and
+   * played out? Read-only; the campaign layer ends the call on it.
+   *
+   * WHY IT IS NEEDED. The watchdog also reads "the agent closed" off the
+   * live transcript, and that projection appends the caller's live
+   * preview as a trailing user turn. Real call c68383c8 (2026-09-29):
+   * after "Okay, thank you." a conversation in the caller's room never
+   * paused, so the transcript never ENDED on the goodbye, the line stayed
+   * up for 67s more and the agent answered the room — "गाड़ी नंबर डाल
+   * दिया" — six times. This is the pipeline's own fact, which no
+   * background voice can hide.
+   */
+  scriptedGoodbyeDelivered(): boolean {
+    return this.scriptedGoodbyeDone;
   }
 
   // ---------------------------------------------------------------

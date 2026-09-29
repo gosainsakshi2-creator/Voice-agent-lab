@@ -581,6 +581,10 @@ interface ScriptedSession {
 function scriptedManager(input: {
   readonly transcriptSoFar: readonly ConversationTurn[];
   readonly drive: (session: ScriptedSession, armed: () => boolean) => Promise<void>;
+  /** The pipeline reports its fixed goodbye as delivered (`scriptedGoodbyeDelivered`). */
+  readonly signalsGoodbye?: boolean;
+  /** The caller's side stays noisy: the pipeline keeps hearing activity. */
+  readonly busyLine?: boolean;
 }) {
   let listener: ((sessionId: string, transition: unknown) => void) | undefined;
   const sessionId = `closing-${randomUUID()}`;
@@ -660,7 +664,8 @@ function scriptedManager(input: {
       turnLatencies: [],
     }),
     getTranscript: () => [...transcript],
-    lastActivityAt: () => 0,
+    lastActivityAt: () => (input.busyLine === true ? Date.now() : 0),
+    ...(input.signalsGoodbye === true ? { scriptedGoodbyeDelivered: () => telemetry.goodbyeCommittedAt !== 0 } : {}),
     armScriptedClosing: () => {
       telemetry.armCalls += 1;
       if (telemetry.armedAt === 0) telemetry.armedAt = Date.now();
@@ -706,6 +711,8 @@ const TICKS_MS = 1_200;
 async function runScripted(input: {
   readonly transcriptSoFar: readonly ConversationTurn[];
   readonly drive: (session: ScriptedSession, armed: () => boolean) => Promise<void>;
+  readonly signalsGoodbye?: boolean;
+  readonly busyLine?: boolean;
 }) {
   seedIndex += 1;
   const inserted = await query<{ id: string }>(
@@ -878,6 +885,38 @@ try {
     const stored = await outcomesOf(asked.outcome.attemptId!);
     assert.equal(stored.length, 1);
     assert.equal(stored[0]!.reason, "confirmed_at_gate");
+  });
+
+  await test("D6b. c68383c8 — a room that keeps talking after the goodbye cannot hold the line open", async () => {
+    const noisy = await runScripted({
+      transcriptSoFar: [agent(GREETING), agent(GATE), caller("Yes, please.")],
+      signalsGoodbye: true,
+      busyLine: true,
+      drive: async (s) => {
+        await wait(300);
+        s.beginReply();
+        await wait(400);
+        s.finishReply(CONFIRMED);
+        await wait(TICKS_MS);
+        s.say("Yes? Yeah, yeah.");
+        s.beginReply();
+        await wait(400);
+        s.finishReply(GOODBYE);
+        // Voices in the caller's room, straight after the goodbye: the
+        // transcript never again ends on the agent's turn.
+        s.say("क्या उसका गाड़ी नंबर डालना था?");
+        for (let i = 0; i < 20; i += 1) {
+          await wait(300);
+          s.say("गाड़ी नंबर तो डाल दिया मैंने।");
+        }
+      },
+    });
+    assert.equal(await hangupReasonOf(noisy.outcome.attemptId!), "agent_hangup:final_yes");
+    const afterGoodbyeMs = noisy.telemetry.endedAt - noisy.telemetry.goodbyeCommittedAt;
+    assert.ok(noisy.telemetry.goodbyeCommittedAt > 0 && afterGoodbyeMs >= 0, "ended after the goodbye");
+    assert.ok(afterGoodbyeMs < 1_500, `ended on the tick after the goodbye, not held by the room (${afterGoodbyeMs}ms)`);
+    const stored = await outcomesOf(noisy.outcome.attemptId!);
+    assert.equal(stored[0]!.type, "registered_confirmed");
   });
 
   await test("D7. a refusal still ends promptly as agent_hangup:final_no — the closing wait exists for a registration only", async () => {

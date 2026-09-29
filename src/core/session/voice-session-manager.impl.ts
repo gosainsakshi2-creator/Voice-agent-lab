@@ -588,6 +588,16 @@ export class DefaultVoiceSessionManager implements VoiceSessionManager, Pipeline
   }
 
   /**
+   * ADDITIVE, NOT PART OF `VoiceSessionManager`. Read-only: has the
+   * pipeline spoken, and played out, its fixed goodbye to a confirmed
+   * registration (`ConversationPipeline.scriptedGoodbyeDelivered`)? A
+   * session with no pipeline reports `false`.
+   */
+  scriptedGoodbyeDelivered(sessionId: SessionId): boolean {
+    return this.pipelines.get(sessionId)?.scriptedGoodbyeDelivered() ?? false;
+  }
+
+  /**
    * ADDITIVE, NOT PART OF `VoiceSessionManager`. Read-only companion to
    * `getTranscript` above: did the identity gate conclude that the
    * person on this line is NOT the person we called?

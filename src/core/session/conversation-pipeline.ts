@@ -567,6 +567,14 @@ const BUFFERED_TURN_DRAIN_POLL_MS = 250;
 const BACKCHANNEL_MIN_REMAINING_SPEECH_MS = 4_000;
 
 /**
+ * How long after the reply's greeting sentence ends a greeting back is
+ * still taken as answering it — the transcript's delay behind the audio
+ * (~0.7s on the calls it was measured on), with margin. See
+ * `greetingSentenceJustPlayed`.
+ */
+const GREETING_BACK_LAG_MS = 1_500;
+
+/**
  * DIAGNOSTIC ONLY (2026-09-25) — the played fraction above which a
  * PROPOSED rule would credit a cut statement as heard. Evaluated by
  * `snapshotCutSentence` for telemetry and read by nothing else: no
@@ -1365,6 +1373,25 @@ const CLOSING_ACKNOWLEDGEMENT_TOKENS = [
   "ji", "sir", "madam", "ma'am", "maam", "please", "okay then", "ok then", "then",
   "जी", "सर", "मैडम",
 ];
+
+/**
+ * A bare "no" after a confirmed registration's close, with nothing but
+ * thanks or courtesy on it: "No.", "No, thank you.", "Nahi ji", "नहीं,
+ * धन्यवाद". Read only by `handleScriptedClosing`, so only once the
+ * registration is settled and the agent's last line asked nothing. A "no"
+ * with any content of its own ("No, cancel it") is still the model's.
+ */
+const NOTHING_MORE_AFTER_CLOSE =
+  /^(?:no+|nope|nah|nahi|nahin|नहीं|नही)(?:[\s,.!…।]+(?:thanks?|thank you|thank you so much|ji|sir|ma'am|madam|जी|सर|मैडम|धन्यवाद|शुक्रिया|थैंक यू))*[\s,.!…।]*$/iu;
+
+/** The caller's turn asked something: a question mark, or a question word. */
+const CALLER_ASKED = /[?？]|\b(?:what|which|how|why|when|where|who|kya|kaun|kaise|kitna|kitne|kab|kahan)\b|क्या|कौन|कैसे|कितना|कितने|कब|कहाँ/iu;
+
+/** Asked when a caller's "No." answers an answer that missed their question. Survives `formatForSpeech` unchanged (probed). */
+const CLARIFY_AFTER_CLOSE = {
+  en: "Sorry — what would you like to know?",
+  hi: "Sorry — आप क्या जानना चाहते हैं?",
+} as const;
 
 /** Punctuation that may sit between closing words without changing what they are. */
 const CLOSING_PUNCTUATION = /[,.!…।\-–—"'’()]/gu;
@@ -5125,13 +5152,38 @@ export class ConversationPipeline {
     // after a confirmed registration the model answered each one by saying
     // the confirmation again — three times on real call c343e150
     // (2026-09-26). The not-a-question guard below still applies.
-    if (!isClosingAcknowledgement(trimmed) && !isContinuationCue(trimmed)) return false;
+    // ...or "No." / "No, thank you." / "नहीं जी" — "nothing more" said to a
+    // confirmation that asked nothing. Left to the model it drew the
+    // decline close ("Okay, no problem at all. Thanks for your time.") to
+    // somebody already registered.
+    const bareNo = NOTHING_MORE_AFTER_CLOSE.test(trimmed);
+    if (!isClosingAcknowledgement(trimmed) && !isContinuationCue(trimmed) && !bareNo) return false;
     // The person's turn has just been recorded, so the assistant's
     // latest turn is the confirmation (or an answer) they are closing on.
-    const lastAssistant = [...this.record.memory.history()]
+    const history = this.record.memory.history();
+    const lastAssistant = [...history]
       .reverse()
       .find((turn) => turn.role === "assistant");
     if (lastAssistant !== undefined && lastAssistant.content.includes("?")) return false;
+
+    // ── A "No." to an ANSWER is "that is not what I asked" ─────────
+    //
+    // Real call cc27c467 (2026-09-29): registered, then "What— what one?
+    // The active 3,000?", an answer that missed the question, and "No." —
+    // which drew the decline close and the auto-hangup 0.3s later, on a
+    // caller still asking. When the caller's turn before this one was a
+    // question, the "no" is about the answer: ask what they wanted to
+    // know. A question, so the call is not closed on it, and the closing
+    // stays armed for whenever they are done.
+    const callerTurns = history.filter((turn) => turn.role === "user");
+    const previousCallerTurn = callerTurns[callerTurns.length - 2]?.content ?? "";
+    if (bareNo && CALLER_ASKED.test(previousCallerTurn)) {
+      const clarify = this.record.memory.currentLanguage === "en" ? CLARIFY_AFTER_CLOSE.en : CLARIFY_AFTER_CLOSE.hi;
+      // eslint-disable-next-line no-console
+      console.log(`[PIPELINE:${this.record.id}] "${trimmed.slice(0, 20)}" after an answer to "${previousCallerTurn.slice(0, 40)}" — asking what they wanted to know: "${clarify}"`);
+      await this.speakAttentionUtterance(clarify, loopSignal, "asking what the caller wanted to know");
+      return true;
+    }
 
     this.scriptedClosingSpoken = true;
     const line = scriptedClosingFor(this.record.memory.currentLanguage);
@@ -5608,7 +5660,7 @@ export class ConversationPipeline {
     // closing, a bare closing acknowledgement is answered by the fixed
     // goodbye (`handleScriptedClosing`) and never reaches the model, so
     // a request pre-opened for it could only ever be abandoned.
-    if (this.scriptedClosingArmed && !this.scriptedClosingSpoken && (isClosingAcknowledgement(text) || isContinuationCue(text))) return;
+    if (this.scriptedClosingArmed && !this.scriptedClosingSpoken && (isClosingAcknowledgement(text) || isContinuationCue(text) || NOTHING_MORE_AFTER_CLOSE.test(text.trim()))) return;
     // ...and a listening sound after a yes/no question, which
     // `handleAckAfterQuestion` answers by re-asking it without the model.
     if (this.questionToReask(text) !== undefined) return;
@@ -6126,7 +6178,12 @@ export class ConversationPipeline {
     // and the next "हेलो" re-pitched from the top (call d9257578,
     // 2026-09-28). The pitch carries on instead; "Hello? Hello?" and a
     // "Hello" over any later sentence still interrupt.
-    if (this.isSingleGreeting(utterance) && this.playingSentenceOpensWithGreeting()) {
+    // ...and the same greeting said with a "yeah" on it ("Yeah, hey.",
+    // "हाँ, हेलो"), or landing just after that sentence ended: the
+    // transcript of a hello said over "Hi Sakshi" arrives ~0.7s later,
+    // over the NEXT sentence (real calls f1494c20 and e21f370f,
+    // 2026-09-29 — both cut the pitch into a hearing check).
+    if (this.isGreetingBack(utterance) && this.greetingSentenceJustPlayed()) {
       return true;
     }
     // `isContinuationCue` is a bare acknowledgement OR an invitation to
@@ -6369,13 +6426,19 @@ export class ConversationPipeline {
     if (!agentName) return false;
     const introduces = (text: string): boolean =>
       OPENS_WITH_GREETING.test(text.trim()) && text.toLowerCase().includes(agentName);
+    // An introduction already said WITHOUT a greeting in front — the
+    // identity re-ask "This is Ishita from Team FlexiFunnels. Am I speaking
+    // with…?" — counts as said too (real call 8a610d3c, 2026-09-29: the
+    // agent introduced itself twice in a row).
+    const introducedSelf = (text: string): boolean =>
+      text.toLowerCase().includes(agentName) && /\b(?:this is|i am|i'm)\b|मैं/iu.test(text);
     if (!introduces(sentence)) return false;
     return this.record.memory
       .history()
       .some(
         (t) =>
           t.role === "assistant" &&
-          t.content.split(/(?<=[.!?।？])\s+/u).some((s) => introduces(s)),
+          t.content.split(/(?<=[.!?।？])\s+/u).some((s) => introduces(s) || introducedSelf(s)),
       );
   }
 
@@ -6402,6 +6465,40 @@ export class ConversationPipeline {
     const form = greetingFormForAttention(utterance);
     if (!isBareGreetingTurn(form)) return false;
     return form.split(/[^\p{L}\p{M}]+/u).filter((word) => word.length > 0).length === 1;
+  }
+
+  /**
+   * ONE greeting, alone or with acknowledgements around it: "Hello.",
+   * "Yeah, hey.", "Hi, yes.", "हाँ, हेलो". Never two greetings — "Hello?
+   * Hello?" is somebody who cannot hear, and still interrupts.
+   */
+  private isGreetingBack(utterance: string): boolean {
+    if (this.isSingleGreeting(utterance)) return true;
+    const words = utterance.split(/[^\p{L}\p{M}']+/u).filter((word) => word.length > 0);
+    if (words.length < 2 || words.length > 3) return false;
+    const greetings = words.filter((word) => this.isSingleGreeting(word));
+    if (greetings.length !== 1) return false;
+    const rest = words.filter((word) => !this.isSingleGreeting(word)).join(" ");
+    return isBareAcknowledgement(rest);
+  }
+
+  /**
+   * Is a greeting sentence ("Hi Ankit, I'm Rohan…") at the play head, or
+   * did one end less than `GREETING_BACK_LAG_MS` ago? The allowance is
+   * the transcript's own delay, so a greeting SAID over that sentence is
+   * judged against the sentence it answered.
+   */
+  private greetingSentenceJustPlayed(): boolean {
+    if (this.playingSentenceOpensWithGreeting()) return true;
+    if (this.outboundPlaybackStartedAt === 0) return false;
+    const playheadMs = this.playedSoFarMs();
+    return this.spokenUtterances.some(
+      (u) =>
+        u.complete &&
+        OPENS_WITH_GREETING.test(u.text.trim()) &&
+        u.endsAtMs <= playheadMs &&
+        playheadMs - u.endsAtMs <= GREETING_BACK_LAG_MS,
+    );
   }
 
   /** Does the sentence at the play head open with a greeting? See `OPENS_WITH_GREETING`. */

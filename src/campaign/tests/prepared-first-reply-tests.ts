@@ -85,6 +85,7 @@ interface LlmRequestSeen {
 
 interface Harness {
   readonly record: InstanceType<typeof SessionRecord>;
+  readonly pipeline: InstanceType<typeof ConversationPipeline>;
   readonly requests: LlmRequestSeen[];
   readonly synthesized: Array<{ readonly text: string; readonly atMs: number }>;
   say(text: string, language?: (typeof SupportedLanguage)[keyof typeof SupportedLanguage]): number;
@@ -204,6 +205,7 @@ function startHarness(input: { readonly prepare: boolean; readonly replyDelayMs?
 
   return {
     record,
+    pipeline,
     requests,
     synthesized,
     say(text, language = SupportedLanguage.ENGLISH) {
@@ -528,6 +530,135 @@ await test("I4. switched OFF, an interim opens nothing (FIX #8's rule)", async (
     h.sayInterim(ANSWER.toLowerCase());
     await sleep(700);
     assert.equal(h.requests.length, before);
+  } finally {
+    await h.stop();
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════
+section("G. A GREETING BACK OVER \"Hi Sakshi, I'm Rohan…\" DOES NOT CUT THE PITCH (real calls f1494c20, e21f370f)");
+
+/** Starts the reply after "Yes." and returns once its first audio is playing. */
+async function pitchPlaying(h: Harness): Promise<void> {
+  await answerOpening(h, "Yes.");
+  await h.waitFor("the pitch to start playing", () => h.record.state === SessionState.SPEAKING && h.assistantTurns().length === 1);
+}
+
+for (const [label, said, delayMs] of [
+  ["\"Yeah, hey.\" over the greeting sentence", "Yeah, hey.", 700],
+  ["\"हाँ, हेलो\" over the greeting sentence", "हाँ, हेलो", 700],
+  ["\"Hello.\" arriving just after the greeting sentence (transcript lag)", "Hello.", 2600],
+] as const) {
+  await test(`G1. ${label} — the pitch is delivered whole`, async () => {
+    const h = startHarness({ prepare: true });
+    try {
+      await pitchPlaying(h);
+      await sleep(delayMs);
+      h.say(said, /[ऀ-ॿ]/u.test(said) ? SupportedLanguage.HINGLISH : SupportedLanguage.ENGLISH);
+      await h.waitFor("the pitch to be committed", () => h.assistantTurns().length >= 2, 30000);
+      assert.equal(h.assistantTurns()[1], PREPARED_EN, "not cut");
+    } finally {
+      await h.stop();
+    }
+  });
+}
+
+await test("G2. \"Hello? Hello?\" — somebody who cannot hear — still interrupts", async () => {
+  const h = startHarness({ prepare: true });
+  try {
+    await pitchPlaying(h);
+    await sleep(700);
+    h.say("Hello? Hello?");
+    await h.waitFor("the pitch to be committed", () => h.assistantTurns().length >= 2, 30000);
+    assert.notEqual(h.assistantTurns()[1], PREPARED_EN, "cut");
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("G3. a real interruption over the greeting sentence still interrupts", async () => {
+  const h = startHarness({ prepare: true });
+  try {
+    await pitchPlaying(h);
+    await sleep(700);
+    h.say("Sorry, who gave you my number?");
+    await h.waitFor("the pitch to be committed", () => h.assistantTurns().length >= 2, 30000);
+    assert.notEqual(h.assistantTurns()[1], PREPARED_EN, "cut");
+  } finally {
+    await h.stop();
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════
+section("R. REAL CALLS 8a610d3c / cc27c467 (2026-09-29)");
+
+await test("R1. \"Who's this?\" → the re-ask introduces the agent → \"Yes.\": the pitch does NOT introduce it a second time", async () => {
+  const h = startHarness({ prepare: true });
+  try {
+    await answerOpening(h, "Who's this?");
+    await h.waitFor("the re-ask", () => h.assistantTurns().length >= 2 && h.record.state === SessionState.LISTENING, 15000);
+    assert.ok(/Rohan/u.test(h.assistantTurns()[1] ?? ""), `the re-ask introduced the agent: "${h.assistantTurns()[1]}"`);
+    await sleep(200);
+    h.say("Yes.");
+    await awaitReply(h, 3);
+    const pitch = h.assistantTurns()[2] ?? "";
+    assert.ok(!/I'm Rohan/u.test(pitch), `introduced twice: "${pitch}"`);
+    assert.equal(pitch, PREPARED_EN.slice(firstSentence(PREPARED_EN).length).trim());
+  } finally {
+    await h.stop();
+  }
+});
+
+for (const said of ["No.", "No, thank you.", "नहीं जी।"]) {
+  await test(`R2. ${JSON.stringify(said)} after a confirmed registration gets the fixed goodbye, not the decline close`, async () => {
+    const h = startHarness({ prepare: true });
+    try {
+      await pastIdentity(h);
+      // The agent last said a STATEMENT to a caller STATEMENT, then the caller said no.
+      h.say("Okay, I understand the details.");
+      await awaitReply(h, 3);
+      await sleep(200);
+      h.pipeline.armScriptedClosing();
+      const before = h.requests.length;
+      h.say(said, /[ऀ-ॿ]/u.test(said) ? SupportedLanguage.HINGLISH : SupportedLanguage.ENGLISH);
+      await awaitReply(h, 4);
+      assert.equal(h.requests.length, before, "no model request");
+      assert.ok(!/no problem|thanks for your time/iu.test(h.assistantTurns()[3] ?? ""), `decline-sounding close: "${h.assistantTurns()[3]}"`);
+    } finally {
+      await h.stop();
+    }
+  });
+}
+
+await test("R4. THE REAL CALL cc27c467: a question, an answer that missed it, then \"No.\" — the agent asks what they wanted to know and the call is NOT closed", async () => {
+  const h = startHarness({ prepare: true });
+  try {
+    await pastIdentity(h);
+    h.say("What— what one? The active 3,000?");
+    await awaitReply(h, 3);
+    await sleep(200);
+    h.pipeline.armScriptedClosing();
+    const before = h.requests.length;
+    h.say("No.");
+    await awaitReply(h, 4);
+    assert.equal(h.requests.length, before, "no model request");
+    assert.equal(h.assistantTurns()[3], "Sorry — what would you like to know?");
+    const { agentClosedIn } = await import("../dispatch/call-runner");
+    assert.equal(agentClosedIn(h.record.memory.history() as never), false, "a question, so the call is not closed on it");
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("R3. \"No, cancel it.\" after the close is NOT a goodbye — the model answers it", async () => {
+  const h = startHarness({ prepare: true });
+  try {
+    await pastIdentity(h);
+    h.pipeline.armScriptedClosing();
+    const before = h.requests.length;
+    h.say("No, cancel it.");
+    await awaitReply(h, 3);
+    assert.ok(h.requests.length > before, "the model was asked");
   } finally {
     await h.stop();
   }

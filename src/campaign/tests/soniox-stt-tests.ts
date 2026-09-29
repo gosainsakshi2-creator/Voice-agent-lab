@@ -1242,6 +1242,39 @@ await test("13c. a socket factory that throws does not spin or crash the caller"
   assert.match(String((await p.checkHealth()).message), /provider_unavailable/);
 });
 
+// 2026-09-29: a 0.67s hangup ended the stream while its first socket was
+// still connecting; the latch then failed the warm-up of the next 33 calls.
+await test("13d. the caller ending the stream before the socket opens does NOT mark Soniox unavailable", async () => {
+  const sock = new MockSocket();
+  const p = new SonioxSpeechToTextProvider(CONFIGURED, () => sock);
+  const held = heldAudio();
+  const run = streamOf(p, held.iterable);
+  await sleep(5);
+  held.release(); // the caller hung up; no open, no close, no error from Soniox
+  await run.done;
+  sock.emit("error", new Error("WebSocket was closed before the connection was established"));
+  assert.equal((await p.checkHealth()).isHealthy, true, "healthy: the provider never failed");
+});
+
+await test("13e. a provider_unavailable latch expires, and a later open clears it", async () => {
+  let created = 0;
+  const p = new SonioxSpeechToTextProvider(CONFIGURED, () => {
+    created += 1;
+    const s = new MockSocket();
+    setTimeout(() => s.emit("close"), 1);
+    return s;
+  });
+  const held = heldAudio();
+  const run = streamOf(p, held.iterable);
+  await sleep(600);
+  held.release();
+  await run.done;
+  assert.equal((await p.checkHealth()).isHealthy, false, "a real failure is latched");
+  (p as unknown as { lastFailureAt: number }).lastFailureAt = Date.now() - 61_000;
+  assert.equal((await p.checkHealth()).isHealthy, true, "and expires after a minute");
+  assert.ok(created >= 2);
+});
+
 // ═════════════════════════════════════════════════════════════════
 section("F. Metrics attribution");
 

@@ -145,6 +145,9 @@ export function sonioxLanguageHints(language: SupportedLanguage): readonly strin
  * failures the stream reports the failure and ends.
  */
 const MAX_RECONNECT_ATTEMPTS = 5;
+
+/** How long a `provider_unavailable` latch blocks warm-ups before it expires. */
+const SONIOX_UNAVAILABLE_LATCH_MS = 60_000;
 const RECONNECT_BASE_DELAY_MS = 250;
 
 /**
@@ -497,6 +500,14 @@ export class SonioxSpeechToTextProvider implements SpeechToTextProvider {
    * not reach the service" WITHOUT making a probe call of its own.
    */
   private lastFailure: SonioxUnavailableReason | undefined;
+  /** When `provider_unavailable` was last latched — it expires, see `checkHealth`. */
+  private lastFailureAt = 0;
+
+  /** Latch `provider_unavailable` (never over an auth / missing-key failure). */
+  private latchUnavailable(): void {
+    this.lastFailure ??= "provider_unavailable";
+    if (this.lastFailure === "provider_unavailable") this.lastFailureAt = Date.now();
+  }
 
   constructor(config: SonioxEnvConfig = loadSonioxEnvConfig(), socketFactory?: SonioxSocketFactory) {
     this.config = config;
@@ -551,12 +562,19 @@ export class SonioxSpeechToTextProvider implements SpeechToTextProvider {
      * when the caller's audio ended before the retry budget ran out.
      */
     let everOpened = false;
+    /**
+     * A socket CLOSED or ERRORED before any opened — the provider really
+     * failed to answer. A stream the caller ended while the first socket was
+     * still connecting is not that (call on 2026-09-29, a 0.67s hangup: the
+     * latch then failed the warm-up of the next 33 calls).
+     */
+    let failedBeforeOpen = false;
     let socket: SonioxSocketLike | undefined;
     /** Buffered while a reconnect is in flight, so no caller audio is dropped. */
     const pending: Uint8Array[] = [];
 
     const finish = (): void => {
-      if (!finished && !everOpened) this.lastFailure ??= "provider_unavailable";
+      if (!finished && !everOpened && failedBeforeOpen) this.latchUnavailable();
       finished = true;
       try {
         socket?.close(1000, "stream complete");
@@ -575,6 +593,7 @@ export class SonioxSpeechToTextProvider implements SpeechToTextProvider {
       }
       if (message.error_code !== undefined || message.error_message !== undefined) {
         this.lastFailure = isAuthFailure(message) ? "authentication_failed" : "provider_unavailable";
+        this.lastFailureAt = Date.now();
         // eslint-disable-next-line no-console
         console.error(
           `[STT:soniox] provider error code=${String(message.error_code ?? "-")} message=${String(message.error_message ?? "-")}`,
@@ -617,6 +636,7 @@ export class SonioxSpeechToTextProvider implements SpeechToTextProvider {
         next = this.socketFactory(SONIOX_REALTIME_URL);
       } catch (error) {
         this.lastFailure = "provider_unavailable";
+        this.lastFailureAt = Date.now();
         // eslint-disable-next-line no-console
         console.error(
           `[STT:soniox] socket could not be created: ${error instanceof Error ? error.message : String(error)}`,
@@ -634,6 +654,9 @@ export class SonioxSpeechToTextProvider implements SpeechToTextProvider {
       on("open", () => {
         everOpened = true;
         attempts = 0; // A successful open retires the failure budget.
+        // ...and proves the provider reachable: an earlier unavailability
+        // latch no longer describes it. Auth / missing-key stay latched.
+        if (this.lastFailure === "provider_unavailable") this.lastFailure = undefined;
         // TELEMETRY ONLY (2026-09-21) — which hints this connection was
         // actually opened with, so a wrong-script transcript can be set
         // against the bias that was in force. The key is not logged.
@@ -689,7 +712,11 @@ export class SonioxSpeechToTextProvider implements SpeechToTextProvider {
       });
 
       on("error", (error: unknown) => {
-        this.lastFailure ??= "provider_unavailable";
+        // Our own close of a still-connecting socket (the caller hung up)
+        // surfaces as an error too; that is not the provider failing.
+        if (finished) return;
+        if (!everOpened) failedBeforeOpen = true;
+        this.latchUnavailable();
         // eslint-disable-next-line no-console
         console.warn(
           `[STT:soniox] socket error: ${error instanceof Error ? error.message : String(error)}`,
@@ -698,8 +725,9 @@ export class SonioxSpeechToTextProvider implements SpeechToTextProvider {
 
       on("close", () => {
         if (finished) return;
+        if (!everOpened) failedBeforeOpen = true;
         if (attempts >= MAX_RECONNECT_ATTEMPTS) {
-          this.lastFailure ??= "provider_unavailable";
+          this.latchUnavailable();
           // eslint-disable-next-line no-console
           console.error(
             `[STT:soniox] giving up after ${MAX_RECONNECT_ATTEMPTS} consecutive connection attempts`,
@@ -767,6 +795,12 @@ export class SonioxSpeechToTextProvider implements SpeechToTextProvider {
         latencyMs: 0,
         message: "missing_api_key: SONIOX_API_KEY is not configured.",
       };
+    }
+    // A transient unavailability expires, so one bad minute cannot block
+    // every later dial of the campaign until a restart (2026-09-21 and
+    // 2026-09-29). Auth and missing-key failures stay latched.
+    if (this.lastFailure === "provider_unavailable" && Date.now() - this.lastFailureAt > SONIOX_UNAVAILABLE_LATCH_MS) {
+      this.lastFailure = undefined;
     }
     if (this.lastFailure !== undefined) {
       return {

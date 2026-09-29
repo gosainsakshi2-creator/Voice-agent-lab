@@ -589,6 +589,17 @@ const BACKCHANNEL_MIN_REMAINING_SPEECH_MS = 4_000;
  */
 const GREETING_BACK_LAG_MS = 1_500;
 
+/**
+ * A reply that opens with a bare acknowledgement — "Great.", "Okay.",
+ * "अच्छा।" — before anything else. See the repeated-introduction check in
+ * `runStreamingCompletion`: the model puts its re-introduction right
+ * behind one ("Great. Hi, I'm Rohan…"), where a first-sentence-only check
+ * never saw it.
+ */
+const BARE_REPLY_ACK = /^(?:great|okay|ok|sure|right|perfect|alright|got it|achha|अच्छा|ठीक है|जी|बढ़िया)[.!,।]?$/iu;
+/** The same acknowledgement at the start of a longer chunk, captured with its punctuation. */
+const LEADING_REPLY_ACK = /^((?:great|okay|ok|sure|right|perfect|alright|got it|achha|अच्छा|ठीक है|जी|बढ़िया)[.!,।]?)\s+/iu;
+
 /** A cached generated sentence is replayed in slices this long; see `synthesizeAndPlay`. */
 const CACHED_SLICE_SECONDS = 0.2;
 
@@ -8960,6 +8971,8 @@ await this.drainPlayback(speakingSignal, true);
     // The reply's first sentence, when it only re-introduces the agent —
     // see `isRepeatedIntroduction`. Not spoken, and not committed.
     let skippedIntro = "";
+    /** The reply opened with a bare "Great." / "Okay." — see the repeated-introduction check. */
+    let firstSentenceIsBareAck = false;
     let sentencesSeen = 0;
     let ttsSynthesisMs = 0;
     let ttsCostUsd = 0;
@@ -9037,9 +9050,28 @@ await this.drainPlayback(speakingSignal, true);
           fullText += event.delta;
           const readySentences = chunker.push(event.delta);
           for (const sentence of readySentences) {
-            const cleaned = toSpokenText(sentence);
+            let cleaned = toSpokenText(sentence);
             if (cleaned.length === 0) continue;
             sentencesSeen += 1;
+            // "Great. Hi, I'm Rohan from Team FlexiFunnels." — the same repeat
+            // behind a bare acknowledgement, in its own chunk or this one (real
+            // call 8c53be11, 2026-09-29). Keep the acknowledgement, skip the rest.
+            if (sentencesSeen === 1) {
+              const lead = LEADING_REPLY_ACK.exec(cleaned);
+              const rest = lead !== null ? cleaned.slice(lead[0].length) : "";
+              if (lead !== null && rest.length > 0 && this.isRepeatedIntroduction(rest)) {
+                skippedIntro = rest;
+                cleaned = lead[1] ?? cleaned;
+                // eslint-disable-next-line no-console
+                console.log(`[PIPELINE:${this.record.id}] repeated introduction skipped after "${cleaned}": "${rest.slice(0, 60)}"`);
+              }
+              firstSentenceIsBareAck = BARE_REPLY_ACK.test(cleaned);
+            } else if (sentencesSeen === 2 && firstSentenceIsBareAck && skippedIntro.length === 0 && this.isRepeatedIntroduction(cleaned)) {
+              skippedIntro = cleaned;
+              // eslint-disable-next-line no-console
+              console.log(`[PIPELINE:${this.record.id}] repeated introduction skipped after an acknowledgement: "${cleaned.slice(0, 60)}"`);
+              continue;
+            }
             // "Hi Rakesh, I'm Ishita from Team FlexiFunnels." again, after the
             // caller already heard it: the model restarts its script block on
             // every interruption (call 28dd0eee said it three times). Skip it.
@@ -9326,8 +9358,10 @@ await this.drainPlayback(speakingSignal, true);
     let assistantText = toSpokenText(finalText ?? fullText);
     // What was spoken starts after the skipped introduction; heard/unheard
     // accounting (`unspokenTail`) needs the committed text to match it.
-    if (skippedIntro.length > 0 && assistantText.startsWith(skippedIntro)) {
-      assistantText = assistantText.slice(skippedIntro.length).trim();
+    // Wherever it stood — first, or behind a bare acknowledgement.
+    if (skippedIntro.length > 0) {
+      const at = assistantText.indexOf(skippedIntro);
+      if (at >= 0) assistantText = `${assistantText.slice(0, at)} ${assistantText.slice(at + skippedIntro.length)}`.replace(/\s+/gu, " ").trim();
     }
 
     // If nothing was ever spoken (e.g. immediate barge-in), still

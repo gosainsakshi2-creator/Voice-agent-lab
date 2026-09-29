@@ -452,6 +452,24 @@ await test("C1. armed, a bare 'Okay, thank you.' is answered with the fixed good
   }
 });
 
+await test("C1d. 8c53be11 — \"Great. Hi, I'm Rohan…\" after the intro was heard: the acknowledgement is spoken, the re-introduction is not", async () => {
+  const INTRO = "Hi, I'm Rohan from Team FlexiFunnels. I'm calling about a free workshop.";
+  const h = startHarness({ replies: [INTRO, "Great. Hi, I'm Rohan from Team FlexiFunnels. It is this Sunday."] });
+  try {
+    await h.waitForReplies(1);
+    h.say("Yes, speaking.");
+    await h.waitForReplies(2);
+    h.say("Yes, I can hear you now.");
+    await h.waitForReplies(3);
+    const intros = h.synthesized.filter((t) => /I'm Rohan/u.test(t));
+    assert.equal(intros.length, 1, `introduced once, not twice: ${JSON.stringify(h.synthesized)}`);
+    assert.ok(h.synthesized.includes("Great."), "the acknowledgement is still spoken");
+    assert.equal(assistantTexts(h)[2], "Great. It is this Sunday.", "committed as spoken");
+  } finally {
+    await h.stop();
+  }
+});
+
 for (const cue of ["Tell me, sir. Okay.", "हाँ जी।", "ओके।"]) {
   await test(`C1c. armed, a bare continuation cue ("${cue}") also gets the fixed goodbye — the confirmation is NOT said again (real call c343e150)`, async () => {
     const h = startHarness({ replies: [GATE, CONFIRMED, "SHOULD-NOT-BE-GENERATED"] });

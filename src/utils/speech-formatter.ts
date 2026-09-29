@@ -42,7 +42,11 @@ const LEADING_DISCOURSE_FILLER =
  * prompt bans this pattern outright; keep the first, drop the second.
  */
 const STACKED_ACKNOWLEDGEMENT =
-  /^(okay|ok|sure|absolutely|alright|right|certainly|yeah|yes|got it|theek hai|bilkul|achha|haan)\s*[,.!]?\s+(?:thank you|thanks|thank you so much|shukriya|धन्यवाद)\s*[,.!]?\s*/iu;
+  // `(?!…for)`: "Okay, thank you FOR telling me." is one thought, not two
+  // stacked acknowledgements — collapsing it spoke "Okay. for telling me."
+  // on real call 8c53be11 (2026-09-29). The longer forms come first, or
+  // "thank you" alone matched and left "Okay. very much." / "Okay. so much.".
+  /^(okay|ok|sure|absolutely|alright|right|certainly|yeah|yes|got it|theek hai|bilkul|achha|haan)\s*[,.!]?\s+(?:thank you so much|thank you very much|thanks a lot|thank you|thanks|shukriya|धन्यवाद)(?!\s+(?:so much\s+|very much\s+)?for\b)\s*[,.!]?\s*/iu;
 
 /** Over-formal phrasings replaced with what a person actually says on a call. */
 const PHRASE_SUBSTITUTIONS: ReadonlyArray<readonly [RegExp, string]> = [

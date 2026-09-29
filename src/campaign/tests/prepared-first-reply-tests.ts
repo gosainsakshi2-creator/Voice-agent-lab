@@ -88,12 +88,14 @@ interface Harness {
   readonly requests: LlmRequestSeen[];
   readonly synthesized: Array<{ readonly text: string; readonly atMs: number }>;
   say(text: string, language?: (typeof SupportedLanguage)[keyof typeof SupportedLanguage]): number;
+  /** An interim (non-final) segment: the words so far, not yet finalized. */
+  sayInterim(text: string): number;
   waitFor(what: string, predicate: () => boolean, timeoutMs?: number): Promise<void>;
   assistantTurns(): string[];
   stop(): Promise<void>;
 }
 
-function startHarness(input: { readonly prepare: boolean; readonly replyDelayMs?: number; readonly openingLine?: string }): Harness {
+function startHarness(input: { readonly prepare: boolean; readonly replyDelayMs?: number; readonly openingLine?: string; readonly interim?: boolean }): Harness {
   const requests: LlmRequestSeen[] = [];
   const synthesized: Array<{ text: string; atMs: number }> = [];
   const segments: TranscriptSegment[] = [];
@@ -197,7 +199,7 @@ function startHarness(input: { readonly prepare: boolean; readonly replyDelayMs?
     end: async () => undefined,
   };
 
-  const pipeline = new ConversationPipeline(record, { telephony, stt, llm, tts } as never, host as never, { prepareFirstReply: input.prepare });
+  const pipeline = new ConversationPipeline(record, { telephony, stt, llm, tts } as never, host as never, { prepareFirstReply: input.prepare, speculateOnInterim: input.interim === true });
   const loop = pipeline.run();
 
   return {
@@ -208,6 +210,11 @@ function startHarness(input: { readonly prepare: boolean; readonly replyDelayMs?
       const startedAtMs = clockMs;
       clockMs += Math.max(200, (text.length / CHARS_PER_SECOND) * 1000);
       segments.push({ text, isFinal: true, isSpeechFinal: true, confidence: 0.95, language, startedAtMs, endedAtMs: clockMs });
+      waiters.shift()?.();
+      return Date.now();
+    },
+    sayInterim(text) {
+      segments.push({ text, isFinal: false, isSpeechFinal: false, confidence: 0.9, language: SupportedLanguage.ENGLISH, startedAtMs: clockMs, endedAtMs: clockMs + 200 });
       waiters.shift()?.();
       return Date.now();
     },
@@ -242,6 +249,28 @@ const awaitReply = (h: Harness, n: number) =>
   h.waitFor(`${n} assistant turns and LISTENING`, () => h.assistantTurns().length >= n && h.record.state === SessionState.LISTENING, 30000);
 
 const firstSentence = (text: string) => text.split(/(?<=[.!?।？])\s+/u)[0] ?? text;
+
+// ═════════════════════════════════════════════════════════════════
+section("V. THE CONFIRMATION VOCABULARY — real answers from the 2026-09-29 audit");
+
+const { preparedReplyVariantFor } = await import("../../core/session/confirmation-vocabulary");
+const SAKSHI = ["Sakshi Gosain", "साक्षी"];
+for (const [said, expected] of [
+  ["Yes.", "en"], ["Yeah", "en"], ["यस", "en"], ["Yes ma'am", "en"], ["Right, who's this?", "en"], ["Yes tell me", "en"],
+  ["Speaking, who is this?", "en"], ["Yes, what happened?", "en"], ["Please say who you are and why you're calling.", "en"],
+  ["Yes, you are speaking with साक्षी, tell me.", "en"], ["यस सर हेलो", "en"], ["राइट", "en"], ["Hello— Thank you, sir.", "en"],
+  ["हाँ", "hinglish"], ["हाँ जी", "hinglish"], ["जी", "hinglish"], ["हाँ बोलिए", "hinglish"], ["हाँ, कौन बोल रहा है?", "hinglish"],
+  ["हाँ मैं बात कर रहा हूँ", "hinglish"], ["Yes बोलिए", "hinglish"], ["Haan ji bataiye", "hinglish"], ["हम्म यस बोलो", "hinglish"],
+  ["Yes, but I am driving right now.", undefined], ["Yeah, I'm just riding right now. Can you call me after, like, half an hour?", undefined],
+  ["Hold on. Yes?", undefined], ["I cannot pick up the call right now; this is my true caller voicemail.", undefined],
+  ["Hello, — You're speaking with Ayusha's assistant. May I know who's calling?", undefined],
+  ["Hi, thank you for calling me. I couldn't answer your call right now. Please leave a message,", undefined],
+  ["हाँ, बाद में बात करते हैं", undefined], ["Yes, not interested.", undefined], ["", undefined],
+] as const) {
+  await test(`V. ${JSON.stringify(said)} → ${expected ?? "its own request"}`, () => {
+    assert.equal(preparedReplyVariantFor(said, SAKSHI), expected);
+  });
+}
 
 // ═════════════════════════════════════════════════════════════════
 section("P. THE PREPARED FIRST REPLY");
@@ -299,8 +328,31 @@ await test("P4. ...and so does a romanized 'Haan ji.'", async () => {
   }
 });
 
-for (const said of ["Yes, but I'm driving right now.", "Yes. Who is this?", "Haan ji, main driving kar raha hoon.", "Yes this is Sakshi, what is it about?"]) {
-  await test(`P5. ${JSON.stringify(said)} is more than a bare yes — the prepared reply is discarded and the turn gets its own`, async () => {
+// Real confirmations (2026-09-29 audit of 487): the reply introduces the
+// agent and the purpose, so it answers these too.
+for (const [said, expected] of [
+  ["Yes, madam.", PREPARED_EN],
+  ["Yeah, tell me.", PREPARED_EN],
+  ["Right, who's this?", PREPARED_EN],
+  ["Yes this is Sakshi, what is it about?", PREPARED_EN],
+  ["हाँ जी बोलिए।", PREPARED_HI],
+  ["हाँ, कौन बोल रहा है?", PREPARED_HI],
+] as const) {
+  await test(`P5a. ${JSON.stringify(said)} is a confirmation the prepared reply answers`, async () => {
+    const h = startHarness({ prepare: true });
+    try {
+      const saidAt = await answerOpening(h, said, /[ऀ-ॿ]/u.test(said) ? SupportedLanguage.HINGLISH : SupportedLanguage.ENGLISH);
+      await awaitReply(h, 2);
+      assert.equal(h.requests.filter((r) => r.atMs >= saidAt).length, 0, "no request after the confirmation");
+      assert.equal(h.assistantTurns()[1], expected);
+    } finally {
+      await h.stop();
+    }
+  });
+}
+
+for (const said of ["Yes, but I'm driving right now.", "Haan ji, main driving kar raha hoon.", "Hold on. Yes?", "Yeah, can you call me after half an hour?"]) {
+  await test(`P5. ${JSON.stringify(said)} says something the pitch would talk past — the prepared reply is discarded and the turn gets its own`, async () => {
     const h = startHarness({ prepare: true });
     try {
       await answerOpening(h, said);
@@ -313,16 +365,20 @@ for (const said of ["Yes, but I'm driving right now.", "Yes. Who is this?", "Haa
   });
 }
 
-await test("P6. an unclear answer, a re-ask, then 'Yes.': the preparation no longer fits and is not used", async () => {
+await test("P6. an unclear answer, a re-ask, then 'Yes.': the reply is prepared AGAIN for the re-ask and served", async () => {
   const h = startHarness({ prepare: true });
   try {
     await answerOpening(h, "Hello?");
     await h.waitFor("the gate to re-ask", () => h.assistantTurns().length >= 2 && h.record.state === SessionState.LISTENING, 15000);
     await sleep(200);
-    h.say("Yes.");
+    const saidAt = h.say("Yes.");
     await awaitReply(h, 3);
-    assert.equal(h.requests.filter((r) => r.lastUser === "Yes.").length, 2, "the confirmation got a request of its own");
     assert.ok(!h.assistantTurns().slice(0, 2).some((t) => t.includes("workshop")), "no pitch before identity");
+    assert.equal(h.requests.filter((r) => r.atMs >= saidAt).length, 0, "no request after the confirmation");
+    assert.equal(h.assistantTurns()[2], PREPARED_EN);
+    const reAsk = h.assistantTurns()[1] ?? "";
+    const lastPrep = [...h.requests].reverse().find((r) => r.lastUser === "Yes.");
+    assert.equal(lastPrep?.history.filter((t) => t.role === "assistant").pop()?.content, reAsk, "prepared for the re-ask, not the opening");
   } finally {
     await h.stop();
   }
@@ -397,6 +453,81 @@ await test("P11. an opening that does NOT ask who picked up prepares nothing unt
     // existing repeated-introduction rule drops because this opening
     // already introduced the agent.
     assert.equal(h.assistantTurns()[2], PREPARED_EN.slice(firstSentence(PREPARED_EN).length).trim());
+  } finally {
+    await h.stop();
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════
+section("I. A SETTLED INTERIM PRE-OPENS THE TURN'S REQUEST (speculateOnInterim)");
+
+/** Past the identity turn, so the next turn is an ordinary one. */
+async function pastIdentity(h: Harness): Promise<void> {
+  await answerOpening(h, "Yes.");
+  await awaitReply(h, 2);
+  await sleep(200);
+}
+
+const ANSWER = "I have tried it before";
+
+await test("I1. an interim that settles opens the request BEFORE the final; the final adopts it — one request for the turn", async () => {
+  const h = startHarness({ prepare: true, interim: true });
+  try {
+    await pastIdentity(h);
+    const before = h.requests.length;
+    h.sayInterim(ANSWER.toLowerCase());
+    await h.waitFor("the request pre-opened on the interim", () => h.requests.length > before, 2000);
+    assert.ok(!h.record.memory.history().some((t) => t.role === "user" && t.content.startsWith("I have tried")), "opened before the turn was released");
+    await sleep(300);
+    h.say(`${ANSWER}.`);
+    await awaitReply(h, 3);
+    assert.equal(h.requests.length - before, 1, "the pre-opened request was adopted, not re-sent");
+    assert.equal(h.assistantTurns()[2], GENERATED);
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("I2. an interim that reads unfinished opens nothing", async () => {
+  const h = startHarness({ prepare: true, interim: true });
+  try {
+    await pastIdentity(h);
+    const before = h.requests.length;
+    h.sayInterim("I have tried it before but");
+    await sleep(700);
+    assert.equal(h.requests.length, before);
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("I3. the caller carries on after the interim settled: that request is abandoned and the full turn is answered", async () => {
+  const h = startHarness({ prepare: true, interim: true });
+  try {
+    await pastIdentity(h);
+    const before = h.requests.length;
+    h.sayInterim("i have tried");
+    await h.waitFor("the first pre-open", () => h.requests.length > before, 2000);
+    h.sayInterim("i have tried it before on instagram");
+    await sleep(100);
+    h.say("I have tried it before on Instagram.");
+    await awaitReply(h, 3);
+    const lastUser = h.requests[h.requests.length - 1]?.lastUser ?? "";
+    assert.ok(/instagram/iu.test(lastUser), `the reply was made for the whole turn, got "${lastUser}"`);
+    assert.equal(h.assistantTurns()[2], GENERATED);
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("I4. switched OFF, an interim opens nothing (FIX #8's rule)", async () => {
+  const h = startHarness({ prepare: true, interim: false });
+  try {
+    await pastIdentity(h);
+    const before = h.requests.length;
+    h.sayInterim(ANSWER.toLowerCase());
+    await sleep(700);
+    assert.equal(h.requests.length, before);
   } finally {
     await h.stop();
   }

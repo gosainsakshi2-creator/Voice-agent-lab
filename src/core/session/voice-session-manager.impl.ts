@@ -334,6 +334,9 @@ export class DefaultVoiceSessionManager implements VoiceSessionManager, Pipeline
     const ttsCache = processTtsAudioCache();
     const pipeline = new ConversationPipeline(record, providers, this, {
       prepareFirstReply: optionalEnv("PREPARE_FIRST_REPLY", "true").trim().toLowerCase() !== "false",
+      // Pre-open each turn's LLM request once the interim transcript settles;
+      // `SPECULATE_ON_INTERIM=false` switches it off.
+      speculateOnInterim: optionalEnv("SPECULATE_ON_INTERIM", "true").trim().toLowerCase() !== "false",
       // Fixed lines served from audio kept across calls; see `processTtsAudioCache`.
       ...(ttsCache !== undefined ? { ttsCache } : {}),
     });

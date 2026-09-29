@@ -48,6 +48,7 @@ import { currentTurnNote, languageHintFor, openingLineFor } from "./system-promp
 import { asksWhoIsCalling, classifyIdentityAnswer } from "../../campaign/domain/identity-answer";
 import { SentenceChunker } from "./sentence-chunker";
 import { joinAudioChunks, ttsCacheKey, type TtsAudioCache } from "./tts-audio-cache";
+import { preparedReplyVariantFor } from "./confirmation-vocabulary";
 import { isBareAcknowledgement, isContinuationCue, isContinuationCuePrefix, readsAsUnfinishedThought } from "./turn-detection";
 import type { ContinuationHoldEvent, EndpointMarkerOutcome, TurnReleaseTrace } from "./turn-detection";
 import { voicemailPhraseIn } from "./voicemail-detection";
@@ -304,32 +305,36 @@ export interface ConversationPipelineOptions {
    * synthesized live, exactly as before.
    */
   readonly ttsCache?: TtsAudioCache;
+  /**
+   * Pre-open a turn's LLM request on a SETTLED INTERIM transcript — see
+   * `scheduleInterimSpeculation`. Off by default: every harness keeps
+   * FIX #8's rule that only explicit endpoint evidence pre-opens.
+   */
+  readonly speculateOnInterim?: boolean;
+}
+
+/**
+ * How long an interim transcript must go unchanged before a request is
+ * pre-opened on it. Soniox finalizes a turn's words only WITH its
+ * end-of-speech marker (last final → evidence: p50 0ms over 367 real
+ * turns), ~0.9s after the caller stops; until then the words exist only
+ * as interims. An interim that reads finished and stops changing is the
+ * earliest real sign the caller is done.
+ */
+const INTERIM_SPECULATION_STABLE_MS = 250;
+
+/**
+ * Two transcripts of the same words: case, punctuation and spacing aside.
+ * An interim ("haan ji") and the final that replaces it ("Haan ji.") are
+ * the same turn for the request made from them.
+ */
+function speculationForm(text: string): string {
+  return text.normalize("NFC").toLowerCase().replace(/[^\p{L}\p{M}\p{N}]+/gu, " ").trim();
 }
 
 // ------------------------------------------------------------------
 // The prepared first reply — see `prepareFirstReply`
 // ------------------------------------------------------------------
-
-/**
- * The most a confirmation may say and still be answered by the reply
- * prepared for a bare "Yes.". "Yes." / "Haan ji, boliye." / "Yes, this is
- * Sakshi speaking." fit; a turn long enough to carry anything else is
- * answered by a request made for it.
- */
-const PREPARED_REPLY_MAX_WORDS = 6;
-
-/**
- * Anything in a confirming turn the prepared reply would talk straight
- * past: a question, a "not now", a "not interested". Any of these and the
- * turn gets its own request, exactly as before. Deliberately broad — a
- * miss costs one second of latency; a false pass pitches at someone who
- * just said they are driving.
- */
-const NOT_A_BARE_CONFIRMATION =
-  /[?？]|\b(?:not|no|nahi|nahin|nhi|busy|later|driving|meeting|call|interested|wait|minute|who|what|kaun|kya|kaise|kyun)\b|नहीं|नही|बाद|बिज़ी|बिजी|रुको|रुकिए|कौन|क्या/iu;
-
-/** A confirmation said in Hindi: any Devanagari, or the romanized words of one. */
-const HINDI_CONFIRMATION = /[ऀ-ॿ]|\b(?:haan|haa|han|haanji|hanji|ji|jee|bilkul|boliye|bolo|bataiye|batao|theek)\b/iu;
 
 /**
  * The bare confirmation each prepared reply answers, and the language its
@@ -2804,6 +2809,8 @@ export class ConversationPipeline {
    * abandoned by the sites listed there.
    */
   private speculation: SpeculativeCompletion | undefined;
+  /** Armed on each interim that reads finished; see `scheduleInterimSpeculation`. */
+  private interimSpeculationTimer: ReturnType<typeof setTimeout> | undefined;
   /**
    * FIX #8 — true only while `waitForTurnDetectorEnd` is subscribed,
    * i.e. the main loop is idle in LISTENING waiting for the caller's
@@ -3994,11 +4001,9 @@ export class ConversationPipeline {
       // eslint-disable-next-line no-console
       console.log(`[PIPELINE:${sid}] identity gate — a bare greeting; asking again without spending a strike (${this.identityGreetingReAsks}/${MAX_IDENTITY_GREETING_REASKS})`);
       this.abandonSpeculation("the identity question is re-asked without the language model");
-      await this.speakAttentionUtterance(
-        this.identityReAskLine(line, false),
-        loopSignal,
-        "re-asking who picked up after a bare greeting",
-      );
+      const reAsk = this.identityReAskLine(line, false);
+      this.prepareFirstReply(reAsk, loopSignal);
+      await this.speakAttentionUtterance(reAsk, loopSignal, "re-asking who picked up after a bare greeting");
       return true;
     }
 
@@ -4016,11 +4021,9 @@ export class ConversationPipeline {
       // eslint-disable-next-line no-console
       console.log(`[PIPELINE:${sid}] identity gate — re-asks spent but the caller asked who is calling; introducing once more before giving up`);
       this.abandonSpeculation("the identity question is re-asked without the language model");
-      await this.speakAttentionUtterance(
-        identityReAskFor(this.record.memory.currentLanguage, line, this.record.request.campaign?.agent.name.trim()),
-        loopSignal,
-        "answering who is calling before the identity question is given up",
-      );
+      const finalIntro = identityReAskFor(this.record.memory.currentLanguage, line, this.record.request.campaign?.agent.name.trim());
+      this.prepareFirstReply(finalIntro, loopSignal);
+      await this.speakAttentionUtterance(finalIntro, loopSignal, "answering who is calling before the identity question is given up");
       return true;
     }
     if (this.identityReAsks >= MAX_IDENTITY_REASKS) {
@@ -4044,14 +4047,9 @@ export class ConversationPipeline {
     // eslint-disable-next-line no-console
     console.log(`[PIPELINE:${sid}] identity gate — no clear answer; asking again (${this.identityReAsks}/${MAX_IDENTITY_REASKS})`);
     this.abandonSpeculation("the identity question is re-asked without the language model");
-    await this.speakAttentionUtterance(
-      this.identityReAskLine(
-        line,
-        asksWhoIsCalling(userText),
-      ),
-      loopSignal,
-      "returning to the unanswered identity question",
-    );
+    const reAskLine = this.identityReAskLine(line, asksWhoIsCalling(userText));
+    this.prepareFirstReply(reAskLine, loopSignal);
+    await this.speakAttentionUtterance(reAskLine, loopSignal, "returning to the unanswered identity question");
     return true;
   }
 
@@ -4849,7 +4847,15 @@ export class ConversationPipeline {
    * it always took.
    */
   private prepareFirstReply(question: string, loopSignal: AbortSignal): void {
-    if (this.options.prepareFirstReply !== true || this.preparedReplies !== undefined) return;
+    if (this.options.prepareFirstReply !== true) return;
+    if (this.preparedReplies !== undefined) {
+      if (this.preparedAfter?.question === question) return;
+      // The question is being asked again ("Sorry — am I speaking
+      // with…?"): the preparation made for the earlier one no longer fits
+      // the conversation, so it is replaced. 3 of 7 calls on 2026-09-29
+      // reached the confirmation only after a re-ask.
+      this.discardPreparedReplies("the identity question is being asked again");
+    }
     if (this.identityState !== "outstanding" || this.voicemailDetected) return;
     const generate = this.providers.llm.generateCompletionStream;
     if (typeof generate !== "function") return;
@@ -4975,16 +4981,16 @@ export class ConversationPipeline {
     const after = this.preparedAfter;
     if (replies === undefined || after === undefined) return undefined;
     const pick = (): PreparedReply | "discard" => {
-      const trimmed = userText.trim();
-      const words = trimmed.split(/\s+/u).filter((word) => word.length > 0).length;
-      if (words === 0 || words > PREPARED_REPLY_MAX_WORDS) return "discard";
-      if (NOT_A_BARE_CONFIRMATION.test(trimmed) || asksWhoIsCalling(trimmed)) return "discard";
-      // The language they ANSWERED in — read off the confirmation itself,
-      // because a bare "हाँ जी।" is a no-floor utterance that never moves
-      // the call's language lock off English. Left to a request made at
-      // release, that turn got the English reply 24 times and the
-      // Hinglish one 18 times in 42 real calls (2026-09-28).
-      const variant = turnLanguage !== "en" || HINDI_CONFIRMATION.test(trimmed) ? "hinglish" : "en";
+      // Every word a word of confirmation, address, the contact's name, or
+      // a question the reply answers ("who is this?") — see
+      // `confirmation-vocabulary.ts`, measured on 487 real confirmations.
+      // The language they ANSWERED in is read off those words, because a
+      // bare "हाँ जी।" never moves the call's language lock off English and
+      // "यस" is English written in Devanagari.
+      const campaign = this.record.request.campaign;
+      const nameForms = [campaign?.customer.name ?? "", ...this.spokenNames.map((name) => name.spoken)];
+      const variant = preparedReplyVariantFor(userText, nameForms);
+      if (variant === undefined) return "discard";
       const reply = replies.find((r) => r.variant === variant);
       return reply !== undefined && reply.usable ? reply : "discard";
     };
@@ -5536,6 +5542,37 @@ export class ConversationPipeline {
    * own PREVIEW of the window it will produce once the turn is recorded,
    * annotated by the same `buildRequestHistory`.
    */
+  /** Same turn text for speculation: exact, or — with `speculateOnInterim` — the same words. */
+  private sameSpeculatedText(a: string, b: string): boolean {
+    if (a === b) return true;
+    return this.options.speculateOnInterim === true && speculationForm(a) === speculationForm(b);
+  }
+
+  /**
+   * (Re)arm the interim speculation for `text` — the whole turn so far,
+   * finals plus the live interim — or disarm it (`""`). When the words
+   * have not changed for `INTERIM_SPECULATION_STABLE_MS` and do not read
+   * as a thought still in progress, the request is pre-opened through
+   * `startSpeculation` and every one of its guards. It decides nothing
+   * about the turn: release is still the detector's alone, and new words
+   * abandon the request exactly as before.
+   */
+  private scheduleInterimSpeculation(text: string): void {
+    if (this.interimSpeculationTimer !== undefined) {
+      clearTimeout(this.interimSpeculationTimer);
+      this.interimSpeculationTimer = undefined;
+    }
+    if (text.length === 0 || !this.awaitingTurn || readsAsUnfinishedThought(text)) return;
+    this.interimSpeculationTimer = setTimeout(() => {
+      this.interimSpeculationTimer = undefined;
+      if (!this.awaitingTurn) return;
+      if (this.speculation !== undefined && this.sameSpeculatedText(this.speculation.text, text)) return;
+      // eslint-disable-next-line no-console
+      console.log(`[SPECULATE:${this.record.id}] interim settled for ${INTERIM_SPECULATION_STABLE_MS}ms — pre-opening on "${text.slice(0, 60)}"`);
+      this.startSpeculation(text);
+    }, INTERIM_SPECULATION_STABLE_MS);
+  }
+
   private startSpeculation(text: string): void {
     if (!this.awaitingTurn || this.voicemailDetected) return;
     if (this.record.state !== SessionState.LISTENING) return;
@@ -5580,7 +5617,7 @@ export class ConversationPipeline {
       // The same pending turn re-announced (e.g. `speech_final` on the
       // words AND a standalone marker for the same utterance): the open
       // request already is this request.
-      if (this.speculation.text === text) return;
+      if (this.sameSpeculatedText(this.speculation.text, text)) return;
       this.abandonSpeculation("pending turn text changed");
     }
 
@@ -5680,7 +5717,7 @@ export class ConversationPipeline {
   ): SpeculativeCompletion | undefined {
     const speculation = this.speculation;
     if (speculation === undefined) return undefined;
-    if (speculation.text !== userText) {
+    if (!this.sameSpeculatedText(speculation.text, userText)) {
       this.abandonSpeculation("released turn text differs");
       return undefined;
     }
@@ -5693,7 +5730,13 @@ export class ConversationPipeline {
       speculation.request.history.length === request.history.length &&
       speculation.request.history.every((turn, i) => {
         const other = request.history[i];
-        return other !== undefined && other.role === turn.role && other.content === turn.content;
+        if (other === undefined || other.role !== turn.role) return false;
+        if (other.content === turn.content) return true;
+        // The caller's own turn, opened on the interim and released as the
+        // final: the same words, so the same request. Every other turn, and
+        // the language hint inside this one, must still match exactly.
+        const last = i === request.history.length - 1 && turn.role === "user";
+        return last && this.options.speculateOnInterim === true && speculationForm(other.content) === speculationForm(turn.content);
       });
     if (!same) {
       this.abandonSpeculation("pre-opened request does not match the request built at release");
@@ -7167,9 +7210,23 @@ export class ConversationPipeline {
           // pending turn is for text that will not be released. Abandon
           // it BEFORE the feed, so the detector's own handling — and any
           // fresh pending-turn notification it produces — starts clean.
-          if (this.speculation !== undefined) this.abandonSpeculation("caller resumed speaking");
+          //
+          // With `speculateOnInterim`, a segment that leaves the WORDS
+          // unchanged — the final replacing a settled interim, a repeated
+          // interim — is not the caller resuming, and keeps the request
+          // opened on those words. Off, this is exactly the old line.
+          const textAfterSegment = `${this.record.turnDetector.getPendingTurnText()} ${segment.text}`.trim();
+          if (this.speculation !== undefined && !this.sameSpeculatedText(textAfterSegment, this.speculation.text)) {
+            this.abandonSpeculation("caller resumed speaking");
+          }
 
           this.record.turnDetector.feed(segment);
+          if (this.options.speculateOnInterim === true) {
+            // An endpointed final is announced by the detector itself
+            // (`onTurnPending`); anything else — an interim, a chunk final —
+            // may settle into the end of the turn.
+            this.scheduleInterimSpeculation(segment.isSpeechFinal === true ? "" : textAfterSegment);
+          }
 
           // ── The caller is STILL TALKING: a chunk boundary mid-turn ──
           //
@@ -7502,6 +7559,7 @@ export class ConversationPipeline {
         if (settled) return;
         settled = true;
         this.awaitingTurn = false;
+        this.scheduleInterimSpeculation("");
         if (silenceTimer !== undefined) clearTimeout(silenceTimer);
         unsubscribe();
         unsubscribePending();
@@ -7513,7 +7571,7 @@ export class ConversationPipeline {
         if (
           result === null ||
           result === SILENCE_ELAPSED ||
-          (this.speculation !== undefined && this.speculation.text !== result.text)
+          (this.speculation !== undefined && !this.sameSpeculatedText(this.speculation.text, result.text))
         ) {
           this.abandonSpeculation(
             result === null

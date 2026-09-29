@@ -1681,7 +1681,7 @@ function scriptedClosingFor(_language: SupportedLanguage): string {
  * `seatConfirmationSpoken`: the fixed goodbye waits for one.
  */
 const SEAT_CONFIRMED =
-  /\breserved\b|reserve\s+(?:हो|ho)\s+(?:गयी|गई|gayi|gai)|reserve\s+kar\s+(?:di|diya|dee)|reserve\s+कर\s+(?:दी|दिया)|रिज़र्व\s+हो|\bbooked\b|seat\s+(?:is\s+)?confirmed|seat\s+pakki|सीट\s+पक्की/iu;
+  /\breserved\b|\bregistered\b|reserve\s+(?:हो|ho)\s+(?:गयी|गई|gayi|gai)|(?:reserve|register)\s+kar\s+(?:di|diya|dee)|(?:reserve|register)\s+कर\s+(?:दी|दिया)|रिज़र्व\s+हो|\bbooked\b|seat\s+(?:is\s+)?confirmed|you'?re\s+all\s+set|(?:पक्की|pakki)\s+(?:हो|ho)/iu;
 
 /** Exported so the campaign layer's closing check reads the same words. */
 export const SCRIPTED_GOODBYE = "Okay, thank you.";
@@ -5629,15 +5629,20 @@ export class ConversationPipeline {
     return true;
   }
 
-  /** Has the agent said, in a statement, that the seat is reserved? */
-  private seatConfirmationSpoken(history: readonly ConversationTurn[]): boolean {
-    return history.some(
-      (turn) =>
-        turn.role === "assistant" &&
-        turn.content
-          .split(/(?<=[.!?।？])\s+/u)
-          .some((sentence) => !/[?？]\s*$/u.test(sentence) && SEAT_CONFIRMED.test(sentence)),
-    );
+  /**
+   * The agent asked the seat question and has NOT yet said, in a statement,
+   * that the seat is reserved. False when no seat question was asked at all.
+   */
+  private seatConfirmationOwed(history: readonly ConversationTurn[]): boolean {
+    const sentencesOf = (turn: ConversationTurn): string[] => turn.content.split(/(?<=[.!?।？])\s+/u);
+    let askedAt = -1;
+    history.forEach((turn, index) => {
+      if (turn.role === "assistant" && sentencesOf(turn).some((s) => /[?？]\s*$/u.test(s) && SEAT_QUESTION.test(s))) askedAt = index;
+    });
+    if (askedAt < 0) return false;
+    return !history
+      .slice(askedAt)
+      .some((turn) => turn.role === "assistant" && sentencesOf(turn).some((s) => !/[?？]\s*$/u.test(s) && SEAT_CONFIRMED.test(s)));
   }
 
   private async handleScriptedClosing(userText: string, loopSignal: AbortSignal): Promise<boolean> {
@@ -5665,7 +5670,7 @@ export class ConversationPipeline {
     // agent answered a question about topics instead of confirming, and the
     // next "ठीक है" drew "Okay, thank you." and the hangup — the caller never
     // heard the confirmation. The model confirms first; the goodbye follows.
-    if (!this.seatConfirmationSpoken(history)) return false;
+    if (this.seatConfirmationOwed(history)) return false;
 
     // ── A "No." to an ANSWER is "that is not what I asked" ─────────
     //

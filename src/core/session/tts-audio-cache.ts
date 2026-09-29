@@ -20,9 +20,12 @@
  * existed. Writes are fire-and-forget.
  *
  * WHAT MAY BE CACHED IS DECIDED BY THE CALLER, NOT HERE. The pipeline
- * only asks for fixed lines with no contact name in them, and only on a
+ * asks only for lines with no contact name in them, and only on a
  * provider that states its request fingerprint (`cacheIdentity`) — see
- * `ttsCacheKeyFor` in the pipeline. This module stores bytes by key.
+ * `ttsCacheKeyFor` in the pipeline. Fixed lines read both tiers
+ * (`get`); generated reply sentences read memory only (`peek`), which
+ * `warm` fills from the store at call start, so they never wait on the
+ * database. This module stores bytes by key.
  */
 
 import { createHash } from "node:crypto";
@@ -43,7 +46,14 @@ export function ttsCacheKey(providerId: string, providerIdentity: string, text: 
 export interface TtsAudioStore {
   get(key: string): Promise<AudioPayload | undefined>;
   put(key: string, providerId: string, audio: AudioPayload): Promise<void>;
+  /** The most recently used clips of one provider touched after `since`, newest first, up to `maxBytes` in all. See `TtsAudioCache.warm`. */
+  recent?(providerId: string, since: Date, maxBytes: number): Promise<Array<{ key: string; audio: AudioPayload }>>;
 }
+
+/** How often `warm` re-reads the store for one provider. */
+const WARM_INTERVAL_MS = 10 * 60_000;
+/** How far back the first `warm` of a process looks. */
+const WARM_LOOKBACK_MS = 14 * 24 * 60 * 60_000;
 
 export interface TtsAudioCacheOptions {
   /** Upper bound on the memory tier, in audio bytes. */
@@ -90,6 +100,55 @@ export class TtsAudioCache {
     } finally {
       if (timer !== undefined) clearTimeout(timer);
     }
+  }
+
+  /**
+   * The clip for `key` from THIS PROCESS's memory only — synchronous, no
+   * store read, so a miss costs nothing. Used for generated reply
+   * sentences, which are spoken while the caller waits: they must never
+   * wait on the database. `warm` is what fills memory from the store,
+   * off the caller's clock.
+   */
+  peek(key: string): AudioPayload | undefined {
+    const inMemory = this.memory.get(key);
+    if (inMemory === undefined) return undefined;
+    this.memory.delete(key);
+    this.memory.set(key, inMemory);
+    return inMemory;
+  }
+
+  /** Per provider: when `warm` last read the store, and whether a read is running. */
+  private readonly warmedAt = new Map<string, { at: Date; running: boolean }>();
+
+  /**
+   * Copy the store's recently used clips for one provider into memory,
+   * so `peek` finds them — after a deploy, and clips other processes
+   * synthesized. Never awaited by a call and never throws. Reads at most
+   * once per `WARM_INTERVAL_MS` per provider, and after the first read
+   * only what was touched since the previous one, so it is one small
+   * query, not a table scan per call.
+   */
+  warm(providerId: string): void {
+    const recent = this.store?.recent;
+    if (this.store === undefined || recent === undefined) return;
+    const state = this.warmedAt.get(providerId);
+    const now = Date.now();
+    if (state !== undefined && (state.running || now - state.at.getTime() < WARM_INTERVAL_MS)) return;
+    const since = state?.at ?? new Date(now - WARM_LOOKBACK_MS);
+    this.warmedAt.set(providerId, { at: since, running: true });
+    const startedAt = new Date(now);
+    void recent
+      .call(this.store, providerId, since, Math.floor(this.maxMemoryBytes / 2))
+      .then((rows) => {
+        for (const row of rows) if (!this.memory.has(row.key) && row.audio.data.length > 0) this.remember(row.key, row.audio);
+        this.warmedAt.set(providerId, { at: startedAt, running: false });
+      })
+      .catch((error: unknown) => {
+        // Try again on a later call; memory keeps filling from live synthesis meanwhile.
+        this.warmedAt.set(providerId, { at: since, running: false });
+        // eslint-disable-next-line no-console
+        console.warn(`[TTS-CACHE] warm-up read failed: ${error instanceof Error ? error.message : String(error)}`);
+      });
   }
 
   /** Keep a clip synthesized live. Never throws; the store write is not awaited. */
@@ -181,6 +240,24 @@ export class PostgresTtsAudioStore implements TtsAudioStore {
     const bytes = audio instanceof Uint8Array ? new Uint8Array(audio) : undefined;
     if (bytes === undefined || typeof row.encoding !== "string" || typeof row.sample_rate_hz !== "number") return undefined;
     return { data: bytes, encoding: row.encoding as AudioPayload["encoding"], sampleRateHz: row.sample_rate_hz };
+  }
+
+  async recent(providerId: string, since: Date, maxBytes: number): Promise<Array<{ key: string; audio: AudioPayload }>> {
+    const result = await this.run(
+      "SELECT cache_key, encoding, sample_rate_hz, audio FROM (" +
+        "SELECT cache_key, encoding, sample_rate_hz, audio, " +
+        "SUM(byte_length) OVER (ORDER BY last_used_at DESC, cache_key) AS running_bytes " +
+        "FROM tts_audio_cache WHERE provider_id = $1 AND last_used_at > $2" +
+        ") t WHERE running_bytes <= $3",
+      [providerId, since, maxBytes],
+    );
+    const rows: Array<{ key: string; audio: AudioPayload }> = [];
+    for (const row of result?.rows ?? []) {
+      const bytes = row.audio instanceof Uint8Array ? new Uint8Array(row.audio) : undefined;
+      if (bytes === undefined || typeof row.cache_key !== "string" || typeof row.encoding !== "string" || typeof row.sample_rate_hz !== "number") continue;
+      rows.push({ key: row.cache_key, audio: { data: bytes, encoding: row.encoding as AudioPayload["encoding"], sampleRateHz: row.sample_rate_hz } });
+    }
+    return rows;
   }
 
   async put(key: string, providerId: string, audio: AudioPayload): Promise<void> {

@@ -339,6 +339,9 @@ export class DefaultVoiceSessionManager implements VoiceSessionManager, Pipeline
       speculateOnInterim: optionalEnv("SPECULATE_ON_INTERIM", "true").trim().toLowerCase() !== "false",
       // Fixed lines served from audio kept across calls; see `processTtsAudioCache`.
       ...(ttsCache !== undefined ? { ttsCache } : {}),
+      // Model-reply sentences served from that cache too (memory only, so
+      // a miss never waits); `TTS_CACHE_GENERATED=false` switches it off.
+      cacheGeneratedSentences: optionalEnv("TTS_CACHE_GENERATED", "true").trim().toLowerCase() !== "false",
     });
     this.pipelines.set(record.id, pipeline);
     record.loopPromise = pipeline.run();

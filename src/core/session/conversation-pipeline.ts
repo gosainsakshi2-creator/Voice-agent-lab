@@ -306,6 +306,12 @@ export interface ConversationPipelineOptions {
    */
   readonly ttsCache?: TtsAudioCache;
   /**
+   * Also serve GENERATED reply sentences from `ttsCache` — memory tier
+   * only, so a miss never waits — see `ttsCacheKeyFor`. Off by default:
+   * every harness keeps "a generated reply is always synthesized".
+   */
+  readonly cacheGeneratedSentences?: boolean;
+  /**
    * Pre-open a turn's LLM request on a SETTLED INTERIM transcript — see
    * `scheduleInterimSpeculation`. Off by default: every harness keeps
    * FIX #8's rule that only explicit endpoint evidence pre-opens.
@@ -573,6 +579,35 @@ const BACKCHANNEL_MIN_REMAINING_SPEECH_MS = 4_000;
  * `greetingSentenceJustPlayed`.
  */
 const GREETING_BACK_LAG_MS = 1_500;
+
+/** A cached generated sentence is replayed in slices this long; see `synthesizeAndPlay`. */
+const CACHED_SLICE_SECONDS = 0.2;
+
+/**
+ * Speech runs at ~12-15 characters a second on every configured voice;
+ * a clip shorter than one second per 40 characters is a stream that
+ * ended early without an error, and is not kept. Generated sentences
+ * only: fixed lines keep the rule they shipped with.
+ */
+const MIN_CACHED_MS_PER_CHAR = 25;
+
+function cacheableClip(entry: { mode: "fixed" | "generated" } | undefined, clip: AudioPayload, text: string): boolean {
+  if (entry?.mode !== "generated") return true;
+  return estimateAudioSeconds(clip) * 1000 >= text.trim().length * MIN_CACHED_MS_PER_CHAR;
+}
+
+/** `clip` cut into consecutive slices of about `seconds`, on sample boundaries. */
+function audioSlices(clip: AudioPayload, seconds: number): AudioPayload[] {
+  const totalSeconds = estimateAudioSeconds(clip);
+  const bytesPerSample = totalSeconds > 0 ? Math.round(clip.data.length / (totalSeconds * clip.sampleRateHz)) : 0;
+  const sliceBytes = bytesPerSample * Math.round(clip.sampleRateHz * seconds);
+  if (!(sliceBytes > 0) || clip.data.length <= sliceBytes) return [clip];
+  const slices: AudioPayload[] = [];
+  for (let offset = 0; offset < clip.data.length; offset += sliceBytes) {
+    slices.push({ ...clip, data: clip.data.subarray(offset, offset + sliceBytes) });
+  }
+  return slices;
+}
 
 /**
  * DIAGNOSTIC ONLY (2026-09-25) — the played fraction above which a
@@ -3083,6 +3118,10 @@ export class ConversationPipeline {
         // after the greeting so the prefill overlaps greeting playback
         // instead of the caller's first reply.
         this.primeLlmPrefixCache(loopSignal);
+        // Generated sentences read memory only; this fills it from the
+        // shared store while the greeting plays. Never awaited, never
+        // throws, at most one small query per provider per 10 minutes.
+        if (this.options.cacheGeneratedSentences === true) this.options.ttsCache?.warm(this.providers.tts.descriptor.id);
         // An opening that asks who picked up: its bare "yes" is answered
         // from a reply prepared while it plays. See `prepareFirstReply`.
         this.prepareFirstReply(greetingText, loopSignal);
@@ -5060,18 +5099,49 @@ export class ConversationPipeline {
   }
 
   /**
-   * The cache key for this synthesis, or undefined when it must not be
-   * cached: not a fixed line (every generated reply), a line with the
-   * contact's name, or a provider that does not state its request
-   * fingerprint (`cacheIdentity`) — without one, a changed voice could be
-   * answered with old audio, so nothing is cached at all.
+   * Does this text carry any spelling of the contact's name — as given,
+   * or as the pipeline writes it for TTS (`spokenNames`, e.g. Devanagari)?
+   * A generated sentence that does is never cached.
    */
-  private ttsCacheKeyFor(task: SynthesisTaskRequest): string | undefined {
-    if (!this.fixedLineCacheable || this.options.ttsCache === undefined) return undefined;
+  private mentionsContactNameAnyForm(text: string): boolean {
+    if (this.mentionsContactName(text)) return true;
+    const lower = text.toLowerCase();
+    return this.spokenNames.some((name) =>
+      name.spoken.toLowerCase().split(/\s+/u).some((part) => part.length >= 2 && lower.includes(part)),
+    );
+  }
+
+  /**
+   * The cache key for this synthesis and how it may be read, or undefined
+   * when it must not be cached: a line with the contact's name, or a
+   * provider that does not state its request fingerprint
+   * (`cacheIdentity`) — without one, a changed voice could be answered
+   * with old audio, so nothing is cached at all.
+   *
+   *   "fixed"     — a `speakFixedUtterance` line: memory, then the store
+   *                 (bounded by its read timeout).
+   *   "generated" — everything else, i.e. a model reply's sentences, when
+   *                 `cacheGeneratedSentences` is on: MEMORY ONLY, so a
+   *                 miss costs nothing and synthesis starts exactly as it
+   *                 did before. The store is read into memory off the
+   *                 caller's clock (`TtsAudioCache.warm`, at call start).
+   *
+   * THE KEY IS THE EXACT TEXT SENT (after `pronounceForSpeech`) plus the
+   * voice/model/settings fingerprint, so this needs nothing from a
+   * script: a script's lines that the model repeats word for word are
+   * paid for once, a re-worded or new script is simply new keys, and a
+   * sentence the model phrases differently is synthesized live.
+   */
+  private ttsCacheKeyFor(task: SynthesisTaskRequest, text: string): { key: string; mode: "fixed" | "generated" } | undefined {
+    if (this.options.ttsCache === undefined) return undefined;
+    let mode: "fixed" | "generated";
+    if (this.fixedLineCacheable) mode = "fixed";
+    else if (this.options.cacheGeneratedSentences === true && !this.mentionsContactNameAnyForm(`${text} ${task.request.text}`)) mode = "generated";
+    else return undefined;
     const tts = this.providers.tts;
     if (typeof tts.cacheIdentity !== "function") return undefined;
     try {
-      return ttsCacheKey(tts.descriptor.id, tts.cacheIdentity(task), task.request.text);
+      return { key: ttsCacheKey(tts.descriptor.id, tts.cacheIdentity(task), task.request.text), mode };
     } catch {
       return undefined;
     }
@@ -9301,8 +9371,32 @@ await this.drainPlayback(speakingSignal, true);
     // `playAudioChunk`, so playback accounting, backpressure and barge-in
     // are unchanged. A miss, a slow store or any error synthesizes live
     // below, and the live clip is kept for next time.
-    const cacheKey = this.ttsCacheKeyFor(task);
-    if (cacheKey !== undefined && this.options.ttsCache !== undefined) {
+    const cacheEntry = this.ttsCacheKeyFor(task, text);
+    const cacheKey = cacheEntry?.key;
+    if (cacheEntry?.mode === "generated" && this.options.ttsCache !== undefined) {
+      // Memory only and synchronous: a miss goes straight to live
+      // synthesis below with no wait at all. A hit is replayed in slices,
+      // so a barge-in is noticed between slices as it is between streamed
+      // chunks.
+      const audio = this.options.ttsCache.peek(cacheEntry.key);
+      if (audio !== undefined && !speakingSignal.aborted) {
+        if (!this.markedTtsThisTurn) {
+          this.markedTtsThisTurn = true;
+          this.markTiming("tts-first-chunk");
+        }
+        const readyMs = Date.now() - startedAt;
+        // eslint-disable-next-line no-console
+        console.log(`[TTS-CACHE:${sid}] HIT (generated, ${readyMs}ms) "${text.slice(0, 60)}"`);
+        for (const slice of audioSlices(audio, CACHED_SLICE_SECONDS)) {
+          if (speakingSignal.aborted) {
+            await this.record.mediaStream?.interruptPlayback();
+            break;
+          }
+          await this.playAudioChunk(slice);
+        }
+        return { ttsMs: readyMs, ttsCostUsd: 0, firstChunkMs: readyMs };
+      }
+    } else if (cacheKey !== undefined && this.options.ttsCache !== undefined) {
       const hit = await this.options.ttsCache.get(cacheKey);
       if (hit !== undefined && !speakingSignal.aborted) {
         if (!this.markedTtsThisTurn) {
@@ -9359,7 +9453,7 @@ await this.drainPlayback(speakingSignal, true);
   toCache?.push(chunk.audio);
 }
         const clip = toCache !== undefined && !speakingSignal.aborted ? joinAudioChunks(toCache) : undefined;
-        if (clip !== undefined && cacheKey !== undefined) this.options.ttsCache?.put(cacheKey, ttsProviderId, clip);
+        if (clip !== undefined && cacheKey !== undefined && cacheableClip(cacheEntry, clip, text)) this.options.ttsCache?.put(cacheKey, ttsProviderId, clip);
       } catch (err) {
         if (!speakingSignal.aborted) {
           // eslint-disable-next-line no-console
@@ -9407,7 +9501,7 @@ await this.drainPlayback(speakingSignal, true);
         this.markTiming("tts-first-chunk");
       }
       await this.playAudioChunk(audio);
-      if (toCache !== undefined && cacheKey !== undefined && !speakingSignal.aborted) {
+      if (toCache !== undefined && cacheKey !== undefined && !speakingSignal.aborted && cacheableClip(cacheEntry, audio, text)) {
         this.options.ttsCache?.put(cacheKey, ttsProviderId, audio);
       }
 

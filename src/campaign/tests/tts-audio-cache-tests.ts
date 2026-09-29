@@ -143,6 +143,45 @@ await test("M6. streamed chunks join into one clip; mixed formats do not", () =>
   assert.equal(joinAudioChunks([]), undefined);
 });
 
+await test("M7. peek reads memory only: a hit is synchronous, a miss never touches the store", () => {
+  const s = fakeStore();
+  s.rows.set("in-store", clip(10));
+  const cache = new TtsAudioCache(s.store);
+  cache.put("k", "p", clip(10));
+  assert.equal(cache.peek("k")?.data.length, 10);
+  assert.equal(cache.peek("in-store"), undefined);
+  assert.equal(s.gets(), 0);
+});
+
+await test("M8. warm copies the store's recent clips into memory, once per interval", async () => {
+  const s = fakeStore();
+  let reads = 0;
+  s.store.recent = async (providerId) => {
+    reads += 1;
+    return providerId === "p" ? [{ key: "w1", audio: clip(10) }, { key: "w2", audio: clip(10) }] : [];
+  };
+  const cache = new TtsAudioCache(s.store);
+  assert.equal(cache.peek("w1"), undefined);
+  cache.warm("p");
+  cache.warm("p"); // already running: no second read
+  await sleep(20);
+  assert.ok(cache.peek("w1") && cache.peek("w2"));
+  cache.warm("p"); // within the interval: no read
+  assert.equal(reads, 1);
+});
+
+await test("M9. a failing warm is silent and leaves the cache working", async () => {
+  const s = fakeStore();
+  s.store.recent = async () => {
+    throw new Error("store down");
+  };
+  const cache = new TtsAudioCache(s.store);
+  cache.warm("p");
+  await sleep(20);
+  cache.put("k", "p", clip(10));
+  assert.ok(cache.peek("k"));
+});
+
 // ═════════════════════════════════════════════════════════════════
 section("G. THE POSTGRES STORE — TEMP tables only");
 
@@ -197,6 +236,21 @@ if (!process.env.DATABASE_URL) {
     await test("G3. an unknown key is undefined", async () => {
       assert.equal(await store.get("missing"), undefined);
     });
+
+    await test("G4. recent() returns one provider's clips used after 'since', newest first, within the byte budget", async () => {
+      await store.put("old-1", "sarvam", clip(4, 1));
+      await store.put("new-1", "sarvam", clip(4, 2));
+      await store.put("new-2", "sarvam", clip(4, 3));
+      await store.put("other", "elevenlabs", clip(4, 4));
+      await chain;
+      await client.query("UPDATE tts_audio_cache SET last_used_at = now() - interval '1 day' WHERE cache_key = 'old-1'");
+      await client.query("UPDATE tts_audio_cache SET last_used_at = now() - interval '1 minute' WHERE cache_key = 'new-1'");
+      const since = new Date(Date.now() - 60 * 60_000);
+      const rows = await store.recent("sarvam", since, 1_000_000);
+      assert.deepEqual(rows.map((r) => r.key), ["new-2", "new-1"]);
+      assert.deepEqual([...(rows[1]?.audio.data ?? [])], [2, 2, 2, 2]);
+      assert.deepEqual((await store.recent("sarvam", since, 4)).map((r) => r.key), ["new-2"], "byte budget");
+    });
   } finally {
     client.release(true);
     await closeDbPool();
@@ -221,7 +275,8 @@ const healthy = (identifier: { category: unknown; id: string }) => ({ provider: 
 const OPENING = "Hello, this is Rohan from Team FlexiFunnels.";
 const GENERATED = "Sure, happy to help with that.";
 
-function startCall(input: { cache?: InstanceType<typeof TtsAudioCache>; identity?: boolean; customerName?: string }) {
+function startCall(input: { cache?: InstanceType<typeof TtsAudioCache>; identity?: boolean; customerName?: string; generated?: boolean; reply?: string; shortClip?: boolean }) {
+  const reply = input.reply ?? GENERATED;
   const synthesized: string[] = [];
   const segments: TranscriptSegment[] = [];
   const waiters: Array<() => void> = [];
@@ -251,14 +306,15 @@ function startCall(input: { cache?: InstanceType<typeof TtsAudioCache>; identity
         yield { type: "token" as const, delta: "", index: 0 };
         return;
       }
-      yield { type: "token" as const, delta: GENERATED, index: 0 };
-      yield { type: "final" as const, turn: { role: "assistant" as const, content: GENERATED, timestamp: new Date() }, latencyMs: 1 };
+      yield { type: "token" as const, delta: reply, index: 0 };
+      yield { type: "final" as const, turn: { role: "assistant" as const, content: reply, timestamp: new Date() }, latencyMs: 1 };
     },
   };
   const tts = {
     descriptor: descriptor(ProviderCategory.TEXT_TO_SPEECH, "fake-tts"),
     synthesize: async (task: { request: { text: string } }) => {
       synthesized.push(task.request.text);
+      if (input.shortClip === true && task.request.text !== OPENING) return clipFor("x");
       return clipFor(task.request.text);
     },
     ...(input.identity !== false ? { cacheIdentity: () => JSON.stringify({ voice: "fake-voice", rate: 8000 }) } : {}),
@@ -303,7 +359,10 @@ function startCall(input: { cache?: InstanceType<typeof TtsAudioCache>; identity
     markError: () => undefined,
     end: async () => undefined,
   };
-  const pipeline = new ConversationPipeline(record, { telephony, stt, llm, tts } as never, host as never, input.cache ? { ttsCache: input.cache } : {});
+  const pipeline = new ConversationPipeline(record, { telephony, stt, llm, tts } as never, host as never, {
+    ...(input.cache ? { ttsCache: input.cache } : {}),
+    ...(input.generated === true ? { cacheGeneratedSentences: true } : {}),
+  });
   const loop = pipeline.run();
   return {
     record,
@@ -386,6 +445,38 @@ await test("P5. no cache configured: every line is synthesized live, as before",
   await oneCall({});
   const second = await oneCall({});
   assert.ok(second.includes(OPENING));
+});
+
+await test("P6. cacheGeneratedSentences: a generated sentence is synthesized once, then served from memory", async () => {
+  const cache = new TtsAudioCache(undefined);
+  const first = await oneCall({ cache, generated: true });
+  const second = await oneCall({ cache, generated: true });
+  assert.ok(first.includes(GENERATED), "call 1 synthesized it");
+  assert.ok(!second.includes(GENERATED), "call 2 did not");
+});
+
+await test("P7. a generated sentence with the contact's name is never cached", async () => {
+  const cache = new TtsAudioCache(undefined);
+  const reply = "Sure Sakshi, happy to help with that.";
+  const first = await oneCall({ cache, generated: true, reply });
+  const second = await oneCall({ cache, generated: true, reply });
+  assert.ok(first.includes(reply) && second.includes(reply));
+});
+
+await test("P8. a generated clip far too short for its text (a stream cut short) is not kept", async () => {
+  const cache = new TtsAudioCache(undefined);
+  await oneCall({ cache, generated: true, shortClip: true });
+  const second = await oneCall({ cache, generated: true });
+  assert.ok(second.includes(GENERATED));
+});
+
+await test("P9. a generated sentence NEVER waits on the store: a slow store is not read at all", async () => {
+  const s = fakeStore({ delayMs: 5000 });
+  const cache = new TtsAudioCache(s.store, { readTimeoutMs: 100 });
+  const first = await oneCall({ cache, generated: true });
+  assert.ok(first.includes(GENERATED));
+  // Only the opening (a fixed line) may read the store.
+  assert.ok(s.gets() <= 1, `store reads: ${s.gets()}`);
 });
 
 console.log(`\n${passed} passed, ${failures.length} failed${skipped ? `, ${skipped} skipped` : ""}`);

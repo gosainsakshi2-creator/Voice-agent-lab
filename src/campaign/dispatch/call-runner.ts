@@ -1565,6 +1565,11 @@ const AGENT_CLOSINGS = [
  */
 const AGENT_CLOSING_MAX_WORDS = 12;
 
+/** The agent stating that it is ending the call, in any of its languages. See `agentClosedIn`. */
+const AGENT_EXPLICIT_CLOSE =
+  /call\s+(?:यहीं\s+|यहाँ\s+|yahin\s+|here\s+)?(?:close|end|बंद|khatam|ख़त्म|खत्म)\s*(?:कर|kar)|(?:end|close)\s+(?:the|this)\s+call|(?:time|समय)\s+(?:के|ke)\s+(?:लिए|liye)\s+(?:thank\s*you|धन्यवाद|शुक्रिया|dhanyavaad|shukriya)/iu;
+const AGENT_EXPLICIT_CLOSE_MAX_WORDS = 24;
+
 /**
  * At most this many words may follow the sign-off phrase and still
  * leave the turn a sign-off.
@@ -1722,6 +1727,11 @@ export function agentClosedIn(turns: readonly ConversationTurn[]): boolean {
 
   const normalised = normaliseText(last.content);
   const wordCount = normalised.trim().length === 0 ? 0 : normalised.trim().split(/\s+/).length;
+  // The agent SAYING it is ending the call ("मैं call यहीं close कर देती हूँ,
+  // आपके time के लिए thank you"). Hindi runs past the 12-word cap, so this
+  // explicit statement has its own, looser one. Real call 7440494c
+  // (2026-09-29): not recognised, the line stayed open ~50s on hold music.
+  if (wordCount > 0 && wordCount <= AGENT_EXPLICIT_CLOSE_MAX_WORDS && AGENT_EXPLICIT_CLOSE.test(last.content)) return true;
   if (wordCount === 0 || wordCount > AGENT_CLOSING_MAX_WORDS) return false;
 
   // The pipeline's fixed goodbye, "Okay, thank you." (2026-09-28). A bare

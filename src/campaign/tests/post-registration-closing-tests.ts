@@ -491,6 +491,28 @@ for (const cue of ["Tell me, sir. Okay.", "हाँ जी।", "ओके।"]
   });
 }
 
+// 2026-09-29 (real call 3a8fdfbe): armed on the yes, the agent answered a
+// question instead of confirming, and "ठीक है" drew the goodbye — the caller
+// never heard that the seat was reserved.
+await test("C1d. armed, but the seat was never CONFIRMED aloud: 'ठीक है' goes to the model, not to the goodbye", async () => {
+  const h = startHarness({ replies: [GATE, ANSWER, CONFIRMED] });
+  try {
+    await h.waitForReplies(1);
+    h.say("Yes, tell me.");
+    await h.waitForReplies(2);
+    h.say("Yes, please. What time is it?");
+    await h.waitForReplies(3);
+    h.pipeline.armScriptedClosing();
+    h.say("ठीक है।");
+    await h.waitForReplies(4);
+    assert.equal(h.requests.length, 3, "the model answered, so it can confirm the seat");
+    assert.equal(assistantTexts(h)[3], CONFIRMED, "the confirmation, not the goodbye");
+    assert.ok(!h.synthesized.includes(GOODBYE), "no goodbye before the confirmation");
+  } finally {
+    await h.stop();
+  }
+});
+
 await test("C2. a QUESTION after arming still goes to the language model; the closing comes after its answer", async () => {
   const h = startHarness({ replies: [GATE, CONFIRMED, ANSWER] });
   try {

@@ -1085,6 +1085,25 @@ for (const { name, bridge } of BRIDGES) {
   // 2026-09-28 (real call 28dd0eee): the model re-introduced the agent on
   // every turn. The caller heard OPENING ("…this is Rohan…"), so a reply
   // opening "Hi Sakshi, I am Rohan…" skips that sentence and speaks on.
+  // 2026-09-29 (real call b87b651d): the intro shares a chunk with the start
+  // of the invite; skipping the whole chunk began the pitch at "4th October".
+  await test(`E6m. ${name}: skipping a repeated introduction never drops the sentence after it`, async () => {
+    const invite = "I am calling to invite you to a free live workshop on Sunday, 4th October at 11 AM.";
+    const reply = `Hi Sakshi, I am Rohan from Team FlexiFunnels. ${invite} ${S3}`;
+    const h = startHarness({ replies: [reply, "SHOULD-NOT-BE-GENERATED"], bridge });
+    try {
+      await startBlock(h);
+      await h.waitFor("the reply committed", () => h.assistantTexts().some((t) => t.includes("plain instructions")), 30000);
+      const spoken = h.synthesized.join(" ");
+      assert.ok(!spoken.includes("I am Rohan"), `the re-introduction is not spoken, synthesized=${JSON.stringify(h.synthesized)}`);
+      assert.ok(spoken.includes("I am calling to invite you"), `the invite is spoken from its first word, synthesized=${JSON.stringify(h.synthesized)}`);
+      const committed = h.assistantTexts().find((t) => t.includes("plain instructions")) ?? "";
+      assert.ok(committed.startsWith("I am calling to invite you"), `and committed from there, got ${JSON.stringify(committed)}`);
+    } finally {
+      await h.stop();
+    }
+  });
+
   await test(`E6k. ${name}: a reply that re-introduces the agent skips that sentence, and commits the rest`, async () => {
     const reply = `Hi Sakshi, I am Rohan from Team FlexiFunnels. ${S2} ${S3}`;
     const h = startHarness({ replies: [reply, "SHOULD-NOT-BE-GENERATED"], bridge });

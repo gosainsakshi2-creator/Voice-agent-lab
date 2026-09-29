@@ -1675,6 +1675,14 @@ function scriptedClosingFor(_language: SupportedLanguage): string {
   return SCRIPTED_GOODBYE;
 }
 
+/**
+ * The agent telling the caller their seat IS reserved ("your free seat is
+ * reserved", "आपकी free seat … reserve हो गयी है"). See
+ * `seatConfirmationSpoken`: the fixed goodbye waits for one.
+ */
+const SEAT_CONFIRMED =
+  /\breserved\b|reserve\s+(?:हो|ho)\s+(?:गयी|गई|gayi|gai)|reserve\s+kar\s+(?:di|diya|dee)|reserve\s+कर\s+(?:दी|दिया)|रिज़र्व\s+हो|\bbooked\b|seat\s+(?:is\s+)?confirmed|seat\s+pakki|सीट\s+पक्की/iu;
+
 /** Exported so the campaign layer's closing check reads the same words. */
 export const SCRIPTED_GOODBYE = "Okay, thank you.";
 
@@ -5621,6 +5629,17 @@ export class ConversationPipeline {
     return true;
   }
 
+  /** Has the agent said, in a statement, that the seat is reserved? */
+  private seatConfirmationSpoken(history: readonly ConversationTurn[]): boolean {
+    return history.some(
+      (turn) =>
+        turn.role === "assistant" &&
+        turn.content
+          .split(/(?<=[.!?।？])\s+/u)
+          .some((sentence) => !/[?？]\s*$/u.test(sentence) && SEAT_CONFIRMED.test(sentence)),
+    );
+  }
+
   private async handleScriptedClosing(userText: string, loopSignal: AbortSignal): Promise<boolean> {
     if (!this.scriptedClosingArmed || this.scriptedClosingSpoken) return false;
     const trimmed = userText.trim();
@@ -5641,6 +5660,12 @@ export class ConversationPipeline {
       .reverse()
       .find((turn) => turn.role === "assistant");
     if (lastAssistant !== undefined && lastAssistant.content.includes("?")) return false;
+    // Never say goodbye before the caller has been TOLD the seat is reserved.
+    // Real call 3a8fdfbe (2026-09-29): "Yes, yes, yes" armed the closing, the
+    // agent answered a question about topics instead of confirming, and the
+    // next "ठीक है" drew "Okay, thank you." and the hangup — the caller never
+    // heard the confirmation. The model confirms first; the goodbye follows.
+    if (!this.seatConfirmationSpoken(history)) return false;
 
     // ── A "No." to an ANSWER is "that is not what I asked" ─────────
     //
@@ -6954,6 +6979,18 @@ export class ConversationPipeline {
           t.role === "assistant" &&
           t.content.split(/(?<=[.!?।？])\s+/u).some((s) => introduces(s) || introducedSelf(s)),
       );
+  }
+
+  /**
+   * A chunk that opens with a repeated introduction, split after that ONE
+   * sentence: `intro` is skipped, `after` is still spoken. The whole chunk is
+   * `intro` when it holds nothing else.
+   */
+  private splitLeadingIntroduction(text: string): { readonly intro: string; readonly after: string } {
+    const match = /^[\s\S]*?[.!?।？]["'”’)\]]*(?=\s|$)/u.exec(text.trim());
+    if (match === null) return { intro: text.trim(), after: "" };
+    const intro = match[0].trim();
+    return { intro, after: text.trim().slice(match[0].length).trim() };
   }
 
   /**
@@ -9105,30 +9142,40 @@ await this.drainPlayback(speakingSignal, true);
             // "Great. Hi, I'm Rohan from Team FlexiFunnels." — the same repeat
             // behind a bare acknowledgement, in its own chunk or this one (real
             // call 8c53be11, 2026-09-29). Keep the acknowledgement, skip the rest.
+            // ONLY the introduction sentence is skipped, never the rest of its
+            // chunk: the chunker joins "Hi, I'm Ishita from Team FlexiFunnels."
+            // to the start of the next sentence ("I'm calling to invite you…
+            // on Sunday,"), and skipping the whole chunk started the pitch at
+            // "4th October at 11 AM." (real call b87b651d, 2026-09-29).
             if (sentencesSeen === 1) {
               const lead = LEADING_REPLY_ACK.exec(cleaned);
               const rest = lead !== null ? cleaned.slice(lead[0].length) : "";
               if (lead !== null && rest.length > 0 && this.isRepeatedIntroduction(rest)) {
-                skippedIntro = rest;
-                cleaned = lead[1] ?? cleaned;
+                const split = this.splitLeadingIntroduction(rest);
+                skippedIntro = split.intro;
+                cleaned = split.after.length > 0 ? `${lead[1] ?? ""} ${split.after}`.trim() : (lead[1] ?? cleaned);
                 // eslint-disable-next-line no-console
-                console.log(`[PIPELINE:${this.record.id}] repeated introduction skipped after "${cleaned}": "${rest.slice(0, 60)}"`);
+                console.log(`[PIPELINE:${this.record.id}] repeated introduction skipped after "${lead[1] ?? ""}": "${split.intro.slice(0, 60)}"`);
               }
               firstSentenceIsBareAck = BARE_REPLY_ACK.test(cleaned);
             } else if (sentencesSeen === 2 && firstSentenceIsBareAck && skippedIntro.length === 0 && this.isRepeatedIntroduction(cleaned)) {
-              skippedIntro = cleaned;
+              const split = this.splitLeadingIntroduction(cleaned);
+              skippedIntro = split.intro;
               // eslint-disable-next-line no-console
-              console.log(`[PIPELINE:${this.record.id}] repeated introduction skipped after an acknowledgement: "${cleaned.slice(0, 60)}"`);
-              continue;
+              console.log(`[PIPELINE:${this.record.id}] repeated introduction skipped after an acknowledgement: "${split.intro.slice(0, 60)}"`);
+              if (split.after.length === 0) continue;
+              cleaned = split.after;
             }
             // "Hi Rakesh, I'm Ishita from Team FlexiFunnels." again, after the
             // caller already heard it: the model restarts its script block on
             // every interruption (call 28dd0eee said it three times). Skip it.
-            if (sentencesSeen === 1 && this.isRepeatedIntroduction(cleaned)) {
-              skippedIntro = cleaned;
+            if (sentencesSeen === 1 && skippedIntro.length === 0 && this.isRepeatedIntroduction(cleaned)) {
+              const split = this.splitLeadingIntroduction(cleaned);
+              skippedIntro = split.intro;
               // eslint-disable-next-line no-console
-              console.log(`[PIPELINE:${this.record.id}] repeated introduction skipped: "${cleaned.slice(0, 60)}"`);
-              continue;
+              console.log(`[PIPELINE:${this.record.id}] repeated introduction skipped: "${split.intro.slice(0, 60)}"`);
+              if (split.after.length === 0) continue;
+              cleaned = split.after;
             }
 
             // FIX #7A — the chunker has just produced a TTS-ready

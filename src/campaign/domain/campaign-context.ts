@@ -75,15 +75,19 @@ export function buildCampaignContext(input: BuildCampaignContextInput): Campaign
     );
   }
 
-  // The stored hash is the campaign's record of which words it agreed
-  // to run. If the script file has been edited since, the campaign
-  // must not quietly start speaking the new text.
+  // The stored hash is the campaign's record of the words it was created
+  // with. An edited script no longer stops the call (2026-09-29, product
+  // decision): a customer who updates their script expects the campaign
+  // to carry on with the new text, and refusing here used to finalize the
+  // contact as INVALID_NUMBER for a number that was fine. The hash this
+  // call actually runs is `currentHash`, returned below and recorded with
+  // the call, so every call stays traceable to its exact text.
   const currentHash = hashScript(script);
   if (input.expectedScriptHash !== undefined && input.expectedScriptHash !== currentHash) {
-    throw new CampaignContextError(
-      `Script "${script.id} ${script.version}" has changed since this campaign was created ` +
-        `(recorded ${input.expectedScriptHash.slice(0, 12)}…, now ${currentHash.slice(0, 12)}…). ` +
-        `Create a new script version rather than editing one a campaign is pinned to.`,
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[campaign-context] script "${script.id} ${script.version}" has changed since this campaign was created ` +
+        `(recorded ${input.expectedScriptHash.slice(0, 12)}…, now ${currentHash.slice(0, 12)}…) — using the new text`,
     );
   }
 

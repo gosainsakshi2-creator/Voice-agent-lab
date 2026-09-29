@@ -372,11 +372,12 @@ test("D5. the SHIPPING script is not stale right now, on the real clock", () => 
 // ═════════════════════════════════════════════════════════════════
 section("E. EVERY PRE-EXISTING VALIDATION INVARIANT STILL FIRES");
 
-test("E1. an unregistered script, a type mismatch and a stale hash all still block", () => {
+test("E1. an unregistered script and a type mismatch still block; an edited script (stale hash) no longer does", () => {
   const base = validationFor(V6, BEFORE_EVENT);
   assert.equal(validateCampaignScript({ ...base, scriptId: "nope" }).ok, false);
   assert.equal(validateCampaignScript({ ...base, campaignType: "reminder" }).ok, false);
-  assert.equal(validateCampaignScript({ ...base, scriptHash: "0".repeat(64) }).ok, false);
+  // 2026-09-29: an edited script keeps the campaign running on the new words.
+  assert.equal(validateCampaignScript({ ...base, scriptHash: "0".repeat(64) }).ok, true);
 });
 
 test("E2. a contact with no name still blocks a name-speaking script", () => {

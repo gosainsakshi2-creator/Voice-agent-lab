@@ -132,12 +132,17 @@ export function validateCampaignScript(input: ScriptValidationInput): ScriptVali
       );
     }
 
+    // An edited script is NOT a blocker (2026-09-29, product decision):
+    // a customer who updates their script expects their campaign to carry
+    // on speaking the new text, not to stop. Every call records the hash
+    // it actually ran (`buildCampaignContext`), so what was said on each
+    // call stays traceable; the edit is only reported.
     const currentHash = hashScript(script);
     if (currentHash !== input.scriptHash) {
-      blockers.push(
-        `Script content has changed since this campaign was created ` +
-          `(recorded ${input.scriptHash.slice(0, 12)}…, now ${currentHash.slice(0, 12)}…). ` +
-          `Publish a new version instead of editing a pinned one.`,
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[preflight] script "${script.id} ${script.version}" has changed since this campaign was created ` +
+          `(recorded ${input.scriptHash.slice(0, 12)}…, now ${currentHash.slice(0, 12)}…) — the campaign continues with the new text`,
       );
     }
 

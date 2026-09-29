@@ -558,8 +558,9 @@ test("F2. the gate reaches the system prompt, and the policy still follows the s
   assert.ok(!prompt.includes("{{"), "no placeholder may survive into the prompt");
 });
 
-test("F3. a campaign pinned to v7 refuses to run if the words are edited", () => {
-  assert.throws(
+test("F3. a campaign pinned to v7 keeps running on the new words if they are edited", () => {
+  // An edited script keeps the campaign running on the new words (2026-09-29).
+  assert.doesNotThrow(
     () =>
       buildCampaignContext({
         campaignId: "c1",
@@ -569,7 +570,6 @@ test("F3. a campaign pinned to v7 refuses to run if the words are edited", () =>
         customerName: "Priya",
         expectedScriptHash: "0".repeat(64),
       }),
-    /has changed since this campaign was created/,
   );
 });
 

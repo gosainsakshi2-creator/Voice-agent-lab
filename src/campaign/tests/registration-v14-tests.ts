@@ -537,14 +537,14 @@ test("F5. no internal machinery, tool or provider name, and no invented fact, is
   }
 });
 
-test("F6. a campaign pinned to v14 refuses to run if the words are edited, and a nameless contact cannot be called", () => {
+test("F6. a campaign pinned to v14 keeps running on the new words if they are edited, and a nameless contact cannot be called", () => {
   const edited: CampaignScript = { ...V14, systemPromptAppendix: `${V14.systemPromptAppendix} ` };
-  assert.throws(
+  // An edited script keeps the campaign running on the new words (2026-09-29).
+  assert.doesNotThrow(
     () => buildCampaignContext({
       script: edited, campaignId: "c", campaignType: "registration",
       provider: "smallest-ai", customerName: NAME, expectedScriptHash: hashScript(V14),
     }),
-    /has changed since this campaign was created/u,
   );
   assert.throws(
     () => buildCampaignContext({

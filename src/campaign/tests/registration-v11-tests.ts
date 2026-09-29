@@ -691,9 +691,10 @@ test("G3. the gate reaches the system prompt, and the policy still follows the s
   assert.ok(appendix.indexOf("--- SCRIPT ---") < appendix.indexOf("# HOW TO RUN THIS SCRIPT ON A LIVE CALL"));
 });
 
-test("G4. a campaign pinned to v11 refuses to run if the words are edited", () => {
+test("G4. a campaign pinned to v11 keeps running on the new words if they are edited", () => {
   const edited: CampaignScript = { ...V11, systemPromptAppendix: `${V11.systemPromptAppendix} ` };
-  assert.throws(
+  // An edited script keeps the campaign running on the new words (2026-09-29).
+  assert.doesNotThrow(
     () =>
       buildCampaignContext({
         script: edited,
@@ -703,7 +704,6 @@ test("G4. a campaign pinned to v11 refuses to run if the words are edited", () =
         customerName: NAME,
         expectedScriptHash: hashScript(V11),
       }),
-    /has changed since this campaign was created/u,
   );
 });
 

@@ -212,19 +212,17 @@ await test("9b. context refuses to build without a customer name", () => {
   }
 });
 
-await test("11b. a stale script hash refuses to build", () => {
-  assert.throws(
-    () =>
-      buildCampaignContext({
-        campaignId: "c1",
-        campaignType: "registration",
-        script: registration,
-        provider: "smallest-ai",
-        customerName: "Priya",
-        expectedScriptHash: "deadbeef".repeat(8),
-      }),
-    (e: unknown) => e instanceof CampaignContextError,
-  );
+await test("11b. an edited script (stale hash) still builds, and the context carries the hash it actually runs", () => {
+  // 2026-09-29: an edited script keeps the campaign running on the new words.
+  const context = buildCampaignContext({
+    campaignId: "c1",
+    campaignType: "registration",
+    script: registration,
+    provider: "smallest-ai",
+    customerName: "Priya",
+    expectedScriptHash: "deadbeef".repeat(8),
+  });
+  assert.equal(context.scriptHash, hashScript(registration));
 });
 
 console.log("\nREADY GATE");
@@ -247,8 +245,8 @@ await test("11. an unknown or mismatched script blocks READY", () => {
   );
   assert.equal(
     validateCampaignScript({ ...baseValidation, scriptHash: "0".repeat(64) }).ok,
-    false,
-    "a changed script must block",
+    true,
+    "a changed script no longer blocks: the campaign carries on with the new words (2026-09-29)",
   );
 });
 

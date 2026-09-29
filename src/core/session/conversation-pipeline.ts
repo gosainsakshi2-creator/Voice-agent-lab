@@ -321,6 +321,13 @@ export interface ConversationPipelineOptions {
    */
   readonly fillers?: boolean;
   /**
+   * While the agent is speaking, ignore words the STT labels as a
+   * DIFFERENT speaker from the one who confirmed their identity — see
+   * `fromAnotherSpeaker`. Needs a diarizing STT (Soniox). Off by default:
+   * every harness keeps its barge-in behaviour exactly.
+   */
+  readonly ignoreOtherSpeakersOverReply?: boolean;
+  /**
    * Pre-open a turn's LLM request on a SETTLED INTERIM transcript — see
    * `scheduleInterimSpeculation`. Off by default: every harness keeps
    * FIX #8's rule that only explicit endpoint evidence pre-opens.
@@ -4211,6 +4218,8 @@ export class ConversationPipeline {
 
     if (verdict === "confirmed") {
       this.identityState = "confirmed";
+      // Whoever just confirmed who they are is the caller — see `fromAnotherSpeaker`.
+      this.callerSpeaker = this.lastFinalSpeaker ?? this.callerSpeaker;
       // "बताइए" confirms identity AND is a listening sound; it must not then
       // re-ask the identity question (call d33295b1). See `handleAckAfterQuestion`.
       this.identityConfirmedThisTurn = true;
@@ -5523,6 +5532,22 @@ export class ConversationPipeline {
         }
       }
     });
+  }
+
+  /** The STT speaker label of whoever confirmed their identity; undefined until then, or with no diarization. */
+  private callerSpeaker: string | undefined;
+  /** The speaker label of the latest final segment fed to the turn detector. */
+  private lastFinalSpeaker: string | undefined;
+
+  /**
+   * Words labelled as a speaker other than the caller. False whenever
+   * anything is unknown — option off, no caller label yet, no label on
+   * the segment — so without diarization nothing changes.
+   */
+  private fromAnotherSpeaker(segment: TranscriptSegment): boolean {
+    if (this.options.ignoreOtherSpeakersOverReply !== true) return false;
+    if (this.callerSpeaker === undefined || segment.speaker === undefined) return false;
+    return segment.speaker !== this.callerSpeaker;
   }
 
   /** An STT result made only of the words of a filler that just played: our own audio back up the line. */
@@ -7706,6 +7731,24 @@ export class ConversationPipeline {
           // must not cut our own reply off. Genuine caller speech does
           // not reach `isSelfEcho`'s thresholds, so it falls through to
           // the identical barge-in call below, unchanged.
+          // ── Another voice in the caller's room, not the caller ──────
+          //
+          // A TV, a video, family talking behind them: loud enough to pass
+          // the energy gate above, but the STT labels it as a different
+          // speaker from the one who confirmed their identity. Ignored
+          // exactly like uncorroborated speech — no barge-in, not fed to
+          // the turn detector — so the agent finishes its sentence. If the
+          // label is ever wrong about the caller, that is the whole cost:
+          // their words after the reply are heard as usual.
+          if (spokeOverTheAssistant && this.fromAnotherSpeaker(segment)) {
+            this.record.liveUserTranscript = "";
+            // eslint-disable-next-line no-console
+            console.log(
+              `[TURN:${this.record.id}] another speaker ignored (not the caller interrupting): "${segment.text.trim()}" — speaker=${segment.speaker} caller=${this.callerSpeaker}`,
+            );
+            continue;
+          }
+
           // A filler's own words back up the line: dropped the same way.
           if (this.isFillerEcho(segment)) {
             this.record.liveUserTranscript = "";
@@ -7809,6 +7852,8 @@ export class ConversationPipeline {
           const textAfterSegment = `${this.record.turnDetector.getPendingTurnText()} ${segment.text}`.trim();
           // See `resumedCallerText`. A final covers every interim before it.
           this.interimSinceRelease = segment.isFinal ? "" : segment.text.trim();
+          // Who said the words the detector is about to hear — see `callerSpeaker`.
+          if (segment.isFinal && segment.speaker !== undefined) this.lastFinalSpeaker = segment.speaker;
           if (this.speculation !== undefined && !this.sameSpeculatedText(textAfterSegment, this.speculation.text)) {
             this.abandonSpeculation("caller resumed speaking");
           }
@@ -8217,6 +8262,10 @@ export class ConversationPipeline {
         // Everything heard up to here is this turn's; only what follows
         // is the caller resuming. See `resumedCallerText`.
         this.interimSinceRelease = "";
+        // A script that never asks who picked up: the first voice to take a
+        // turn is the caller. (An identity check, when there is one,
+        // replaces this with whoever confirmed — see `callerSpeaker`.)
+        if (this.identityState !== "outstanding") this.callerSpeaker ??= this.lastFinalSpeaker;
         // Where the release falls on the STT stream clock — the
         // reference point that separates "the tail of THIS turn, still
         // extending" from "a new utterance begun after it". Read only

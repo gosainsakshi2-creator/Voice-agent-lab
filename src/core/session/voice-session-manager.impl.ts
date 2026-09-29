@@ -345,6 +345,9 @@ export class DefaultVoiceSessionManager implements VoiceSessionManager, Pipeline
       // A short filler when a reply is slow to start (~1 turn in 10), played
       // only from cached audio; `LATENCY_FILLERS=false` switches it off.
       fillers: optionalEnv("LATENCY_FILLERS", "true").trim().toLowerCase() !== "false",
+      // Over a reply, words the STT labels as another speaker than the caller
+      // (a TV, the room) do not interrupt; `IGNORE_OTHER_SPEAKERS=false` switches it off.
+      ignoreOtherSpeakersOverReply: optionalEnv("IGNORE_OTHER_SPEAKERS", "true").trim().toLowerCase() !== "false",
     });
     this.pipelines.set(record.id, pipeline);
     record.loopPromise = pipeline.run();

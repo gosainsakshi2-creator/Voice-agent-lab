@@ -120,11 +120,14 @@ interface SayOptions {
    * threshold cannot help with.
    */
   readonly heardBy?: "loud" | "quiet" | "none";
+  /** The STT speaker label, as a diarizing STT (Soniox) reports it. */
+  readonly speaker?: string;
 }
 
 function startHarness(input: {
   readonly openingLine: string;
   readonly replies: readonly string[];
+  readonly ignoreOtherSpeakers?: boolean;
 }) {
   const requests: Array<readonly ConversationTurn[]> = [];
   const synthesized: string[] = [];
@@ -249,6 +252,7 @@ function startHarness(input: {
     record,
     { telephony, stt, llm, tts } as never,
     host as never,
+    input.ignoreOtherSpeakers === true ? { ignoreOtherSpeakersOverReply: true } : {},
   );
   const loop = pipeline.run();
 
@@ -283,6 +287,7 @@ function startHarness(input: {
         language: SupportedLanguage.ENGLISH,
         startedAtMs,
         endedAtMs: clockMs,
+        ...(opts?.speaker !== undefined ? { speaker: opts.speaker } : {}),
       });
       waiters.shift()?.();
     },
@@ -479,6 +484,58 @@ await test("a genuine interruption still interrupts, and is still answered", asy
     await h.stop();
   }
 });
+
+for (const [label, speaker, cut] of [
+  ["a DIFFERENT speaker (the TV, the room) over the reply does NOT interrupt it", "2", false],
+  ["the CALLER's own label over the reply still interrupts it", "1", true],
+] as const) {
+  await test(`diarization: ${label}`, async () => {
+    const BLOCK =
+      "We have created Flexi Genie, which automates your online business. It builds funnels and pages for you.";
+    const h = startHarness({
+      openingLine: OPENING,
+      replies: [BLOCK, "The workshop is free and runs this Sunday."],
+      ignoreOtherSpeakers: true,
+    });
+    try {
+      await h.waitForReplies(1);
+      // The caller takes the first turn: they are speaker "1".
+      h.say("Tell me more please.", { speaker: "1" });
+      await h.waitFor("the block to start", () => h.record.state === SessionState.SPEAKING);
+      await sleep(400);
+      // The barge-in decision is read from its log line: after a cut this
+      // harness never reaches a third reply on HEAD either (see "a genuine
+      // interruption still interrupts" above), so only the decision is asserted.
+      const lines: string[] = [];
+      const original = console.log;
+      console.log = (...args: unknown[]) => {
+        lines.push(args.map(String).join(" "));
+        original(...args);
+      };
+      try {
+        h.say("Actually how much does the price come to?", { speaker });
+        await sleep(1500);
+      } finally {
+        console.log = original;
+      }
+      const accepted = lines.some((l) => l.includes("barge-in ACCEPTED"));
+      const ignored = lines.some((l) => l.includes("another speaker ignored"));
+      if (cut) {
+        assert.equal(accepted, true, "the caller's own words interrupt the reply");
+        assert.equal(ignored, false);
+      } else {
+        assert.equal(accepted, false, "another speaker must not interrupt the reply");
+        assert.equal(ignored, true);
+        await h.waitForReplies(2);
+        await sleep(300);
+        assert.equal(h.assistantTexts()[1], BLOCK, "the reply played to the end");
+        assert.ok(!h.userTurns().some((t) => t.includes("price")), `the other voice became a turn: ${JSON.stringify(h.userTurns())}`);
+      }
+    } finally {
+      await h.stop();
+    }
+  });
+}
 
 await test("short caller utterances are never suppressed, whatever the assistant said", async () => {
   // "wait", "stop", "hello", "yes", "billing" — all below the four-word

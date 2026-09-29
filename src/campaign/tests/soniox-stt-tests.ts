@@ -235,6 +235,26 @@ await test("3b. the config frame carries the documented fields and the mu-law fo
   await run.done;
 });
 
+await test("3d. speaker diarization is requested when on (the default) and not sent when off", async () => {
+  await withEnv({ SONIOX_SPEAKER_DIARIZATION: undefined }, () => {
+    assert.equal(loadSonioxEnvConfig().speakerDiarization, true);
+  });
+  await withEnv({ SONIOX_SPEAKER_DIARIZATION: "false" }, () => {
+    assert.equal(loadSonioxEnvConfig().speakerDiarization, false);
+  });
+  for (const on of [true, false]) {
+    const sock = new MockSocket();
+    const p = new SonioxSpeechToTextProvider({ ...CONFIGURED, speakerDiarization: on }, () => sock);
+    const held = heldAudio();
+    const run = streamOf(p, held.iterable);
+    sock.emit("open");
+    await sleep(10);
+    assert.equal(sock.config?.["enable_speaker_diarization"], on ? true : undefined);
+    held.release();
+    await run.done;
+  }
+});
+
 await test("3c. the endpoint URL is the documented real-time one", () => {
   assert.equal(SONIOX_REALTIME_URL, "wss://stt-rt.soniox.com/transcribe-websocket");
 });
@@ -851,6 +871,17 @@ await test("7. interim tokens => one interim segment", () => {
   assert.equal(segs[0]!.isFinal, false);
   assert.equal(segs[0]!.text, "hello");
   assert.equal(segs[0]!.isSpeechFinal, false);
+});
+
+await test("7b. diarized tokens => the segment carries the speaker most of its words have; none without diarization", () => {
+  const segs = segmentsFromSonioxMessage(
+    { tokens: [{ text: "turn", is_final: true, speaker: "2" }, { text: " the", is_final: true, speaker: "2" }, { text: " tv", is_final: true, speaker: "1" }] },
+    EN,
+  );
+  assert.equal(segs[0]!.speaker, "2");
+  const plain = segmentsFromSonioxMessage({ tokens: [{ text: "yes", is_final: true }] }, EN);
+  assert.equal(plain[0]!.speaker, undefined);
+  assert.equal("speaker" in plain[0]!, false, "no key at all, so nothing downstream changes");
 });
 
 await test("8. final tokens => one final segment that is NOT an endpoint claim", () => {

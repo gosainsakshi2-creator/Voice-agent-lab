@@ -111,6 +111,13 @@ export interface TranscriptSegment {
   readonly language: SupportedLanguage;
   readonly startedAtMs: number;
   readonly endedAtMs: number;
+  /**
+   * OPTIONAL, ADDITIVE. The provider's speaker label for these words
+   * ("1", "2", …) when it diarizes the stream (Soniox
+   * `enable_speaker_diarization`). Absent from every provider that does
+   * not, and every consumer treats absence as "unknown speaker".
+   */
+  readonly speaker?: string;
 }
 
 /**

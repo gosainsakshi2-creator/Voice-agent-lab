@@ -264,6 +264,8 @@ export interface SonioxEnvConfig {
   readonly endpointLatencyAdjustmentLevel: number;
   /** Documented range -1.0 to 1.0, higher makes an endpoint likelier. Vendor default 0; we ship 0.3. */
   readonly endpointSensitivity: number;
+  /** Ask Soniox to label each token's speaker — see `TranscriptSegment.speaker`. */
+  readonly speakerDiarization?: boolean;
 }
 
 /**
@@ -301,6 +303,9 @@ export function loadSonioxEnvConfig(): SonioxEnvConfig {
         SONIOX_DEFAULT_LANGUAGE_HINTS_STRICT ? "true" : "false",
       ) === "true",
     contextEnabled: optionalEnv("SONIOX_CONTEXT_ENABLED", "true") === "true",
+    // Speaker labels, so the pipeline can tell the caller from a TV or a
+    // room behind them; `SONIOX_SPEAKER_DIARIZATION=false` switches it off.
+    speakerDiarization: optionalEnv("SONIOX_SPEAKER_DIARIZATION", "true") === "true",
     maxEndpointDelayMs: rangedEnv(
       "SONIOX_MAX_ENDPOINT_DELAY_MS",
       SONIOX_DEFAULT_MAX_ENDPOINT_DELAY_MS,
@@ -400,7 +405,12 @@ export function segmentsFromSonioxMessage(
     const confidences = group
       .map((t) => t.confidence)
       .filter((n): n is number => typeof n === "number" && Number.isFinite(n));
+    // The label most of these words carry (diarization on); absent otherwise.
+    const speakerCounts = new Map<string, number>();
+    for (const t of group) if (typeof t.speaker === "string" && t.speaker.length > 0) speakerCounts.set(t.speaker, (speakerCounts.get(t.speaker) ?? 0) + 1);
+    const speaker = [...speakerCounts].sort((a, b) => b[1] - a[1])[0]?.[0];
     return {
+      ...(speaker !== undefined ? { speaker } : {}),
       text,
       isFinal,
       // Soniox finalizes words continuously; only the `<end>` token is
@@ -656,6 +666,7 @@ export class SonioxSpeechToTextProvider implements SpeechToTextProvider {
             language_hints_strict: this.config.languageHintsStrict,
             // Keyword boosting — see `SONIOX_CONTEXT`.
             ...(this.config.contextEnabled === true ? { context: SONIOX_CONTEXT } : {}),
+            ...(this.config.speakerDiarization === true ? { enable_speaker_diarization: true } : {}),
             enable_endpoint_detection: this.config.enableEndpointDetection,
             // The three latency knobs, sent explicitly rather than left
             // to Soniox's conservative transcription defaults. See the

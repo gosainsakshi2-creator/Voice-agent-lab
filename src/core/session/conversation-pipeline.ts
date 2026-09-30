@@ -44,7 +44,7 @@ import type { TelephonyProvider } from "../../interfaces/providers/telephony-pro
 
 import type { SessionRecord } from "./session-record";
 import { detectLanguage, isLockGradeEvidence, type LanguageDetectionResult } from "./language-detector";
-import { currentTurnNote, languageHintFor, openingLineFor } from "./system-prompt";
+import { currentTurnNote, interruptedReplyNote, languageHintFor, openingLineFor } from "./system-prompt";
 import { asksWhoIsCalling, classifyIdentityAnswer } from "../../campaign/domain/identity-answer";
 import { SentenceChunker } from "./sentence-chunker";
 import { joinAudioChunks, ttsCacheKey, type TtsAudioCache } from "./tts-audio-cache";
@@ -342,6 +342,13 @@ export interface ConversationPipelineOptions {
    * every harness keeps its timing exactly.
    */
   readonly letCallerFinish?: boolean;
+  /**
+   * After a barge-in cuts a model reply, tell the next request where it
+   * was cut and what the caller did not hear — see `interruptionNote`.
+   * The committed history is unchanged either way. Off by default: every
+   * harness keeps its requests exactly.
+   */
+  readonly noteInterruptedReply?: boolean;
   /**
    * Pre-open a turn's LLM request on a SETTLED INTERIM transcript — see
    * `scheduleInterimSpeculation`. Off by default: every harness keeps
@@ -2454,6 +2461,21 @@ const MAX_STRANDED_RESUMES = 3;
  * the two are not guaranteed to line up; when they do not, saying
  * nothing is correct and guessing is not.
  */
+/**
+ * The whole words of `text` that fit in the first `fraction` of it, by
+ * character count — the part of a cut sentence whose audio has played,
+ * given how far through the sentence the play head is. Rounds DOWN to a
+ * word boundary: a word the head is inside of was not heard.
+ */
+export function wordPrefixAtFraction(text: string, fraction: number): string {
+  if (fraction <= 0) return "";
+  if (fraction >= 1) return text;
+  const cut = Math.floor(text.length * fraction);
+  if (cut >= text.length || /\s/u.test(text[cut]!)) return text.slice(0, cut).trimEnd();
+  const lastSpace = text.slice(0, cut).search(/\s\S*$/u);
+  return lastSpace < 0 ? "" : text.slice(0, lastSpace).trimEnd();
+}
+
 export function unspokenTail(fullText: string, heardText: string): string {
   const heard = heardText.trim();
   if (heard.length === 0) return fullText.trim();
@@ -2925,6 +2947,20 @@ export class ConversationPipeline {
    * transport had already thrown away.
    */
   private cancelledHeardText = "";
+  /**
+   * `cancelledHeardText` word by word — the cut sentence credited up to
+   * the play head, not by the partial-credit rule. Frozen at the same
+   * instant. Read only to build `interruptionNote`; never committed.
+   */
+  private cancelledHeardWords = "";
+  /**
+   * Where the last model reply was cut off, for the next request only —
+   * see `noteInterruptedReply`. `atHistoryLength` is the history length
+   * once the heard part was committed: the note stands until an
+   * assistant turn lands after that point (an answer, a resume, a fixed
+   * line), so it is never shown for a reply other than the one it names.
+   */
+  private interruptionNote: { readonly atHistoryLength: number; readonly heard: string; readonly unheard: string } | undefined;
   /**
    * DIAGNOSTIC ONLY (2026-09-21) — what tripped the barge-in that
    * cancelled the response in flight, if one did. Written by
@@ -3872,6 +3908,21 @@ export class ConversationPipeline {
             this.record.memory.recordAssistantTurn(heard);
             this.contextualReplyCommitted = true;
           }
+          this.interruptionNote = undefined;
+          if (this.options.noteInterruptedReply === true) {
+            const unheard = unspokenTail(result.assistantText, this.cancelledHeardWords);
+            if (unheard.length > 0) {
+              this.interruptionNote = {
+                atHistoryLength: this.record.memory.history().length,
+                heard: this.cancelledHeardWords,
+                unheard,
+              };
+              // eslint-disable-next-line no-console
+              console.log(
+                `[INTERRUPTION-NOTE:${sid}] response #${responseId} heardWords="${this.cancelledHeardWords.slice(-80)}" unheard="${unheard.slice(0, 80)}${unheard.length > 80 ? "..." : ""}"`,
+              );
+            }
+          }
           strandedRemainder = unspokenTail(result.assistantText, heard);
           // Generation was aborted by the cut, so the text can end mid-sentence
           // ("… सब एक phone से। आपने"). Resuming that fragment stops the agent
@@ -3888,6 +3939,7 @@ export class ConversationPipeline {
         } else if (result.assistantText.trim().length > 0) {
           this.record.memory.recordAssistantTurn(result.assistantText);
           this.contextualReplyCommitted = true;
+          this.interruptionNote = undefined;
         } else {
           // PHASE A — AN EMPTY GENERATION IS NOT AN ASSISTANT TURN.
           //
@@ -6606,7 +6658,16 @@ export class ConversationPipeline {
    * `remainingSpeechMs`. Nothing here changes what is synthesized,
    * queued, played or cancelled.
    */
-  private heardSoFarText(allowPartialCredit = true): string {
+  private heardSoFarText(
+    allowPartialCredit = true,
+    /**
+     * Credit the sentence the caller was cut off in word by word, up to the
+     * play head, with no partial-credit rule — what they heard, exactly.
+     * Read only for `interruptionNote`; what is COMMITTED is always the
+     * sentence-level default.
+     */
+    wordLevel = false,
+  ): string {
     if (this.outboundPlaybackStartedAt === 0 || this.spokenUtterances.length === 0) return "";
     const playedMs = this.playedSoFarMs();
     const heard: string[] = [];
@@ -6644,7 +6705,8 @@ export class ConversationPipeline {
           const startFraction = sentenceStart / totalChars;
           const ofSentence = (playedFraction - startFraction) / (endFraction - startFraction);
           const isQuestion = /[?？][\s"'”’)\]]*$/u.test(sentence.trim());
-          if (allowPartialCredit && !isQuestion && ofSentence > PROPOSED_PARTIAL_CREDIT_FRACTION) creditedChars = sentenceEnd;
+          if (wordLevel) creditedChars = sentenceStart + wordPrefixAtFraction(sentence, ofSentence).length;
+          else if (allowPartialCredit && !isQuestion && ofSentence > PROPOSED_PARTIAL_CREDIT_FRACTION) creditedChars = sentenceEnd;
           break;
         }
         sentenceStart = sentenceEnd;
@@ -6976,6 +7038,7 @@ export class ConversationPipeline {
     // the last reply's text being committed a second time.
     this.spokenUtterances = [];
     this.cancelledHeardText = "";
+    this.cancelledHeardWords = "";
     return this.currentResponseId;
   }
 
@@ -7107,6 +7170,7 @@ export class ConversationPipeline {
     // hear: the sentence they were in is not credited, so it is replayed.
     const cutByHearingProblem = cutText !== undefined && isAttentionCheck(cutText);
     this.cancelledHeardText = this.heardSoFarText(!cutByHearingProblem);
+    this.cancelledHeardWords = cutByHearingProblem ? this.cancelledHeardText : this.heardSoFarText(false, true);
     // DIAGNOSTIC ONLY — see `pendingCutSentence`. Read at the same
     // instant, from the same counters, and never allowed to fail the
     // barge-in: anything it throws is swallowed and nothing is recorded.
@@ -8225,6 +8289,7 @@ export class ConversationPipeline {
     // committed as something a person heard.
     this.cancelledResponseId = this.currentResponseId;
     this.cancelledHeardText = "";
+    this.cancelledHeardWords = "";
     this.record.bargeIn.triggerBargeIn();
     if (this.record.state === SessionState.SPEAKING) {
       this.host.transition(
@@ -8954,6 +9019,8 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
           // comes back continuing the previous topic instead of
           // answering what was just asked.
           turn.content = `${currentTurnNote()}\n${hint}\n${turn.content}`;
+          const note = this.liveInterruptionNote();
+          if (note !== undefined) turn.content = `${interruptedReplyNote(note.heard, note.unheard)}\n${turn.content}`;
 
           break;
       }
@@ -8961,6 +9028,17 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
 
   return turns;
 }
+
+  /** `interruptionNote`, while no assistant turn has been committed after the cut reply. */
+  private liveInterruptionNote(): { readonly heard: string; readonly unheard: string } | undefined {
+    const note = this.interruptionNote;
+    if (note === undefined) return undefined;
+    const history = this.record.memory.history();
+    for (let i = note.atHistoryLength; i < history.length; i++) {
+      if (history[i]?.role === "assistant") return undefined;
+    }
+    return note;
+  }
 
   /**
    * Speaks a known utterance with no LLM call in the path — used for

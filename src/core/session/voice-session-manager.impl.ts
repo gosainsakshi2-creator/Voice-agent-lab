@@ -355,6 +355,9 @@ export class DefaultVoiceSessionManager implements VoiceSessionManager, Pipeline
       // Before a reply's first word, let a caller who is mid-utterance finish;
       // `LET_CALLER_FINISH=false` switches it off.
       letCallerFinish: optionalEnv("LET_CALLER_FINISH", "true").trim().toLowerCase() !== "false",
+      // After a barge-in, tell the next request where the reply was cut and
+      // what the caller did not hear; `NOTE_INTERRUPTED_REPLY=false` switches it off.
+      noteInterruptedReply: optionalEnv("NOTE_INTERRUPTED_REPLY", "true").trim().toLowerCase() !== "false",
     });
     this.pipelines.set(record.id, pipeline);
     record.loopPromise = pipeline.run();

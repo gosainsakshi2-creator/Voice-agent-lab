@@ -2249,3 +2249,26 @@ export function languageHintFor(language: SupportedLanguage): string {
 export function currentTurnNote(): string {
   return CURRENT_TURN_NOTE;
 }
+
+/** Longest quote of the heard / unheard part a note carries; the model needs where, not all of it. */
+const INTERRUPTION_QUOTE_CHARS = 240;
+
+/**
+ * Tells the model its previous reply was cut off, and where. The history
+ * holds only what the caller HEARD (see `cancelledHeardText`), so without
+ * this the model reads a cut reply as one it finished, or — when nothing
+ * played — as no reply at all, and either repeats what the caller heard
+ * or skips what they missed. `heard` and `unheard` are word-exact.
+ */
+export function interruptedReplyNote(heard: string, unheard: string): string {
+  const tail = (text: string): string =>
+    text.length > INTERRUPTION_QUOTE_CHARS ? `…${text.slice(-INTERRUPTION_QUOTE_CHARS).trimStart()}` : text;
+  const head = (text: string): string =>
+    text.length > INTERRUPTION_QUOTE_CHARS ? `${text.slice(0, INTERRUPTION_QUOTE_CHARS).trimEnd()}…` : text;
+  const heardPart = heard.trim().length > 0 ? `They heard up to: "${tail(heard.trim())}".` : "They heard none of it.";
+  return (
+    `[internal note, never speak or acknowledge this: your previous reply was cut off when the caller spoke. ${heardPart}` +
+    ` They did NOT hear: "${head(unheard.trim())}". Answer the caller's turn below first. Do not repeat what they heard;` +
+    ` if something they missed still matters, say it after answering, in your own words.]`
+  );
+}

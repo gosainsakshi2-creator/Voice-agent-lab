@@ -707,6 +707,62 @@ test("F. a callback and a question are still neither a yes nor a no", () => {
 });
 
 // ═════════════════════════════════════════════════════════════════
+section("I. REAL CALLS 29-30 SEP 2026 — THE LABEL MUST MATCH WHAT WAS SAID");
+// ═════════════════════════════════════════════════════════════════
+
+const HI_GATE = "इसके लिए आपको कोई coding या design skill नहीं चाहिए। तो क्या मैं आपकी free seat reserve कर दूँ?";
+
+test("I. 2841028a: a withdrawal after an agent STATEMENT containing 'कैसे' retracts the gate yes", () => {
+  // "कैसे" (how) inside a statement made the agent's turn read as a
+  // question, so the withdrawal was bound to it and the person stayed
+  // registered.
+  expect(
+    [
+      agent(HI_GATE),
+      caller("ठीक है।"),
+      caller("तो किस चीज़ के लिए होगा, सर? प्लानिंग किस चीज़ का है?"),
+      caller("ट्रेनिंग है ये?"),
+      agent("हाँ, ये एक free live workshop है, training जैसा ही है। इसमें हम live दिखाते हैं कि पूरा online business कैसे launch होता है — website, product, checkout और payments — सब सिर्फ़ phone से।"),
+      caller("सॉरी, सर, मैं अभी इसमें नहीं कर सकूँगा।"),
+      agent("कोई बात नहीं, बिल्कुल ठीक है। आपके समय के लिए Thank you."),
+    ],
+    "FINAL_NO",
+    "a person who withdrew after the answer must not stay registered",
+  );
+});
+
+test("I. ...and a no to an agent turn that really asks (with '?') still keeps the registration", () => {
+  expect(
+    afterUnrelatedQuestion("Do you know how the joining link works?", "No."),
+    "FINAL_YES",
+    "a no to a real question is an answer to that question",
+  );
+});
+
+test("I. 5931a155: 'कर दीजिए' at the gate registers even though the same turn says 'पेमेंट नहीं'", () => {
+  expect(
+    [
+      caller("कि हमें बाद में भी पेमेंट करना पड़ेगा या फिर ये फ्री है, सिखा रही हैं जो आप?"),
+      agent("अभी वाला workshop पूरा फ्री है, सिखाने के लिए आपको कुछ भी पेमेंट नहीं करनी पड़ेगी।"),
+      agent("ठीक है। तो क्या मैं आपकी free seat reserve कर दूँ इस workshop के लिए?"),
+      caller("जी, कर दीजिए। जब अगर पेमेंट नहीं हो रही है तो हम।"),
+      caller("सीख लीजिए।"),
+      agent("Perfect — आपकी free seat webinar के लिए reserve हो गयी है, और joining details आपको WhatsApp और email पे मिल जाएँगी।"),
+    ],
+    "FINAL_YES",
+    "a no about the price is not a no to the seat",
+  );
+});
+
+test("I. ...and 'नहीं, पेमेंट नहीं करना' at the gate is still a refusal", () => {
+  expect(
+    [agent(HI_GATE), caller("नहीं, पेमेंट नहीं करना मुझे।"), agent(CLOSING)],
+    "FINAL_NO",
+    "the first नहीं still refuses",
+  );
+});
+
+// ═════════════════════════════════════════════════════════════════
 console.log(
   failures.length === 0
     ? `\nALL PASSED — ${passed} passed, 0 failed`

@@ -179,6 +179,12 @@ const BARE_NO_PHRASES = new Set(["no", "nope", "nah", "nahi", "nahin", "nai", "�
 const NEGATION_EXCEPTIONS = [
   "no problem", "no issue", "no issues", "no doubt", "no worries",
   "koi baat nahi", "koi dikkat nahi", "koi problem nahi",
+  // "No payment" is about the price of a free seat, not a no to the seat.
+  // "जी, कर दीजिए। जब अगर पेमेंट नहीं हो रही है तो हम।" said yes at the
+  // gate, and its "नहीं" took the yes back (real call 5931a155,
+  // 2026-09-29). Bound to the word payment, so "नहीं, पेमेंट नहीं करना"
+  // still refuses on its first "नहीं".
+  "पेमेंट नहीं", "पेमेंट नही", "payment नहीं", "payment nahi", "payment nahin", "no payment",
 ];
 
 /**
@@ -1366,7 +1372,15 @@ function commitQuestionContext(
     // The agent asked something else. The person is answering THAT —
     // unless the agent has since acknowledged their answer to it, which
     // closed that exchange. See `CommitContexts`.
-    if (isQuestionTurn(turn.text)) {
+    //
+    // The AGENT's text is written, so a question of its own carries a
+    // "?". `isQuestionTurn` also matches question WORDS, which is right
+    // for a caller's unpunctuated speech but not here: "…दिखाते हैं कि
+    // पूरा online business कैसे launch होता है" is a statement, and read
+    // as a question it made the caller's "मैं अभी इसमें नहीं कर सकूँगा"
+    // an answer to it, so a person who withdrew stayed registered (real
+    // call 2841028a, 2026-09-30). Same test as `answersAnotherQuestion`.
+    if (/[?？]/u.test(turn.text)) {
       return {
         answering: "OTHER_QUESTION",
         retraction: closedExchange ? "STATEMENT_OR_NONE" : "OTHER_QUESTION",

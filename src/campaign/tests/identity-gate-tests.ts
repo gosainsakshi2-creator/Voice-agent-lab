@@ -454,6 +454,9 @@ const pitched = (spoken: readonly string[]) => spoken.some((t) => t.includes("fr
 /** How many times did it ask who picked up? */
 const idAsks = (spoken: readonly string[]) =>
   spoken.filter((t) => t.includes("Am I speaking with Sakshi")).length;
+/** A re-ask's lead-in: "Sorry — " after an unclear answer, "Yes — " after a bare greeting. */
+const reAskLeadIns = (spoken: readonly string[]) =>
+  spoken.filter((t) => t.startsWith("Sorry") || t.startsWith("Yes — ")).length;
 
 // ═════════════════════════════════════════════════════════════════
 section("A. THE CLASSIFIER — HEARING AND IDENTITY ARE DIFFERENT ANSWERS");
@@ -1077,7 +1080,7 @@ await test("D10. a 'Hello' heard WHILE the opening plays is the pickup, not an a
   assert.equal(r.llmRequests, 1, "one request, and only after the real answer");
   assert.equal(r.lastUserSentToLlm, "Yes.");
   assert.equal(idAsks(r.spoken), 0, "the pickup greeting must NOT re-ask the question the caller is still hearing");
-  assert.equal(r.spoken.filter((t) => t.startsWith("Sorry")).length, 0, "no 'Sorry —' re-ask at all");
+  assert.equal(reAskLeadIns(r.spoken), 0, "no 'Sorry —' / 'Yes —' re-ask at all");
 });
 
 await test("D10b. a 'Hello' said AFTER the opening finished is still unclear and still re-asked (scope: the pickup window only)", async () => {
@@ -1122,7 +1125,7 @@ await test("D10g. DEEPGRAM'S OWN SPELLINGS of the pickup hello are the pickup �
   for (const rendering of ["ഹലോ.", "ഹലോ .", "Aló.", "¿Aló?", "Aló, ¿aló?", "Allô.", "ಹಲೋ.", "हॅलो.", "Hola."]) {
     const r = await idFirst([rendering, "Yes."]);
     assert.equal(idAsks(r.spoken), 0, `"${rendering}" over the opening must not re-ask the question`);
-    assert.equal(r.spoken.filter((t) => t.startsWith("Sorry")).length, 0, `no "Sorry —" after "${rendering}"`);
+    assert.equal(reAskLeadIns(r.spoken), 0, `no re-ask after "${rendering}"`);
     assert.equal(r.llmRequests, 1, `"${rendering}" then "Yes." opens the gate once`);
     assert.equal(r.lastUserSentToLlm, "Yes.");
   }
@@ -1161,8 +1164,12 @@ await test("D10j. THE REPRODUCTION: a post-opening 'हेलो।' on an ENGLI
   // though the lock had refused it as evidence.
   const r = await run(["हेलो।", "Yes."], { openingLine: ID_FIRST_OPEN, skipPickup: true, afterOpening: true });
   assert.ok(idAsks(r.spoken) >= 1, "a hello after the question is still not an answer — the question is put again");
-  assert.ok(r.spoken.some((t) => t.startsWith("Sorry")), "…in ENGLISH");
-  assert.equal(r.spoken.filter((t) => t.startsWith("माफ़")).length, 0, "never in Hindi on an English call for a bare greeting");
+  assert.ok(r.spoken.some((t) => t.startsWith("Yes — ")), "…in ENGLISH");
+  assert.equal(
+    r.spoken.filter((t) => t.startsWith("माफ़")).length,
+    0,
+    "never in Hindi on an English call for a bare greeting",
+  );
   assert.equal(r.llmRequests, 1, "and the English 'Yes.' then opens the gate");
 });
 
@@ -1200,7 +1207,7 @@ await test("D10k. the pickup window still holds under the SONIOX LANGUAGE RESTRI
   for (const rendering of ["Hello.", "हेलो।", "हैलो।", "हॅलो.", "नमस्ते।", "Hi."]) {
     const r = await idFirst([rendering, "Yes."]);
     assert.equal(idAsks(r.spoken), 0, `"${rendering}" over the opening must not re-ask`);
-    assert.equal(r.spoken.filter((t) => t.startsWith("Sorry")).length, 0, `no "Sorry —" after "${rendering}"`);
+    assert.equal(reAskLeadIns(r.spoken), 0, `no re-ask after "${rendering}"`);
     assert.equal(r.llmRequests, 1, `"${rendering}" then "Yes." opens the gate once`);
     assert.equal(r.lastUserSentToLlm, "Yes.");
   }
@@ -1226,6 +1233,19 @@ await test("D10k. the pickup window still holds under the SONIOX LANGUAGE RESTRI
       `"${answer}" must reach the gate, never be consumed as a bare pickup greeting`,
     );
   }
+});
+
+await test("D10m. a bare 'Hello.' after the question is re-asked WITHOUT an apology; an unclear answer keeps 'Sorry —'", async () => {
+  // 29-30 Sep 2026: "Hello." -> "Sorry — Am I speaking with…?" on 26 of 73
+  // answered calls. The caller only did not hear it; nothing needs an apology.
+  const hello = await run(["Hello.", "Yes."], { openingLine: ID_FIRST_OPEN, skipPickup: true, afterOpening: true });
+  assert.ok(hello.spoken.some((t) => t === "Yes — Am I speaking with Sakshi?"), `spoken=${JSON.stringify(hello.spoken)}`);
+  assert.equal(hello.spoken.filter((t) => t.startsWith("Sorry")).length, 0, "no apology for a hello");
+  assert.equal(hello.llmRequests, 1, "and the 'Yes.' then opens the gate");
+  // Scope: only the bare-greeting branch changed. An answer that is not a
+  // greeting and not an answer keeps the old re-ask.
+  const unclear = await run(["Okay.", "Yes."], { openingLine: ID_FIRST_OPEN, skipPickup: true, afterOpening: true });
+  assert.ok(unclear.spoken.some((t) => t.startsWith("Sorry — ")), `spoken=${JSON.stringify(unclear.spoken)}`);
 });
 
 await test("D11. a repeated 'Yes.' does not ask, introduce or pitch twice", async () => {

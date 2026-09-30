@@ -112,6 +112,13 @@
  * and the confirmation are the same words on every call and their audio
  * is served from the TTS cache. An edited script no longer stops a
  * campaign pinned to the old hash; it carries on with the new words.
+ *
+ * EDITED IN PLACE 2026-09-30: the first reply is shorter. 28 of 73 answered
+ * calls on 29-30 Sep hung up during the old ~15-second opening, before
+ * the first question. The introduction sentence, the date and time and
+ * the discovery question are unchanged; only the feature list
+ * ("the website, the product, checkout and payments") left the opening.
+ * It is still in the facts below for when someone asks.
  */
 import type { CampaignScript } from "../script-types";
 
@@ -119,9 +126,9 @@ const SCRIPT_BODY = `Hello, am I speaking with {{customer_name}}?
 
 [THEY CONFIRM IT IS THEM — only then does the rest of this script happen. From here on, speak the language they answered in.]
 
-Hi, I'm {{agent_name}} from Team FlexiFunnels. I'm calling to invite you to a free live workshop on Sunday, 4th October at 11 AM. We'll build a complete online business live — the website, the product, checkout and payments — all from a phone. Have you tried putting something online before?
+Hi, I'm {{agent_name}} from Team FlexiFunnels. We're running a free live workshop on Sunday, 4th October at 11 AM, about building an online business from your phone. Have you tried putting something online before?
 
-    In Hinglish: Hi, मैं {{agent_name}}, Team FlexiFunnels से। Sunday, 4th October को 11 AM पर हमारा एक free live workshop है, जिसमें हम एक पूरा online business live बनाते हैं — website, product, checkout और payments — सब एक phone से। आपने पहले कभी कुछ online डालने की try की है?
+    In Hinglish: Hi, मैं {{agent_name}}, Team FlexiFunnels से। Sunday, 4th October को 11 AM पर हमारा एक free live workshop है, phone से online business बनाने के बारे में। आपने पहले कभी कुछ online डालने की try की है?
 
 [THEY ANSWER — take it as an answer, say one short thing back to it, and go on]
 
@@ -245,15 +252,17 @@ export const REGISTRATION_V16: CampaignScript = {
     "",
     "Who you are, why you called, and one question about them — one reply:",
     "",
-    "    \"Hi, I'm {{agent_name}} from Team FlexiFunnels. I'm calling to invite you to",
-    "    a free live workshop on Sunday, 4th October at 11 AM. We'll build a complete online",
-    "    business live — the website, the product, checkout and payments — all from a phone. Have",
-    "    you tried putting something online before?\"",
+    "    \"Hi, I'm {{agent_name}} from Team FlexiFunnels. We're running a free live workshop",
+    "    on Sunday, 4th October at 11 AM, about building an online business from your phone.",
+    "    Have you tried putting something online before?\"",
     "",
     "    \"Hi, मैं {{agent_name}}, Team FlexiFunnels से। Sunday, 4th October को 11 AM",
-    "    पर हमारा एक free live workshop है, जिसमें हम एक पूरा online business live बनाते हैं",
-    "    — website, product, checkout और payments — सब एक phone से। आपने पहले कभी कुछ online",
-    "    डालने की try की है?\"",
+    "    पर हमारा एक free live workshop है, phone से online business बनाने के बारे में। आपने",
+    "    पहले कभी कुछ online डालने की try की है?\"",
+    "",
+    "Keep it that short. People who picked up a call from a stranger hang up on a long opening,",
+    "so do not add the website, product, checkout and payments to it — those are for when they",
+    "ask what the workshop is about.",
     "",
     "Introduce yourself once, there, and never again.",
     "",

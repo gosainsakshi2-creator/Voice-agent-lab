@@ -2140,7 +2140,12 @@ const LANGUAGE_LOCK_MIN_WORDS = SELF_ECHO_MIN_WORDS;
  * lead-in, then the same question — which is what a person does when
  * their question got lost.
  */
-function identityReAskFor(language: SupportedLanguage, line: string, introduceAs?: string): string {
+function identityReAskFor(
+  language: SupportedLanguage,
+  line: string,
+  introduceAs?: string,
+  afterBareGreeting = false,
+): string {
   // The caller asked who is calling ("Who is this?", "Kaun bol raha
   // hai?"). Repeating our question without answering theirs is what
   // made call 124b3316 ask it three times and get closed. Say who we
@@ -2155,6 +2160,13 @@ function identityReAskFor(language: SupportedLanguage, line: string, introduceAs
         return `This is ${introduceAs} from Team FlexiFunnels. ${line}`;
     }
   }
+  // The caller only said "Hello." — they did not hear the question, and
+  // nothing went wrong that needs an apology. "Sorry — Am I speaking…?"
+  // was the reply on 26 of 73 answered calls (29-30 Sep 2026) and sounded
+  // scripted. Just "Yes — ", in every language: no greeting word, because
+  // a sentence that opens with one is read by `OPENS_WITH_GREETING` as
+  // the pitch's greeting, which changes how a cut is handled.
+  if (afterBareGreeting) return `Yes — ${line}`;
   switch (language) {
     case "hi":
       return `माफ़ कीजिए — ${line}`;
@@ -4185,10 +4197,10 @@ export class ConversationPipeline {
    * calls (26 Sep 2026); when the plain form would repeat the last line,
    * the agent's name is put in front of it instead.
    */
-  private identityReAskLine(line: string, askedWhoIsCalling: boolean): string {
+  private identityReAskLine(line: string, askedWhoIsCalling: boolean, afterBareGreeting = false): string {
     const language = this.record.memory.currentLanguage;
     const name = this.record.request.campaign?.agent.name.trim();
-    const plain = identityReAskFor(language, line);
+    const plain = identityReAskFor(language, line, undefined, afterBareGreeting);
     // Never a line already spoken on this call, not only the last one.
     const alreadySaid = this.record.memory
       .history()
@@ -4298,7 +4310,7 @@ export class ConversationPipeline {
       // eslint-disable-next-line no-console
       console.log(`[PIPELINE:${sid}] identity gate — a bare greeting; asking again without spending a strike (${this.identityGreetingReAsks}/${MAX_IDENTITY_GREETING_REASKS})`);
       this.abandonSpeculation("the identity question is re-asked without the language model");
-      const reAsk = this.identityReAskLine(line, false);
+      const reAsk = this.identityReAskLine(line, false, true);
       this.prepareFirstReply(reAsk, loopSignal);
       await this.speakAttentionUtterance(reAsk, loopSignal, "re-asking who picked up after a bare greeting");
       return true;

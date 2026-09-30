@@ -445,6 +445,48 @@ class PreparedReply {
   }
 }
 
+/**
+ * The first-sentence audio of a prepared reply, kept chunk by chunk as the
+ * provider delivers it, so a confirmation that arrives while synthesis is
+ * still running starts playing at the first chunk instead of waiting for
+ * the whole clip. On Sarvam the whole clip also pays a socket open and the
+ * ~700ms end-of-stream idle wait: real calls 2841028a, b24e639c and
+ * 4af7f242 (2026-09-29/30) waited 1.9-2.1s for it after the reply's text
+ * was already in hand. One reader, `synthesizeAndPlay`.
+ */
+class PreparedAudio {
+  private readonly chunks: AudioPayload[] = [];
+  private done = false;
+  private wake: (() => void) | undefined;
+
+  push(chunk: AudioPayload): void {
+    this.chunks.push(chunk);
+    this.notify();
+  }
+
+  /** No more chunks will arrive: synthesis finished, failed or was aborted. */
+  finish(): void {
+    this.done = true;
+    this.notify();
+  }
+
+  /** The chunk at `index`, waiting for it if synthesis is still running; undefined once there is none. */
+  async next(index: number): Promise<AudioPayload | undefined> {
+    while (index >= this.chunks.length && !this.done) {
+      await new Promise<void>((resolve) => {
+        this.wake = resolve;
+      });
+    }
+    return this.chunks[index];
+  }
+
+  private notify(): void {
+    const wake = this.wake;
+    this.wake = undefined;
+    wake?.();
+  }
+}
+
 // ------------------------------------------------------------------
 // Voice-safe output validation
 // ------------------------------------------------------------------
@@ -5091,7 +5133,7 @@ export class ConversationPipeline {
   /** The identity question the replies were prepared for, and the memory length once it is committed. */
   private preparedAfter: { readonly question: string; readonly historyLength: number } | undefined;
   /** First-sentence audio of a prepared reply, consumed by `synthesizeAndPlay` on an exact text + language match. */
-  private preparedAudio: Array<{ readonly text: string; readonly language: SupportedLanguage; readonly audio: Promise<AudioPayload[] | undefined> }> = [];
+  private preparedAudio: Array<{ readonly text: string; readonly language: SupportedLanguage; readonly audio: PreparedAudio }> = [];
   /** A prepared synthesis still running, so a live one never overlaps it on the same provider session. */
   private preparedAudioInFlight: Promise<unknown> = Promise.resolve();
 
@@ -5184,25 +5226,33 @@ export class ConversationPipeline {
     };
     // Queued behind any preparation already running: one synthesis at a
     // time per provider session, as live playback already guarantees.
-    const audio = this.preparedAudioInFlight.then(async (): Promise<AudioPayload[] | undefined> => {
-      if (signal.aborted) return undefined;
+    // Chunks are handed to `audio` as they arrive — see `PreparedAudio`.
+    const audio = new PreparedAudio();
+    this.preparedAudioInFlight = this.preparedAudioInFlight.then(async (): Promise<void> => {
       try {
-        const chunks: AudioPayload[] = [];
+        if (signal.aborted) return;
+        let seconds = 0;
         if (tts.synthesizeStream) {
-          for await (const chunk of tts.synthesizeStream(task, signal)) chunks.push(chunk.audio);
+          for await (const chunk of tts.synthesizeStream(task, signal)) {
+            if (signal.aborted) break;
+            seconds += estimateAudioSeconds(chunk.audio);
+            audio.push(chunk.audio);
+          }
         } else {
-          chunks.push(await tts.synthesize(task));
+          const clip = await tts.synthesize(task);
+          if (!signal.aborted) {
+            seconds += estimateAudioSeconds(clip);
+            audio.push(clip);
+          }
         }
-        if (signal.aborted || chunks.length === 0) return undefined;
-        const seconds = chunks.reduce((sum, chunk) => sum + estimateAudioSeconds(chunk), 0);
         // Charged whether or not it is played: it was synthesized.
-        this.record.metrics.recordAuxiliaryCost({ textToSpeech: estimateTtsCost(tts.descriptor.id, text.length, seconds) });
-        return chunks;
+        if (seconds > 0) this.record.metrics.recordAuxiliaryCost({ textToSpeech: estimateTtsCost(tts.descriptor.id, text.length, seconds) });
       } catch {
-        return undefined;
+        // No more audio; whatever arrived before the failure is kept.
+      } finally {
+        audio.finish();
       }
     });
-    this.preparedAudioInFlight = audio;
     this.preparedAudio.push({ text, language, audio });
   }
 
@@ -5335,7 +5385,7 @@ export class ConversationPipeline {
   }
 
   /** The prepared first-sentence audio for exactly this text and language, consumed; undefined otherwise. */
-  private takePreparedAudio(text: string, language: SupportedLanguage): Promise<AudioPayload[] | undefined> | undefined {
+  private takePreparedAudio(text: string, language: SupportedLanguage): PreparedAudio | undefined {
     const index = this.preparedAudio.findIndex((entry) => entry.text === text && entry.language === language);
     if (index < 0) return undefined;
     const entry = this.preparedAudio[index];
@@ -9886,8 +9936,11 @@ await this.drainPlayback(speakingSignal, true);
     // falls through to live synthesis below.
     if (this.options.prepareFirstReply === true) {
       const prepared = this.takePreparedAudio(text, language);
-      const audio = prepared !== undefined ? await prepared : undefined;
-      if (audio !== undefined && !speakingSignal.aborted) {
+      // Played from its first chunk, the rest as synthesis delivers it —
+      // see `PreparedAudio`. No chunk at all (failed, aborted, empty)
+      // falls through to live synthesis exactly as before.
+      const first = prepared !== undefined ? await prepared.next(0) : undefined;
+      if (prepared !== undefined && first !== undefined && !speakingSignal.aborted) {
         if (!this.markedTtsThisTurn) {
           this.markedTtsThisTurn = true;
           this.markTiming("tts-first-chunk");
@@ -9895,7 +9948,7 @@ await this.drainPlayback(speakingSignal, true);
         const readyMs = Date.now() - startedAt;
         // eslint-disable-next-line no-console
         console.log(`[PREPARE:${sid}] playing prepared audio for "${text.slice(0, 60)}" (ready in ${readyMs}ms)`);
-        for (const chunk of audio) {
+        for (let index = 0, chunk: AudioPayload | undefined = first; chunk !== undefined; chunk = await prepared.next(++index)) {
           if (speakingSignal.aborted) {
             await this.record.mediaStream?.interruptPlayback();
             break;

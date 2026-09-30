@@ -96,7 +96,7 @@ interface Harness {
   stop(): Promise<void>;
 }
 
-function startHarness(input: { readonly prepare: boolean; readonly replyDelayMs?: number; readonly openingLine?: string; readonly interim?: boolean }): Harness {
+function startHarness(input: { readonly prepare: boolean; readonly replyDelayMs?: number; readonly openingLine?: string; readonly interim?: boolean; readonly slowStreamedPreparedTts?: boolean }): Harness {
   const requests: LlmRequestSeen[] = [];
   const synthesized: Array<{ text: string; atMs: number }> = [];
   const segments: TranscriptSegment[] = [];
@@ -150,6 +150,24 @@ function startHarness(input: { readonly prepare: boolean; readonly replyDelayMs?
       return clipFor(task.request.text);
     },
     checkHealth: async () => healthy(descriptor(ProviderCategory.TEXT_TO_SPEECH, "fake-tts")),
+    // Sarvam's shape: the first chunk arrives quickly, the whole clip much
+    // later. Only the prepared reply's sentences are slow, so every other
+    // line keeps the harness's timing.
+    ...(input.slowStreamedPreparedTts === true
+      ? {
+          synthesizeStream: async function* (task: { request: { text: string } }, signal?: AbortSignal) {
+            synthesized.push({ text: task.request.text, atMs: Date.now() });
+            const clip = clipFor(task.request.text);
+            const pieces = task.request.text.startsWith("Hi Sakshi") ? 3 : 1;
+            const size = Math.ceil(clip.data.length / pieces);
+            for (let i = 0; i < pieces; i += 1) {
+              if (i > 0) await sleep(1500);
+              if (signal?.aborted) return;
+              yield { audio: { ...clip, data: clip.data.slice(i * size, (i + 1) * size) }, sequence: i, isFinal: i === pieces - 1 };
+            }
+          },
+        }
+      : {}),
   };
 
   const telephony = {
@@ -404,6 +422,24 @@ await test("P8. a SLOW model still serves the prepared reply: what was generated
     await awaitReply(h, 2);
     assert.equal(h.requests.filter((r) => r.atMs >= saidAt).length, 0, "still no request after the confirmation");
     assert.equal(h.assistantTurns()[1], PREPARED_EN, "the whole reply arrived");
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("P8b. prepared audio still being synthesized when the caller confirms plays from its FIRST chunk, not after the whole clip (real calls 2841028a, b24e639c)", async () => {
+  const h = startHarness({ prepare: true, slowStreamedPreparedTts: true });
+  try {
+    const saidAt = await answerOpening(h, "Yes.");
+    await awaitReply(h, 2);
+    assert.equal(h.requests.filter((r) => r.atMs >= saidAt).length, 0, "still no request after the confirmation");
+    assert.equal(h.assistantTurns()[1], PREPARED_EN, "the whole reply was spoken and committed");
+    const turn = h.record.metrics.build().turnLatencies[0];
+    assert.equal(turn?.replySource, "prepared");
+    // The clip takes 3s to synthesize in full; its first chunk is in hand
+    // before the caller answers. Waiting for the whole clip costs ~1s+.
+    const ttsMs = turn?.tts?.milliseconds ?? Number.POSITIVE_INFINITY;
+    assert.ok(ttsMs < 400, `the reply's audio started from the first chunk (${ttsMs}ms), not after the whole clip`);
   } finally {
     await h.stop();
   }

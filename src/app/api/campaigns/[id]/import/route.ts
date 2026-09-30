@@ -7,6 +7,7 @@ import { CsvImportError, assertUploadAcceptable, parseCsvFile } from "@/campaign
 import { MappingError, suggestMapping, type ColumnMapping } from "@/campaign/import/column-mapper";
 import { AllocationError } from "@/campaign/import/provider-allocator";
 import { findScript } from "@/campaign/script/script-registry";
+import { prefetchCampaignSpokenNames } from "@/campaign/names/spoken-name-resolver";
 
 export const dynamic = "force-dynamic";
 
@@ -77,6 +78,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         ? { region: String(form.get("region")) }
         : {}),
     });
+
+    // Resolve every new name's Devanagari spelling in the background, so
+    // the first dial reads it from the DB. Never awaited, never throws.
+    if (!dryRun) void prefetchCampaignSpokenNames(campaign.id);
 
     return NextResponse.json({ report, callsPlaced: 0 });
   } catch (error) {

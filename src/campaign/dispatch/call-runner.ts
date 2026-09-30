@@ -63,6 +63,9 @@ import type { OutcomeClassification } from "../outcome/outcome-types";
 import { toStoredTranscript, type StoredTranscript, type TranscriptTurn } from "../outcome/transcript";
 import type { ConversationTurn } from "../../types/provider.types";
 import { buildCampaignContext, CampaignContextError } from "../domain/campaign-context";
+
+/** The most a name the import did not resolve may delay the dial (one name measured ~1.9s on gpt-5.1). */
+export const SPOKEN_NAME_TIMEOUT_MS = 3_000;
 import { classifyError, type CallStatus, type FailureClass } from "../domain/call-status";
 import { planRetry } from "./retry-planner";
 import type { DispatchConfig } from "../config/dispatch.config";
@@ -147,6 +150,12 @@ export interface CallRunnerDeps {
   readonly config: DispatchConfig;
   readonly campaign: CampaignRecord;
   readonly script: CampaignScript;
+  /**
+   * OPTIONAL. The contact name's Devanagari spelling, resolved before
+   * the dial (the dispatcher passes `resolveSpokenName`). Absent, the
+   * name is spoken through the committed table alone, as before.
+   */
+  readonly resolveSpokenName?: (name: string | null) => Promise<string | undefined>;
 }
 
 export interface CallOutcome {
@@ -506,6 +515,11 @@ export async function runCall(
   }
 
   // ── 3. Script + agent, resolved before anyone's phone rings ─────
+  // The contact's name in Devanagari, so the opening line says it the
+  // way they do. Normally a DB read (import resolved it); a name import
+  // missed costs at most SPOKEN_NAME_TIMEOUT_MS here, BEFORE the dial —
+  // nothing is added after pickup. A late answer is still stored.
+  const customerSpokenName = await deps.resolveSpokenName?.(contact.name);
   let campaignContext;
   try {
     campaignContext = buildCampaignContext({
@@ -514,6 +528,7 @@ export async function runCall(
       script,
       provider: contact.assignedProvider,
       customerName: contact.name,
+      ...(customerSpokenName !== undefined ? { customerSpokenName } : {}),
       expectedScriptHash: campaign.scriptHash,
     });
   } catch (error) {

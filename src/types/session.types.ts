@@ -74,7 +74,15 @@ export interface CampaignSessionContext {
   readonly scriptVersion: string;
   readonly scriptHash: string;
   readonly agent: { readonly gender: "male" | "female"; readonly name: string };
-  readonly customer: { readonly name: string };
+  readonly customer: {
+    readonly name: string;
+    /**
+     * OPTIONAL. The Devanagari spelling of `name`, resolved before the
+     * dial (`spoken-name-resolver.ts`). Audio only — it rewrites the TTS
+     * request through `spokenNameSubstitutions`, never the transcript.
+     */
+    readonly spokenName?: string;
+  };
   /**
    * ADDITIVE, OPTIONAL. Which version of the campaign layer's
    * conversational-handling policy is baked into `systemPromptAppendix`

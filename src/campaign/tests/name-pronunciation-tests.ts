@@ -217,7 +217,9 @@ test("C3. the pipeline resolves them ONCE, in the constructor", () => {
   const calls = source.match(/spokenNameSubstitutions\(/gu) ?? [];
   assert.equal(calls.length, 1, `resolved ${calls.length} times — it must be exactly once per session`);
   assert.ok(
-    source.includes("this.spokenNames = spokenNameSubstitutions(record.request.campaign?.customer.name)"),
+    source.includes(
+      "this.spokenNames = spokenNameSubstitutions(record.request.campaign?.customer.name, record.request.campaign?.customer.spokenName)",
+    ),
     "it must be built from the contact name, in the constructor",
   );
   assert.ok(
@@ -257,6 +259,136 @@ test("C5. every table key is already normalized, so no key needs work at call ti
     assert.equal(key, key.normalize("NFC").trim().replace(/\s+/gu, " ").toLowerCase(), `key "${key}"`);
     assert.ok(lookupSpokenName(key) !== undefined, `"${key}" must resolve`);
   }
+});
+
+// ═════════════════════════════════════════════════════════════════
+section("D. A NAME THE TABLE DOES NOT KNOW — RESOLVED BEFORE THE DIAL");
+// ═════════════════════════════════════════════════════════════════
+
+const resolved = (line: string, contactName: string, spelling: string, language = EN) =>
+  pronounceForSpeech(line, language, spokenNameSubstitutions(contactName, spelling));
+
+test("D1. the opening line speaks a resolved full name, in every language", () => {
+  for (const language of ALL_LANGUAGES) {
+    assert.equal(
+      resolved("Hello, am I speaking with Sakshi Gupta?", "Sakshi Gupta", "साक्षी गुप्ता", language),
+      "Hello, am I speaking with साक्षी गुप्ता?",
+      `language ${language}`,
+    );
+  }
+});
+
+test("D2. the resolved parts cover the first name in model prose", () => {
+  assert.equal(resolved("Thank you, Sakshi.", "Sakshi Gupta", "साक्षी गुप्ता"), "Thank you, साक्षी.");
+});
+
+test("D3. a table row still wins over the resolved spelling, inside the full name too", () => {
+  assert.equal(
+    resolved("Hello, am I speaking with Rahul Kapoor?", "Rahul Kapoor", "राहूल कपूर"),
+    "Hello, am I speaking with राहुल कपूर?",
+  );
+});
+
+test("D4. a spelling that is not pure Devanagari, or misaligned, is ignored", () => {
+  for (const bad of ["Sakshi गुप्ता", "साक्षी", "साक्षी गुप्ता जी", "", "साक्षी, गुप्ता"]) {
+    assert.equal(
+      resolved("Hello, am I speaking with Sakshi Gupta?", "Sakshi Gupta", bad),
+      "Hello, am I speaking with Sakshi Gupta?",
+      `spelling "${bad}"`,
+    );
+  }
+});
+
+const { resolveSpokenName, prefetchSpokenNames, parseSpellingReply, resetSpokenNameMemo } = await import(
+  "../names/spoken-name-resolver"
+);
+
+function fakeDeps(answers: Record<string, string | null>, delayMs = 0) {
+  const stored = new Map<string, string | null>();
+  const asked: string[][] = [];
+  return {
+    stored,
+    asked,
+    deps: {
+      store: {
+        get: async (keys: readonly string[]) =>
+          new Map(keys.filter((key) => stored.has(key)).map((key) => [key, stored.get(key) ?? null] as const)),
+        put: async (entries: ReadonlyMap<string, string | null>) => {
+          for (const [key, value] of entries) if (!stored.has(key)) stored.set(key, value);
+        },
+      },
+      spell: async (names: readonly string[]) => {
+        asked.push([...names]);
+        if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
+        return new Map(
+          names.filter((name) => name.toLowerCase() in answers).map((name) => [name.toLowerCase(), answers[name.toLowerCase()] ?? null] as const),
+        );
+      },
+    },
+  };
+}
+
+async function asyncTest(name: string, fn: () => Promise<void>): Promise<void> {
+  resetSpokenNameMemo();
+  try {
+    await fn();
+    passed += 1;
+    console.log(`  [PASS] ${name}`);
+  } catch (error) {
+    failures.push(name);
+    console.log(`  [FAIL] ${name}`);
+    console.log(`         ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+await asyncTest("D5. an unknown name is asked once, stored, and read back on the next dial", async () => {
+  const fake = fakeDeps({ "sakshi gupta": "साक्षी गुप्ता" });
+  assert.equal(await resolveSpokenName("  SAKSHI   Gupta ", { timeoutMs: 1000 }, fake.deps), "साक्षी गुप्ता");
+  assert.equal(fake.stored.get("sakshi gupta"), "साक्षी गुप्ता");
+  resetSpokenNameMemo();
+  assert.equal(await resolveSpokenName("Sakshi Gupta", { timeoutMs: 1000 }, fake.deps), "साक्षी गुप्ता");
+  assert.equal(fake.asked.length, 1, "the second dial must be a store read, not a model request");
+});
+
+await asyncTest("D6. a name the table fully covers is never sent to the model", async () => {
+  const fake = fakeDeps({});
+  assert.equal(await resolveSpokenName("Rahul Sharma", { timeoutMs: 1000 }, fake.deps), undefined);
+  assert.equal(await resolveSpokenName("", { timeoutMs: 1000 }, fake.deps), undefined);
+  assert.equal(await resolveSpokenName("साक्षी", { timeoutMs: 1000 }, fake.deps), undefined);
+  assert.equal(fake.asked.length, 0);
+});
+
+await asyncTest("D7. a slow model cannot hold the dial past the timeout, and its late answer is kept", async () => {
+  const fake = fakeDeps({ ankit: "अंकित" }, 1000);
+  const started = Date.now();
+  assert.equal(await resolveSpokenName("Ankit", { timeoutMs: 20 }, fake.deps), undefined);
+  assert.ok(Date.now() - started < 600, "must return at the timeout, long before the model");
+  await new Promise((resolve) => setTimeout(resolve, 1100));
+  assert.equal(fake.stored.get("ankit"), "अंकित", "the late answer must still be stored for the retry");
+});
+
+await asyncTest("D8. a declined or malformed answer is remembered as null and never spoken", async () => {
+  const fake = fakeDeps({ "n/a": null, bobby: "Bobby" });
+  assert.equal(await resolveSpokenName("N/A", { timeoutMs: 1000 }, fake.deps), undefined);
+  assert.equal(await resolveSpokenName("Bobby", { timeoutMs: 1000 }, fake.deps), undefined);
+  assert.equal(fake.stored.get("n/a"), null);
+  assert.equal(fake.stored.get("bobby"), null);
+});
+
+await asyncTest("D9. import prefetch batches distinct unknown names only", async () => {
+  const fake = fakeDeps({ sakshi: "साक्षी", neha: "नेहा" });
+  const sent = await prefetchSpokenNames(["Sakshi", "sakshi ", "Neha", "Rahul", null, ""], fake.deps);
+  assert.equal(sent, 2);
+  assert.deepEqual(fake.asked, [["Sakshi", "Neha"]]);
+  assert.equal(await resolveSpokenName("Neha", { timeoutMs: 1000 }, fake.deps), "नेहा");
+  assert.equal(fake.asked.length, 1);
+});
+
+test("D10. the model's reply is read even inside a code fence", () => {
+  const parsed = parseSpellingReply('```json\n{"Sakshi": "साक्षी", "N/A": null}\n```');
+  assert.equal(parsed.get("sakshi"), "साक्षी");
+  assert.equal(parsed.get("n/a"), null);
+  assert.equal(parseSpellingReply("sorry, I can't").size, 0);
 });
 
 console.log(`\n${"═".repeat(60)}`);

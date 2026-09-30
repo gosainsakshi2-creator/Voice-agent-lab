@@ -42,8 +42,37 @@ export interface SpokenNameSubstitution {
  * is human-typed, so "  RAHUL  sharma" and "Rahul Sharma" must reach
  * the same row.
  */
-function keyOf(name: string): string {
+export function nameKeyOf(name: string): string {
   return name.normalize("NFC").trim().replace(/\s+/gu, " ").toLowerCase();
+}
+const keyOf = nameKeyOf;
+
+/** Devanagari letters, marks and spaces, and nothing else. */
+const PURE_DEVANAGARI = /^[ऀ-ॿ ]+$/u;
+
+/**
+ * A resolved spelling is only trusted when it is pure Devanagari and
+ * has exactly one word per word of the name — the alignment the parts
+ * below are cut from. Anything else is ignored, never half-applied.
+ */
+export function isUsableSpelling(name: string, spelling: string | undefined): spelling is string {
+  if (spelling === undefined) return false;
+  const spoken = spelling.normalize("NFC").trim().replace(/\s+/gu, " ");
+  if (spoken.length === 0 || !PURE_DEVANAGARI.test(spoken)) return false;
+  const words = name.normalize("NFC").trim().replace(/\s+/gu, " ").split(" ");
+  return spoken.split(" ").length === words.length;
+}
+
+/**
+ * True when the committed table already says every part of this name
+ * (or the whole name), so nothing has to be resolved for it.
+ */
+export function tableCoversName(name: string): boolean {
+  const full = name.normalize("NFC").trim().replace(/\s+/gu, " ");
+  if (full.length === 0) return true;
+  if (lookupSpokenName(full) !== undefined) return true;
+  const parts = full.split(" ").filter((part) => part.length > 1);
+  return parts.every((part) => lookupSpokenName(part) !== undefined);
 }
 
 /**
@@ -98,10 +127,33 @@ function patternFor(name: string): RegExp {
  *
  * Returns an empty list for an empty name, so a session with no contact
  * name costs nothing and changes nothing.
+ *
+ * `resolvedSpelling` is the spelling the campaign layer resolved for a
+ * name the table does not know (`spoken-name-resolver.ts`, before the
+ * dial). The table still wins wherever it has a row; the resolved
+ * spelling fills only what it lacks, word for word. A spelling that is
+ * not pure Devanagari, or does not have one word per name word, is
+ * ignored outright.
  */
-export function spokenNameSubstitutions(customerName: string | null | undefined): readonly SpokenNameSubstitution[] {
+export function spokenNameSubstitutions(
+  customerName: string | null | undefined,
+  resolvedSpelling?: string,
+): readonly SpokenNameSubstitution[] {
   const full = (customerName ?? "").normalize("NFC").trim().replace(/\s+/gu, " ");
   if (full.length === 0) return [];
+
+  const words = full.split(" ");
+  const resolvedWords = isUsableSpelling(full, resolvedSpelling)
+    ? resolvedSpelling.normalize("NFC").trim().replace(/\s+/gu, " ").split(" ")
+    : undefined;
+  const resolvedFor = new Map<string, string>();
+  if (resolvedWords !== undefined) {
+    resolvedFor.set(keyOf(full), resolvedWords.join(" "));
+    words.forEach((word, index) => {
+      const spoken = resolvedWords[index];
+      if (spoken !== undefined && !resolvedFor.has(keyOf(word))) resolvedFor.set(keyOf(word), spoken);
+    });
+  }
 
   const substitutions: SpokenNameSubstitution[] = [];
   const seen = new Set<string>();
@@ -109,14 +161,27 @@ export function spokenNameSubstitutions(customerName: string | null | undefined)
   const add = (name: string): void => {
     const key = keyOf(name);
     if (key.length === 0 || seen.has(key)) return;
-    const spoken = lookupSpokenName(name);
+    const spoken = lookupSpokenName(name) ?? resolvedFor.get(key);
     if (spoken === undefined) return;
     seen.add(key);
     substitutions.push({ pattern: patternFor(name), spoken });
   };
 
-  const parts = full.split(" ").filter((part) => part.length > 1);
-  if (parts.length > 1) add(full);
+  const parts = words.filter((part) => part.length > 1);
+  if (parts.length > 1) {
+    // The whole phrase, built from the table's parts where it has them
+    // and the resolved words for the rest — so a table row is never
+    // overridden by the resolved spelling inside the full name either.
+    if (lookupSpokenName(full) === undefined && resolvedWords !== undefined) {
+      const spoken = words
+        .map((word, index) => (word.length > 1 ? lookupSpokenName(word) : undefined) ?? resolvedWords[index] ?? word)
+        .join(" ");
+      seen.add(keyOf(full));
+      substitutions.push({ pattern: patternFor(full), spoken });
+    } else {
+      add(full);
+    }
+  }
   for (const part of parts) add(part);
 
   return substitutions;

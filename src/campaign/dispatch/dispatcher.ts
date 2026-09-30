@@ -41,7 +41,8 @@ import { validateCampaignScript } from "../script/script-validation";
 import { CAMPAIGN_TTS_PROVIDERS, type CampaignTtsProvider, type CampaignRecord } from "../domain/campaign-types";
 import { LaneGate, Semaphore, TokenBucket } from "./concurrency";
 import { SessionObserver } from "./session-observer";
-import { runCall, type ManagerLike } from "./call-runner";
+import { runCall, SPOKEN_NAME_TIMEOUT_MS, type ManagerLike } from "./call-runner";
+import { resolveSpokenName } from "../names/spoken-name-resolver";
 import { reconcileRegistrationSheet } from "../integrations/registration-reconciler";
 
 export type DispatcherState = "IDLE" | "RUNNING" | "PAUSING" | "PAUSED" | "STOPPING" | "STOPPED";
@@ -298,6 +299,7 @@ export class CampaignDispatcher {
               config: this.config,
               campaign,
               script,
+              resolveSpokenName: (name) => resolveSpokenName(name, { timeoutMs: SPOKEN_NAME_TIMEOUT_MS }),
             }, claimedAt);
           } catch (error) {
             await logEvent(

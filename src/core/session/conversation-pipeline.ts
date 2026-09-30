@@ -3253,7 +3253,7 @@ export class ConversationPipeline {
     // false and the state is `unasked`, exactly as before.
     // Resolved here, once, from the one field that holds it. A field
     // initializer cannot do this: it would run before `record` exists.
-    this.spokenNames = spokenNameSubstitutions(record.request.campaign?.customer.name);
+    this.spokenNames = spokenNameSubstitutions(record.request.campaign?.customer.name, record.request.campaign?.customer.spokenName);
 
     const identityLine = record.campaignIdentityLine?.trim() ?? "";
     this.openingAsksIdentity =

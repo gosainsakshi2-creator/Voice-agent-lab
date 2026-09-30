@@ -33,6 +33,8 @@ export interface BuildCampaignContextInput {
   readonly provider: string;
   /** From `contacts.name`, which the CSV importer populated. */
   readonly customerName: string | null;
+  /** The Devanagari spelling of `customerName`, when one was resolved before the dial. */
+  readonly customerSpokenName?: string;
   /** The hash stored on the campaign when it was created. */
   readonly expectedScriptHash?: string;
 }
@@ -101,7 +103,10 @@ export function buildCampaignContext(input: BuildCampaignContextInput): Campaign
       scriptVersion: script.version,
       scriptHash: currentHash,
       agent: { gender: agent.gender, name: agent.name },
-      customer: { name: customerName },
+      customer: {
+        name: customerName,
+        ...(input.customerSpokenName !== undefined ? { spokenName: input.customerSpokenName } : {}),
+      },
       conversationPolicyId: CONVERSATION_POLICY_ID,
       // The approved script, then the standing rules for running it.
       // The script text is interpolated and otherwise untouched; the

@@ -105,9 +105,19 @@ const QUESTION_MARKERS = [
  * available signal is already gone. Speech-to-text does emit question
  * marks, and when it does not the marker words above carry it.
  */
+/**
+ * "why" introducing a REASON, not asking for one: "I do not have time,
+ * that's why I cannot go." Removed before the markers are matched, so an
+ * explanation is not read as a question (real call 4ca07186, 2026-09-30,
+ * where that sentence's refusal was set aside as "pending"). A question
+ * mark still makes any turn a question.
+ */
+const REASON_CONNECTIVES = ["that s why", "thats why", "that is why", "this is why", "which is why"];
+
 export function isQuestionTurn(rawText: string): boolean {
   if (rawText.includes("?") || rawText.includes("？")) return true;
-  return containsPhrase(normaliseText(rawText), QUESTION_MARKERS);
+  const normalised = REASON_CONNECTIVES.reduce((text, phrase) => ` ${text} `.split(` ${phrase} `).join(" "), normaliseText(rawText));
+  return containsPhrase(normalised, QUESTION_MARKERS);
 }
 
 /** A sentence that was still going when the turn ended. */
@@ -123,6 +133,20 @@ const DANGLING_TAIL_WORDS = [
   "but", "and", "because", "actually", "however", "so", "if", "that",
   "aur", "lekin", "par", "kyunki", "ki", "to", "toh", "matlab", "bas",
   "और", "लेकिन", "पर", "क्योंकि", "कि",
+];
+
+/**
+ * Words after which a closing "that" is their OBJECT, so the sentence is
+ * complete: "I cannot go with that.", "I don't want that.", "I can't do
+ * that." After anything else ("I think that", "the thing is that") it
+ * introduces a clause still to come and stays a dangling tail. Real call
+ * 4ca07186 (2026-09-30): "And I do not have time, that's why I cannot go
+ * with that." read as cut off, so its refusal decided nothing and the
+ * call settled `unclear` — a person who declined, back in the retry queue.
+ */
+const THAT_AS_OBJECT_AFTER = [
+  "with", "about", "for", "of", "on", "in", "like",
+  "do", "did", "does", "want", "need", "afford", "manage", "handle", "attend", "try", "tried",
 ];
 
 /**
@@ -142,6 +166,7 @@ export function isUnfinishedTurn(rawText: string): boolean {
   if (containsPhrase(normalised, UNFINISHED_MARKERS)) return true;
   const words = normalised.trim().split(" ");
   const last = words[words.length - 1];
+  if (last === "that" && THAT_AS_OBJECT_AFTER.includes(words[words.length - 2] ?? "")) return false;
   // A one-word turn ("but") is a fragment, not a dangling tail; the
   // classifier reads nothing into it either way.
   return words.length > 1 && last !== undefined && DANGLING_TAIL_WORDS.includes(last);

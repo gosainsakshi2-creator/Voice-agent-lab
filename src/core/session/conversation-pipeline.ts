@@ -48,6 +48,7 @@ import { currentTurnNote, languageHintFor, openingLineFor } from "./system-promp
 import { asksWhoIsCalling, classifyIdentityAnswer } from "../../campaign/domain/identity-answer";
 import { SentenceChunker } from "./sentence-chunker";
 import { joinAudioChunks, ttsCacheKey, type TtsAudioCache } from "./tts-audio-cache";
+import { firstReplyCacheKey, type FirstReplyCache } from "./first-reply-cache";
 import { preparedReplyVariantFor } from "./confirmation-vocabulary";
 import { isBareAcknowledgement, isContinuationCue, isContinuationCuePrefix, readsAsUnfinishedThought } from "./turn-detection";
 import type { ContinuationHoldEvent, EndpointMarkerOutcome, TurnReleaseTrace } from "./turn-detection";
@@ -284,10 +285,11 @@ interface ThinkingAndSpeakingResult {
   /**
    * `"prepared"` when the reply was generated while the identity question
    * was still playing and served on the confirmation — see
-   * `prepareFirstReply`. Absent for a reply requested at release.
-   * Telemetry only.
+   * `prepareFirstReply`; `"cached"` when that reply was an earlier call's,
+   * reused with no model request — see `FirstReplyCache`. Absent for a
+   * reply requested at release. Telemetry only.
    */
-  readonly replySource?: "prepared";
+  readonly replySource?: "prepared" | "cached";
   /** True when a latency filler was spoken before this reply — see `armFiller`. Telemetry only. */
   readonly fillerSpoken?: true;
 }
@@ -301,6 +303,13 @@ export interface ConversationPipelineOptions {
    * as before; the production manager turns it on.
    */
   readonly prepareFirstReply?: boolean;
+  /**
+   * Reuse the prepared first reply an earlier call of the same script
+   * generated, word for word, instead of asking the model again — see
+   * `FirstReplyCache`. Only read with `prepareFirstReply`. Absent (every
+   * test harness) means every call generates its own, exactly as before.
+   */
+  readonly firstReplyCache?: FirstReplyCache;
   /**
    * Serve fixed lines from synthesized audio kept across calls — see
    * `TtsAudioCache`. Absent (every test harness) means every line is
@@ -327,6 +336,12 @@ export interface ConversationPipelineOptions {
    * every harness keeps its barge-in behaviour exactly.
    */
   readonly ignoreOtherSpeakersOverReply?: boolean;
+  /**
+   * Before a reply's first word, wait for a caller who is audibly
+   * mid-utterance to finish — see `letCallerFinish`. Off by default:
+   * every harness keeps its timing exactly.
+   */
+  readonly letCallerFinish?: boolean;
   /**
    * Pre-open a turn's LLM request on a SETTLED INTERIM transcript — see
    * `scheduleInterimSpeculation`. Off by default: every harness keeps
@@ -386,11 +401,29 @@ class PreparedReply {
   private wake: (() => void) | undefined;
   readonly openedAtMs = Date.now();
   firstTokenAtMs: number | undefined;
+  /** Served from `FirstReplyCache`: no model request was made for it. */
+  fromCache = false;
 
   constructor(
     readonly variant: "en" | "hinglish",
     readonly abort: AbortController,
   ) {}
+
+  /** A reply already in hand, complete, as a stream that ended normally would leave it. */
+  static fromText(variant: "en" | "hinglish", abort: AbortController, text: string): PreparedReply {
+    const reply = new PreparedReply(variant, abort);
+    reply.deltas.push(text);
+    reply.final = { type: "final", turn: { role: "assistant", content: text, timestamp: new Date() }, latencyMs: 0 };
+    reply.finished = true;
+    reply.firstTokenAtMs = reply.openedAtMs;
+    reply.fromCache = true;
+    return reply;
+  }
+
+  /** The stream ran to its normal end: nothing aborted, nothing failed, a final event arrived. */
+  get complete(): boolean {
+    return this.finished && this.final !== undefined && this.usable;
+  }
 
   /** The text generated so far. */
   get text(): string {
@@ -681,6 +714,10 @@ const FILLER_AFTER_MS = 2_000;
 const MAX_FILLERS_PER_CALL = 3;
 /** How long after a filler ends an STT result made only of its words is read as its echo. */
 const FILLER_ECHO_WINDOW_MS = 1_500;
+/** Longest a reply's first word waits for a mid-utterance caller; see `letCallerFinish`. */
+const CALLER_FINISH_MAX_WAIT_MS = 1_500;
+const CALLER_FINISH_POLL_MS = 30;
+
 /** No filler starts within this long of loud caller speech. */
 const FILLER_CALLER_QUIET_MS = 700;
 /** How often a playing filler checks whether the caller has started talking. */
@@ -5184,6 +5221,8 @@ export class ConversationPipeline {
       historyLength: this.record.memory.history().length + (questionPending ? 1 : 0),
     };
     const replies: PreparedReply[] = [];
+    const replyCache = this.options.firstReplyCache;
+    const contactNames = [this.record.request.campaign?.customer.name ?? "", ...this.spokenNames.map((name) => name.spoken)];
     for (const confirmation of PREPARED_CONFIRMATIONS) {
       const abort = new AbortController();
       const signal = combineSignals([abort.signal, loopSignal]);
@@ -5192,6 +5231,20 @@ export class ConversationPipeline {
           ...base,
           { role: "user", content: confirmation.text, timestamp: new Date() },
         ]);
+        // ── THE SAME REPLY AS AN EARLIER CALL — see `FirstReplyCache` ──
+        // Same script, prompt, question and model, name masked: the reply
+        // an earlier call generated is this call's reply, word for word.
+        // No model request; its first sentence's audio is usually cached too.
+        const cacheKey = replyCache !== undefined ? firstReplyCacheKey(this.providers.llm.descriptor.id, history, contactNames) : undefined;
+        const cachedText = cacheKey !== undefined ? replyCache?.get(cacheKey) : undefined;
+        if (cachedText !== undefined) {
+          const reply = PreparedReply.fromText(confirmation.variant, abort, cachedText);
+          const chunker = new SentenceChunker();
+          const first = [...chunker.push(cachedText), chunker.flush() ?? ""].map((s) => toSpokenText(s)).find((s) => s.length > 0);
+          if (first !== undefined) this.prepareSentenceAudio(first, signal);
+          replies.push(reply);
+          continue;
+        }
         const stream = generate.call(this.providers.llm, { sessionId: sid, history }, signal);
         if (!stream) continue;
         const reply = new PreparedReply(confirmation.variant, abort);
@@ -5209,12 +5262,26 @@ export class ConversationPipeline {
             firstSentence = sentence;
             this.prepareSentenceAudio(sentence, signal);
           },
-          // Every preparation is charged to the call, used or not — the
-          // served one's turn then reports 0, so nothing is counted twice.
-          () =>
+          () => {
+            // Every preparation is charged to the call, used or not — the
+            // served one's turn then reports 0, so nothing is counted twice.
             this.record.metrics.recordAuxiliaryCost({
               languageModel: estimateLlmCost(this.providers.llm.descriptor.id, promptTokens, estimateTokenCount(reply.text)),
-            }),
+            });
+            // Kept for the next call only when it is a whole, clean reply
+            // that names nobody: a reply with this contact's name in it
+            // would greet the next caller by the wrong one.
+            const text = reply.text.trim();
+            if (
+              cacheKey !== undefined &&
+              reply.complete &&
+              text.length >= 10 &&
+              !isContaminatedOutput(text) &&
+              !this.mentionsContactNameAnyForm(text)
+            ) {
+              replyCache?.put(cacheKey, text);
+            }
+          },
         );
         replies.push(reply);
       } catch (error) {
@@ -5225,7 +5292,7 @@ export class ConversationPipeline {
     if (replies.length === 0) return;
     this.preparedReplies = replies;
     // eslint-disable-next-line no-console
-    console.log(`[PREPARE:${sid}] preparing the first reply to a bare confirmation of "${question.slice(0, 60)}" (${replies.map((r) => r.variant).join(", ")})`);
+    console.log(`[PREPARE:${sid}] preparing the first reply to a bare confirmation of "${question.slice(0, 60)}" (${replies.map((r) => (r.fromCache ? `${r.variant} from cache` : r.variant)).join(", ")})`);
   }
 
   /** Synthesize one prepared sentence in the voice and language live synthesis would use now. */
@@ -5236,29 +5303,47 @@ export class ConversationPipeline {
       sessionId: this.record.id,
       request: { text: pronounceForSpeech(text, language, this.spokenNames), language },
     };
+    const audio = new PreparedAudio();
+    // Already synthesized on an earlier call: no synthesis, no cost. Same
+    // key and the same memory-only read a generated sentence uses.
+    const cacheKey = this.generatedSentenceCacheKey(task, text);
+    const cached = cacheKey !== undefined ? this.options.ttsCache?.peek(cacheKey) : undefined;
+    if (cached !== undefined) {
+      audio.push(cached);
+      audio.finish();
+      this.preparedAudio.push({ text, language, audio });
+      return;
+    }
     // Queued behind any preparation already running: one synthesis at a
     // time per provider session, as live playback already guarantees.
     // Chunks are handed to `audio` as they arrive — see `PreparedAudio`.
-    const audio = new PreparedAudio();
     this.preparedAudioInFlight = this.preparedAudioInFlight.then(async (): Promise<void> => {
       try {
         if (signal.aborted) return;
         let seconds = 0;
+        const chunks: AudioPayload[] = [];
         if (tts.synthesizeStream) {
           for await (const chunk of tts.synthesizeStream(task, signal)) {
             if (signal.aborted) break;
             seconds += estimateAudioSeconds(chunk.audio);
+            chunks.push(chunk.audio);
             audio.push(chunk.audio);
           }
         } else {
           const clip = await tts.synthesize(task);
           if (!signal.aborted) {
             seconds += estimateAudioSeconds(clip);
+            chunks.push(clip);
             audio.push(clip);
           }
         }
         // Charged whether or not it is played: it was synthesized.
         if (seconds > 0) this.record.metrics.recordAuxiliaryCost({ textToSpeech: estimateTtsCost(tts.descriptor.id, text.length, seconds) });
+        // Kept for later calls under the rule every generated sentence has.
+        const clip = !signal.aborted ? joinAudioChunks(chunks) : undefined;
+        if (clip !== undefined && cacheKey !== undefined && cacheableClip({ mode: "generated" }, clip, text)) {
+          this.options.ttsCache?.put(cacheKey, tts.descriptor.id, clip);
+        }
       } catch {
         // No more audio; whatever arrived before the failure is kept.
       } finally {
@@ -5391,6 +5476,24 @@ export class ConversationPipeline {
     if (typeof tts.cacheIdentity !== "function") return undefined;
     try {
       return { key: ttsCacheKey(tts.descriptor.id, tts.cacheIdentity(task), task.request.text), mode };
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * `ttsCacheKeyFor`'s "generated" key, for synthesis made OUTSIDE
+   * `speakFixedUtterance` (the prepared first sentence). Read independently
+   * of `fixedLineCacheable`, which a fixed line playing at the same moment
+   * may have set, and which would skip the contact-name check.
+   */
+  private generatedSentenceCacheKey(task: SynthesisTaskRequest, text: string): string | undefined {
+    if (this.options.ttsCache === undefined || this.options.cacheGeneratedSentences !== true) return undefined;
+    if (this.mentionsContactNameAnyForm(`${text} ${task.request.text}`)) return undefined;
+    const tts = this.providers.tts;
+    if (typeof tts.cacheIdentity !== "function") return undefined;
+    try {
+      return ttsCacheKey(tts.descriptor.id, tts.cacheIdentity(task), task.request.text);
     } catch {
       return undefined;
     }
@@ -6670,6 +6773,38 @@ export class ConversationPipeline {
    * as a held final supersedes it, and their whole thought is answered.
    * Nothing waits: a caller who is silent leaves this empty.
    */
+  /**
+   * Waits, before a reply's first word, while the caller is audibly in
+   * the middle of saying something — a live interim with no final yet —
+   * so the supersession check that follows reads their WHOLE utterance.
+   *
+   * WHY. That check reads the caller at one instant. Real call e54df29a
+   * (2026-09-29): "…send me the details on WhatsApp." was released, and
+   * while its reply was generated the caller began "Okay…". At the check
+   * the interim was just "Okay" — an acknowledgement, which by design
+   * keeps the reply — so the reply was spoken straight over them; 0.9s
+   * in, their words grew past "okay" and cut it. They were talked over
+   * AND the reply was lost.
+   *
+   * COSTS NOTHING ON A NORMAL TURN. A silent caller has no live interim,
+   * so this returns at once. It waits only while one is open, until its
+   * final lands (Soniox finalizes with its end-of-speech marker), and
+   * never longer than `CALLER_FINISH_MAX_WAIT_MS`, so line noise cannot
+   * hold a reply for long. What the caller turns out to have said is
+   * then judged by the unchanged check: a bare "haan" keeps the reply,
+   * anything more supersedes it and their whole thought is answered.
+   */
+  private async letCallerFinish(signal: AbortSignal): Promise<number> {
+    if (this.options.letCallerFinish !== true || this.interimSinceRelease.length === 0) return 0;
+    const startedAt = Date.now();
+    // eslint-disable-next-line no-console
+    console.log(`[PIPELINE:${this.record.id}] caller is mid-utterance ("${this.interimSinceRelease.slice(0, 60)}") — letting them finish before the reply`);
+    while (this.interimSinceRelease.length > 0 && !signal.aborted && Date.now() - startedAt < CALLER_FINISH_MAX_WAIT_MS) {
+      await abortableSleep(CALLER_FINISH_POLL_MS, signal);
+    }
+    return Date.now() - startedAt;
+  }
+
   private resumedCallerText(): string {
     return `${this.record.turnDetector.getPendingTurnText()} ${this.interimSinceRelease}`.trim();
   }
@@ -8967,8 +9102,9 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
         first: iterator.next(),
         firstTokenAtMs: prepared.firstTokenAtMs,
       });
-      // Its model cost was charged when the preparation finished.
-      return { ...result, llmCostUsd: 0, replySource: "prepared" };
+      // Its model cost was charged when the preparation finished (a
+      // cached reply had none).
+      return { ...result, llmCostUsd: 0, replySource: prepared.fromCache ? "cached" : "prepared" };
     }
 
     // FIX #8 — the request above is STILL built, exactly as before, and
@@ -9296,6 +9432,9 @@ await this.drainPlayback(speakingSignal, true);
             // delivered to the next subscriber immediately, so every
             // supersession is followed by a real turn.
             if (speakingSignal === undefined) {
+              // A caller still mid-utterance finishes first, so the
+              // check below reads all of it. See `letCallerFinish`.
+              ttsBlockedDuringStreamMs += await this.letCallerFinish(thinkingSignal);
               // PHASE A/B — the decision and its description, from one
               // evaluation, taken BEFORE `triggerExternalBargeIn` so it
               // describes the detector as it stood when the decision was
@@ -9466,6 +9605,7 @@ await this.drainPlayback(speakingSignal, true);
     // PHASE A/B — assessed once, under exactly the conditions that
     // guarded the old `newerUserTurnWaiting()` call in the chain below,
     // so the same turns are assessed as before. Read-only.
+    if (!superseded && remainder.length > 0 && speakingSignal === undefined) await this.letCallerFinish(thinkingSignal);
     const tailSupersession =
       !superseded && remainder.length > 0 && speakingSignal === undefined
         ? this.describeSupersession()

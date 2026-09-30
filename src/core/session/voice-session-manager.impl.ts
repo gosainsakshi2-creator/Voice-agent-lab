@@ -42,6 +42,7 @@ import { toSessionErrorInfo } from "./error-recovery";
 import { assignEndpointing } from "./stt-endpointing-experiment";
 import { optionalEnv, optionalEnvNumber } from "../../providers/shared/env";
 import { PostgresTtsAudioStore, TtsAudioCache } from "./tts-audio-cache";
+import { processFirstReplyCache } from "./first-reply-cache";
 import { getDbPool } from "../../campaign/db/client";
 
 /** `undefined` until first asked for; `null` once switched off. */
@@ -334,6 +335,9 @@ export class DefaultVoiceSessionManager implements VoiceSessionManager, Pipeline
     const ttsCache = processTtsAudioCache();
     const pipeline = new ConversationPipeline(record, providers, this, {
       prepareFirstReply: optionalEnv("PREPARE_FIRST_REPLY", "true").trim().toLowerCase() !== "false",
+      // ...and reused word for word by later calls of the same script, with
+      // no model request; `CACHE_FIRST_REPLY=false` switches that off.
+      ...(optionalEnv("CACHE_FIRST_REPLY", "true").trim().toLowerCase() !== "false" ? { firstReplyCache: processFirstReplyCache() } : {}),
       // Pre-open each turn's LLM request once the interim transcript settles;
       // `SPECULATE_ON_INTERIM=false` switches it off.
       speculateOnInterim: optionalEnv("SPECULATE_ON_INTERIM", "true").trim().toLowerCase() !== "false",
@@ -348,6 +352,9 @@ export class DefaultVoiceSessionManager implements VoiceSessionManager, Pipeline
       // Over a reply, words the STT labels as another speaker than the caller
       // (a TV, the room) do not interrupt; `IGNORE_OTHER_SPEAKERS=false` switches it off.
       ignoreOtherSpeakersOverReply: optionalEnv("IGNORE_OTHER_SPEAKERS", "true").trim().toLowerCase() !== "false",
+      // Before a reply's first word, let a caller who is mid-utterance finish;
+      // `LET_CALLER_FINISH=false` switches it off.
+      letCallerFinish: optionalEnv("LET_CALLER_FINISH", "true").trim().toLowerCase() !== "false",
     });
     this.pipelines.set(record.id, pipeline);
     record.loopPromise = pipeline.run();

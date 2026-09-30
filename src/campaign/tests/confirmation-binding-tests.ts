@@ -43,7 +43,7 @@ import { classifyOutcome } from "../outcome/classifier";
 import { dispositionFor } from "../outcome/disposition";
 import { isFinalYes } from "../integrations/final-yes-sheet";
 import { definitiveAnswerIn } from "../dispatch/call-runner";
-import { isQuestionTurn } from "../outcome/conversation-events";
+import { isQuestionTurn, isUnfinishedTurn } from "../outcome/conversation-events";
 
 import type { ConversationTurn } from "../../types/provider.types";
 
@@ -114,7 +114,7 @@ function settle(turns: readonly ConversationTurn[]) {
  * above check — and only the ENDING is deferred, so this expects the
  * held reading explicitly instead of accepting either.
  */
-function expect(turns: readonly ConversationTurn[], disposition: "FINAL_YES" | "FINAL_NO", why: string): void {
+function expect(turns: readonly ConversationTurn[], disposition: "FINAL_YES" | "FINAL_NO" | "UNRESOLVED", why: string): void {
   const result = settle(turns);
   assert.equal(result.disposition, disposition, `${why} (outcome was ${result.outcomeType})`);
   assert.equal(result.sheet, disposition === "FINAL_YES", "the sheet gate must agree with the disposition");
@@ -760,6 +760,42 @@ test("I. ...and 'नहीं, पेमेंट नहीं करना' at 
     "FINAL_NO",
     "the first नहीं still refuses",
   );
+});
+
+const PITCH_QUESTION =
+  "Hi, I'm Rohan from Team FlexiFunnels. We're running a free live workshop on Sunday, 4th October at 11 AM, about building an online business from your phone. Have you tried putting something online before?";
+
+test("I. 4ca07186: 'I do not have time, that's why I cannot go with that.' is a decline, not unclear", () => {
+  expect(
+    [
+      agent(PITCH_QUESTION),
+      caller("No."),
+      caller("And I do not have time, that's why I cannot go with that."),
+      agent("Okay, no problem at all. Thanks for your time, Neena."),
+    ],
+    "FINAL_NO",
+    "a person who said they cannot go must not be redialled as unresolved",
+  );
+});
+
+test("I. ...'that's why' explains, it does not ask — but a question with 'why' is still a question", () => {
+  assert.equal(isQuestionTurn("I do not have time, that's why I cannot go."), false);
+  assert.equal(isQuestionTurn("That is why I called."), false);
+  assert.equal(isQuestionTurn("Why is it free"), true, "'why' asking something is unchanged");
+  assert.equal(isQuestionTurn("That's why, what time is it"), true, "another question word still counts");
+  assert.equal(isQuestionTurn("that's why?"), true, "a question mark still makes it a question");
+});
+
+test("I. ...'with that' / 'do that' end a sentence; 'I think that' / '…but that' are still cut off", () => {
+  assert.equal(isUnfinishedTurn("I cannot go with that."), false);
+  assert.equal(isUnfinishedTurn("I don't want to do that."), false);
+  assert.equal(isUnfinishedTurn("Yes, but I think that"), true);
+  assert.equal(isUnfinishedTurn("The thing is that"), true);
+  assert.equal(isUnfinishedTurn("I was going to be happy, but."), true);
+});
+
+test("I. ...and a cut-off 'Okay, but I think that' at the gate still does NOT register", () => {
+  expect([agent(GATE), caller("Okay, but I think that"), agent(CLOSING)], "UNRESOLVED", "an unfinished answer registers nobody");
 });
 
 // ═════════════════════════════════════════════════════════════════

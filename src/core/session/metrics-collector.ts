@@ -498,7 +498,7 @@ export class SessionMetricsCollector {
       ...(charsGenerated !== undefined ? { charsGenerated } : {}),
       ...(ttsChunkCount !== undefined ? { ttsChunkCount } : {}),
       ...(supersederTakesFloor !== undefined ? { supersederTakesFloor } : {}),
-      ...(input.replySource === "prepared" ? { replySource: "prepared" as const } : {}),
+      ...(input.replySource !== undefined ? { replySource: input.replySource } : {}),
       ...(input.fillerSpoken === true ? { fillerSpoken: true as const } : {}),
       ...(releaseReason !== undefined ? { releaseReason } : {}),
       ...(heldTextReadsUnfinished !== undefined ? { heldTextReadsUnfinished } : {}),

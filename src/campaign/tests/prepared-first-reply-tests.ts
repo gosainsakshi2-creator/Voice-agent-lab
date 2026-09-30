@@ -26,6 +26,8 @@ import assert from "node:assert/strict";
 const { ConversationPipeline } = await import("../../core/session/conversation-pipeline");
 const { SessionRecord } = await import("../../core/session/session-record");
 const { SessionState, SupportedLanguage, CallDirection, ProviderCategory } = await import("../../types/enums");
+const { FirstReplyCache } = await import("../../core/session/first-reply-cache");
+const { TtsAudioCache } = await import("../../core/session/tts-audio-cache");
 
 import type { AudioPayload, ConversationTurn, TranscriptSegment } from "../../types/provider.types";
 import type { CompletionRequest } from "../../interfaces/providers/language-model-provider.interface";
@@ -74,6 +76,9 @@ const ID_LINE = `Am I speaking with ${NAME}?`;
 /** What the fake model says to a bare "Yes." — i.e. what the script's first reply would be. */
 const PREPARED_EN = "Hi Sakshi, I'm Rohan from Team FlexiFunnels. I'm calling to invite you to a free live workshop. Have you tried putting something online before?";
 const PREPARED_HI = "Hi Sakshi, मैं Rohan, Team FlexiFunnels से। हमारा एक free live workshop है। आपने पहले कभी कुछ online डालने की try की है?";
+/** The same replies as a script whose pitch names nobody — the shape a cached first reply needs. */
+const PREPARED_EN_NAMELESS = "Hi, I'm Rohan from Team FlexiFunnels. I'm calling to invite you to a free live workshop. Have you tried putting something online before?";
+const PREPARED_HI_NAMELESS = "Hi, मैं Rohan, Team FlexiFunnels से। हमारा एक free live workshop है। आपने पहले कभी कुछ online डालने की try की है?";
 /** What it says to anything else. */
 const GENERATED = "Sure. You won't need any coding or design skills for this.";
 
@@ -96,7 +101,19 @@ interface Harness {
   stop(): Promise<void>;
 }
 
-function startHarness(input: { readonly prepare: boolean; readonly replyDelayMs?: number; readonly openingLine?: string; readonly interim?: boolean; readonly slowStreamedPreparedTts?: boolean }): Harness {
+interface ReplyCacheInput {
+  /** Shared across harnesses to stand for one process running several calls. */
+  readonly firstReplyCache?: InstanceType<typeof FirstReplyCache>;
+  /** Shared audio cache; the fake voice then states a fingerprint so clips can be kept. */
+  readonly ttsCache?: InstanceType<typeof TtsAudioCache>;
+  readonly customerName?: string;
+  readonly appendix?: string;
+  /** The model's reply to a bare "Yes." names nobody, as a real script's pitch does. */
+  readonly namelessReplies?: boolean;
+}
+
+function startHarness(input: { readonly prepare: boolean; readonly replyDelayMs?: number; readonly openingLine?: string; readonly interim?: boolean; readonly finish?: boolean; readonly slowStreamedPreparedTts?: boolean } & ReplyCacheInput): Harness {
+  const customerName = input.customerName ?? NAME;
   const requests: LlmRequestSeen[] = [];
   const synthesized: Array<{ text: string; atMs: number }> = [];
   const segments: TranscriptSegment[] = [];
@@ -132,7 +149,12 @@ function startHarness(input: { readonly prepare: boolean; readonly replyDelayMs?
       }
       const lastUser = [...request.history].reverse().find((t) => t.role === "user")?.content.split("\n").pop() ?? "";
       requests.push({ lastUser, history: request.history, atMs: Date.now() });
-      const reply = lastUser === "Yes." ? PREPARED_EN : lastUser === "हाँ जी।" ? PREPARED_HI : GENERATED;
+      const reply =
+        lastUser === "Yes."
+          ? input.namelessReplies === true ? PREPARED_EN_NAMELESS : PREPARED_EN
+          : lastUser === "हाँ जी।"
+            ? input.namelessReplies === true ? PREPARED_HI_NAMELESS : PREPARED_HI
+            : GENERATED;
       await sleep(input.replyDelayMs ?? 10);
       for (const delta of reply.split(/(?<=\s)/u)) {
         if (signal?.aborted) return;
@@ -150,6 +172,7 @@ function startHarness(input: { readonly prepare: boolean; readonly replyDelayMs?
       return clipFor(task.request.text);
     },
     checkHealth: async () => healthy(descriptor(ProviderCategory.TEXT_TO_SPEECH, "fake-tts")),
+    ...(input.ttsCache !== undefined ? { cacheIdentity: () => "fake-voice" } : {}),
     // Sarvam's shape: the first chunk arrives quickly, the whole clip much
     // later. Only the prepared reply's sentences are slow, so every other
     // line keeps the harness's timing.
@@ -198,10 +221,10 @@ function startHarness(input: { readonly prepare: boolean; readonly replyDelayMs?
         scriptVersion: "v1",
         scriptHash: "test",
         agent: { gender: "male", name: "Rohan" },
-        customer: { name: NAME },
-        openingLine: input.openingLine ?? OPENING,
-        identityLine: ID_LINE,
-        systemPromptAppendix: "TEST APPENDIX — any customer's script",
+        customer: { name: customerName },
+        openingLine: input.openingLine ?? `Hello, am I speaking with ${customerName}?`,
+        identityLine: `Am I speaking with ${customerName}?`,
+        systemPromptAppendix: input.appendix ?? "TEST APPENDIX — any customer's script",
       },
     },
     stack,
@@ -218,7 +241,13 @@ function startHarness(input: { readonly prepare: boolean; readonly replyDelayMs?
     end: async () => undefined,
   };
 
-  const pipeline = new ConversationPipeline(record, { telephony, stt, llm, tts } as never, host as never, { prepareFirstReply: input.prepare, speculateOnInterim: input.interim === true });
+  const pipeline = new ConversationPipeline(record, { telephony, stt, llm, tts } as never, host as never, {
+    prepareFirstReply: input.prepare,
+    ...(input.firstReplyCache !== undefined ? { firstReplyCache: input.firstReplyCache } : {}),
+    ...(input.ttsCache !== undefined ? { ttsCache: input.ttsCache, cacheGeneratedSentences: true } : {}),
+    speculateOnInterim: input.interim === true,
+    ...(input.finish === true ? { letCallerFinish: true } : {}),
+  });
   const loop = pipeline.run();
 
   return {
@@ -744,6 +773,76 @@ await test("W2. a bare \"haan\" while the reply is being generated does NOT canc
   }
 });
 
+/** Real call e54df29a: the caller carries on with "Okay…" while the reply is generated, and says more. */
+async function okayThenMore(finish: boolean): Promise<{ spoken: string[]; lastUser: string; replies: string[] }> {
+  const h = startHarness({ prepare: true, replyDelayMs: 900, finish });
+  try {
+    await pastIdentity(h);
+    const spokenBefore = h.synthesized.length;
+    h.say("Yeah, I've tried, but send me the details on WhatsApp.");
+    await sleep(500);
+    h.sayInterim("okay");
+    // The reply's first sentence is ready at ~900ms; the caller is still talking.
+    await sleep(600);
+    h.sayInterim("okay but what is the price");
+    await sleep(300);
+    h.say("Okay, but what is the price?");
+    await awaitReply(h, 3);
+    await sleep(300);
+    return {
+      spoken: h.synthesized.slice(spokenBefore).map((s) => s.text),
+      lastUser: h.requests[h.requests.length - 1]?.lastUser ?? "",
+      replies: h.assistantTurns().slice(2),
+    };
+  } finally {
+    await h.stop();
+  }
+}
+
+await test("W3. e54df29a — the caller is mid-\"Okay…\" when the reply is ready: it waits, and answers their whole utterance, never talking over it", async () => {
+  const run = await okayThenMore(true);
+  assert.equal(run.spoken.filter((t) => t.startsWith("Sure.")).length, 1, `one reply spoken, not one over the caller: ${JSON.stringify(run.spoken)}`);
+  assert.ok(/price/iu.test(run.lastUser), `the reply answered the whole utterance, got "${run.lastUser}"`);
+  assert.equal(run.replies.length, 1, JSON.stringify(run.replies));
+});
+
+await test("W4. a bare \"haan\" that FINISHES while the reply waits: the reply is kept and spoken once", async () => {
+  const h = startHarness({ prepare: true, replyDelayMs: 900, finish: true });
+  try {
+    await pastIdentity(h);
+    const spokenBefore = h.synthesized.length;
+    h.say("We have already tried it before.");
+    await sleep(500);
+    h.sayInterim("haan");
+    await sleep(600);
+    h.say("Haan.");
+    await awaitReply(h, 3);
+    assert.equal(h.assistantTurns()[2], GENERATED, "the reply was kept and committed");
+    const spoken = h.synthesized.slice(spokenBefore).map((s) => s.text);
+    assert.equal(spoken.filter((t) => t.startsWith("Sure.")).length, 1, `spoken once: ${JSON.stringify(spoken)}`);
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("W5. a caller who is silent while the reply is generated: no wait at all", async () => {
+  const timeToFirstWord = async (finish: boolean) => {
+    const h = startHarness({ prepare: true, replyDelayMs: 900, finish });
+    try {
+      await pastIdentity(h);
+      const spokenBefore = h.synthesized.length;
+      const saidAt = h.say("We have already tried it before.");
+      await awaitReply(h, 3);
+      return (h.synthesized[spokenBefore]?.atMs ?? Infinity) - saidAt;
+    } finally {
+      await h.stop();
+    }
+  };
+  const off = await timeToFirstWord(false);
+  const on = await timeToFirstWord(true);
+  assert.ok(on - off < 150, `first word ${on}ms with the wait on vs ${off}ms off`);
+});
+
 // ═════════════════════════════════════════════════════════════════
 section("A. A CONFIRMING TURN PRE-OPENS ITS REQUEST (preparation off)");
 
@@ -775,6 +874,64 @@ await test("A2. an unclear outstanding turn pre-opens nothing — the gate answe
   } finally {
     await h.stop();
   }
+});
+
+// ═════════════════════════════════════════════════════════════════
+section("C. THE FIRST REPLY IS REUSED ACROSS CALLS OF THE SAME SCRIPT (firstReplyCache)");
+
+/** One whole call: the opening, a bare "Yes.", the first reply. Returns the harness, stopped. */
+async function oneCall(input: Parameters<typeof startHarness>[0]): Promise<Harness> {
+  const h = startHarness(input);
+  try {
+    await answerOpening(h, "Yes.");
+    await awaitReply(h, 2);
+  } finally {
+    await h.stop();
+  }
+  return h;
+}
+
+// The script names the contact, as real scripts do: the key must mask it.
+const scriptFor = (name: string) => `TEST APPENDIX — you are calling ${name} about a free live workshop.`;
+
+await test("C1. a second call of the same script, to a different person, makes NO model request and speaks the same reply", async () => {
+  const cache = new FirstReplyCache();
+  const first = await oneCall({ prepare: true, firstReplyCache: cache, namelessReplies: true, customerName: NAME, appendix: scriptFor(NAME) });
+  assert.equal(first.requests.length, 2, "the first call generates it, once per language");
+  const second = await oneCall({ prepare: true, firstReplyCache: cache, namelessReplies: true, customerName: "Rahul Verma", appendix: scriptFor("Rahul Verma") });
+  assert.equal(second.requests.length, 0, "the second call asks the model for nothing");
+  assert.equal(second.assistantTurns()[1], PREPARED_EN_NAMELESS, "and speaks the same reply, word for word");
+  assert.equal(second.record.metrics.build().turnLatencies[0]?.replySource, "cached", "telemetry says where it came from");
+});
+
+await test("C2. a reply that says the contact's name is NEVER reused: the next caller gets their own", async () => {
+  const cache = new FirstReplyCache();
+  await oneCall({ prepare: true, firstReplyCache: cache, customerName: NAME, appendix: scriptFor(NAME) });
+  const second = await oneCall({ prepare: true, firstReplyCache: cache, customerName: "Rahul Verma", appendix: scriptFor("Rahul Verma") });
+  assert.equal(second.requests.length, 2, "\"Hi Sakshi, …\" was not kept, so it was generated again");
+  assert.equal(second.record.metrics.build().turnLatencies[0]?.replySource, "prepared");
+});
+
+await test("C3. an edited script is a different key: the reply is generated fresh, nothing to invalidate", async () => {
+  const cache = new FirstReplyCache();
+  await oneCall({ prepare: true, firstReplyCache: cache, namelessReplies: true, appendix: scriptFor(NAME) });
+  const edited = await oneCall({ prepare: true, firstReplyCache: cache, namelessReplies: true, appendix: `${scriptFor(NAME)} Now on Saturday.` });
+  assert.equal(edited.requests.length, 2, "the edited script's reply is requested");
+});
+
+await test("C4. with the audio cache, the second call synthesizes none of the reply either", async () => {
+  const cache = new FirstReplyCache();
+  const audio = new TtsAudioCache(undefined);
+  const first = await oneCall({ prepare: true, firstReplyCache: cache, ttsCache: audio, namelessReplies: true, appendix: scriptFor(NAME) });
+  assert.ok(first.synthesized.some((s) => s.text.startsWith("Hi, I'm Rohan")), "the first call synthesized it");
+  const second = await oneCall({ prepare: true, firstReplyCache: cache, ttsCache: audio, namelessReplies: true, customerName: "Rahul Verma", appendix: scriptFor("Rahul Verma") });
+  assert.deepEqual(
+    // The opening carries the name (spoken as "राहुल वर्मा"), so it is never cached.
+    second.synthesized.filter((s) => !s.text.startsWith("Hello, am I speaking with")).map((s) => s.text),
+    [],
+    "only the opening (which carries the name) was synthesized",
+  );
+  assert.equal(second.assistantTurns()[1], PREPARED_EN_NAMELESS);
 });
 
 console.log(`\n${passed} passed, ${failures.length} failed`);

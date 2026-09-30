@@ -537,8 +537,10 @@ export interface TurnLatencyBreakdown {
    * question played and served on the confirmation (see `prepareFirstReply`).
    * Absent on every other turn. Telemetry only: it is what separates the
    * prepared first reply from requested ones when their latency is compared.
+   * `"cached"` when that prepared reply was an earlier call's, reused with
+   * no model request (see `FirstReplyCache`).
    */
-  readonly replySource?: "prepared";
+  readonly replySource?: "prepared" | "cached";
   /**
    * True when a short latency filler ("Okay, I see…") was spoken because
    * this reply was slow to start. Absent otherwise. Telemetry only; the

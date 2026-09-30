@@ -95,6 +95,17 @@ const PREROLL_FRAMES = 5;
 /** Never hold the pre-roll longer than this (short utterances may never reach PREROLL_FRAMES). */
 const PREROLL_MAX_WAIT_MS = 120;
 /**
+ * Audio kept buffered at the FAR END, ahead of what the caller is hearing.
+ * The pre-roll above only delays the pump's start — pacing is anchored to
+ * that start, so without a lead every frame reaches Vobiz exactly when it
+ * is due to play, and any network or event-loop hiccup longer than one
+ * frame is an underrun the caller hears as broken audio. Starting the
+ * pacing clock this far in the past sends the lead in the first ~100ms
+ * (MAX_FRAMES_PER_TICK still bounds each tick) and holds it for the rest
+ * of the utterance. Barge-in is unaffected: `clearAudio` flushes it.
+ */
+const OUTBOUND_LEAD_FRAMES = 10; // 200ms
+/**
  * ---------------- Two energy gates, two questions ----------------
  *
  * The segmenter's default threshold of RMS 150 is ~-47 dBFS — inside
@@ -447,7 +458,7 @@ export function attachVobizMediaBridge(
       // eslint-disable-next-line no-console
       console.log(`[Vobiz] greeting pump started`);
     }
-    const startedAt = Date.now();
+    const startedAt = Date.now() - OUTBOUND_LEAD_FRAMES * OUTBOUND_FRAME_MS;
     let framesSent = 0;
     pumpTimer = setInterval(() => {
       // Drift correction with burst cap — identical rationale to the
@@ -455,7 +466,9 @@ export function attachVobizMediaBridge(
       // correction would dump dozens of frames in one tick.
       const rawDue = Math.floor((Date.now() - startedAt) / OUTBOUND_FRAME_MS) - framesSent;
       const framesDue = Math.min(rawDue, MAX_FRAMES_PER_TICK);
-      if (rawDue > MAX_FRAMES_PER_TICK && framesSent === 0) {
+      // Past the lead, frames are overdue: the event loop was starved,
+      // mid-reply included (the old `framesSent === 0` only saw the start).
+      if (rawDue > MAX_FRAMES_PER_TICK + OUTBOUND_LEAD_FRAMES) {
         // eslint-disable-next-line no-console
         console.log(
           `[vobiz-bridge:${sessionId}] pump burst capped: ${rawDue} frames due, sending ${framesDue} (event loop starved ~${rawDue * OUTBOUND_FRAME_MS}ms)`,

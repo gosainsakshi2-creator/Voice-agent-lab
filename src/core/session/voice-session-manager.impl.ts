@@ -384,6 +384,9 @@ export class DefaultVoiceSessionManager implements VoiceSessionManager, Pipeline
       // "I want to— No more about the services" is read as "know more", not a
       // refusal. OFF unless `REPAIR_STT_HOMOPHONES=true`.
       repairSttHomophones: optionalEnv("REPAIR_STT_HOMOPHONES", "false").trim().toLowerCase() === "true",
+      // The next sentence is synthesized while this one still streams (ElevenLabs
+      // only). OFF unless `PREFETCH_NEXT_SENTENCE=true`.
+      prefetchNextSentence: optionalEnv("PREFETCH_NEXT_SENTENCE", "false").trim().toLowerCase() === "true",
     });
     this.pipelines.set(record.id, pipeline);
     record.loopPromise = pipeline.run();

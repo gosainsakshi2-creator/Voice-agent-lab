@@ -392,6 +392,14 @@ export interface ConversationPipelineOptions {
    */
   readonly repairSttHomophones?: boolean;
   /**
+   * Start synthesizing a reply's next sentence while the previous one is
+   * still streaming, so its first chunk is ready at the boundary. Calls
+   * 2026-10-01 at 1 CPU still had ~450ms of mid-reply silence per sentence
+   * boundary — the TTS's time to first byte, paid after the previous
+   * stream ended. Only on `PREFETCH_SAFE_TTS` providers. Off by default.
+   */
+  readonly prefetchNextSentence?: boolean;
+  /**
    * Pre-open a turn's LLM request on a SETTLED INTERIM transcript — see
    * `scheduleInterimSpeculation`. Off by default: every harness keeps
    * FIX #8's rule that only explicit endpoint evidence pre-opens.
@@ -552,15 +560,30 @@ class PreparedAudio {
     this.notify();
   }
 
-  /** The chunk at `index`, waiting for it if synthesis is still running; undefined once there is none. */
-  async next(index: number): Promise<AudioPayload | undefined> {
+  /**
+   * The chunk at `index`, waiting for it if synthesis is still running;
+   * undefined once there is none. With `timeoutMs`, also undefined when no
+   * chunk arrives in that long — a reader that must never wait forever on
+   * a synthesis that stalled.
+   */
+  async next(index: number, timeoutMs?: number): Promise<AudioPayload | undefined> {
+    const deadline = timeoutMs !== undefined ? Date.now() + timeoutMs : undefined;
     while (index >= this.chunks.length && !this.done) {
+      const left = deadline !== undefined ? deadline - Date.now() : undefined;
+      if (left !== undefined && left <= 0) {
+        this.timedOut = true;
+        return undefined;
+      }
       await new Promise<void>((resolve) => {
         this.wake = resolve;
+        if (left !== undefined) setTimeout(resolve, left);
       });
     }
     return this.chunks[index];
   }
+
+  /** A `next` with a timeout gave up waiting. */
+  timedOut = false;
 
   private notify(): void {
     const wake = this.wake;
@@ -2153,6 +2176,20 @@ const BARGE_IN_MIN_CONFIDENCE = 0.4;
 
 /** How sure the STT must be before quiet speech may stop the reply without loud energy — see `clearSpeechWithoutEnergy`. */
 const CLEAR_SPEECH_MIN_CONFIDENCE = 0.85;
+
+/**
+ * TTS providers whose every `synthesizeStream` is an independent request,
+ * so the next sentence may be synthesized while this one still streams —
+ * see `prefetchNextSentence`. ElevenLabs `stream()` is one POST per call.
+ */
+const PREFETCH_SAFE_TTS: ReadonlySet<string> = new Set(["elevenlabs"]);
+
+/**
+ * Longest a prepared or prefetched clip may go without its next chunk
+ * before playback moves on. Streams deliver a chunk every ~100ms; this is
+ * the guarantee that a stalled synthesis can never hold the reply open.
+ */
+const PREPARED_CHUNK_TIMEOUT_MS = 3_000;
 
 /**
  * A caller who carries on within this long after the reply started was
@@ -5549,8 +5586,14 @@ export class ConversationPipeline {
     console.log(`[PREPARE:${sid}] preparing the first reply to a bare confirmation of "${question.slice(0, 60)}" (${replies.map((r) => (r.fromCache ? `${r.variant} from cache` : r.variant)).join(", ")})`);
   }
 
-  /** Synthesize one prepared sentence in the voice and language live synthesis would use now. */
-  private prepareSentenceAudio(text: string, signal: AbortSignal): void {
+  /**
+   * Synthesize one prepared sentence in the voice and language live
+   * synthesis would use now. `concurrent` (the next-sentence prefetch, see
+   * `prefetchNextSentence`) starts it at once instead of queueing it behind
+   * other preparations: it is meant to overlap the sentence playing now,
+   * on a provider whose every stream is its own request.
+   */
+  private prepareSentenceAudio(text: string, signal: AbortSignal, concurrent = false): PreparedAudio {
     const language = this.record.memory.currentLanguage;
     const tts = this.providers.tts;
     const task: SynthesisTaskRequest = {
@@ -5566,12 +5609,12 @@ export class ConversationPipeline {
       audio.push(cached);
       audio.finish();
       this.preparedAudio.push({ text, language, audio });
-      return;
+      return audio;
     }
     // Queued behind any preparation already running: one synthesis at a
     // time per provider session, as live playback already guarantees.
     // Chunks are handed to `audio` as they arrive — see `PreparedAudio`.
-    this.preparedAudioInFlight = this.preparedAudioInFlight.then(async (): Promise<void> => {
+    const job = async (): Promise<void> => {
       try {
         if (signal.aborted) return;
         let seconds = 0;
@@ -5603,8 +5646,11 @@ export class ConversationPipeline {
       } finally {
         audio.finish();
       }
-    });
+    };
+    if (concurrent) void job();
+    else this.preparedAudioInFlight = this.preparedAudioInFlight.then(job);
     this.preparedAudio.push({ text, language, audio });
+    return audio;
   }
 
   /** Drop every prepared reply and its audio. Idempotent. */
@@ -9725,6 +9771,33 @@ await this.drainPlayback(speakingSignal, true);
     // A short filler if no sentence is ready in time — see `armFiller`.
     const filler = this.armFiller(thinkingSignal, () => fullText);
 
+    // NEXT-SENTENCE PREFETCH — see `prefetchNextSentence`. Only where every
+    // synthesis is its own HTTP request (ElevenLabs `stream()`); a provider
+    // on one shared socket must never run two at once.
+    const prefetching = this.options.prefetchNextSentence === true && PREFETCH_SAFE_TTS.has(this.providers.tts.descriptor.id);
+    let pendingSpoken: Promise<{ spoken: Awaited<ReturnType<ConversationPipeline["synthesizeAndPlay"]>>; synthesisStartedAt: number }> | undefined;
+    let pendingSpokenDone = false;
+    // Audio this reply prefetched. Whatever is left unplayed when the reply
+    // ends (a barge-in cut it) is dropped, so a later sentence with the
+    // same words can never play a stale, half-synthesized clip.
+    const prefetched = new Set<PreparedAudio>();
+    // Waits for the sentence in flight and books it exactly as the
+    // sequential path books each sentence.
+    const settlePendingSpoken = async (): Promise<void> => {
+      const pending = pendingSpoken;
+      if (pending === undefined) return;
+      pendingSpoken = undefined;
+      const { spoken, synthesisStartedAt } = await pending.catch(() => ({
+        spoken: { ttsMs: 0, ttsCostUsd: 0 } as Awaited<ReturnType<ConversationPipeline["synthesizeAndPlay"]>>,
+        synthesisStartedAt: Date.now(),
+      }));
+      ttsBlockedDuringStreamMs += Date.now() - synthesisStartedAt;
+      ttsFirstChunkMs ??= spoken.firstChunkMs;
+      ttsSynthesisMs += spoken.ttsMs;
+      ttsCostUsd += spoken.ttsCostUsd;
+      ttsChunkCount += 1;
+    };
+
     try {
       const stream =
         preOpened !== undefined
@@ -9882,6 +9955,23 @@ await this.drainPlayback(speakingSignal, true);
             }
             speakingSignal ??= this.enterSpeaking();
             if (speakingSignal.aborted) break;
+            if (prefetching) {
+              // NEXT-SENTENCE PREFETCH — see `prefetchNextSentence`. The
+              // previous sentence may still be streaming from the TTS: start
+              // this one's synthesis now, so its first chunk is in hand when
+              // that one ends, instead of ~450ms (the provider's time to first
+              // byte) of dead air at every sentence boundary.
+              if (pendingSpoken !== undefined && !pendingSpokenDone) prefetched.add(this.prepareSentenceAudio(cleaned, speakingSignal, true));
+              await settlePendingSpoken();
+              if (speakingSignal.aborted) break;
+              const synthesisStartedAt = Date.now();
+              pendingSpokenDone = false;
+              pendingSpoken = this.synthesizeAndPlay(cleaned, speakingSignal).then((spoken) => {
+                pendingSpokenDone = true;
+                return { spoken, synthesisStartedAt };
+              });
+              continue;
+            }
             const synthesisStartedAt = Date.now();
             const spoken = await this.synthesizeAndPlay(cleaned, speakingSignal);
             ttsBlockedDuringStreamMs += Date.now() - synthesisStartedAt;
@@ -9905,7 +9995,12 @@ await this.drainPlayback(speakingSignal, true);
 
         if (contaminated || speakingSignal?.aborted) break;
       }
+      // The last sentence of a prefetching reply is still playing.
+      await settlePendingSpoken();
+      if (prefetched.size > 0) this.preparedAudio = this.preparedAudio.filter((entry) => !prefetched.has(entry.audio));
     } catch (error) {
+      await settlePendingSpoken();
+      if (prefetched.size > 0) this.preparedAudio = this.preparedAudio.filter((entry) => !prefetched.has(entry.audio));
       // Streaming LLM connection dropped mid-reply — speak whatever
       // was generated so far rather than losing the turn entirely.
       //
@@ -10493,7 +10588,7 @@ await this.drainPlayback(speakingSignal, true);
     // Played through the same `playAudioChunk`, so playback accounting,
     // backpressure and barge-in are unchanged. Anything missing or failed
     // falls through to live synthesis below.
-    if (this.options.prepareFirstReply === true) {
+    if (this.options.prepareFirstReply === true || this.options.prefetchNextSentence === true) {
       const prepared = this.takePreparedAudio(text, language);
       // Played from its first chunk, the rest as synthesis delivers it —
       // see `PreparedAudio`. No chunk at all (failed, aborted, empty)
@@ -10507,12 +10602,16 @@ await this.drainPlayback(speakingSignal, true);
         const readyMs = Date.now() - startedAt;
         // eslint-disable-next-line no-console
         console.log(`[PREPARE:${sid}] playing prepared audio for "${text.slice(0, 60)}" (ready in ${readyMs}ms)`);
-        for (let index = 0, chunk: AudioPayload | undefined = first; chunk !== undefined; chunk = await prepared.next(++index)) {
+        for (let index = 0, chunk: AudioPayload | undefined = first; chunk !== undefined; chunk = await prepared.next(++index, PREPARED_CHUNK_TIMEOUT_MS)) {
           if (speakingSignal.aborted) {
             await this.record.mediaStream?.interruptPlayback();
             break;
           }
           await this.playAudioChunk(chunk);
+        }
+        if (prepared.timedOut) {
+          // eslint-disable-next-line no-console
+          console.warn(`[PREPARE:${sid}] prepared audio stalled for ${PREPARED_CHUNK_TIMEOUT_MS}ms — moving on: "${text.slice(0, 60)}"`);
         }
         // Its cost was charged when it was synthesized.
         return { ttsMs: readyMs, ttsCostUsd: 0, firstChunkMs: readyMs };

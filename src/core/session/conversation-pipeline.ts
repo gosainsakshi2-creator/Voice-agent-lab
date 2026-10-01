@@ -3914,8 +3914,15 @@ export class ConversationPipeline {
             this.record.memory.recordAssistantTurn(heard);
             this.contextualReplyCommitted = true;
           }
-          this.interruptionNote = undefined;
-          if (this.options.noteInterruptedReply === true) {
+          // A reply cancelled before its first frame played (superseded while
+          // THINKING) was never cut in front of the caller: the earlier note
+          // still describes what they last heard. Call f81ac976 (2026-10-01):
+          // replacing it said "they heard none of" a reply never spoken and
+          // lost the question the caller really had missed. `cut` is
+          // undefined exactly when no playback had started.
+          const replyPlayed = cut !== undefined;
+          if (replyPlayed) this.interruptionNote = undefined;
+          if (this.options.noteInterruptedReply === true && replyPlayed) {
             const unheard = unspokenTail(result.assistantText, this.cancelledHeardWords);
             if (unheard.length > 0) {
               this.interruptionNote = { heard: this.cancelledHeardWords, unheard };

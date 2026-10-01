@@ -109,6 +109,8 @@ function startHarness(input: {
    */
   readonly bridge?: { readonly highWaterMs?: number };
   readonly noteInterruptedReply?: boolean;
+  /** Delay before the Nth request's first token (by request index), so a turn can supersede it while THINKING. */
+  readonly llmDelayMs?: Readonly<Record<number, number>>;
 }): Harness {
   const requests: Array<readonly ConversationTurn[]> = [];
   const synthesized: string[] = [];
@@ -149,7 +151,7 @@ function startHarness(input: {
       requests.push(request.history);
       const reply = input.replies[replyIndex] ?? "Okay.";
       replyIndex += 1;
-      await sleep(10);
+      await sleep(input.llmDelayMs?.[requests.length - 1] ?? 10);
       if (signal?.aborted) return;
       for (const delta of reply.split(/(?<=\s)/u)) {
         if (signal?.aborted) return;
@@ -486,6 +488,30 @@ await test("B7. option OFF: no telemetry entry", async () => {
     await h.waitFor("the answer", () => h.assistantTexts().some((t) => t.includes(ANSWER)), 20000);
     await sleep(300);
     assert.ok(h.record.metrics.build().turnLatencies.every((t) => t.interruptionNote === undefined));
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("B8. call f81ac976: a reply superseded before it played does not replace the note", async () => {
+  // Request 1 answers QUESTION and is held for 3s, so the follow-up lands
+  // while THINKING and supersedes it before any audio. The next request
+  // must still describe the BLOCK the caller was cut off in.
+  const h = startHarness({
+    replies: [BLOCK, "Never spoken.", ANSWER, FOLLOW_UP],
+    noteInterruptedReply: true,
+    llmDelayMs: { 1: 3000 },
+  });
+  try {
+    const before = await cutInsideS2(h);
+    await sleep(400);
+    h.say("And also, when is the workshop?");
+    await h.waitFor("a request after the superseded one", () => h.requests.length > before + 1, 20000);
+    const turn = lastUserTurn(h.requests[h.requests.length - 1]!);
+    assert.ok(!h.synthesized.some((t) => t.includes("Never spoken")), "the superseded reply must not have played");
+    assert.ok(turn.includes("your previous reply was cut off"), `the note is gone: ${turn.slice(0, 300)}`);
+    assert.ok(turn.includes("plain instructions"), `the note must still name the block, got: ${turn.slice(0, 400)}`);
+    assert.ok(!turn.includes("heard none of it"), "and must not claim the caller heard none of a reply never spoken");
   } finally {
     await h.stop();
   }

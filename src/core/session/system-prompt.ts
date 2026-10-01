@@ -2264,6 +2264,21 @@ export function pendingQuestionNote(question: string): string {
   );
 }
 
+/**
+ * The caller asked something. Call 530e9440 (2026-10-01): four questions
+ * at once ("what are your services", "what is FlexiFunnels", "who is
+ * hosting", "why should I join") got one 47-word sentence about one of
+ * them — about 25 seconds of audio — and the caller said "I do not want
+ * to join. Bye-bye." halfway through it.
+ */
+export function shortAnswerNote(): string {
+  return (
+    "[internal note, never speak or acknowledge this: the caller asked a question. Answer in at most two short" +
+    " sentences, about 35 words in all. If they asked several things, give each one a few words, in the order" +
+    " they asked; say plainly when you do not have a detail rather than skipping it. Then ask your next question.]"
+  );
+}
+
 /** Longest quote of the heard / unheard part a note carries; the model needs where, not all of it. */
 const INTERRUPTION_QUOTE_CHARS = 240;
 

@@ -44,7 +44,7 @@ import type { TelephonyProvider } from "../../interfaces/providers/telephony-pro
 
 import type { SessionRecord } from "./session-record";
 import { detectLanguage, isLockGradeEvidence, type LanguageDetectionResult } from "./language-detector";
-import { currentTurnNote, interruptedReplyNote, languageHintFor, openingLineFor, pendingQuestionNote } from "./system-prompt";
+import { currentTurnNote, interruptedReplyNote, languageHintFor, openingLineFor, pendingQuestionNote, shortAnswerNote } from "./system-prompt";
 import { isQuestionTurn } from "../../campaign/outcome/conversation-events";
 import { asksWhoIsCalling, classifyIdentityAnswer } from "../../campaign/domain/identity-answer";
 import { SentenceChunker } from "./sentence-chunker";
@@ -370,6 +370,13 @@ export interface ConversationPipelineOptions {
    * Off by default: every harness keeps its requests exactly.
    */
   readonly returnToPendingQuestion?: boolean;
+  /**
+   * When the caller asked something, tell the model to answer in at most
+   * two short sentences, each question in turn — see `shortAnswerNote`.
+   * Script blocks the agent delivers unprompted are not touched. Off by
+   * default: every harness keeps its requests exactly.
+   */
+  readonly shortAnswers?: boolean;
   /**
    * Pre-open a turn's LLM request on a SETTLED INTERIM transcript — see
    * `scheduleInterimSpeculation`. Off by default: every harness keeps
@@ -2513,6 +2520,17 @@ export function wordPrefixAtFraction(text: string, fraction: number): string {
  * a question rather than an answer. `undefined` otherwise — including when
  * the agent's turn did not end on a question, or nothing was said since.
  */
+/** Everything the caller has said since the agent's last turn reads as a question. */
+export function callerAskedSinceAgent(turns: readonly ConversationTurn[]): boolean {
+  const since: string[] = [];
+  for (let i = turns.length - 1; i >= 0; i--) {
+    const turn = turns[i];
+    if (turn === undefined || turn.role === "assistant") break;
+    if (turn.role === "user") since.unshift(turn.content);
+  }
+  return since.length > 0 && isQuestionTurn(since.join(" "));
+}
+
 export function pendingQuestionIn(turns: readonly ConversationTurn[]): string | undefined {
   let lastAssistant = -1;
   for (let i = turns.length - 1; i >= 0; i--) {
@@ -3023,6 +3041,8 @@ export class ConversationPipeline {
   private interruptionNoteSent: TurnLatencyBreakdown["interruptionNote"] | undefined;
   /** `buildRequestHistory` added the pending-question note; read-and-cleared for telemetry. */
   private pendingQuestionNoted = false;
+  /** `buildRequestHistory` added the short-answer note; read-and-cleared for telemetry. */
+  private shortAnswerNoted = false;
   /**
    * DIAGNOSTIC ONLY (2026-09-21) — what tripped the barge-in that
    * cancelled the response in flight, if one did. Written by
@@ -4130,6 +4150,7 @@ export class ConversationPipeline {
           fillerSpoken: result.fillerSpoken,
           interruptionNote: this.consumeInterruptionNoteSent(),
           pendingQuestionNote: this.consumePendingQuestionNoted(),
+          shortAnswerNote: this.consumeShortAnswerNoted(),
           delivery: this.consumeDeliveryDelta(),
           // TURN-RELEASE TRACE — spread so a turn with no trace (batch
           // STT) omits all five rather than storing nulls. Counts and
@@ -9111,6 +9132,7 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
   const turns = recent.map(turn => ({ ...turn }));
   // Read from the turns as spoken, before any note is prefixed below.
   const pending = this.options.returnToPendingQuestion === true ? pendingQuestionIn(recent) : undefined;
+  const callerAsked = this.options.shortAnswers === true && callerAskedSinceAgent(recent);
 
   const hint = languageHintFor(detectedLanguage);
 
@@ -9135,6 +9157,10 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
           if (pending !== undefined) {
             turn.content = `${pendingQuestionNote(pending)}\n${turn.content}`;
             this.pendingQuestionNoted = true;
+          }
+          if (callerAsked) {
+            turn.content = `${shortAnswerNote()}\n${turn.content}`;
+            this.shortAnswerNoted = true;
           }
           const note = this.interruptionNote;
           if (note !== undefined) {
@@ -9177,6 +9203,13 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
       sendErrors: now.sendErrors - (before?.sendErrors ?? 0),
     };
     return Object.values(delta).some((v) => v > 0) ? delta : undefined;
+  }
+
+  /** Read-and-clear, for the turn's telemetry. */
+  private consumeShortAnswerNoted(): true | undefined {
+    const noted = this.shortAnswerNoted;
+    this.shortAnswerNoted = false;
+    return noted ? true : undefined;
   }
 
   /** Read-and-clear, for the turn's telemetry. */

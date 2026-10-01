@@ -21,7 +21,7 @@
 
 import assert from "node:assert/strict";
 
-const { ConversationPipeline, wordPrefixAtFraction, pendingQuestionIn } = await import("../../core/session/conversation-pipeline");
+const { ConversationPipeline, wordPrefixAtFraction, pendingQuestionIn, callerAskedSinceAgent } = await import("../../core/session/conversation-pipeline");
 const { interruptedReplyNote } = await import("../../core/session/system-prompt");
 const { SessionRecord } = await import("../../core/session/session-record");
 const { SessionState, SupportedLanguage, CallDirection, ProviderCategory } = await import(
@@ -112,6 +112,7 @@ function startHarness(input: {
   /** Delay before the Nth request's first token (by request index), so a turn can supersede it while THINKING. */
   readonly llmDelayMs?: Readonly<Record<number, number>>;
   readonly returnToPendingQuestion?: boolean;
+  readonly shortAnswers?: boolean;
 }): Harness {
   const requests: Array<readonly ConversationTurn[]> = [];
   const synthesized: string[] = [];
@@ -267,6 +268,7 @@ function startHarness(input: {
   const pipeline = new ConversationPipeline(record, { telephony, stt, llm, tts } as never, host as never, {
     ...(input.noteInterruptedReply === true ? { noteInterruptedReply: true } : {}),
     ...(input.returnToPendingQuestion === true ? { returnToPendingQuestion: true } : {}),
+    ...(input.shortAnswers === true ? { shortAnswers: true } : {}),
   });
   const loop = pipeline.run();
 
@@ -578,6 +580,53 @@ await test("C5. OFF: no note, exactly as before", async () => {
   try {
     await startBlock(h);
     assert.ok(!(await nextRequestAfter(h, "What time is it?")).includes("you had asked"));
+  } finally {
+    await h.stop();
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════
+section("SECTION D — a caller's question gets a short answer (call 530e9440)");
+// ═════════════════════════════════════════════════════════════════
+
+const FOUR_QUESTIONS =
+  "First I wanted to know about your services, and what FlexiFunnels is, and who is hosting this, and why it would be beneficial for me?";
+
+await test("D1. callerAskedSinceAgent: a question, superseding turns read together, not an answer", () => {
+  assert.equal(callerAskedSinceAgent([t("assistant", ASKS), t("user", FOUR_QUESTIONS)]), true);
+  assert.equal(callerAskedSinceAgent([t("assistant", ASKS), t("user", "Mm-hmm."), t("user", "And who is hosting it?")]), true);
+  assert.equal(callerAskedSinceAgent([t("assistant", ASKS), t("user", "No, not yet.")]), false);
+  assert.equal(callerAskedSinceAgent([t("assistant", ASKS)]), false);
+});
+
+await test("D2. ON: the caller's question gets the short-answer note, and telemetry says so", async () => {
+  const h = startHarness({ replies: [ASKING_BLOCK, "It is a free workshop."], shortAnswers: true });
+  try {
+    await startBlock(h);
+    const turn = await nextRequestAfter(h, FOUR_QUESTIONS);
+    assert.ok(turn.includes("Answer in at most two short sentences"), turn.slice(0, 400));
+    await h.waitFor("the turn to be recorded", () => h.record.metrics.build().turnLatencies.some((x) => x.shortAnswerNote === true), 20000);
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("D3. ON: an answer, and the script block itself, get no note", async () => {
+  const h = startHarness({ replies: [ASKING_BLOCK, "Great."], shortAnswers: true });
+  try {
+    await startBlock(h);
+    assert.ok(!lastUserTurn(h.requests[0]!).includes("two short sentences"), "the block's own request is untouched");
+    assert.ok(!(await nextRequestAfter(h, "No, not yet.")).includes("two short sentences"));
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("D4. OFF: no note, exactly as before", async () => {
+  const h = startHarness({ replies: [ASKING_BLOCK, "It is a free workshop."] });
+  try {
+    await startBlock(h);
+    assert.ok(!(await nextRequestAfter(h, FOUR_QUESTIONS)).includes("two short sentences"));
   } finally {
     await h.stop();
   }

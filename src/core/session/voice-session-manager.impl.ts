@@ -375,6 +375,9 @@ export class DefaultVoiceSessionManager implements VoiceSessionManager, Pipeline
       // A caller who answers the agent's question with a question gets an
       // answer AND the question again. OFF unless `RETURN_TO_PENDING_QUESTION=true`.
       returnToPendingQuestion: optionalEnv("RETURN_TO_PENDING_QUESTION", "false").trim().toLowerCase() === "true",
+      // A caller's question gets an answer of at most two short sentences.
+      // OFF unless `SHORT_ANSWERS=true`.
+      shortAnswers: optionalEnv("SHORT_ANSWERS", "false").trim().toLowerCase() === "true",
     });
     this.pipelines.set(record.id, pipeline);
     record.loopPromise = pipeline.run();

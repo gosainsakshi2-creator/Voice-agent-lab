@@ -150,6 +150,7 @@ export interface TurnLatencyInput {
   /** Delivery counters since the previous turn; recorded only when anything was sent or went wrong. */
   readonly delivery?: DeliveryCounters | undefined;
   readonly pendingQuestionNote?: true | undefined;
+  readonly shortAnswerNote?: true | undefined;
   // TURN-RELEASE TRACE (2026-09-21) — see `TurnLatencyBreakdown` for
   // what each one is and why it exists. Indexed access rather than a
   // re-declared union, matching `endpointMarkerOutcome` and
@@ -527,6 +528,7 @@ export class SessionMetricsCollector {
       ...(input.interruptionNote !== undefined ? { interruptionNote: input.interruptionNote } : {}),
       ...(input.delivery !== undefined ? { delivery: input.delivery } : {}),
       ...(input.pendingQuestionNote === true ? { pendingQuestionNote: true as const } : {}),
+      ...(input.shortAnswerNote === true ? { shortAnswerNote: true as const } : {}),
       ...(releaseReason !== undefined ? { releaseReason } : {}),
       ...(heldTextReadsUnfinished !== undefined ? { heldTextReadsUnfinished } : {}),
       ...(continuationGracesAtRelease !== undefined ? { continuationGracesAtRelease } : {}),

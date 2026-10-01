@@ -44,6 +44,7 @@ import { optionalEnv, optionalEnvNumber } from "../../providers/shared/env";
 import { PostgresTtsAudioStore, TtsAudioCache } from "./tts-audio-cache";
 import { processFirstReplyCache } from "./first-reply-cache";
 import type { OutboundDeliveryEvent } from "./metrics-collector";
+import { RuntimeHealthProbe } from "./runtime-health";
 import { getDbPool } from "../../campaign/db/client";
 
 /** `undefined` until first asked for; `null` once switched off. */
@@ -103,6 +104,11 @@ export class DefaultVoiceSessionManager implements VoiceSessionManager, Pipeline
 
     const id = generateSessionId();
     const record = new SessionRecord(id, request, request.providerStack);
+    // Telemetry only — event-loop delay and GC for this call; stopped by
+    // `markCallEnded`. See `runtime-health.ts`.
+    const runtimeProbe = new RuntimeHealthProbe();
+    runtimeProbe.start();
+    record.metrics.attachRuntimeProbe(runtimeProbe);
     this.sessions.set(id, record);
     return record.toSnapshot();
   }

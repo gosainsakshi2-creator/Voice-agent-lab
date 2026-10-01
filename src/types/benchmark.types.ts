@@ -774,6 +774,20 @@ export interface BenchmarkMetrics {
    * yields many interims), and how often clear but quiet speech stopped
    * the reply anyway (`callerFirstTurnTaking`). Absent when all are 0.
    */
+  /**
+   * How long the event loop was blocked during the call and how much of
+   * it was GC — see `runtime-health.ts`. Absent for harness sessions.
+   */
+  readonly runtime?: {
+    readonly loopMaxMs: number;
+    readonly loopP99Ms: number;
+    readonly loopMeanMs: number;
+    readonly gcCount: number;
+    readonly gcTotalMs: number;
+    readonly gcMaxMs: number;
+    readonly nodeEnv: string;
+    readonly rssMb: number;
+  };
   readonly bargeInGate?: {
     readonly uncorroboratedFinals: number;
     readonly uncorroboratedInterims: number;

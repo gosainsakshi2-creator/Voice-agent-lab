@@ -21,6 +21,7 @@ import assert from "node:assert/strict";
 const { ConversationPipeline } = await import("../../core/session/conversation-pipeline");
 const { isStopRequest } = await import("../../core/session/turn-detection");
 const { SessionMetricsCollector, socketCloseEvent } = await import("../../core/session/metrics-collector");
+const { RuntimeHealthProbe } = await import("../../core/session/runtime-health");
 const { SessionRecord } = await import("../../core/session/session-record");
 const { SessionState, SupportedLanguage, CallDirection, ProviderCategory } = await import(
   "../../types/enums"
@@ -589,6 +590,39 @@ await test("D6. ON: quiet speech the STT is unsure of still does not stop the re
   } finally {
     await h.stop();
   }
+});
+
+// ═════════════════════════════════════════════════════════════════
+section("SECTION E — runtime health: a blocked event loop is measured");
+// ═════════════════════════════════════════════════════════════════
+
+await test("E1. a 250ms synchronous block shows up as loopMaxMs, and the figures freeze at stop", async () => {
+  const probe = new RuntimeHealthProbe();
+  probe.start();
+  await sleep(100);
+  const until = Date.now() + 250;
+  while (Date.now() < until) {
+    // Block the event loop, as a stalled reply start would.
+  }
+  await sleep(100);
+  probe.stop();
+  const r = probe.snapshot();
+  assert.ok(r.loopMaxMs >= 200, `loopMaxMs=${r.loopMaxMs}`);
+  assert.ok(typeof r.nodeEnv === "string" && r.rssMb > 0, JSON.stringify(r));
+  await sleep(50);
+  assert.deepEqual(probe.snapshot(), r, "frozen after stop");
+});
+
+await test("E2. the collector reports `runtime` only when a probe is attached, and stops it at call end", () => {
+  const c = new SessionMetricsCollector("sess-e2" as SessionId, STACK as never);
+  assert.equal(c.build().runtime, undefined);
+  const probe = new RuntimeHealthProbe();
+  probe.start();
+  c.attachRuntimeProbe(probe);
+  c.markCallEnded();
+  const first = c.build().runtime;
+  assert.ok(first !== undefined);
+  assert.deepEqual(c.build().runtime, first, "stopped: the same figures every build");
 });
 
 void SCRIPT_TEXT;

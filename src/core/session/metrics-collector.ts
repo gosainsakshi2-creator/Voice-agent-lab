@@ -33,6 +33,7 @@ import type {
   TurnLatencyBreakdown,
 } from "../../types/benchmark.types";
 import type { ProviderStackSelection, SessionId } from "../../types/session.types";
+import type { RuntimeHealthProbe } from "./runtime-health";
 
 /** One thing a media bridge saw while sending audio — see `DeliveryCounters`. */
 export type OutboundDeliveryEvent =
@@ -695,6 +696,15 @@ export class SessionMetricsCollector {
 
   markCallEnded(): void {
     this.endedAt ??= new Date();
+    this.runtimeProbe?.stop();
+  }
+
+  // ── RUNTIME HEALTH — see `runtime-health.ts`. Attached by the manager
+  // for real sessions only; harness collectors carry none.
+  private runtimeProbe: RuntimeHealthProbe | undefined;
+
+  attachRuntimeProbe(probe: RuntimeHealthProbe): void {
+    this.runtimeProbe ??= probe;
   }
 
   build(): BenchmarkMetrics {
@@ -749,6 +759,7 @@ export class SessionMetricsCollector {
         ? { delivery: { ...this.delivery, ...(this.socketClose !== undefined ? { socketClose: this.socketClose } : {}) } }
         : {}),
       ...(Object.values(this.bargeInGate).some((v) => v > 0) ? { bargeInGate: { ...this.bargeInGate } } : {}),
+      ...(this.runtimeProbe !== undefined ? { runtime: this.runtimeProbe.snapshot() } : {}),
       estimatedCost,
       turnLatencies: [...this.turnLatencies],
     };

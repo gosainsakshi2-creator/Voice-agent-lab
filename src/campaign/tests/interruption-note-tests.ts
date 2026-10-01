@@ -21,7 +21,7 @@
 
 import assert from "node:assert/strict";
 
-const { ConversationPipeline, wordPrefixAtFraction, pendingQuestionIn, callerAskedSinceAgent, discoveryNoIn } = await import("../../core/session/conversation-pipeline");
+const { ConversationPipeline, wordPrefixAtFraction, pendingQuestionIn, callerAskedSinceAgent, discoveryNoIn, isCallerGoodbye } = await import("../../core/session/conversation-pipeline");
 const { interruptedReplyNote } = await import("../../core/session/system-prompt");
 const { SessionRecord } = await import("../../core/session/session-record");
 const { SessionState, SupportedLanguage, CallDirection, ProviderCategory } = await import(
@@ -114,6 +114,7 @@ function startHarness(input: {
   readonly returnToPendingQuestion?: boolean;
   readonly shortAnswers?: boolean;
   readonly englishAcknowledgements?: boolean;
+  readonly endOnCallerGoodbye?: boolean;
 }): Harness {
   const requests: Array<readonly ConversationTurn[]> = [];
   const synthesized: string[] = [];
@@ -271,6 +272,7 @@ function startHarness(input: {
     ...(input.returnToPendingQuestion === true ? { returnToPendingQuestion: true } : {}),
     ...(input.shortAnswers === true ? { shortAnswers: true } : {}),
     ...(input.englishAcknowledgements === true ? { englishAcknowledgements: true } : {}),
+    ...(input.endOnCallerGoodbye === true ? { endOnCallerGoodbye: true } : {}),
   });
   const loop = pipeline.run();
 
@@ -687,6 +689,52 @@ await test("F2. …but not a clear refusal, not the seat question, and not once 
   );
   assert.equal(discoveryNoIn([t("assistant", ASKS), t("user", "Yes, I have.")]), undefined, "not a no");
   assert.equal(discoveryNoIn([t("assistant", "The workshop is on Sunday."), t("user", "No.")]), undefined, "no question was asked");
+});
+
+// ═════════════════════════════════════════════════════════════════
+section("SECTION G — the caller's \"Bye\" ends the call (test call c8612a51)");
+// ═════════════════════════════════════════════════════════════════
+
+await test("G1. isCallerGoodbye: a whole-turn goodbye, in English and Hindi", () => {
+  for (const said of ["Bye.", "Okay, bye.", "Bye bye", "Chalo theek hai, bye", "बाय", "ओके बाय", "Thank you, bye.", "Okay bye bro"]) {
+    assert.ok(isCallerGoodbye(said), `"${said}" is a goodbye`);
+  }
+});
+
+await test("G2. …but not a turn that says more, or no farewell word", () => {
+  for (const said of ["Bye, but first tell me the time.", "Why did you say bye?", "You said bye ना, so why did not you put the call?", "Okay, thank you.", "Okay.", ""]) {
+    assert.ok(!isCallerGoodbye(said), `"${said}" is not a goodbye`);
+  }
+});
+
+await test("G3. ON: \"Okay, bye.\" gets the fixed goodbye, and the model's reply is never spoken", async () => {
+  const h = startHarness({ replies: [ASKING_BLOCK, "Should never be said."], endOnCallerGoodbye: true });
+  try {
+    await startBlock(h);
+    await h.waitFor("the question to finish", () => h.record.state === SessionState.LISTENING && h.assistantTexts().length >= 2, 30000);
+    h.say("Okay, bye.");
+    await h.waitFor("the goodbye", () => h.assistantTexts().some((t) => t === "Okay, thank you."), 20000);
+    await sleep(500);
+    // A request may be PRE-OPENED on the endpoint (speculation) and is then
+    // abandoned; what matters is that the model's reply is never spoken.
+    assert.ok(!h.synthesized.some((t) => t.includes("Should never be said")), "the model's reply is not spoken");
+    assert.ok(!h.assistantTexts().some((t) => t.includes("Should never be said")), "nor committed");
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("G4. OFF: the goodbye goes to the model, exactly as before", async () => {
+  const h = startHarness({ replies: [ASKING_BLOCK, "Okay, bye Sakshi."] });
+  try {
+    await startBlock(h);
+    await h.waitFor("the question to finish", () => h.record.state === SessionState.LISTENING && h.assistantTexts().length >= 2, 30000);
+    const before = h.requests.length;
+    h.say("Okay, bye.");
+    await h.waitFor("the model's reply", () => h.requests.length > before, 20000);
+  } finally {
+    await h.stop();
+  }
 });
 
 await test("B4. the committed history is the same with the option on and off", async () => {

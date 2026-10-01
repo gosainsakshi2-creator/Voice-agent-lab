@@ -135,6 +135,8 @@ export interface ManagerLike {
    * Optional so a manager without it behaves exactly as before.
    */
   scriptedGoodbyeDelivered?(sessionId: SessionId): boolean;
+  /** The pipeline answered the caller's own goodbye and it has played — see `endOnCallerGoodbye`. */
+  callerGoodbyeDelivered?(sessionId: SessionId): boolean;
   /**
    * OPTIONAL, and read-only. The identity gate's own verdict: the
    * person on the line said they are NOT the person we called.
@@ -783,6 +785,8 @@ export async function runCall(
           // `definitiveAnswerSoFar` so a FINAL_YES / FINAL_NO still
           // takes its own path and names its own hangup. See
           // `agentClosedIn`.
+          // The caller said goodbye and heard ours: done, whatever the room says next.
+          if (callerGoodbyeDeliveredSoFar(manager, sessionId as SessionId)) return "AGENT_CLOSED" as const;
           if (agentClosedSoFar(manager, sessionId as SessionId)) return "AGENT_CLOSED" as const;
         }
       }
@@ -1840,6 +1844,16 @@ function liveRegistrationReadingSoFar(
  * way every other optional manager call here is: a manager without the
  * method, or a session that is gone, changes nothing.
  */
+/** Has the pipeline answered the caller's goodbye? Contained like the reads above. */
+function callerGoodbyeDeliveredSoFar(manager: ManagerLike, sessionId: SessionId): boolean {
+  if (typeof manager.callerGoodbyeDelivered !== "function") return false;
+  try {
+    return manager.callerGoodbyeDelivered(sessionId) === true;
+  } catch {
+    return false;
+  }
+}
+
 /** Has the pipeline spoken and played its fixed goodbye? Contained like the reads above. */
 function scriptedGoodbyeDeliveredSoFar(manager: ManagerLike, sessionId: SessionId): boolean {
   if (typeof manager.scriptedGoodbyeDelivered !== "function") return false;

@@ -2286,10 +2286,15 @@ export function shortAnswerNote(): string {
  * reply itself stays in the caller's language.
  */
 export function englishAcknowledgementNote(): string {
+  // Test call c8612a51: told only "say it in English", the model opened
+  // almost every reply with "Right," — robotic in its own way. Not every
+  // reply needs one, and the same one twice running is the tell.
   return (
     "[internal note, never speak or acknowledge this: if your reply opens with an acknowledgement, say that acknowledgement" +
-    ' in English — "Okay", "Right", "Got it", "I see", "Sure" — never "अच्छा", "ठीक है", "जी" or "हाँ". Everything after it' +
-    " stays in the caller's language.]"
+    ' in English — "Okay", "Got it", "Sure", "I see", "Right" — never "अच्छा", "ठीक है", "जी" or "हाँ". Most replies need none:' +
+    " go straight to the point. Never open two replies in a row with the same word. Do not announce what you are about to" +
+    ' say ("मैं बस जल्दी से बता दूँ", "let me quickly tell you").' +
+    " Everything after it stays in the caller's language.]"
   );
 }
 

@@ -413,6 +413,12 @@ export interface ConversationPipelineOptions {
    */
   readonly continueAfterDiscoveryNo?: boolean;
   /**
+   * A caller's whole-turn goodbye ("Bye", "Okay, bye", "बाय") is answered
+   * with the fixed goodbye and the call is ended once it has played — see
+   * `isCallerGoodbye`. Off by default.
+   */
+  readonly endOnCallerGoodbye?: boolean;
+  /**
    * Pre-open a turn's LLM request on a SETTLED INTERIM transcript — see
    * `scheduleInterimSpeculation`. Off by default: every harness keeps
    * FIX #8's rule that only explicit endpoint evidence pre-opens.
@@ -1874,6 +1880,26 @@ const SEAT_CONFIRMED =
 
 /** Exported so the campaign layer's closing check reads the same words. */
 export const SCRIPTED_GOODBYE = "Okay, thank you.";
+
+/** Words a caller's goodbye may be made of; at least one must be a farewell word. */
+const GOODBYE_WORDS = new Set(["bye", "byee", "goodbye", "tata", "बाय", "टाटा", "अलविदा"]);
+const GOODBYE_FILLER_WORDS = new Set([
+  "ok", "okay", "achha", "accha", "chalo", "theek", "thik", "hai", "thank", "thanks", "you", "ji", "good", "ma'am", "sir", "bro",
+  "ओके", "चलो", "ठीक", "है", "जी", "धन्यवाद", "थैंक", "यू", "अच्छा",
+]);
+
+/**
+ * The caller's whole turn is a goodbye: "Bye.", "Okay, bye.", "Chalo
+ * theek hai, bye", "बाय", "Thank you, bye bye". Test call c8612a51
+ * (2026-10-01): "Bye." got "Okay, bye Sakshi — thank you." and the line
+ * stayed open while the caller kept talking; the model then told her it
+ * "can't actually cut the call". Pure; exported for its tests.
+ */
+export function isCallerGoodbye(text: string): boolean {
+  const words = text.toLowerCase().match(/[\p{L}\p{M}']+/gu) ?? [];
+  if (words.length === 0 || words.length > 8) return false;
+  return words.some((w) => GOODBYE_WORDS.has(w)) && words.every((w) => GOODBYE_WORDS.has(w) || GOODBYE_FILLER_WORDS.has(w));
+}
 
 /**
  * ---------------- The hearing check that never ends ----------------
@@ -4108,6 +4134,12 @@ export class ConversationPipeline {
           this.activeTimer = undefined;
           continue;
         }
+        if (await this.handleCallerGoodbye(turn.text, loopSignal)) {
+          this.abandonSpeculation("the caller said goodbye");
+          timer.summarize();
+          this.activeTimer = undefined;
+          continue;
+        }
         if (await this.handleScriptedClosing(turn.text, loopSignal)) {
           this.abandonSpeculation("the closing was spoken without the language model");
           timer.summarize();
@@ -6259,6 +6291,29 @@ export class ConversationPipeline {
    * दिया" — six times. This is the pipeline's own fact, which no
    * background voice can hide.
    */
+  /**
+   * `endOnCallerGoodbye`: the caller's whole turn is a goodbye — say the
+   * fixed one back and mark it, so the campaign layer ends the call as
+   * soon as it has played (`callerGoodbyeDelivered`), whatever is said in
+   * the room afterwards.
+   */
+  private async handleCallerGoodbye(userText: string, loopSignal: AbortSignal): Promise<boolean> {
+    if (this.options.endOnCallerGoodbye !== true || this.callerGoodbyeDone || this.scriptedClosingArmed) return false;
+    if (!isCallerGoodbye(userText)) return false;
+    // eslint-disable-next-line no-console
+    console.log(`[PIPELINE:${this.record.id}] the caller said goodbye ("${userText.trim().slice(0, 40)}") — fixed goodbye, then the call ends`);
+    await this.speakAttentionUtterance(SCRIPTED_GOODBYE, loopSignal, "saying goodbye to a caller's goodbye", undefined, "CLOSING", true);
+    this.callerGoodbyeDone = true;
+    return true;
+  }
+
+  private callerGoodbyeDone = false;
+
+  /** Has the fixed goodbye to the caller's own goodbye been spoken? Read-only; the campaign layer ends the call on it. */
+  callerGoodbyeDelivered(): boolean {
+    return this.callerGoodbyeDone;
+  }
+
   scriptedGoodbyeDelivered(): boolean {
     return this.scriptedGoodbyeDone;
   }

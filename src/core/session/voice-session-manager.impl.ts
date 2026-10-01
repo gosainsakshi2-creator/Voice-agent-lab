@@ -410,6 +410,9 @@ export class DefaultVoiceSessionManager implements VoiceSessionManager, Pipeline
       // A "no" before the seat question is an answer, not a refusal. OFF unless
       // `CONTINUE_AFTER_DISCOVERY_NO=true`.
       continueAfterDiscoveryNo: optionalEnv("CONTINUE_AFTER_DISCOVERY_NO", "false").trim().toLowerCase() === "true",
+      // The caller's "Bye" ends the call after one fixed goodbye. OFF unless
+      // `END_ON_CALLER_GOODBYE=true`.
+      endOnCallerGoodbye: optionalEnv("END_ON_CALLER_GOODBYE", "false").trim().toLowerCase() === "true",
     });
     this.pipelines.set(record.id, pipeline);
     record.loopPromise = pipeline.run();
@@ -700,6 +703,10 @@ export class DefaultVoiceSessionManager implements VoiceSessionManager, Pipeline
    * registration (`ConversationPipeline.scriptedGoodbyeDelivered`)? A
    * session with no pipeline reports `false`.
    */
+  callerGoodbyeDelivered(sessionId: SessionId): boolean {
+    return this.pipelines.get(sessionId)?.callerGoodbyeDelivered() ?? false;
+  }
+
   scriptedGoodbyeDelivered(sessionId: SessionId): boolean {
     return this.pipelines.get(sessionId)?.scriptedGoodbyeDelivered() ?? false;
   }

@@ -442,6 +442,55 @@ await test("B3. option OFF: no note, exactly as before", async () => {
   }
 });
 
+await test("B5. call 2e94826f: the note survives the hearing question and reaches the next real request", async () => {
+  const h = startHarness({ replies: [BLOCK, ANSWER, FOLLOW_UP], noteInterruptedReply: true });
+  try {
+    await startBlock(h);
+    await sleep(msFor(S1) + 1500);
+    h.say("Hello? Hello?");
+    await h.waitFor("the hearing question", () => h.synthesized.some((t) => t.includes("can you hear me")), 20000);
+    await h.waitFor("the agent to listen again", () => h.record.state === SessionState.LISTENING, 20000);
+    const before = h.requests.length;
+    h.say(QUESTION);
+    await h.waitFor("the request answering the question", () => h.requests.length > before, 20000);
+    const turn = lastUserTurn(h.requests[before]!);
+    assert.ok(turn.includes("your previous reply was cut off"), `the hearing question must not end the note: ${turn.slice(0, 300)}`);
+    assert.ok(turn.includes("plain instructions"), "and it still names what was never played");
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("B6. the turn that carried the note records it in telemetry, counts only", async () => {
+  const h = startHarness({ replies: [BLOCK, ANSWER, FOLLOW_UP], noteInterruptedReply: true });
+  try {
+    await cutInsideS2(h);
+    await h.waitFor("the answer", () => h.assistantTexts().some((t) => t.includes(ANSWER)), 20000);
+    await h.waitFor("the turn to be recorded", () =>
+      h.record.metrics.build().turnLatencies.some((t) => t.interruptionNote !== undefined), 20000);
+    const turns = h.record.metrics.build().turnLatencies;
+    const noted = turns.filter((t) => t.interruptionNote !== undefined);
+    assert.equal(noted.length, 1, `exactly the answering turn, got ${JSON.stringify(turns.map((t) => t.interruptionNote))}`);
+    const note = noted[0]!.interruptionNote!;
+    assert.ok(note.heardChars > S1.length && note.unheardChars > S3.length, JSON.stringify(note));
+    assert.equal(note.unheardEndsWithQuestion, false);
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("B7. option OFF: no telemetry entry", async () => {
+  const h = startHarness({ replies: [BLOCK, ANSWER, FOLLOW_UP] });
+  try {
+    await cutInsideS2(h);
+    await h.waitFor("the answer", () => h.assistantTexts().some((t) => t.includes(ANSWER)), 20000);
+    await sleep(300);
+    assert.ok(h.record.metrics.build().turnLatencies.every((t) => t.interruptionNote === undefined));
+  } finally {
+    await h.stop();
+  }
+});
+
 await test("B4. the committed history is the same with the option on and off", async () => {
   const run = async (on: boolean): Promise<readonly string[]> => {
     const h = startHarness({ replies: [BLOCK, ANSWER, FOLLOW_UP], ...(on ? { noteInterruptedReply: true } : {}) });

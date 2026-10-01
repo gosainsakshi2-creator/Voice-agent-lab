@@ -37,7 +37,7 @@ import type { AudioPayload, ConversationTurn } from "../../types/provider.types"
 import type { CompletionRequest } from "../../interfaces/providers/language-model-provider.interface";
 import type { LanguageModelProvider } from "../../interfaces/providers/language-model-provider.interface";
 import type { LlmStreamEvent } from "../../types/streaming.types";
-import type { BargeInTriggerTelemetry, CutSentenceTelemetry, TurnOutcome } from "../../types/benchmark.types";
+import type { BargeInTriggerTelemetry, CutSentenceTelemetry, TurnLatencyBreakdown, TurnOutcome } from "../../types/benchmark.types";
 import type { SpeechToTextProvider } from "../../interfaces/providers/speech-to-text-provider.interface";
 import type { TextToSpeechProvider, SynthesisTaskRequest } from "../../interfaces/providers/text-to-speech-provider.interface";
 import type { TelephonyProvider } from "../../interfaces/providers/telephony-provider.interface";
@@ -2954,13 +2954,19 @@ export class ConversationPipeline {
    */
   private cancelledHeardWords = "";
   /**
-   * Where the last model reply was cut off, for the next request only —
-   * see `noteInterruptedReply`. `atHistoryLength` is the history length
-   * once the heard part was committed: the note stands until an
-   * assistant turn lands after that point (an answer, a resume, a fixed
-   * line), so it is never shown for a reply other than the one it names.
+   * Where the last model reply was cut off, for the requests that follow
+   * — see `noteInterruptedReply`. It stands through FIXED lines (the
+   * hearing question, an acknowledgement, a silence prompt), which carry
+   * none of the reply's content, and ends only when that content is
+   * dealt with: the model's next reply is committed, or a resume or
+   * repeat replays it (`settleInterruptionNoteAfterReplay`). Call
+   * 2e94826f (2026-09-30) is why: "Hey, can you hear me?" used to end
+   * it, and two turns later the model re-pitched a block the caller had
+   * already heard twice.
    */
-  private interruptionNote: { readonly atHistoryLength: number; readonly heard: string; readonly unheard: string } | undefined;
+  private interruptionNote: { readonly heard: string; readonly unheard: string } | undefined;
+  /** What `buildRequestHistory` last put in a request, for this turn's telemetry. */
+  private interruptionNoteSent: TurnLatencyBreakdown["interruptionNote"] | undefined;
   /**
    * DIAGNOSTIC ONLY (2026-09-21) — what tripped the barge-in that
    * cancelled the response in flight, if one did. Written by
@@ -3912,11 +3918,7 @@ export class ConversationPipeline {
           if (this.options.noteInterruptedReply === true) {
             const unheard = unspokenTail(result.assistantText, this.cancelledHeardWords);
             if (unheard.length > 0) {
-              this.interruptionNote = {
-                atHistoryLength: this.record.memory.history().length,
-                heard: this.cancelledHeardWords,
-                unheard,
-              };
+              this.interruptionNote = { heard: this.cancelledHeardWords, unheard };
               // eslint-disable-next-line no-console
               console.log(
                 `[INTERRUPTION-NOTE:${sid}] response #${responseId} heardWords="${this.cancelledHeardWords.slice(-80)}" unheard="${unheard.slice(0, 80)}${unheard.length > 80 ? "..." : ""}"`,
@@ -4063,6 +4065,7 @@ export class ConversationPipeline {
           supersederTakesFloor: result.supersederTakesFloor,
           replySource: result.replySource,
           fillerSpoken: result.fillerSpoken,
+          interruptionNote: this.consumeInterruptionNoteSent(),
           // TURN-RELEASE TRACE — spread so a turn with no trace (batch
           // STT) omits all five rather than storing nulls. Counts and
           // enums only; the transcript stays on the console line.
@@ -4209,6 +4212,8 @@ export class ConversationPipeline {
     // the caller never asked for it, the pipeline spoke it because a
     // barge-in left them mid-sentence. See `ConversationTurn.replayOf`.
     this.record.memory.recordAssistantTurn(remainder, "resume");
+    // Committed whole, so settled as heard whole.
+    this.settleInterruptionNoteAfterReplay(remainder, false);
     // FIX 2 — script content the caller heard: a block has been delivered.
     this.contextualReplyCommitted = true;
     this.record.bargeIn.reset();
@@ -5093,6 +5098,9 @@ export class ConversationPipeline {
     const cancelled = this.isResponseCancelled(responseId);
     const heard = cancelled ? this.cancelledHeardText : text;
     if (heard.length > 0) this.record.memory.recordAssistantTurn(heard, replayOf);
+    // A fixed line that is not a replay (the hearing question, an
+    // acknowledgement) leaves the note standing — see `interruptionNote`.
+    if (replayOf !== undefined) this.settleInterruptionNoteAfterReplay(text, cancelled);
     this.record.bargeIn.reset();
     return { heard, unheard: cancelled ? unspokenTail(text, heard) : "" };
   }
@@ -9019,8 +9027,15 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
           // comes back continuing the previous topic instead of
           // answering what was just asked.
           turn.content = `${currentTurnNote()}\n${hint}\n${turn.content}`;
-          const note = this.liveInterruptionNote();
-          if (note !== undefined) turn.content = `${interruptedReplyNote(note.heard, note.unheard)}\n${turn.content}`;
+          const note = this.interruptionNote;
+          if (note !== undefined) {
+            turn.content = `${interruptedReplyNote(note.heard, note.unheard)}\n${turn.content}`;
+            this.interruptionNoteSent = {
+              heardChars: note.heard.trim().length,
+              unheardChars: note.unheard.trim().length,
+              unheardEndsWithQuestion: /[?？][\s"'”’)\]]*$/u.test(note.unheard.trim()),
+            };
+          }
 
           break;
       }
@@ -9029,15 +9044,30 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
   return turns;
 }
 
-  /** `interruptionNote`, while no assistant turn has been committed after the cut reply. */
-  private liveInterruptionNote(): { readonly heard: string; readonly unheard: string } | undefined {
+  /** Read-and-clear, for the turn's telemetry. */
+  private consumeInterruptionNoteSent(): TurnLatencyBreakdown["interruptionNote"] | undefined {
+    const sent = this.interruptionNoteSent;
+    this.interruptionNoteSent = undefined;
+    return sent;
+  }
+
+  /**
+   * A resume or repeat has just replayed (part of) the cut reply. What is
+   * still unheard is whatever of this replay was cut, plus the old unheard
+   * part when the replay did not contain it — a REPEAT can re-speak only
+   * the part already heard (call 2e94826f: the intro again, never the
+   * question that was cut). Nothing left unheard ends the note.
+   */
+  private settleInterruptionNoteAfterReplay(text: string, cancelled: boolean): void {
     const note = this.interruptionNote;
-    if (note === undefined) return undefined;
-    const history = this.record.memory.history();
-    for (let i = note.atHistoryLength; i < history.length; i++) {
-      if (history[i]?.role === "assistant") return undefined;
-    }
-    return note;
+    if (note === undefined) return;
+    const comparable = (s: string): string =>
+      s.toLowerCase().replace(/[^\p{L}\p{M}\p{N}\s]/gu, " ").replace(/\s+/gu, " ").trim();
+    const covered = comparable(text).includes(comparable(note.unheard));
+    const replayUnheard = cancelled ? unspokenTail(text, this.cancelledHeardWords) : "";
+    const unheard = (covered ? replayUnheard : `${replayUnheard} ${note.unheard}`).trim();
+    const heard = cancelled ? this.cancelledHeardWords : text;
+    this.interruptionNote = unheard.length > 0 ? { heard, unheard } : undefined;
   }
 
   /**

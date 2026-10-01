@@ -126,6 +126,8 @@ export interface TurnLatencyInput {
   readonly replySource?: TurnLatencyBreakdown["replySource"] | undefined;
   /** True when a latency filler was spoken before the reply. */
   readonly fillerSpoken?: boolean | undefined;
+  /** The interrupted-reply note this turn's request carried, if any. */
+  readonly interruptionNote?: TurnLatencyBreakdown["interruptionNote"] | undefined;
   // TURN-RELEASE TRACE (2026-09-21) — see `TurnLatencyBreakdown` for
   // what each one is and why it exists. Indexed access rather than a
   // re-declared union, matching `endpointMarkerOutcome` and
@@ -500,6 +502,7 @@ export class SessionMetricsCollector {
       ...(supersederTakesFloor !== undefined ? { supersederTakesFloor } : {}),
       ...(input.replySource !== undefined ? { replySource: input.replySource } : {}),
       ...(input.fillerSpoken === true ? { fillerSpoken: true as const } : {}),
+      ...(input.interruptionNote !== undefined ? { interruptionNote: input.interruptionNote } : {}),
       ...(releaseReason !== undefined ? { releaseReason } : {}),
       ...(heldTextReadsUnfinished !== undefined ? { heldTextReadsUnfinished } : {}),
       ...(continuationGracesAtRelease !== undefined ? { continuationGracesAtRelease } : {}),

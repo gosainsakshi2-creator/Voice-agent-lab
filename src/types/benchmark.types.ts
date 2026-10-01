@@ -547,6 +547,17 @@ export interface TurnLatencyBreakdown {
    * turn's latency figures are the reply's own, not the filler's.
    */
   readonly fillerSpoken?: true;
+  /**
+   * Present when this turn's request carried the interrupted-reply note
+   * (see `noteInterruptedReply`): how much of the cut reply the caller
+   * heard and did not, word-exact, and whether the unheard part ends on
+   * a question. Counts only; the text itself is in the transcript.
+   */
+  readonly interruptionNote?: {
+    readonly heardChars: number;
+    readonly unheardChars: number;
+    readonly unheardEndsWithQuestion: boolean;
+  };
 
   // ── TURN-RELEASE TRACE (2026-09-21) ───────────────────────────────
   //

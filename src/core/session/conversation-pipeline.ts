@@ -378,6 +378,12 @@ export interface ConversationPipelineOptions {
    */
   readonly shortAnswers?: boolean;
   /**
+   * Time the latency filler from when the caller stopped speaking
+   * (`FILLER_AFTER_SPEECH_END_MS`) instead of from when the request opened
+   * (`FILLER_AFTER_MS`). Needs `fillers`. Off by default.
+   */
+  readonly fillerFromSpeechEnd?: boolean;
+  /**
    * Pre-open a turn's LLM request on a SETTLED INTERIM transcript — see
    * `scheduleInterimSpeculation`. Off by default: every harness keeps
    * FIX #8's rule that only explicit endpoint evidence pre-opens.
@@ -745,6 +751,31 @@ function cacheableClip(entry: { mode: "fixed" | "generated" } | undefined, clip:
  * over their callers.)
  */
 const FILLER_AFTER_MS = 2_000;
+/**
+ * With `fillerFromSpeechEnd`: a filler once the caller has heard this
+ * much silence since they stopped speaking, with no sentence of the reply
+ * ready. All the other filler rules (not after a greeting or a goodbye,
+ * at most three a call, never two turns running) still apply.
+ */
+const FILLER_AFTER_SPEECH_END_MS = 2_000;
+/**
+ * ...but never sooner than this after the request opened: after a long
+ * release hold the 2s may already be spent, and a reply that is ~1s away
+ * does not need a filler spoken over its first word.
+ */
+const FILLER_MIN_AFTER_REQUEST_MS = 700;
+
+/**
+ * How long after a reply's request opens its filler may start. With no
+ * speech-end time (`fillerFromSpeechEnd` off, or unknown): `FILLER_AFTER_MS`
+ * from the request. With one: whatever is left of
+ * `FILLER_AFTER_SPEECH_END_MS` since the caller stopped, but at least
+ * `FILLER_MIN_AFTER_REQUEST_MS`. Pure; exported for its tests.
+ */
+export function fillerDelayMs(nowMs: number, speechEndedAtMs: number | undefined): number {
+  if (speechEndedAtMs === undefined) return FILLER_AFTER_MS;
+  return Math.max(FILLER_MIN_AFTER_REQUEST_MS, FILLER_AFTER_SPEECH_END_MS - (nowMs - speechEndedAtMs));
+}
 /** At most this many fillers in one call, never two turns running, and never the same one twice. */
 const MAX_FILLERS_PER_CALL = 3;
 /** How long after a filler ends an STT result made only of its words is read as its echo. */
@@ -3043,6 +3074,8 @@ export class ConversationPipeline {
   private pendingQuestionNoted = false;
   /** `buildRequestHistory` added the short-answer note; read-and-cleared for telemetry. */
   private shortAnswerNoted = false;
+  /** When the caller stopped speaking, for the reply now being generated — see `fillerFromSpeechEnd`. */
+  private replyTurnSpeechEndedAtMs: number | undefined;
   /**
    * DIAGNOSTIC ONLY (2026-09-21) — what tripped the barge-in that
    * cancelled the response in flight, if one did. Written by
@@ -3915,6 +3948,8 @@ export class ConversationPipeline {
         // a barge-in (discarded below). Taken BEFORE generation starts so
         // the id belongs to this response and no other.
         const responseId = this.beginAssistantResponse();
+        // When the caller stopped, for `fillerFromSpeechEnd`.
+        this.replyTurnSpeechEndedAtMs = turn.userSpeechEndedAtMs;
         const result = await this.runThinkingAndSpeaking(turn.text, turnLanguage, loopSignal);
         timer.summarize();
         timer.printLatencyBreakdown({
@@ -5786,6 +5821,12 @@ export class ConversationPipeline {
     let settled = false;
     let spoken = false;
     let playing: Promise<void> | undefined;
+    // `fillerFromSpeechEnd`: count the silence the CALLER hears, from when
+    // they stopped — the ~1s endpoint wait included — not from when the
+    // request opened. Calls 2026-10-01: request → first token was 0.7-1.1s
+    // on almost every turn, so the 2s-from-request timer never fired while
+    // callers waited 2-2.5s.
+    const delayMs = fillerDelayMs(Date.now(), this.options.fillerFromSpeechEnd === true ? this.replyTurnSpeechEndedAtMs : undefined);
     const timer =
       this.options.fillers === true && this.options.ttsCache !== undefined
         ? setTimeout(() => {
@@ -5794,7 +5835,7 @@ export class ConversationPipeline {
             if (pick === undefined) return;
             spoken = true;
             playing = this.playFiller(pick.text, pick.audio, thinkingSignal).catch(() => undefined);
-          }, FILLER_AFTER_MS)
+          }, delayMs)
         : undefined;
     return {
       // Fillers off: nothing is awaited anywhere, exactly as before.

@@ -275,7 +275,7 @@ const healthy = (identifier: { category: unknown; id: string }) => ({ provider: 
 const OPENING = "Hello, this is Rohan from Team FlexiFunnels.";
 const GENERATED = "Sure, happy to help with that.";
 
-function startCall(input: { cache?: InstanceType<typeof TtsAudioCache>; identity?: boolean; customerName?: string; generated?: boolean; reply?: string; shortClip?: boolean; fillers?: boolean; llmDelayMs?: number }) {
+function startCall(input: { cache?: InstanceType<typeof TtsAudioCache>; identity?: boolean; customerName?: string; generated?: boolean; reply?: string; shortClip?: boolean; fillers?: boolean; fillerFromSpeechEnd?: boolean; llmDelayMs?: number }) {
   const reply = input.reply ?? GENERATED;
   const synthesized: string[] = [];
   const segments: TranscriptSegment[] = [];
@@ -364,6 +364,7 @@ function startCall(input: { cache?: InstanceType<typeof TtsAudioCache>; identity
     ...(input.cache ? { ttsCache: input.cache } : {}),
     ...(input.generated === true ? { cacheGeneratedSentences: true } : {}),
     ...(input.fillers === true ? { fillers: true } : {}),
+    ...(input.fillerFromSpeechEnd === true ? { fillerFromSpeechEnd: true } : {}),
   });
   const loop = pipeline.run();
   return {
@@ -550,6 +551,25 @@ await test("F3. a filler that is not cached yet is never synthesized while the c
   const run = await fillerLines(() => fillerCall({ cache, fillers: true, llmDelayMs: 2600 }));
   assert.equal(run.lines.length, 0, "nothing cached, so nothing played");
   assert.deepEqual(run.result.assistant, [OPENING, GENERATED]);
+});
+
+await test("F4b. FILLER_FROM_SPEECH_END: the filler is timed from when the caller stopped, not from the request", async () => {
+  // Real calls 2026-10-01: release ~950ms after speech end, request → first
+  // token 0.7-1.1s, so the 2s-from-request rule never fired while callers
+  // heard 2-2.5s of silence. From speech end, the endpoint wait counts.
+  const { fillerDelayMs } = await import("../../core/session/conversation-pipeline");
+  const now = 10_000;
+  assert.equal(fillerDelayMs(now, undefined), 2000, "OFF / unknown: 2s from the request, as before");
+  assert.equal(fillerDelayMs(now, now - 950), 1050, "released 950ms after speech end: 1050ms more");
+  assert.equal(fillerDelayMs(now, now - 1800), 700, "a long release hold: never sooner than 700ms after the request");
+  assert.equal(fillerDelayMs(now, now - 5000), 700);
+});
+
+await test("F4c. FILLER_FROM_SPEECH_END: a fast reply still gets none", async () => {
+  const cache = new TtsAudioCache(undefined);
+  await fillerCall({ cache, fillers: true });
+  const run = await fillerLines(() => fillerCall({ cache, fillers: true, fillerFromSpeechEnd: true }));
+  assert.equal(run.lines.length, 0);
 });
 
 await test("F4. a reply that is ready in time never gets a filler, even with fillers cached", async () => {

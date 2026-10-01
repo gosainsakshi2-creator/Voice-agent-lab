@@ -378,6 +378,9 @@ export class DefaultVoiceSessionManager implements VoiceSessionManager, Pipeline
       // A caller's question gets an answer of at most two short sentences.
       // OFF unless `SHORT_ANSWERS=true`.
       shortAnswers: optionalEnv("SHORT_ANSWERS", "false").trim().toLowerCase() === "true",
+      // The latency filler counts the caller's silence from when they stopped
+      // speaking. OFF unless `FILLER_FROM_SPEECH_END=true`.
+      fillerFromSpeechEnd: optionalEnv("FILLER_FROM_SPEECH_END", "false").trim().toLowerCase() === "true",
     });
     this.pipelines.set(record.id, pipeline);
     record.loopPromise = pipeline.run();

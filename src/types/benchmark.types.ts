@@ -810,6 +810,8 @@ export interface BenchmarkMetrics {
 export interface DeliveryCounters {
   readonly framesSent: number;
   readonly starvedCount: number;
+  /** Of those, how many ran dry within 200ms of the pump starting — the start of an utterance, not its middle. */
+  readonly starvedEarlyCount: number;
   readonly gapCount: number;
   readonly gapMsTotal: number;
   readonly maxGapMs: number;

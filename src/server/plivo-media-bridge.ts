@@ -543,7 +543,7 @@ export function attachPlivoMediaBridge(
             console.warn(
               `[plivo-bridge:${sessionId}] OUTBOUND STARVED: queue empty after ${framesSent} frames while still SPEAKING — the caller is now hearing silence`,
             );
-            reportDelivery({ kind: "starved" });
+            reportDelivery({ kind: "starved", framesBefore: framesSent });
           }
           clearInterval(pumpTimer);
           pumpTimer = undefined;

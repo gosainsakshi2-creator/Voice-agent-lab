@@ -448,7 +448,8 @@ await test("C1. the collector totals what the bridge reports, and build() carrie
   const c = new SessionMetricsCollector("sess-c1" as SessionId, STACK as never);
   assert.equal(c.build().delivery, undefined, "nothing sent, nothing recorded");
   for (let i = 0; i < 50; i++) c.countOutboundFrame();
-  c.noteOutboundDelivery({ kind: "starved" });
+  c.noteOutboundDelivery({ kind: "starved", framesBefore: 1 });
+  c.noteOutboundDelivery({ kind: "starved", framesBefore: 300 });
   c.noteOutboundDelivery({ kind: "gap", ms: 340.6 });
   c.noteOutboundDelivery({ kind: "gap", ms: 120 });
   c.noteOutboundDelivery({ kind: "burst_capped", lateMs: 400 });
@@ -459,7 +460,7 @@ await test("C1. the collector totals what the bridge reports, and build() carrie
   assert.deepEqual(
     { ...d, socketClose: { code: d.socketClose?.code, reason: d.socketClose?.reason } },
     {
-      framesSent: 50, starvedCount: 1, gapCount: 2, gapMsTotal: 461, maxGapMs: 341,
+      framesSent: 50, starvedCount: 2, starvedEarlyCount: 1, gapCount: 2, gapMsTotal: 461, maxGapMs: 341,
       burstCapCount: 1, maxLateMs: 400, sendErrors: 1,
       socketClose: { code: 1006, reason: "abnormal" },
     },

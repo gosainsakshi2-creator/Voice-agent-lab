@@ -37,11 +37,18 @@ import type { RuntimeHealthProbe } from "./runtime-health";
 
 /** One thing a media bridge saw while sending audio — see `DeliveryCounters`. */
 export type OutboundDeliveryEvent =
-  | { readonly kind: "starved" }
+  | { readonly kind: "starved"; readonly framesBefore?: number }
   | { readonly kind: "gap"; readonly ms: number }
   | { readonly kind: "burst_capped"; readonly lateMs: number }
   | { readonly kind: "send_error" }
   | { readonly kind: "socket_closed"; readonly code?: number | undefined; readonly reason?: string | undefined };
+
+/**
+ * A pump that ran dry within this many frames (200ms) of starting ran dry
+ * at the START of an utterance — the TTS's first chunk arrived and the
+ * next did not — not mid-sentence. See `DeliveryCounters.starvedEarlyCount`.
+ */
+const STARVED_EARLY_MAX_FRAMES = 10;
 
 /** A `ws` "close" event's arguments — `(code: number, reason: Buffer)` — as a delivery event. */
 export function socketCloseEvent(args: readonly unknown[]): OutboundDeliveryEvent {
@@ -623,6 +630,7 @@ export class SessionMetricsCollector {
   private delivery = {
     framesSent: 0,
     starvedCount: 0,
+    starvedEarlyCount: 0,
     gapCount: 0,
     gapMsTotal: 0,
     maxGapMs: 0,
@@ -641,6 +649,7 @@ export class SessionMetricsCollector {
     switch (event.kind) {
       case "starved":
         d.starvedCount += 1;
+        if (event.framesBefore !== undefined && event.framesBefore <= STARVED_EARLY_MAX_FRAMES) d.starvedEarlyCount += 1;
         return;
       case "gap": {
         const ms = Math.max(0, Math.round(event.ms));

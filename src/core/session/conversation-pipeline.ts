@@ -9194,6 +9194,7 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
     const delta: DeliveryCounters = {
       framesSent: now.framesSent - (before?.framesSent ?? 0),
       starvedCount: now.starvedCount - (before?.starvedCount ?? 0),
+      starvedEarlyCount: now.starvedEarlyCount - (before?.starvedEarlyCount ?? 0),
       gapCount: now.gapCount - (before?.gapCount ?? 0),
       gapMsTotal: now.gapMsTotal - (before?.gapMsTotal ?? 0),
       // The snapshot's maxima are already this span's own.

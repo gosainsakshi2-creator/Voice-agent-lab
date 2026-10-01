@@ -938,8 +938,10 @@ async function persistMetrics(
     let recording: unknown;
     try {
       recording = manager.takeAudioCapture?.(sessionId);
-    } catch {
+    } catch (error) {
       recording = undefined;
+      // eslint-disable-next-line no-console
+      console.warn(`[RECORDING] audio capture could not be taken for ${sessionId}: ${error instanceof Error ? error.message : String(error)}`);
     }
     const raw = recording !== undefined ? { ...(metrics as unknown as Record<string, unknown>), recording } : (metrics as unknown as Record<string, unknown>);
     await saveCallMetrics(attemptId, campaign.id, contact.assignedProvider, raw, {

@@ -37,7 +37,7 @@ import type { RuntimeHealthProbe } from "./runtime-health";
 
 /** One thing a media bridge saw while sending audio — see `DeliveryCounters`. */
 export type OutboundDeliveryEvent =
-  | { readonly kind: "starved"; readonly framesBefore?: number }
+  | { readonly kind: "starved"; readonly framesBefore?: number; readonly producer?: "tts_first_chunk" | "tts_streaming" | "waiting_llm" }
   | { readonly kind: "gap"; readonly ms: number }
   | { readonly kind: "burst_capped"; readonly lateMs: number }
   | { readonly kind: "send_error" }
@@ -159,6 +159,7 @@ export interface TurnLatencyInput {
   readonly pendingQuestionNote?: true | undefined;
   readonly shortAnswerNote?: true | undefined;
   readonly voice?: TurnLatencyBreakdown["voice"] | undefined;
+  readonly prefetch?: TurnLatencyBreakdown["prefetch"] | undefined;
   // TURN-RELEASE TRACE (2026-09-21) — see `TurnLatencyBreakdown` for
   // what each one is and why it exists. Indexed access rather than a
   // re-declared union, matching `endpointMarkerOutcome` and
@@ -538,6 +539,7 @@ export class SessionMetricsCollector {
       ...(input.pendingQuestionNote === true ? { pendingQuestionNote: true as const } : {}),
       ...(input.shortAnswerNote === true ? { shortAnswerNote: true as const } : {}),
       ...(input.voice !== undefined ? { voice: input.voice } : {}),
+      ...(input.prefetch !== undefined ? { prefetch: input.prefetch } : {}),
       ...(releaseReason !== undefined ? { releaseReason } : {}),
       ...(heldTextReadsUnfinished !== undefined ? { heldTextReadsUnfinished } : {}),
       ...(continuationGracesAtRelease !== undefined ? { continuationGracesAtRelease } : {}),
@@ -641,6 +643,7 @@ export class SessionMetricsCollector {
     sendErrors: 0,
   };
   private socketClose: SocketCloseRecord | undefined;
+  private starvedWhile = { ttsFirstChunk: 0, ttsStreaming: 0, waitingLlm: 0 };
 
   countOutboundFrame(): void {
     this.delivery.framesSent += 1;
@@ -652,6 +655,9 @@ export class SessionMetricsCollector {
       case "starved":
         d.starvedCount += 1;
         if (event.framesBefore !== undefined && event.framesBefore <= STARVED_EARLY_MAX_FRAMES) d.starvedEarlyCount += 1;
+        if (event.producer === "tts_first_chunk") this.starvedWhile.ttsFirstChunk += 1;
+        else if (event.producer === "tts_streaming") this.starvedWhile.ttsStreaming += 1;
+        else if (event.producer === "waiting_llm") this.starvedWhile.waitingLlm += 1;
         return;
       case "gap": {
         const ms = Math.max(0, Math.round(event.ms));
@@ -769,7 +775,13 @@ export class SessionMetricsCollector {
       ...(this.sttModel !== undefined ? { sttModel: this.sttModel } : {}),
       ...(this.sttEndpointing !== undefined ? { sttEndpointing: this.sttEndpointing } : {}),
       ...(Object.values(this.delivery).some((v) => v > 0) || this.socketClose !== undefined
-        ? { delivery: { ...this.delivery, ...(this.socketClose !== undefined ? { socketClose: this.socketClose } : {}) } }
+        ? {
+            delivery: {
+              ...this.delivery,
+              ...(Object.values(this.starvedWhile).some((v) => v > 0) ? { starvedWhile: { ...this.starvedWhile } } : {}),
+              ...(this.socketClose !== undefined ? { socketClose: this.socketClose } : {}),
+            },
+          }
         : {}),
       ...(Object.values(this.bargeInGate).some((v) => v > 0) ? { bargeInGate: { ...this.bargeInGate } } : {}),
       ...(this.runtimeProbe !== undefined ? { runtime: this.runtimeProbe.snapshot() } : {}),

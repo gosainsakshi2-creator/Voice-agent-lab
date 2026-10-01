@@ -849,6 +849,12 @@ getTranscript(sessionId: SessionId): readonly import("../../types/provider.types
   noteOutboundDelivery(sessionId: SessionId, event: OutboundDeliveryEvent): void {
     const record = this.sessions.get(sessionId);
     if (!record) return;
+    if (event.kind === "starved") {
+      // What the pipeline was doing when the caller started hearing silence.
+      const producer = this.pipelines.get(sessionId)?.producerPhase();
+      record.metrics.noteOutboundDelivery(producer !== undefined ? { ...event, producer } : event);
+      return;
+    }
     record.metrics.noteOutboundDelivery(event);
   }
 

@@ -363,7 +363,7 @@ ${BLOCK}`;
 const TTFB_MS = 400;
 const ttsLog: Array<{ text: string; event: "request" | "end"; at: number }> = [];
 
-async function runBlock(prefetch: boolean): Promise<{ log: typeof ttsLog; assistant: readonly string[]; synthesized: readonly string[]; wallMs: number }> {
+async function runBlock(prefetch: boolean): Promise<{ log: typeof ttsLog; assistant: readonly string[]; synthesized: readonly string[]; wallMs: number; prefetch: { started: number; played: number } | undefined }> {
   ttsLog.length = 0;
   const h = startHarness({ replies: [BLOCK, "Okay."], ...(prefetch ? { prefetchNextSentence: true } : {}) });
   try {
@@ -377,7 +377,9 @@ async function runBlock(prefetch: boolean): Promise<{ log: typeof ttsLog; assist
       console.log(`[PREFETCH-DEBUG] state=${h.record.state} log=${JSON.stringify(ttsLog.map((e) => ({ t: e.text.slice(0, 18), e: e.event, at: e.at - t0 })))}`);
       throw error;
     }
-    return { log: [...ttsLog], assistant: h.assistantTexts(), synthesized: [...h.synthesized], wallMs: Date.now() - startedAt };
+    await h.waitFor("the turn to be recorded", () => h.record.metrics.build().turnLatencies.length >= 1, 20000);
+    const prefetch = h.record.metrics.build().turnLatencies.map((t) => t.prefetch).find((p) => p !== undefined);
+    return { log: [...ttsLog], assistant: h.assistantTexts(), synthesized: [...h.synthesized], wallMs: Date.now() - startedAt, prefetch };
   } finally {
     await h.stop();
   }
@@ -394,6 +396,7 @@ await test("A1. ON: sentence 2's request goes out before sentence 1's stream end
   const s2Request = requestAt(run.log, "Flexi Genie");
   assert.ok(s1End !== undefined && s2Request !== undefined, JSON.stringify(run.log));
   assert.ok(s2Request < s1End, `S2 requested ${s2Request - s1End}ms relative to S1's end — must be before it`);
+  assert.ok((run.prefetch?.started ?? 0) >= 1 && (run.prefetch?.played ?? 0) >= 1, `telemetry: ${JSON.stringify(run.prefetch)}`);
 });
 
 await test("A2. OFF: exactly as before — sentence 2 is requested only after sentence 1 ends", async () => {

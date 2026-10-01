@@ -3170,6 +3170,13 @@ export class ConversationPipeline {
     this.turnVoiceStats = { speakerChars: new Map(), confidenceSum: 0, confidenceCount: 0 };
   }
 
+  private consumePrefetchCounts(): { readonly started: number; readonly played: number } | undefined {
+    const counts = { started: this.prefetchStartedThisTurn, played: this.prefetchPlayedThisTurn };
+    this.prefetchStartedThisTurn = 0;
+    this.prefetchPlayedThisTurn = 0;
+    return counts.started > 0 || counts.played > 0 ? counts : undefined;
+  }
+
   private consumeTurnVoice(): TurnVoiceTelemetry | undefined {
     const voice = this.pendingTurnVoice;
     this.pendingTurnVoice = undefined;
@@ -4296,6 +4303,7 @@ export class ConversationPipeline {
           pendingQuestionNote: this.consumePendingQuestionNoted(),
           shortAnswerNote: this.consumeShortAnswerNoted(),
           voice: this.consumeTurnVoice(),
+          prefetch: this.consumePrefetchCounts(),
           delivery: this.consumeDeliveryDelta(),
           // TURN-RELEASE TRACE — spread so a turn with no trace (batch
           // STT) omits all five rather than storing nulls. Counts and
@@ -9961,7 +9969,12 @@ await this.drainPlayback(speakingSignal, true);
               // this one's synthesis now, so its first chunk is in hand when
               // that one ends, instead of ~450ms (the provider's time to first
               // byte) of dead air at every sentence boundary.
-              if (pendingSpoken !== undefined && !pendingSpokenDone) prefetched.add(this.prepareSentenceAudio(cleaned, speakingSignal, true));
+              if (pendingSpoken !== undefined && !pendingSpokenDone) {
+                const clip = this.prepareSentenceAudio(cleaned, speakingSignal, true);
+                prefetched.add(clip);
+                this.prefetchedAudio.add(clip);
+                this.prefetchStartedThisTurn += 1;
+              }
               await settlePendingSpoken();
               if (speakingSignal.aborted) break;
               const synthesisStartedAt = Date.now();
@@ -10518,7 +10531,43 @@ await this.drainPlayback(speakingSignal, true);
     return false;
   }
 
+  // ── PRODUCER STATE — telemetry only, see `producerPhase` ──────────
+  /** `synthesizeAndPlay` calls in flight. */
+  private ttsInFlight = 0;
+  /** The newest of them has not handed over a chunk yet. */
+  private ttsAwaitingFirstChunk = false;
+  /** Prefetched clips (`prefetchNextSentence`), to count the ones that were played. */
+  private readonly prefetchedAudio = new WeakSet<PreparedAudio>();
+  private prefetchStartedThisTurn = 0;
+  private prefetchPlayedThisTurn = 0;
+
+  /**
+   * TELEMETRY ONLY. What the reply's audio producer was doing at this
+   * instant — read by the manager when the bridge's pump runs dry, so a
+   * mid-reply gap says whether the TTS had not answered yet
+   * (`tts_first_chunk`: a sentence boundary paid its time to first byte),
+   * was streaming slower than playback (`tts_streaming`: a stall inside a
+   * sentence), or no sentence was ready at all (`waiting_llm`).
+   */
+  producerPhase(): "tts_first_chunk" | "tts_streaming" | "waiting_llm" {
+    if (this.ttsInFlight > 0) return this.ttsAwaitingFirstChunk ? "tts_first_chunk" : "tts_streaming";
+    return "waiting_llm";
+  }
+
   private async synthesizeAndPlay(
+    text: string,
+    speakingSignal: AbortSignal,
+  ): Promise<{ ttsMs: number; ttsCostUsd: number; firstChunkMs?: number }> {
+    this.ttsInFlight += 1;
+    this.ttsAwaitingFirstChunk = true;
+    try {
+      return await this.synthesizeAndPlayInner(text, speakingSignal);
+    } finally {
+      this.ttsInFlight -= 1;
+    }
+  }
+
+  private async synthesizeAndPlayInner(
     text: string,
     speakingSignal: AbortSignal,
   ): Promise<{ ttsMs: number; ttsCostUsd: number; firstChunkMs?: number }> {
@@ -10600,6 +10649,7 @@ await this.drainPlayback(speakingSignal, true);
           this.markTiming("tts-first-chunk");
         }
         const readyMs = Date.now() - startedAt;
+        if (this.prefetchedAudio.has(prepared)) this.prefetchPlayedThisTurn += 1;
         // eslint-disable-next-line no-console
         console.log(`[PREPARE:${sid}] playing prepared audio for "${text.slice(0, 60)}" (ready in ${readyMs}ms)`);
         for (let index = 0, chunk: AudioPayload | undefined = first; chunk !== undefined; chunk = await prepared.next(++index, PREPARED_CHUNK_TIMEOUT_MS)) {
@@ -10867,6 +10917,7 @@ await this.drainPlayback(speakingSignal, true);
 
   private async playAudioChunk(audio: AudioPayload): Promise<void> {
     this.playAudioChunkCount += 1;
+    this.ttsAwaitingFirstChunk = false;
 
     // On the first chunk, wait for the bridge to register its listener.
     if (this.playAudioChunkCount === 1) {

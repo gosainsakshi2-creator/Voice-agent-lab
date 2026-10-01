@@ -571,6 +571,8 @@ export interface TurnLatencyBreakdown {
   readonly shortAnswerNote?: true;
   /** What the caller's turn sounded like — see `TurnVoiceTelemetry`. */
   readonly voice?: TurnVoiceTelemetry;
+  /** Next-sentence prefetch this turn (`prefetchNextSentence`): clips started, and how many were played. */
+  readonly prefetch?: { readonly started: number; readonly played: number };
 
   // ── TURN-RELEASE TRACE (2026-09-21) ───────────────────────────────
   //
@@ -814,6 +816,12 @@ export interface DeliveryCounters {
   readonly starvedCount: number;
   /** Of those, how many ran dry within 200ms of the pump starting — the start of an utterance, not its middle. */
   readonly starvedEarlyCount: number;
+  /**
+   * What the reply's audio producer was doing each time the pump ran dry
+   * (call-wide only): the TTS had not answered the next request yet, it
+   * was streaming slower than playback, or no sentence was ready.
+   */
+  readonly starvedWhile?: { readonly ttsFirstChunk: number; readonly ttsStreaming: number; readonly waitingLlm: number };
   readonly gapCount: number;
   readonly gapMsTotal: number;
   readonly maxGapMs: number;

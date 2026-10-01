@@ -483,6 +483,15 @@ await test("C1b. call 64f54e00: a turn's max gap is its own, even when an earlie
   assert.equal(c.build().delivery!.maxLateMs, 1800);
 });
 
+await test("C1c. each starve records what the producer was doing", () => {
+  const c = new SessionMetricsCollector("sess-c1c" as SessionId, STACK as never);
+  c.noteOutboundDelivery({ kind: "starved", framesBefore: 200, producer: "tts_first_chunk" });
+  c.noteOutboundDelivery({ kind: "starved", framesBefore: 200, producer: "tts_streaming" });
+  c.noteOutboundDelivery({ kind: "starved", framesBefore: 200, producer: "tts_streaming" });
+  c.noteOutboundDelivery({ kind: "starved", framesBefore: 200 });
+  assert.deepEqual(c.build().delivery?.starvedWhile, { ttsFirstChunk: 1, ttsStreaming: 2, waitingLlm: 0 });
+});
+
 await test("C2. a turn records the counters since the previous turn, and only when something happened", async () => {
   const h = startHarness({ replies: [BLOCK, ANSWER, FOLLOW_UP] });
   try {

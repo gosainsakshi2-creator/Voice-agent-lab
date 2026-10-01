@@ -21,7 +21,7 @@
 
 import assert from "node:assert/strict";
 
-const { ConversationPipeline, wordPrefixAtFraction, pendingQuestionIn, callerAskedSinceAgent } = await import("../../core/session/conversation-pipeline");
+const { ConversationPipeline, wordPrefixAtFraction, pendingQuestionIn, callerAskedSinceAgent, discoveryNoIn } = await import("../../core/session/conversation-pipeline");
 const { interruptedReplyNote } = await import("../../core/session/system-prompt");
 const { SessionRecord } = await import("../../core/session/session-record");
 const { SessionState, SupportedLanguage, CallDirection, ProviderCategory } = await import(
@@ -660,6 +660,33 @@ await test("E2. ON, English call: no note — it is English already", async () =
 
 await test("E3. OFF: no note, exactly as before", async () => {
   assert.ok(!(await ackRequest({ on: false, hindi: true })).includes("acknowledgement in English"));
+});
+
+// ═════════════════════════════════════════════════════════════════
+section("SECTION F — a \"no\" before the seat question is an answer (test call 849e83d3)");
+// ═════════════════════════════════════════════════════════════════
+
+const DISCOVERY = "Hi, मैं Ishita, Team FlexiFunnels से। आपने पहले कभी कुछ online डालने की try की है?";
+const SEAT = "इसके लिए कोई coding या design skill नहीं चाहिए। तो क्या मैं आपकी free seat reserve कर दूँ?";
+
+await test("F1. call 849e83d3: \"नहीं, फिलहाल तो नहीं करूँ\" to the discovery question is an answer", () => {
+  assert.equal(discoveryNoIn([t("assistant", DISCOVERY), t("user", "नहीं, फिलहाल तो नहीं करूँ।")]), "आपने पहले कभी कुछ online डालने की try की है?");
+  assert.ok(discoveryNoIn([t("assistant", ASKS), t("user", "No, not yet.")]) !== undefined);
+  assert.ok(discoveryNoIn([t("assistant", ASKS), t("user", "Nahi, abhi tak nahi.")]) !== undefined);
+});
+
+await test("F2. …but not a clear refusal, not the seat question, and not once the seat was offered", () => {
+  assert.equal(discoveryNoIn([t("assistant", ASKS), t("user", "No, I'm not interested.")]), undefined, "a refusal is the model's to close on");
+  assert.equal(discoveryNoIn([t("assistant", DISCOVERY), t("user", "नहीं, मुझे नहीं चाहिए।")]), undefined);
+  assert.equal(discoveryNoIn([t("assistant", ASKS), t("user", "No, I don't have time.")]), undefined);
+  assert.equal(discoveryNoIn([t("assistant", SEAT), t("user", "नहीं।")]), undefined, "a no to the seat question is a no");
+  assert.equal(
+    discoveryNoIn([t("assistant", SEAT), t("user", "Tell me more first."), t("assistant", ASKS), t("user", "No.")]),
+    undefined,
+    "after the seat was offered, a no may be about it",
+  );
+  assert.equal(discoveryNoIn([t("assistant", ASKS), t("user", "Yes, I have.")]), undefined, "not a no");
+  assert.equal(discoveryNoIn([t("assistant", "The workshop is on Sunday."), t("user", "No.")]), undefined, "no question was asked");
 });
 
 await test("B4. the committed history is the same with the option on and off", async () => {

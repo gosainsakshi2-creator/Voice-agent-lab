@@ -44,7 +44,7 @@ import type { TelephonyProvider } from "../../interfaces/providers/telephony-pro
 
 import type { SessionRecord } from "./session-record";
 import { detectLanguage, isLockGradeEvidence, type LanguageDetectionResult } from "./language-detector";
-import { currentTurnNote, englishAcknowledgementNote, interruptedReplyNote, languageHintFor, openingLineFor, pendingQuestionNote, shortAnswerNote } from "./system-prompt";
+import { currentTurnNote, discoveryNoNote, englishAcknowledgementNote, interruptedReplyNote, languageHintFor, openingLineFor, pendingQuestionNote, shortAnswerNote } from "./system-prompt";
 import { isQuestionTurn } from "../../campaign/outcome/conversation-events";
 import { repairSttHomophones } from "./stt-repair";
 import { asksWhoIsCalling, classifyIdentityAnswer } from "../../campaign/domain/identity-answer";
@@ -407,6 +407,12 @@ export interface ConversationPipelineOptions {
    */
   readonly englishAcknowledgements?: boolean;
   /**
+   * A "no" to a question asked before the seat question is an answer, not
+   * a refusal: tell the model to carry on and offer the seat — see
+   * `discoveryNoIn`. Off by default.
+   */
+  readonly continueAfterDiscoveryNo?: boolean;
+  /**
    * Pre-open a turn's LLM request on a SETTLED INTERIM transcript — see
    * `scheduleInterimSpeculation`. Off by default: every harness keeps
    * FIX #8's rule that only explicit endpoint evidence pre-opens.
@@ -679,7 +685,7 @@ function fallbackGreeting(language: SupportedLanguage): string {
     case "hi":
       return "नमस्ते! मैं आपकी कैसे मदद कर सकता हूँ?";
     case "hi-en":
-      return "Hey, namaste! Kaise help kar sakta hoon aapki?";
+      return "Hey, नमस्ते! मैं आपकी कैसे help कर सकता हूँ?";
     default:
       return "Hey! How can I help you today?";
   }
@@ -1371,7 +1377,7 @@ function attentionAcknowledgementFor(language: SupportedLanguage): string {
     case "hi":
       return "हाँ, क्या आपको मेरी आवाज़ ठीक से सुनाई दे रही है?";
     case "hi-en":
-      return "Haan, aap mujhe theek se sun paa rahe ho?";
+      return "हाँ, आप मुझे ठीक से सुन पा रहे हो?";
     default:
       return "Hey, can you hear me?";
   }
@@ -1449,7 +1455,7 @@ function silenceRecoveryPromptFor(language: SupportedLanguage, promptIndex: numb
       case "hi":
         return "हैलो, क्या आप वहाँ हैं?";
       case "hi-en":
-        return "Hello, aap wahan hain?";
+        return "Hello, आप वहाँ हैं?";
       default:
         return "Hello, are you there?";
     }
@@ -1458,7 +1464,7 @@ function silenceRecoveryPromptFor(language: SupportedLanguage, promptIndex: numb
     case "hi":
       return "हैलो, क्या कोई है?";
     case "hi-en":
-      return "Hello, koi hai wahan?";
+      return "Hello, कोई है वहाँ?";
     default:
       return "Hello, is anyone there?";
   }
@@ -1476,7 +1482,7 @@ function hearingFollowUpFor(language: SupportedLanguage): string {
     case "hi":
       return "बस कन्फ़र्म करना था कि आप मुझे सुन पा रहे हैं। जो मैंने अभी कहा, वो आपने सुना?";
     case "hi-en":
-      return "Bas confirm karna tha ki aap mujhe sun paa rahe hain. Jo maine abhi kaha, woh aapne suna?";
+      return "बस confirm करना था कि आप मुझे सुन पा रहे हैं। जो मैंने अभी कहा, वो आपने सुना?";
     default:
       return "I just want to make sure you can hear me. Did you catch what I was saying?";
   }
@@ -2323,7 +2329,7 @@ function identityReAskFor(
       case "hi":
         return `मेरा नाम ${introduceAs} है, Team FlexiFunnels से. ${line}`;
       case "hi-en":
-        return `Mera naam ${introduceAs} hai, Team FlexiFunnels se. ${line}`;
+        return `मेरा नाम ${introduceAs} है, Team FlexiFunnels से. ${line}`;
       default:
         return `This is ${introduceAs} from Team FlexiFunnels. ${line}`;
     }
@@ -2355,7 +2361,7 @@ function identityGiveUpFor(language: SupportedLanguage): string {
     case "hi":
       return "कोई बात नहीं, मैं बाद में कॉल कर लूँगी. धन्यवाद!";
     case "hi-en":
-      return "Koi baat nahi, main baad mein call kar lungi. Thank you!";
+      return "कोई बात नहीं, मैं बाद में call कर लूँगी। Thank you!";
     default:
       return "No problem, I'll try again later. Thank you!";
   }
@@ -2606,6 +2612,43 @@ export function wordPrefixAtFraction(text: string, fraction: number): string {
  * a question rather than an answer. `undefined` otherwise — including when
  * the agent's turn did not end on a question, or nothing was said since.
  */
+/** A turn that opens with a plain "no": "No.", "Nahi, abhi tak nahi", "नहीं, फिलहाल तो नहीं करूँ". */
+const OPENS_WITH_NO = /^\s*(?:no|nope|nah|nahi|nahin|nai|नहीं|नही|ना)(?=$|[\s,.!?।—–-])/iu;
+
+/**
+ * The caller said "no" to one of the agent's questions BEFORE the seat
+ * question — and it is not a refusal of the offer itself. Returns the
+ * question it answered; undefined otherwise. Test call 849e83d3
+ * (2026-10-01): "Have you tried putting something online before?" →
+ * "नहीं, फिलहाल तो नहीं करूँ।" → the model said goodbye, and the seat was
+ * never offered. A clear refusal ("not interested", "नहीं चाहिए", "no
+ * time", "busy") is left to the model, which may close on it. Pure;
+ * exported for its tests.
+ */
+export function discoveryNoIn(turns: readonly ConversationTurn[]): string | undefined {
+  let lastAssistant = -1;
+  for (let i = turns.length - 1; i >= 0; i--) {
+    if (turns[i]?.role === "assistant") {
+      lastAssistant = i;
+      break;
+    }
+  }
+  if (lastAssistant < 0) return undefined;
+  const said = turns
+    .slice(lastAssistant + 1)
+    .filter((t) => t.role === "user")
+    .map((t) => t.content)
+    .join(" ")
+    .trim();
+  if (!OPENS_WITH_NO.test(said) || CALLER_DECLINES.test(said)) return undefined;
+  const sentences = (turns[lastAssistant]!.content.trim().match(/[^.!?।？]+[.!?।？]*/gu) ?? []).map((s) => s.trim());
+  const question = sentences[sentences.length - 1] ?? "";
+  if (!/[?？]$/u.test(question) || SEAT_QUESTION.test(question)) return undefined;
+  // The seat question has been asked already: a "no" now may be about it.
+  const seatAsked = turns.some((t) => t.role === "assistant" && /[?？]/u.test(t.content) && SEAT_QUESTION.test(t.content));
+  return seatAsked ? undefined : question;
+}
+
 /** Everything the caller has said since the agent's last turn reads as a question. */
 export function callerAskedSinceAgent(turns: readonly ConversationTurn[]): boolean {
   const since: string[] = [];
@@ -3129,6 +3172,8 @@ export class ConversationPipeline {
   private pendingQuestionNoted = false;
   /** `buildRequestHistory` added the short-answer note; read-and-cleared for telemetry. */
   private shortAnswerNoted = false;
+  /** `buildRequestHistory` added the discovery-"no" note; read-and-cleared for telemetry. */
+  private discoveryNoNoted = false;
   /** When the caller stopped speaking, for the reply now being generated — see `fillerFromSpeechEnd`. */
   private replyTurnSpeechEndedAtMs: number | undefined;
   /** Speakers and STT confidence of the final segments since the last turn was acquired — see `TurnVoiceTelemetry`. */
@@ -4309,6 +4354,7 @@ export class ConversationPipeline {
           interruptionNote: this.consumeInterruptionNoteSent(),
           pendingQuestionNote: this.consumePendingQuestionNoted(),
           shortAnswerNote: this.consumeShortAnswerNoted(),
+          discoveryNoNote: this.consumeDiscoveryNoNoted(),
           voice: this.consumeTurnVoice(),
           prefetch: this.consumePrefetchCounts(),
           delivery: this.consumeDeliveryDelta(),
@@ -5449,8 +5495,8 @@ export class ConversationPipeline {
           : `ठीक है, तो मैं बता ${female ? "रही थी" : "रहा था"} कि — `;
       case "hi-en":
         return asking
-          ? `Theek hai, toh main pooch ${female ? "rahi thi" : "raha tha"} — `
-          : `Theek hai, toh main bata ${female ? "rahi thi" : "raha tha"} ki — `;
+          ? `ठीक है, तो मैं पूछ ${female ? "रही थी" : "रहा था"} — `
+          : `ठीक है, तो मैं बता ${female ? "रही थी" : "रहा था"} कि — `;
       default:
         return asking ? "Okay, so I was asking — " : "Okay, so I was telling you that — ";
     }
@@ -9319,6 +9365,9 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
   // Read from the turns as spoken, before any note is prefixed below.
   const pending = this.options.returnToPendingQuestion === true ? pendingQuestionIn(recent) : undefined;
   const callerAsked = this.options.shortAnswers === true && callerAskedSinceAgent(recent);
+  // Never on the identity question: "No" there is the wrong person.
+  const discoveryNo =
+    this.options.continueAfterDiscoveryNo === true && this.identityState === "confirmed" ? discoveryNoIn(recent) : undefined;
 
   const hint = languageHintFor(detectedLanguage);
 
@@ -9347,6 +9396,10 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
           if (callerAsked) {
             turn.content = `${shortAnswerNote()}\n${turn.content}`;
             this.shortAnswerNoted = true;
+          }
+          if (discoveryNo !== undefined) {
+            turn.content = `${discoveryNoNote(discoveryNo)}\n${turn.content}`;
+            this.discoveryNoNoted = true;
           }
           if (this.options.englishAcknowledgements === true && detectedLanguage !== "en") {
             turn.content = `${englishAcknowledgementNote()}\n${turn.content}`;
@@ -9393,6 +9446,13 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
       sendErrors: now.sendErrors - (before?.sendErrors ?? 0),
     };
     return Object.values(delta).some((v) => v > 0) ? delta : undefined;
+  }
+
+  /** Read-and-clear, for the turn's telemetry. */
+  private consumeDiscoveryNoNoted(): true | undefined {
+    const noted = this.discoveryNoNoted;
+    this.discoveryNoNoted = false;
+    return noted ? true : undefined;
   }
 
   /** Read-and-clear, for the turn's telemetry. */

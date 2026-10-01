@@ -101,13 +101,13 @@ const ALL_LANGUAGES: readonly Lang[] = [EN, HI, HI_EN];
 const HEARING_ACK: Readonly<Record<string, string>> = {
   [EN]: "Hey, can you hear me?",
   [HI]: "हाँ, क्या आपको मेरी आवाज़ ठीक से सुनाई दे रही है?",
-  [HI_EN]: "Haan, aap mujhe theek se sun paa rahe ho?",
+  [HI_EN]: "हाँ, आप मुझे ठीक से सुन पा रहे हो?",
 };
 const HEARING_FOLLOW_UP: Readonly<Record<string, string>> = {
   [EN]: "I just want to make sure you can hear me. Did you catch what I was saying?",
   [HI]: "बस कन्फ़र्म करना था कि आप मुझे सुन पा रहे हैं। जो मैंने अभी कहा, वो आपने सुना?",
   [HI_EN]:
-    "Bas confirm karna tha ki aap mujhe sun paa rahe hain. Jo maine abhi kaha, woh aapne suna?",
+    "बस confirm करना था कि आप मुझे सुन पा रहे हैं। जो मैंने अभी कहा, वो आपने सुना?",
 };
 
 /**

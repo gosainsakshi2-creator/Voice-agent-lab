@@ -96,10 +96,10 @@ const FOLLOW_UP = "I just want to make sure you can hear me. Did you catch what 
 const ALL_HEARING_LINES = [
   ACK,
   "हाँ, क्या आपको मेरी आवाज़ ठीक से सुनाई दे रही है?",
-  "Haan, aap mujhe theek se sun paa rahe ho?",
+  "हाँ, आप मुझे ठीक से सुन पा रहे हो?",
   FOLLOW_UP,
   "बस कन्फ़र्म करना था कि आप मुझे सुन पा रहे हैं। जो मैंने अभी कहा, वो आपने सुना?",
-  "Bas confirm karna tha ki aap mujhe sun paa rahe hain. Jo maine abhi kaha, woh aapne suna?",
+  "बस confirm करना था कि आप मुझे सुन पा रहे हैं। जो मैंने अभी कहा, वो आपने सुना?",
 ];
 /**
  * `MAX_HEARING_LINES_WITHOUT_PROGRESS`, restated for the same reason.

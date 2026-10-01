@@ -407,6 +407,9 @@ export class DefaultVoiceSessionManager implements VoiceSessionManager, Pipeline
       // Fillers and the reply's opening acknowledgement in English in every
       // language. OFF unless `ENGLISH_ACKNOWLEDGEMENTS=true`.
       englishAcknowledgements: optionalEnv("ENGLISH_ACKNOWLEDGEMENTS", "false").trim().toLowerCase() === "true",
+      // A "no" before the seat question is an answer, not a refusal. OFF unless
+      // `CONTINUE_AFTER_DISCOVERY_NO=true`.
+      continueAfterDiscoveryNo: optionalEnv("CONTINUE_AFTER_DISCOVERY_NO", "false").trim().toLowerCase() === "true",
     });
     this.pipelines.set(record.id, pipeline);
     record.loopPromise = pipeline.run();

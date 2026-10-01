@@ -2293,6 +2293,19 @@ export function englishAcknowledgementNote(): string {
   );
 }
 
+/**
+ * The caller said "no" to a question the agent asked before offering the
+ * seat — see `discoveryNoIn`. That answers the question; it does not turn
+ * the offer down, and nobody has been asked yet.
+ */
+export function discoveryNoNote(question: string): string {
+  return (
+    `[internal note, never speak or acknowledge this: the caller's "no" answers your question "${question.trim()}" — it is not` +
+    " a refusal of the workshop, which you have not offered them yet. Do not close the call or say goodbye. Acknowledge" +
+    " their answer briefly and carry on with the script towards asking whether to reserve their seat.]"
+  );
+}
+
 /** Longest quote of the heard / unheard part a note carries; the model needs where, not all of it. */
 const INTERRUPTION_QUOTE_CHARS = 240;
 

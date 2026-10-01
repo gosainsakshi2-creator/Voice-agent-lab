@@ -569,6 +569,8 @@ export interface TurnLatencyBreakdown {
   readonly pendingQuestionNote?: true;
   /** True when this turn's request asked for a short answer to the caller's question (`shortAnswers`). */
   readonly shortAnswerNote?: true;
+  /** True when this turn's request said a pre-seat-question "no" is not a refusal (`continueAfterDiscoveryNo`). */
+  readonly discoveryNoNote?: true;
   /** What the caller's turn sounded like — see `TurnVoiceTelemetry`. */
   readonly voice?: TurnVoiceTelemetry;
   /** Next-sentence prefetch this turn (`prefetchNextSentence`): clips started, and how many were played. */

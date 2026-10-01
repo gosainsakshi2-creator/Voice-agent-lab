@@ -57,6 +57,13 @@ export interface DispatchConfig {
   readonly claimBatchSize: number;
   readonly pollIntervalMs: number;
   readonly stageMaxCalls: number;
+  /**
+   * Keep a lane running while any of its contacts has a retry scheduled
+   * for later (a no-answer's 30 minutes), so the retry is actually dialled
+   * — see `countPendingContacts`. `CAMPAIGN_WAIT_FOR_RETRIES=false` restores
+   * the old behaviour, where the run ended once nothing was due right now.
+   */
+  readonly waitForRetries: boolean;
   readonly retry: RetryConfig;
   readonly dispatcherId: string;
   readonly lockStaleSeconds: number;
@@ -141,6 +148,7 @@ export function getDispatchConfig(): DispatchConfig {
     // Pilot ladder ceiling for a single run. 10 by default so the first
     // real run cannot become a thousand calls by accident.
     stageMaxCalls: optionalEnvNumber("CAMPAIGN_STAGE_MAX_CALLS", 10),
+    waitForRetries: optionalEnv("CAMPAIGN_WAIT_FOR_RETRIES", "true").trim().toLowerCase() !== "false",
     retry: {
       maxAttempts: optionalEnvNumber("CAMPAIGN_RETRY_MAX_ATTEMPTS", 3),
       noAnswerDelayMinutes: optionalEnvNumber("CAMPAIGN_RETRY_NO_ANSWER_DELAY_MINUTES", 30),

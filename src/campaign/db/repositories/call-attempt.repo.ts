@@ -414,16 +414,26 @@ export async function recoverOrphans(campaignId: string): Promise<{ attempts: nu
 export async function countPendingContacts(
   campaignId: string,
   provider?: CampaignTtsProvider,
+  /**
+   * Per-lane only: count a contact whose retry is scheduled for later
+   * (`next_attempt_after` in the future) as still pending. The lane uses
+   * this to decide it is finished; without it a lane whose only remaining
+   * contacts were no-answers waiting their 30 minutes counted zero, the run
+   * ended, the campaign settled READY and those retries were never dialled
+   * (2026-10-01: 522 no-answer contacts left PENDING across READY, PAUSED
+   * and RUNNING campaigns, every one on attempt 1).
+   */
+  includeScheduledRetries = false,
 ): Promise<number> {
   const result = provider
     ? await query<{ n: number }>(
         `SELECT count(*)::int AS n FROM contacts
           WHERE campaign_id = $1 AND assigned_provider = $2
             AND status IN ('PENDING','ASSIGNED')
-            AND (next_attempt_after IS NULL OR next_attempt_after <= now())
+            AND ($3::boolean OR next_attempt_after IS NULL OR next_attempt_after <= now())
             AND (final_disposition IS NULL
                  OR final_disposition NOT IN ('FINAL_YES','FINAL_NO'))`,
-        [campaignId, provider],
+        [campaignId, provider, includeScheduledRetries],
       )
     : await query<{ n: number }>(
         `SELECT count(*)::int AS n FROM contacts

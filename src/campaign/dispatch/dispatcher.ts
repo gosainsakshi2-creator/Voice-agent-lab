@@ -274,7 +274,7 @@ export class CampaignDispatcher {
         // Nothing claimable. If nothing is in flight and nothing is
         // waiting, this lane is finished; otherwise a retry may become
         // due later, so wait rather than exiting early.
-        if (inFlight.size === 0 && (await countPendingContacts(campaign.id, provider)) === 0) break;
+        if (inFlight.size === 0 && (await countPendingContacts(campaign.id, provider, this.config.waitForRetries)) === 0) break;
         await wait(this.config.pollIntervalMs);
         continue;
       }

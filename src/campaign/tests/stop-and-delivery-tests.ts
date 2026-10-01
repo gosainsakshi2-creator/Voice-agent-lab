@@ -466,6 +466,19 @@ await test("C1. the collector totals what the bridge reports, and build() carrie
   assert.ok(Number.isInteger(d.gapMsTotal) && Number.isInteger(d.maxGapMs), "integers only");
 });
 
+await test("C1b. call 64f54e00: a turn's max gap is its own, even when an earlier turn's was bigger", () => {
+  const c = new SessionMetricsCollector("sess-c1b" as SessionId, STACK as never);
+  c.noteOutboundDelivery({ kind: "gap", ms: 465 });
+  c.noteOutboundDelivery({ kind: "burst_capped", lateMs: 1800 });
+  assert.equal(c.deliverySnapshot().maxGapMs, 465);
+  c.noteOutboundDelivery({ kind: "gap", ms: 453 });
+  const second = c.deliverySnapshot();
+  assert.equal(second.maxGapMs, 453, "the second turn's own gap, not 0");
+  assert.equal(second.maxLateMs, 0, "no late burst in the second turn");
+  assert.equal(c.build().delivery!.maxGapMs, 465, "the call-wide max is unchanged");
+  assert.equal(c.build().delivery!.maxLateMs, 1800);
+});
+
 await test("C2. a turn records the counters since the previous turn, and only when something happened", async () => {
   const h = startHarness({ replies: [BLOCK, ANSWER, FOLLOW_UP] });
   try {

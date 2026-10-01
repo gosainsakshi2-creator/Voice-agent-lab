@@ -9131,10 +9131,10 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
       starvedCount: now.starvedCount - (before?.starvedCount ?? 0),
       gapCount: now.gapCount - (before?.gapCount ?? 0),
       gapMsTotal: now.gapMsTotal - (before?.gapMsTotal ?? 0),
-      // Maxima are call-wide; a turn reports one only if it raised it.
-      maxGapMs: now.maxGapMs > (before?.maxGapMs ?? 0) ? now.maxGapMs : 0,
+      // The snapshot's maxima are already this span's own.
+      maxGapMs: now.maxGapMs,
       burstCapCount: now.burstCapCount - (before?.burstCapCount ?? 0),
-      maxLateMs: now.maxLateMs > (before?.maxLateMs ?? 0) ? now.maxLateMs : 0,
+      maxLateMs: now.maxLateMs,
       sendErrors: now.sendErrors - (before?.sendErrors ?? 0),
     };
     return Object.values(delta).some((v) => v > 0) ? delta : undefined;

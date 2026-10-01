@@ -642,12 +642,16 @@ export class SessionMetricsCollector {
         d.gapCount += 1;
         d.gapMsTotal += ms;
         d.maxGapMs = Math.max(d.maxGapMs, ms);
+        this.windowMaxGapMs = Math.max(this.windowMaxGapMs, ms);
         return;
       }
-      case "burst_capped":
+      case "burst_capped": {
+        const lateMs = Math.max(0, Math.round(event.lateMs));
         d.burstCapCount += 1;
-        d.maxLateMs = Math.max(d.maxLateMs, Math.max(0, Math.round(event.lateMs)));
+        d.maxLateMs = Math.max(d.maxLateMs, lateMs);
+        this.windowMaxLateMs = Math.max(this.windowMaxLateMs, lateMs);
         return;
+      }
       case "send_error":
         d.sendErrors += 1;
         return;
@@ -670,9 +674,21 @@ export class SessionMetricsCollector {
     else this.bargeInGate.energyBypassed += 1;
   }
 
-  /** A copy of the running totals, for per-turn deltas. */
+  /** Largest gap / lateness since the last `deliverySnapshot` — the per-turn maxima. */
+  private windowMaxGapMs = 0;
+  private windowMaxLateMs = 0;
+
+  /**
+   * The running totals for per-turn deltas, except the two maxima, which
+   * are the largest SINCE THE PREVIOUS SNAPSHOT (and reset here): a turn
+   * whose 450ms gap did not beat an earlier one must still report 450,
+   * not 0. `build()` keeps the call-wide maxima.
+   */
   deliverySnapshot(): DeliveryCounters {
-    return { ...this.delivery };
+    const snapshot = { ...this.delivery, maxGapMs: this.windowMaxGapMs, maxLateMs: this.windowMaxLateMs };
+    this.windowMaxGapMs = 0;
+    this.windowMaxLateMs = 0;
+    return snapshot;
   }
 
   markCallEnded(): void {
@@ -727,7 +743,7 @@ export class SessionMetricsCollector {
       callDuration,
       ...(this.sttModel !== undefined ? { sttModel: this.sttModel } : {}),
       ...(this.sttEndpointing !== undefined ? { sttEndpointing: this.sttEndpointing } : {}),
-      ...(this.delivery.framesSent > 0 || this.socketClose !== undefined
+      ...(Object.values(this.delivery).some((v) => v > 0) || this.socketClose !== undefined
         ? { delivery: { ...this.delivery, ...(this.socketClose !== undefined ? { socketClose: this.socketClose } : {}) } }
         : {}),
       ...(Object.values(this.bargeInGate).some((v) => v > 0) ? { bargeInGate: { ...this.bargeInGate } } : {}),

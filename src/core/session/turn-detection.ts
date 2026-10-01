@@ -394,6 +394,29 @@ const HOLD_PHRASE_ONLY = new RegExp(
 const HOLD_GRACE_MS = 1200;
 
 /**
+ * The part of `HOLD_PHRASES` that asks the AGENT to stop — not the
+ * thinking-aloud ones ("actually", "i mean", "matlab"), which are the
+ * caller holding their own turn and say nothing about the agent's.
+ */
+const STOP_PHRASES = [
+  "wait", "wait wait", "stop", "hold on", "hang on", "one (?:second|sec|minute|moment)",
+  "just a (?:second|sec|minute|moment)", "wait a (?:second|sec|minute|moment)",
+  "ruko", "ruk(?:iye|o)", "ruk(?:iye|o) zara", "thoda ruko", "ek (?:minute|second|sec|min)",
+  "रुको", "रुकिए", "रुक", "एक मिनट", "एक सेकंड",
+];
+
+const STOP_PHRASE_ONLY = new RegExp(`^(?:${STOP_PHRASES.join("|")})[\\s,.!?…।-]*$`, "iu");
+
+/**
+ * True when the whole utterance is a request for the agent to stop:
+ * "wait", "ruko", "ek minute", "रुको". A longer turn that opens with one
+ * ("wait, what did you say?") is ordinary speech and is not this.
+ */
+export function isStopRequest(text: string): boolean {
+  return STOP_PHRASE_ONLY.test(text.trim());
+}
+
+/**
  * Punctuation that ends a FRAGMENT rather than a sentence. Deepgram
  * emits these when the caller trailed off or is still listing details
  * ("The transaction happened around,"), and a comma is never the end of

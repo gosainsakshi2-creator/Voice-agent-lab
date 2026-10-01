@@ -37,7 +37,7 @@ import type { AudioPayload, ConversationTurn } from "../../types/provider.types"
 import type { CompletionRequest } from "../../interfaces/providers/language-model-provider.interface";
 import type { LanguageModelProvider } from "../../interfaces/providers/language-model-provider.interface";
 import type { LlmStreamEvent } from "../../types/streaming.types";
-import type { BargeInTriggerTelemetry, CutSentenceTelemetry, TurnLatencyBreakdown, TurnOutcome } from "../../types/benchmark.types";
+import type { BargeInTriggerTelemetry, CutSentenceTelemetry, DeliveryCounters, TurnLatencyBreakdown, TurnOutcome } from "../../types/benchmark.types";
 import type { SpeechToTextProvider } from "../../interfaces/providers/speech-to-text-provider.interface";
 import type { TextToSpeechProvider, SynthesisTaskRequest } from "../../interfaces/providers/text-to-speech-provider.interface";
 import type { TelephonyProvider } from "../../interfaces/providers/telephony-provider.interface";
@@ -50,7 +50,7 @@ import { SentenceChunker } from "./sentence-chunker";
 import { joinAudioChunks, ttsCacheKey, type TtsAudioCache } from "./tts-audio-cache";
 import { firstReplyCacheKey, type FirstReplyCache } from "./first-reply-cache";
 import { preparedReplyVariantFor } from "./confirmation-vocabulary";
-import { isBareAcknowledgement, isContinuationCue, isContinuationCuePrefix, readsAsUnfinishedThought } from "./turn-detection";
+import { isBareAcknowledgement, isContinuationCue, isContinuationCuePrefix, isStopRequest, readsAsUnfinishedThought } from "./turn-detection";
 import type { ContinuationHoldEvent, EndpointMarkerOutcome, TurnReleaseTrace } from "./turn-detection";
 import { voicemailPhraseIn } from "./voicemail-detection";
 import { combineSignals, abortableSleep } from "./abort-utils";
@@ -349,6 +349,13 @@ export interface ConversationPipelineOptions {
    * harness keeps its requests exactly.
    */
   readonly noteInterruptedReply?: boolean;
+  /**
+   * While the agent speaks, a one-word "wait" / "ruko" / "रुको" interim
+   * interrupts at once instead of waiting for its final transcript —
+   * see `isStopRequest`. Energy and confidence gates still apply. Off by
+   * default: every harness keeps its barge-in behaviour exactly.
+   */
+  readonly stopOnRequest?: boolean;
   /**
    * Pre-open a turn's LLM request on a SETTLED INTERIM transcript — see
    * `scheduleInterimSpeculation`. Off by default: every harness keeps
@@ -4073,6 +4080,7 @@ export class ConversationPipeline {
           replySource: result.replySource,
           fillerSpoken: result.fillerSpoken,
           interruptionNote: this.consumeInterruptionNoteSent(),
+          delivery: this.consumeDeliveryDelta(),
           // TURN-RELEASE TRACE — spread so a turn with no trace (batch
           // STT) omits all five rather than storing nulls. Counts and
           // enums only; the transcript stays on the console line.
@@ -7425,7 +7433,11 @@ export class ConversationPipeline {
     // release and reply latency are untouched.
     if (!segment.isFinal) {
       const text = segment.text.trim();
-      if (text.length === 0 || text.split(/\s+/u).length <= 1) return false;
+      // ...except an explicit "wait" / "ruko", which stops the reply on
+      // its interim instead of ~0.5s later — see `stopOnRequest`. The
+      // energy and confidence gates below still apply to it.
+      const stopNow = this.options.stopOnRequest === true && isStopRequest(text);
+      if (!stopNow && (text.length === 0 || text.split(/\s+/u).length <= 1)) return false;
     }
     // A transport that never reports energy at all — the in-process
     // audio fallback, the test harnesses — keeps exactly the
@@ -9050,6 +9062,32 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
 
   return turns;
 }
+
+  /** The bridge's delivery totals when the previous turn was recorded. */
+  private deliveryAtLastTurn: DeliveryCounters | undefined;
+
+  /**
+   * The bridge's delivery counters since the previous recorded turn —
+   * mostly this turn's reply. `undefined` when nothing was sent and
+   * nothing went wrong in that span (the harnesses, a silent turn).
+   */
+  private consumeDeliveryDelta(): DeliveryCounters | undefined {
+    const now = this.record.metrics.deliverySnapshot();
+    const before = this.deliveryAtLastTurn;
+    this.deliveryAtLastTurn = now;
+    const delta: DeliveryCounters = {
+      framesSent: now.framesSent - (before?.framesSent ?? 0),
+      starvedCount: now.starvedCount - (before?.starvedCount ?? 0),
+      gapCount: now.gapCount - (before?.gapCount ?? 0),
+      gapMsTotal: now.gapMsTotal - (before?.gapMsTotal ?? 0),
+      // Maxima are call-wide; a turn reports one only if it raised it.
+      maxGapMs: now.maxGapMs > (before?.maxGapMs ?? 0) ? now.maxGapMs : 0,
+      burstCapCount: now.burstCapCount - (before?.burstCapCount ?? 0),
+      maxLateMs: now.maxLateMs > (before?.maxLateMs ?? 0) ? now.maxLateMs : 0,
+      sendErrors: now.sendErrors - (before?.sendErrors ?? 0),
+    };
+    return Object.values(delta).some((v) => v > 0) ? delta : undefined;
+  }
 
   /** Read-and-clear, for the turn's telemetry. */
   private consumeInterruptionNoteSent(): TurnLatencyBreakdown["interruptionNote"] | undefined {

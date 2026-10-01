@@ -558,6 +558,12 @@ export interface TurnLatencyBreakdown {
     readonly unheardChars: number;
     readonly unheardEndsWithQuestion: boolean;
   };
+  /**
+   * The bridge's delivery counters since the previous turn was recorded —
+   * mostly this turn's reply. Absent when nothing was sent in that span.
+   * See `DeliveryCounters`.
+   */
+  readonly delivery?: DeliveryCounters;
 
   // ── TURN-RELEASE TRACE (2026-09-21) ───────────────────────────────
   //
@@ -754,8 +760,48 @@ export interface BenchmarkMetrics {
    * which the production default of 400 applied, unchanged.
    */
   readonly sttEndpointing?: EndpointingAssignmentRecord;
+  /**
+   * What the media bridge saw while sending the agent's audio, over the
+   * whole call — see `DeliveryCounters`. Absent when no frame was sent
+   * (no bridge, the harnesses). Telemetry only.
+   */
+  readonly delivery?: DeliveryCounters & { readonly socketClose?: SocketCloseRecord };
   readonly estimatedCost: EstimatedCostMetric;
   readonly turnLatencies: readonly TurnLatencyBreakdown[];
+}
+
+/**
+ * OUTBOUND DELIVERY (P0 #2, 2026-10-01). The bridges already detected
+ * these and printed them; nothing reached the database, so a "voice
+ * broke" report could not be placed on our side or the carrier's.
+ * Counted where the bridge already logs them; no audio decision reads
+ * them.
+ *
+ *   framesSent     20ms frames written to the media socket
+ *   starvedCount   the pump ran dry while the agent was still SPEAKING —
+ *                  the caller heard silence the pipeline did not intend
+ *   gapCount / gapMsTotal / maxGapMs  how long each of those lasted, until
+ *                  the pump had audio again
+ *   burstCapCount / maxLateMs  the event loop was starved and frames went
+ *                  out late (the "pump burst capped" line)
+ *   sendErrors     a frame the socket threw on
+ */
+export interface DeliveryCounters {
+  readonly framesSent: number;
+  readonly starvedCount: number;
+  readonly gapCount: number;
+  readonly gapMsTotal: number;
+  readonly maxGapMs: number;
+  readonly burstCapCount: number;
+  readonly maxLateMs: number;
+  readonly sendErrors: number;
+}
+
+/** The media socket's close, as the bridge saw it. `atCallMs` is from the call's start. */
+export interface SocketCloseRecord {
+  readonly code?: number;
+  readonly reason?: string;
+  readonly atCallMs?: number;
 }
 
 /**

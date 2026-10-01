@@ -26,11 +26,29 @@
 import type {
   BenchmarkMetrics,
   CallDurationMetric,
+  DeliveryCounters,
   EstimatedCostMetric,
+  SocketCloseRecord,
   LatencyMeasurementMs,
   TurnLatencyBreakdown,
 } from "../../types/benchmark.types";
 import type { ProviderStackSelection, SessionId } from "../../types/session.types";
+
+/** One thing a media bridge saw while sending audio — see `DeliveryCounters`. */
+export type OutboundDeliveryEvent =
+  | { readonly kind: "starved" }
+  | { readonly kind: "gap"; readonly ms: number }
+  | { readonly kind: "burst_capped"; readonly lateMs: number }
+  | { readonly kind: "send_error" }
+  | { readonly kind: "socket_closed"; readonly code?: number | undefined; readonly reason?: string | undefined };
+
+/** A `ws` "close" event's arguments — `(code: number, reason: Buffer)` — as a delivery event. */
+export function socketCloseEvent(args: readonly unknown[]): OutboundDeliveryEvent {
+  const code = typeof args[0] === "number" ? args[0] : undefined;
+  const raw = args[1];
+  const reason = raw === undefined || raw === null ? undefined : String(raw);
+  return { kind: "socket_closed", code, reason };
+}
 import { estimateTelephonyCost } from "./cost-estimator";
 import { ALLOWED_ENDPOINTING_MS, type EndpointingAssignment } from "./stt-endpointing-experiment";
 
@@ -128,6 +146,8 @@ export interface TurnLatencyInput {
   readonly fillerSpoken?: boolean | undefined;
   /** The interrupted-reply note this turn's request carried, if any. */
   readonly interruptionNote?: TurnLatencyBreakdown["interruptionNote"] | undefined;
+  /** Delivery counters since the previous turn; recorded only when anything was sent or went wrong. */
+  readonly delivery?: DeliveryCounters | undefined;
   // TURN-RELEASE TRACE (2026-09-21) — see `TurnLatencyBreakdown` for
   // what each one is and why it exists. Indexed access rather than a
   // re-declared union, matching `endpointMarkerOutcome` and
@@ -503,6 +523,7 @@ export class SessionMetricsCollector {
       ...(input.replySource !== undefined ? { replySource: input.replySource } : {}),
       ...(input.fillerSpoken === true ? { fillerSpoken: true as const } : {}),
       ...(input.interruptionNote !== undefined ? { interruptionNote: input.interruptionNote } : {}),
+      ...(input.delivery !== undefined ? { delivery: input.delivery } : {}),
       ...(releaseReason !== undefined ? { releaseReason } : {}),
       ...(heldTextReadsUnfinished !== undefined ? { heldTextReadsUnfinished } : {}),
       ...(continuationGracesAtRelease !== undefined ? { continuationGracesAtRelease } : {}),
@@ -591,6 +612,60 @@ export class SessionMetricsCollector {
     this.firstOutboundAudioAt ??= new Date();
   }
 
+  // ── OUTBOUND DELIVERY — see `DeliveryCounters`. Written only by the
+  // manager on the bridges' behalf; read by `build()` and by the
+  // pipeline's per-turn delta. Nothing decides anything from them.
+  private delivery = {
+    framesSent: 0,
+    starvedCount: 0,
+    gapCount: 0,
+    gapMsTotal: 0,
+    maxGapMs: 0,
+    burstCapCount: 0,
+    maxLateMs: 0,
+    sendErrors: 0,
+  };
+  private socketClose: SocketCloseRecord | undefined;
+
+  countOutboundFrame(): void {
+    this.delivery.framesSent += 1;
+  }
+
+  noteOutboundDelivery(event: OutboundDeliveryEvent): void {
+    const d = this.delivery;
+    switch (event.kind) {
+      case "starved":
+        d.starvedCount += 1;
+        return;
+      case "gap": {
+        const ms = Math.max(0, Math.round(event.ms));
+        d.gapCount += 1;
+        d.gapMsTotal += ms;
+        d.maxGapMs = Math.max(d.maxGapMs, ms);
+        return;
+      }
+      case "burst_capped":
+        d.burstCapCount += 1;
+        d.maxLateMs = Math.max(d.maxLateMs, Math.max(0, Math.round(event.lateMs)));
+        return;
+      case "send_error":
+        d.sendErrors += 1;
+        return;
+      case "socket_closed":
+        this.socketClose ??= {
+          ...(event.code !== undefined ? { code: event.code } : {}),
+          ...(event.reason !== undefined && event.reason.length > 0 ? { reason: event.reason.slice(0, 120) } : {}),
+          atCallMs: Date.now() - this.createdAt.getTime(),
+        };
+        return;
+    }
+  }
+
+  /** A copy of the running totals, for per-turn deltas. */
+  deliverySnapshot(): DeliveryCounters {
+    return { ...this.delivery };
+  }
+
   markCallEnded(): void {
     this.endedAt ??= new Date();
   }
@@ -643,6 +718,9 @@ export class SessionMetricsCollector {
       callDuration,
       ...(this.sttModel !== undefined ? { sttModel: this.sttModel } : {}),
       ...(this.sttEndpointing !== undefined ? { sttEndpointing: this.sttEndpointing } : {}),
+      ...(this.delivery.framesSent > 0 || this.socketClose !== undefined
+        ? { delivery: { ...this.delivery, ...(this.socketClose !== undefined ? { socketClose: this.socketClose } : {}) } }
+        : {}),
       estimatedCost,
       turnLatencies: [...this.turnLatencies],
     };

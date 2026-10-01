@@ -43,6 +43,7 @@ import { assignEndpointing } from "./stt-endpointing-experiment";
 import { optionalEnv, optionalEnvNumber } from "../../providers/shared/env";
 import { PostgresTtsAudioStore, TtsAudioCache } from "./tts-audio-cache";
 import { processFirstReplyCache } from "./first-reply-cache";
+import type { OutboundDeliveryEvent } from "./metrics-collector";
 import { getDbPool } from "../../campaign/db/client";
 
 /** `undefined` until first asked for; `null` once switched off. */
@@ -358,6 +359,10 @@ export class DefaultVoiceSessionManager implements VoiceSessionManager, Pipeline
       // After a barge-in, tell the next request where the reply was cut and
       // what the caller did not hear; `NOTE_INTERRUPTED_REPLY=false` switches it off.
       noteInterruptedReply: optionalEnv("NOTE_INTERRUPTED_REPLY", "true").trim().toLowerCase() !== "false",
+      // A one-word "wait" / "ruko" stops the reply on its interim. OFF unless
+      // `STOP_ON_REQUEST=true`: it changes live barge-in, so it is tried on
+      // test calls before it is the default.
+      stopOnRequest: optionalEnv("STOP_ON_REQUEST", "false").trim().toLowerCase() === "true",
     });
     this.pipelines.set(record.id, pipeline);
     record.loopPromise = pipeline.run();
@@ -734,6 +739,21 @@ getTranscript(sessionId: SessionId): readonly import("../../types/provider.types
       record.firstOutboundFrameAtMs = Date.now();
     }
     record.metrics.markFirstOutboundAudio();
+    record.metrics.countOutboundFrame();
+  }
+
+  /**
+   * ADDITIVE, NOT PART OF `VoiceSessionManager`. A media bridge reporting
+   * what it already logs about sending audio — a starved pump, the gap
+   * until it had audio again, a late burst, a failed send, the socket's
+   * close — so it reaches `call_metrics.raw` (see `DeliveryCounters`).
+   * Same contract as `noteOutboundFrameSent`: an unknown session returns
+   * silently, it throws nothing, and nothing decides anything from it.
+   */
+  noteOutboundDelivery(sessionId: SessionId, event: OutboundDeliveryEvent): void {
+    const record = this.sessions.get(sessionId);
+    if (!record) return;
+    record.metrics.noteOutboundDelivery(event);
   }
 
   /**

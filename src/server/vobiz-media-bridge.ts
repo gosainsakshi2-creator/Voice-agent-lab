@@ -57,6 +57,7 @@ import type { SessionId } from "../types/session.types";
 import type { AudioPayload } from "../types/provider.types";
 import { SessionState } from "../types/enums";
 import type { DefaultVoiceSessionManager } from "../core/session/voice-session-manager.impl";
+import { socketCloseEvent, type OutboundDeliveryEvent } from "../core/session/metrics-collector";
 import { MulawVadSegmenter } from "./vad-segmenter";
 import { createOutboundMulawEncoder, createOutboundMulawFramer } from "./audio-codec";
 
@@ -361,12 +362,22 @@ export function attachVobizMediaBridge(
     }
   }
 
+  /** TELEMETRY ONLY — see `DeliveryCounters`. Never allowed to fail the audio path. */
+  function reportDelivery(event: OutboundDeliveryEvent): void {
+    try {
+      manager.noteOutboundDelivery(sessionId, event);
+    } catch {
+      // Telemetry must not break a call.
+    }
+  }
+
   function sendJson(obj: unknown): void {
     if (closed || socket.readyState !== OPEN_STATE) return;
     try {
       socket.send(JSON.stringify(obj));
     } catch {
       // Socket dropped mid-send — the close handler will clean up.
+      reportDelivery({ kind: "send_error" });
     }
   }
 
@@ -452,6 +463,7 @@ export function attachVobizMediaBridge(
       console.warn(
         `[vobiz-bridge:${sessionId}] OUTBOUND GAP: ${Date.now() - pumpDryAtMs}ms of application-side silence mid-reply — producer could not keep the queue fed (queue=${outboundQueue.length} frames)`,
       );
+      reportDelivery({ kind: "gap", ms: Date.now() - pumpDryAtMs });
       pumpDryAtMs = undefined;
     }
     if (awaitingFirstFrame) {
@@ -473,6 +485,7 @@ export function attachVobizMediaBridge(
         console.log(
           `[vobiz-bridge:${sessionId}] pump burst capped: ${rawDue} frames due, sending ${framesDue} (event loop starved ~${rawDue * OUTBOUND_FRAME_MS}ms)`,
         );
+        reportDelivery({ kind: "burst_capped", lateMs: rawDue * OUTBOUND_FRAME_MS });
       }
       for (let i = 0; i < framesDue; i += 1) {
         const frame = outboundQueue.shift();
@@ -486,6 +499,7 @@ export function attachVobizMediaBridge(
             console.warn(
               `[vobiz-bridge:${sessionId}] OUTBOUND STARVED: queue empty after ${framesSent} frames while still SPEAKING — the caller is now hearing silence`,
             );
+            reportDelivery({ kind: "starved" });
           }
           clearInterval(pumpTimer);
           pumpTimer = undefined;
@@ -765,6 +779,7 @@ export function attachVobizMediaBridge(
     socket.on("close", (...args: unknown[]) => {
       // eslint-disable-next-line no-console
       console.log(`[vobiz-bridge:${sessionId}] socket "close" event, args=${JSON.stringify(args)}`);
+      reportDelivery(socketCloseEvent(args));
       cleanup();
     });
     socket.on("error", (...args: unknown[]) => {

@@ -88,7 +88,7 @@ interface Harness {
   readonly synthesized: string[];
   say(text: string): void;
   /** An INTERIM segment only — no final follows unless the test sends one. */
-  sayInterim(text: string): void;
+  sayInterim(text: string, opts?: { readonly confidence?: number; readonly startedAtMs?: number }): void;
   waitFor(what: string, predicate: () => boolean, timeoutMs?: number): Promise<void>;
   waitForReplies(n: number, timeoutMs?: number): Promise<void>;
   assistantTurns(): readonly ConversationTurn[];
@@ -109,6 +109,7 @@ function startHarness(input: {
    */
   readonly bridge?: { readonly highWaterMs?: number };
   readonly stopOnRequest?: boolean;
+  readonly callerFirstTurnTaking?: boolean;
   /** Delay before the Nth request's first token (by request index), so a turn can supersede it while THINKING. */
   readonly llmDelayMs?: Readonly<Record<number, number>>;
 }): Harness {
@@ -265,6 +266,7 @@ function startHarness(input: {
 
   const pipeline = new ConversationPipeline(record, { telephony, stt, llm, tts } as never, host as never, {
     ...(input.stopOnRequest === true ? { stopOnRequest: true } : {}),
+    ...(input.callerFirstTurnTaking === true ? { callerFirstTurnTaking: true } : {}),
   });
   const loop = pipeline.run();
 
@@ -272,15 +274,16 @@ function startHarness(input: {
     record,
     requests,
     synthesized,
-    sayInterim(text) {
+    sayInterim(text, opts = {}) {
+      const startedAtMs = opts.startedAtMs ?? clockMs;
       segments.push({
         text,
         isFinal: false,
         isSpeechFinal: false,
-        confidence: 0.95,
+        confidence: opts.confidence ?? 0.95,
         language: SupportedLanguage.ENGLISH,
-        startedAtMs: clockMs,
-        endedAtMs: clockMs + 300,
+        startedAtMs,
+        endedAtMs: startedAtMs + 300,
       });
       waiters.shift()?.();
     },
@@ -480,6 +483,96 @@ await test("C2. a turn records the counters since the previous turn, and only wh
       { frames: withDelivery[0]!.delivery!.framesSent, gaps: withDelivery[0]!.delivery!.gapCount, gapMs: withDelivery[0]!.delivery!.gapMsTotal },
       { frames: 30, gaps: 1, gapMs: 250 },
     );
+  } finally {
+    await h.stop();
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════
+section("SECTION D — caller first: quiet but clear speech stops the reply, acknowledgements never do");
+// ═════════════════════════════════════════════════════════════════
+
+/** Start the block, then make the caller QUIET: the bridge reports energy, last loud 5s ago. */
+async function quietCaller(h: Harness): Promise<void> {
+  await startBlock(h);
+  h.record.lastCallerEnergyAt = Date.now() - 5000;
+  await sleep(600);
+}
+
+const keepsSpeaking = async (h: Harness): Promise<void> => {
+  await sleep(1500);
+  assert.equal(h.record.state, SessionState.SPEAKING, "the agent must keep talking");
+};
+const stops = (h: Harness) => h.waitFor("the reply to stop", () => h.record.state !== SessionState.SPEAKING, 3000);
+
+await test("D1. ON: a quiet question stops the reply", async () => {
+  const h = startHarness({ replies: [BLOCK, ANSWER, FOLLOW_UP], callerFirstTurnTaking: true });
+  try {
+    await quietCaller(h);
+    h.sayInterim("how much does this cost", { startedAtMs: 6000 });
+    await stops(h);
+    assert.ok((h.record.metrics.build().bargeInGate?.energyBypassed ?? 0) >= 1, "and telemetry counts it");
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("D2. OFF: the same quiet question is ignored, exactly as before — and counted", async () => {
+  const h = startHarness({ replies: [BLOCK, ANSWER, FOLLOW_UP] });
+  try {
+    await quietCaller(h);
+    h.sayInterim("how much does this cost", { startedAtMs: 6000 });
+    await keepsSpeaking(h);
+    assert.ok((h.record.metrics.build().bargeInGate?.uncorroboratedInterims ?? 0) >= 1, "the miss is now visible in telemetry");
+  } finally {
+    await h.stop();
+  }
+});
+
+for (const [label, loud] of [["quiet", false], ["loud", true]] as const) {
+  await test(`D3. ON: a ${label} acknowledgement never stops the reply`, async () => {
+    const h = startHarness({ replies: [BLOCK, ANSWER, FOLLOW_UP], callerFirstTurnTaking: true });
+    try {
+      await quietCaller(h);
+      if (loud) h.record.lastCallerEnergyAt = Date.now();
+      h.sayInterim("haan ji haan", { startedAtMs: 6000 });
+      await keepsSpeaking(h);
+      h.sayInterim("okay okay", { startedAtMs: 6500 });
+      await keepsSpeaking(h);
+    } finally {
+      await h.stop();
+    }
+  });
+}
+
+await test("D4. ON: two quiet words right after the reply started (the caller carrying on after a pause) stop it", async () => {
+  const h = startHarness({ replies: [BLOCK, ANSWER, FOLLOW_UP], callerFirstTurnTaking: true });
+  try {
+    await quietCaller(h);
+    h.sayInterim("and also", { startedAtMs: 500 });
+    await stops(h);
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("D5. ON: …but two quiet words deep into the reply do not", async () => {
+  const h = startHarness({ replies: [BLOCK, ANSWER, FOLLOW_UP], callerFirstTurnTaking: true });
+  try {
+    await quietCaller(h);
+    h.sayInterim("and also", { startedAtMs: 6000 });
+    await keepsSpeaking(h);
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("D6. ON: quiet speech the STT is unsure of still does not stop the reply", async () => {
+  const h = startHarness({ replies: [BLOCK, ANSWER, FOLLOW_UP], callerFirstTurnTaking: true });
+  try {
+    await quietCaller(h);
+    h.sayInterim("how much does this cost", { startedAtMs: 6000, confidence: 0.6 });
+    await keepsSpeaking(h);
   } finally {
     await h.stop();
   }

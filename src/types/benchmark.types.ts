@@ -766,6 +766,17 @@ export interface BenchmarkMetrics {
    * (no bridge, the harnesses). Telemetry only.
    */
   readonly delivery?: DeliveryCounters & { readonly socketClose?: SocketCloseRecord };
+  /**
+   * Caller speech over the agent that the barge-in gate set aside as
+   * uncorroborated (finals and interims counted apart — one utterance
+   * yields many interims), and how often clear but quiet speech stopped
+   * the reply anyway (`callerFirstTurnTaking`). Absent when all are 0.
+   */
+  readonly bargeInGate?: {
+    readonly uncorroboratedFinals: number;
+    readonly uncorroboratedInterims: number;
+    readonly energyBypassed: number;
+  };
   readonly estimatedCost: EstimatedCostMetric;
   readonly turnLatencies: readonly TurnLatencyBreakdown[];
 }

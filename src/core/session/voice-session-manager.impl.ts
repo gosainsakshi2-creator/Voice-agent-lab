@@ -363,6 +363,9 @@ export class DefaultVoiceSessionManager implements VoiceSessionManager, Pipeline
       // `STOP_ON_REQUEST=true`: it changes live barge-in, so it is tried on
       // test calls before it is the default.
       stopOnRequest: optionalEnv("STOP_ON_REQUEST", "false").trim().toLowerCase() === "true",
+      // Clear but quiet caller speech stops the reply without loud energy;
+      // acknowledgements never do. OFF unless `CALLER_FIRST_TURN_TAKING=true`.
+      callerFirstTurnTaking: optionalEnv("CALLER_FIRST_TURN_TAKING", "false").trim().toLowerCase() === "true",
     });
     this.pipelines.set(record.id, pipeline);
     record.loopPromise = pipeline.run();

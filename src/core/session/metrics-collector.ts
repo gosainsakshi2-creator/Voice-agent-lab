@@ -661,6 +661,15 @@ export class SessionMetricsCollector {
     }
   }
 
+  // ── BARGE-IN GATE — see `BargeInGateCounters`. Telemetry only.
+  private bargeInGate = { uncorroboratedFinals: 0, uncorroboratedInterims: 0, energyBypassed: 0 };
+
+  noteBargeInGate(kind: "uncorroborated_final" | "uncorroborated_interim" | "energy_bypassed"): void {
+    if (kind === "uncorroborated_final") this.bargeInGate.uncorroboratedFinals += 1;
+    else if (kind === "uncorroborated_interim") this.bargeInGate.uncorroboratedInterims += 1;
+    else this.bargeInGate.energyBypassed += 1;
+  }
+
   /** A copy of the running totals, for per-turn deltas. */
   deliverySnapshot(): DeliveryCounters {
     return { ...this.delivery };
@@ -721,6 +730,7 @@ export class SessionMetricsCollector {
       ...(this.delivery.framesSent > 0 || this.socketClose !== undefined
         ? { delivery: { ...this.delivery, ...(this.socketClose !== undefined ? { socketClose: this.socketClose } : {}) } }
         : {}),
+      ...(Object.values(this.bargeInGate).some((v) => v > 0) ? { bargeInGate: { ...this.bargeInGate } } : {}),
       estimatedCost,
       turnLatencies: [...this.turnLatencies],
     };

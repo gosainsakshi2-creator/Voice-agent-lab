@@ -357,6 +357,13 @@ export interface ConversationPipelineOptions {
    */
   readonly stopOnRequest?: boolean;
   /**
+   * Stop the reply for clear caller speech even when it is too quiet for
+   * the loud-energy gate — see `clearSpeechWithoutEnergy`. Acknowledgements
+   * still never interrupt. Off by default: every harness keeps its
+   * barge-in behaviour exactly.
+   */
+  readonly callerFirstTurnTaking?: boolean;
+  /**
    * Pre-open a turn's LLM request on a SETTLED INTERIM transcript — see
    * `scheduleInterimSpeculation`. Off by default: every harness keeps
    * FIX #8's rule that only explicit endpoint evidence pre-opens.
@@ -2090,6 +2097,16 @@ const BARGE_IN_ENERGY_WINDOW_MS = 1_200;
  * above is what does the heavy lifting.
  */
 const BARGE_IN_MIN_CONFIDENCE = 0.4;
+
+/** How sure the STT must be before quiet speech may stop the reply without loud energy — see `clearSpeechWithoutEnergy`. */
+const CLEAR_SPEECH_MIN_CONFIDENCE = 0.85;
+
+/**
+ * A caller who carries on within this long after the reply started was
+ * mid-thought at a natural pause, not answering the reply — two words
+ * are then enough to stop it. See `clearSpeechWithoutEnergy`.
+ */
+const RESUMED_TURN_WINDOW_MS = 2_000;
 
 /**
  * ---------------- SELF-ECHO: our own voice, transcribed ----------------
@@ -7421,6 +7438,32 @@ export class ConversationPipeline {
    * SPEAKING, and it gates nothing else: no turn, no timer, no
    * threshold, no state.
    */
+  /**
+   * CALLER FIRST (`callerFirstTurnTaking`, 2026-10-01). Speech clear
+   * enough to stop the reply WITHOUT the loud-energy corroboration — the
+   * soft-spoken caller the energy gate was filtering out with the
+   * television. Reached only after the backchannel check, so "haan" /
+   * "hmm" / "ok" keep the agent talking however loud or soft. Clear
+   * means a confident transcript (`CLEAR_SPEECH_MIN_CONFIDENCE`) that is:
+   *   - three or more words, or a question, or "wait" / "ruko"; or
+   *   - two words that began within `RESUMED_TURN_WINDOW_MS` of the reply
+   *     starting — the caller carrying on after a natural pause the
+   *     detector took for the end of their turn.
+   * Background voices are out of scope here by decision (they will get
+   * their own approach); the other-speaker and self-echo filters still
+   * run after this.
+   */
+  private clearSpeechWithoutEnergy(segment: TranscriptSegment): boolean {
+    if (this.options.callerFirstTurnTaking !== true) return false;
+    if (segment.confidence < CLEAR_SPEECH_MIN_CONFIDENCE) return false;
+    const text = segment.text.trim();
+    const words = text.length === 0 ? 0 : text.split(/\s+/u).length;
+    if (words >= 3 || /[?？]/u.test(text) || isStopRequest(text)) return true;
+    if (words < 2 || segment.startedAtMs <= 0) return false;
+    const intoReplyMs = this.sttClockOffsetMs + segment.startedAtMs - this.speakingStartedAtStreamMs;
+    return intoReplyMs >= 0 && intoReplyMs <= RESUMED_TURN_WINDOW_MS;
+  }
+
   private interruptionCorroborated(segment: TranscriptSegment): boolean {
     // ── One word still in flight is not yet the caller ─────────────
     //
@@ -7445,7 +7488,14 @@ export class ConversationPipeline {
     // `noteCallerEnergy` is the only writer, so `0` is "never stamped".
     if (this.record.lastCallerEnergyAt !== 0) {
       const energyAgeMs = Date.now() - this.record.lastCallerEnergyAt;
-      if (energyAgeMs > BARGE_IN_ENERGY_WINDOW_MS) return false;
+      if (energyAgeMs > BARGE_IN_ENERGY_WINDOW_MS) {
+        if (!this.clearSpeechWithoutEnergy(segment)) return false;
+        this.record.metrics.noteBargeInGate("energy_bypassed");
+        // eslint-disable-next-line no-console
+        console.log(
+          `[TURN:${this.record.id}] quiet but clear speech — interrupting without loud energy (energyAgeMs=${energyAgeMs} confidence=${segment.confidence}): "${segment.text.trim().slice(0, 80)}"`,
+        );
+      }
     }
     // `0` is "not reported", not "no confidence" — see the constant.
     if (segment.confidence > 0 && segment.confidence < BARGE_IN_MIN_CONFIDENCE) {
@@ -8035,6 +8085,7 @@ export class ConversationPipeline {
           // from that point on becomes their turn as usual.
           if (spokeOverTheAssistant && !this.interruptionCorroborated(segment)) {
             this.record.liveUserTranscript = "";
+            this.record.metrics.noteBargeInGate(segment.isFinal ? "uncorroborated_final" : "uncorroborated_interim");
             // eslint-disable-next-line no-console
             console.log(
               `[TURN:${this.record.id}] uncorroborated speech ignored (not the caller interrupting): "${segment.text.trim()}" — confidence=${segment.confidence} loudSpeechAgeMs=${this.record.lastCallerEnergyAt === 0 ? "n/a" : Date.now() - this.record.lastCallerEnergyAt}`,

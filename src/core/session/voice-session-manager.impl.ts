@@ -381,6 +381,9 @@ export class DefaultVoiceSessionManager implements VoiceSessionManager, Pipeline
       // The latency filler counts the caller's silence from when they stopped
       // speaking. OFF unless `FILLER_FROM_SPEECH_END=true`.
       fillerFromSpeechEnd: optionalEnv("FILLER_FROM_SPEECH_END", "false").trim().toLowerCase() === "true",
+      // "I want to— No more about the services" is read as "know more", not a
+      // refusal. OFF unless `REPAIR_STT_HOMOPHONES=true`.
+      repairSttHomophones: optionalEnv("REPAIR_STT_HOMOPHONES", "false").trim().toLowerCase() === "true",
     });
     this.pipelines.set(record.id, pipeline);
     record.loopPromise = pipeline.run();

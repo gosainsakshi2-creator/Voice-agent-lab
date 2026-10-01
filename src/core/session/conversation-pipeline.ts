@@ -46,6 +46,7 @@ import type { SessionRecord } from "./session-record";
 import { detectLanguage, isLockGradeEvidence, type LanguageDetectionResult } from "./language-detector";
 import { currentTurnNote, interruptedReplyNote, languageHintFor, openingLineFor, pendingQuestionNote, shortAnswerNote } from "./system-prompt";
 import { isQuestionTurn } from "../../campaign/outcome/conversation-events";
+import { repairSttHomophones } from "./stt-repair";
 import { asksWhoIsCalling, classifyIdentityAnswer } from "../../campaign/domain/identity-answer";
 import { SentenceChunker } from "./sentence-chunker";
 import { joinAudioChunks, ttsCacheKey, type TtsAudioCache } from "./tts-audio-cache";
@@ -383,6 +384,13 @@ export interface ConversationPipelineOptions {
    * (`FILLER_AFTER_MS`). Needs `fillers`. Off by default.
    */
   readonly fillerFromSpeechEnd?: boolean;
+  /**
+   * Restore "know" where the STT wrote "no" in shapes that cannot be a
+   * refusal ("I want to— No more about the services") before the model,
+   * the classifier or the hangup watchdog read the caller's turn — see
+   * `stt-repair.ts`. Off by default.
+   */
+  readonly repairSttHomophones?: boolean;
   /**
    * Pre-open a turn's LLM request on a SETTLED INTERIM transcript — see
    * `scheduleInterimSpeculation`. Off by default: every harness keeps
@@ -3632,7 +3640,16 @@ export class ConversationPipeline {
           this.host.transition(this.record, SessionState.LISTENING, "awaiting user speech");
         }
 
-        const turn = await this.acquireNextUserTurn(loopSignal);
+        const acquired = await this.acquireNextUserTurn(loopSignal);
+        // "know" the STT wrote as "no" is restored before anything reads the
+        // turn — see `stt-repair.ts` and `repairSttHomophones`.
+        const repairedText =
+          acquired && this.options.repairSttHomophones === true ? repairSttHomophones(acquired.text) : acquired?.text;
+        if (acquired && repairedText !== undefined && repairedText !== acquired.text) {
+          // eslint-disable-next-line no-console
+          console.log(`[STT-REPAIR:${sid}] "${acquired.text.slice(0, 100)}" -> "${repairedText.slice(0, 100)}"`);
+        }
+        const turn = acquired && repairedText !== undefined && repairedText !== acquired.text ? { ...acquired, text: repairedText } : acquired;
         if (!turn || loopSignal.aborted) {
           // eslint-disable-next-line no-console
           console.log(`[PIPELINE:${sid}] acquireNextUserTurn returned null or aborted — exiting loop`);

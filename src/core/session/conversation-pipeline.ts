@@ -44,7 +44,8 @@ import type { TelephonyProvider } from "../../interfaces/providers/telephony-pro
 
 import type { SessionRecord } from "./session-record";
 import { detectLanguage, isLockGradeEvidence, type LanguageDetectionResult } from "./language-detector";
-import { currentTurnNote, interruptedReplyNote, languageHintFor, openingLineFor } from "./system-prompt";
+import { currentTurnNote, interruptedReplyNote, languageHintFor, openingLineFor, pendingQuestionNote } from "./system-prompt";
+import { isQuestionTurn } from "../../campaign/outcome/conversation-events";
 import { asksWhoIsCalling, classifyIdentityAnswer } from "../../campaign/domain/identity-answer";
 import { SentenceChunker } from "./sentence-chunker";
 import { joinAudioChunks, ttsCacheKey, type TtsAudioCache } from "./tts-audio-cache";
@@ -363,6 +364,12 @@ export interface ConversationPipelineOptions {
    * barge-in behaviour exactly.
    */
   readonly callerFirstTurnTaking?: boolean;
+  /**
+   * When the caller answers the agent's question with a question, tell the
+   * model to answer it and then ask its own again — see `pendingQuestionIn`.
+   * Off by default: every harness keeps its requests exactly.
+   */
+  readonly returnToPendingQuestion?: boolean;
   /**
    * Pre-open a turn's LLM request on a SETTLED INTERIM transcript — see
    * `scheduleInterimSpeculation`. Off by default: every harness keeps
@@ -2500,6 +2507,29 @@ export function wordPrefixAtFraction(text: string, fraction: number): string {
   return lastSpace < 0 ? "" : text.slice(0, lastSpace).trimEnd();
 }
 
+/**
+ * The question the agent's last turn ended on, when everything the caller
+ * has said since (one turn, or several superseding each other) is itself
+ * a question rather than an answer. `undefined` otherwise — including when
+ * the agent's turn did not end on a question, or nothing was said since.
+ */
+export function pendingQuestionIn(turns: readonly ConversationTurn[]): string | undefined {
+  let lastAssistant = -1;
+  for (let i = turns.length - 1; i >= 0; i--) {
+    if (turns[i]?.role === "assistant") {
+      lastAssistant = i;
+      break;
+    }
+  }
+  if (lastAssistant < 0) return undefined;
+  const since = turns.slice(lastAssistant + 1).filter((t) => t.role === "user");
+  if (since.length === 0) return undefined;
+  const sentences = (turns[lastAssistant]!.content.trim().match(/[^.!?।？]+[.!?।？]*/gu) ?? []).map((s) => s.trim());
+  const question = sentences[sentences.length - 1] ?? "";
+  if (!/[?？]$/u.test(question)) return undefined;
+  return isQuestionTurn(since.map((t) => t.content).join(" ")) ? question : undefined;
+}
+
 export function unspokenTail(fullText: string, heardText: string): string {
   const heard = heardText.trim();
   if (heard.length === 0) return fullText.trim();
@@ -2991,6 +3021,8 @@ export class ConversationPipeline {
   private interruptionNote: { readonly heard: string; readonly unheard: string } | undefined;
   /** What `buildRequestHistory` last put in a request, for this turn's telemetry. */
   private interruptionNoteSent: TurnLatencyBreakdown["interruptionNote"] | undefined;
+  /** `buildRequestHistory` added the pending-question note; read-and-cleared for telemetry. */
+  private pendingQuestionNoted = false;
   /**
    * DIAGNOSTIC ONLY (2026-09-21) — what tripped the barge-in that
    * cancelled the response in flight, if one did. Written by
@@ -4097,6 +4129,7 @@ export class ConversationPipeline {
           replySource: result.replySource,
           fillerSpoken: result.fillerSpoken,
           interruptionNote: this.consumeInterruptionNoteSent(),
+          pendingQuestionNote: this.consumePendingQuestionNoted(),
           delivery: this.consumeDeliveryDelta(),
           // TURN-RELEASE TRACE — spread so a turn with no trace (batch
           // STT) omits all five rather than storing nulls. Counts and
@@ -9076,6 +9109,8 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
 ): readonly ConversationTurn[] {
 
   const turns = recent.map(turn => ({ ...turn }));
+  // Read from the turns as spoken, before any note is prefixed below.
+  const pending = this.options.returnToPendingQuestion === true ? pendingQuestionIn(recent) : undefined;
 
   const hint = languageHintFor(detectedLanguage);
 
@@ -9097,6 +9132,10 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
           // comes back continuing the previous topic instead of
           // answering what was just asked.
           turn.content = `${currentTurnNote()}\n${hint}\n${turn.content}`;
+          if (pending !== undefined) {
+            turn.content = `${pendingQuestionNote(pending)}\n${turn.content}`;
+            this.pendingQuestionNoted = true;
+          }
           const note = this.interruptionNote;
           if (note !== undefined) {
             turn.content = `${interruptedReplyNote(note.heard, note.unheard)}\n${turn.content}`;
@@ -9138,6 +9177,13 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
       sendErrors: now.sendErrors - (before?.sendErrors ?? 0),
     };
     return Object.values(delta).some((v) => v > 0) ? delta : undefined;
+  }
+
+  /** Read-and-clear, for the turn's telemetry. */
+  private consumePendingQuestionNoted(): true | undefined {
+    const noted = this.pendingQuestionNoted;
+    this.pendingQuestionNoted = false;
+    return noted ? true : undefined;
   }
 
   /** Read-and-clear, for the turn's telemetry. */

@@ -21,7 +21,7 @@
 
 import assert from "node:assert/strict";
 
-const { ConversationPipeline, wordPrefixAtFraction } = await import("../../core/session/conversation-pipeline");
+const { ConversationPipeline, wordPrefixAtFraction, pendingQuestionIn } = await import("../../core/session/conversation-pipeline");
 const { interruptedReplyNote } = await import("../../core/session/system-prompt");
 const { SessionRecord } = await import("../../core/session/session-record");
 const { SessionState, SupportedLanguage, CallDirection, ProviderCategory } = await import(
@@ -111,6 +111,7 @@ function startHarness(input: {
   readonly noteInterruptedReply?: boolean;
   /** Delay before the Nth request's first token (by request index), so a turn can supersede it while THINKING. */
   readonly llmDelayMs?: Readonly<Record<number, number>>;
+  readonly returnToPendingQuestion?: boolean;
 }): Harness {
   const requests: Array<readonly ConversationTurn[]> = [];
   const synthesized: string[] = [];
@@ -265,6 +266,7 @@ function startHarness(input: {
 
   const pipeline = new ConversationPipeline(record, { telephony, stt, llm, tts } as never, host as never, {
     ...(input.noteInterruptedReply === true ? { noteInterruptedReply: true } : {}),
+    ...(input.returnToPendingQuestion === true ? { returnToPendingQuestion: true } : {}),
   });
   const loop = pipeline.run();
 
@@ -512,6 +514,70 @@ await test("B8. call f81ac976: a reply superseded before it played does not repl
     assert.ok(turn.includes("your previous reply was cut off"), `the note is gone: ${turn.slice(0, 300)}`);
     assert.ok(turn.includes("plain instructions"), `the note must still name the block, got: ${turn.slice(0, 400)}`);
     assert.ok(!turn.includes("heard none of it"), "and must not claim the caller heard none of a reply never spoken");
+  } finally {
+    await h.stop();
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════
+section("SECTION C — a question answered with a question (call 64f54e00)");
+// ═════════════════════════════════════════════════════════════════
+
+const ASKS = "We have a free workshop on Sunday at 11 AM. Have you tried putting something online before?";
+const t = (role: "user" | "assistant", content: string): ConversationTurn => ({ role, content, timestamp: new Date() });
+
+await test("C1. pendingQuestionIn: the agent's question, when the caller asked something back", () => {
+  assert.equal(pendingQuestionIn([t("assistant", ASKS), t("user", "What time?")]), "Have you tried putting something online before?");
+  assert.equal(
+    pendingQuestionIn([t("assistant", ASKS), t("user", "Wait, what are you saying? Like, uh, at what?"), t("user", "What time?")]),
+    "Have you tried putting something online before?",
+    "several superseding turns are read together",
+  );
+});
+
+await test("C2. …but not when the caller answered, or the agent asked nothing", () => {
+  assert.equal(pendingQuestionIn([t("assistant", ASKS), t("user", "No, not yet.")]), undefined);
+  assert.equal(pendingQuestionIn([t("assistant", "The workshop is on Sunday at 11 AM."), t("user", "What time?")]), undefined);
+  assert.equal(pendingQuestionIn([t("assistant", ASKS)]), undefined, "nothing said since");
+  assert.equal(pendingQuestionIn([t("user", "What time?")]), undefined, "no agent turn at all");
+});
+
+const ASKING_BLOCK = `${S1} Have you tried putting something online before?`;
+const nextRequestAfter = async (h: Harness, line: string): Promise<string> => {
+  await h.waitFor("the question to finish", () => h.record.state === SessionState.LISTENING && h.assistantTexts().length >= 2, 30000);
+  const before = h.requests.length;
+  h.say(line);
+  await h.waitFor("the next request", () => h.requests.length > before, 20000);
+  return lastUserTurn(h.requests[before]!);
+};
+
+await test("C3. ON: the next request tells the model to answer, then ask its question again", async () => {
+  const h = startHarness({ replies: [ASKING_BLOCK, "It is at 11 AM on Sunday."], returnToPendingQuestion: true });
+  try {
+    await startBlock(h);
+    const turn = await nextRequestAfter(h, "What time is it?");
+    assert.ok(turn.includes('you had asked "Have you tried putting something online before?"'), turn.slice(0, 400));
+    await h.waitFor("the turn to be recorded", () => h.record.metrics.build().turnLatencies.some((x) => x.pendingQuestionNote === true), 20000);
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("C4. ON: an answer gets no note", async () => {
+  const h = startHarness({ replies: [ASKING_BLOCK, "Great."], returnToPendingQuestion: true });
+  try {
+    await startBlock(h);
+    assert.ok(!(await nextRequestAfter(h, "No, not yet.")).includes("you had asked"));
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("C5. OFF: no note, exactly as before", async () => {
+  const h = startHarness({ replies: [ASKING_BLOCK, "It is at 11 AM on Sunday."] });
+  try {
+    await startBlock(h);
+    assert.ok(!(await nextRequestAfter(h, "What time is it?")).includes("you had asked"));
   } finally {
     await h.stop();
   }

@@ -564,6 +564,8 @@ export interface TurnLatencyBreakdown {
    * See `DeliveryCounters`.
    */
   readonly delivery?: DeliveryCounters;
+  /** True when this turn's request told the model to re-ask its unanswered question (`returnToPendingQuestion`). */
+  readonly pendingQuestionNote?: true;
 
   // ── TURN-RELEASE TRACE (2026-09-21) ───────────────────────────────
   //

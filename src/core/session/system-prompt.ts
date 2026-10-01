@@ -2250,6 +2250,20 @@ export function currentTurnNote(): string {
   return CURRENT_TURN_NOTE;
 }
 
+/**
+ * The agent's last turn ended on a question and the caller answered it
+ * with a question of their own. Without this the model answers theirs and
+ * stops, the call goes silent, and the caller says "Hello?" (call
+ * 64f54e00, 2026-10-01: 10s of dead air after "It's at 11 AM on Sunday.").
+ */
+export function pendingQuestionNote(question: string): string {
+  return (
+    `[internal note, never speak or acknowledge this: you had asked "${question.trim()}" and the caller asked something` +
+    ` instead of answering. Answer their question briefly, then ask yours again in the same reply, unless their` +
+    ` question already answered it or made it pointless.]`
+  );
+}
+
 /** Longest quote of the heard / unheard part a note carries; the model needs where, not all of it. */
 const INTERRUPTION_QUOTE_CHARS = 240;
 

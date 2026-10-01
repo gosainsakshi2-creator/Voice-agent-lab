@@ -3089,8 +3089,13 @@ export class ConversationPipeline {
   private replyTurnSpeechEndedAtMs: number | undefined;
   /** Speakers and STT confidence of the final segments since the last turn was acquired — see `TurnVoiceTelemetry`. */
   private turnVoiceStats = { speakerChars: new Map<string, number>(), confidenceSum: 0, confidenceCount: 0 };
-  /** The caller's own speech level, from their first turn with enough audio, dBFS. */
-  private callerLevelDbfs: number | undefined;
+  /**
+   * The caller's own speech levels, dBFS: one per earlier turn with enough
+   * audio that the caller's speaker label said (or before any label is
+   * known). A turn is compared with their MEDIAN, so one quiet "Hello?" at
+   * pickup does not set the bar (call 71283c26: every turn read +2..+10 dB).
+   */
+  private callerLevelsDbfs: number[] = [];
   /** The acquired turn's voice telemetry, until `recordTurn` takes it. */
   private pendingTurnVoice: TurnVoiceTelemetry | undefined;
 
@@ -3105,17 +3110,18 @@ export class ConversationPipeline {
     const level = this.record.inboundSpeechLevel;
     const stats = this.turnVoiceStats;
     const speechDbfs = level.frames > 0 ? level.sumDbfs / level.frames : undefined;
-    if (this.callerLevelDbfs === undefined && speechDbfs !== undefined && level.frames >= CALLER_LEVEL_MIN_FRAMES) {
-      this.callerLevelDbfs = speechDbfs;
-    }
     const ranked = [...stats.speakerChars].sort((a, b) => b[1] - a[1]);
     const speaker = ranked[0]?.[0];
     const caller = this.callerSpeaker;
+    const sorted = [...this.callerLevelsDbfs].sort((a, b) => a - b);
+    const callerLevel = sorted.length === 0 ? undefined : sorted[Math.floor(sorted.length / 2)];
+    const saidByCaller = caller === undefined || speaker === undefined || speaker === "?" || speaker === caller;
+    if (speechDbfs !== undefined && level.frames >= CALLER_LEVEL_MIN_FRAMES && saidByCaller) this.callerLevelsDbfs.push(speechDbfs);
     this.pendingTurnVoice = {
       speechFrames: level.frames,
       ...(speechDbfs !== undefined ? { speechDbfs: Math.round(speechDbfs * 10) / 10 } : {}),
-      ...(speechDbfs !== undefined && this.callerLevelDbfs !== undefined
-        ? { levelVsCallerDb: Math.round((speechDbfs - this.callerLevelDbfs) * 10) / 10 }
+      ...(speechDbfs !== undefined && callerLevel !== undefined
+        ? { levelVsCallerDb: Math.round((speechDbfs - callerLevel) * 10) / 10 }
         : {}),
       ...(speaker !== undefined && speaker !== "?" ? { speaker } : {}),
       ...(caller !== undefined ? { callerSpeaker: caller } : {}),

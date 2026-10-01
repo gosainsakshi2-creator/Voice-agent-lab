@@ -654,7 +654,7 @@ await test("F1. the VAD reports the RMS of speech frames only, and nothing witho
   new MulawVadSegmenter(() => undefined).push(toneFrame(6000));
 });
 
-await test("F2. each turn records its level against the caller's own, and the STT confidence", async () => {
+await test("F2. each turn records its level against the median of the caller's earlier turns, and the STT confidence", async () => {
   const h = startHarness({ replies: [BLOCK, ANSWER, FOLLOW_UP] });
   try {
     await h.waitForReplies(1);
@@ -670,7 +670,7 @@ await test("F2. each turn records its level against the caller's own, and the ST
     assert.deepEqual(
       voices.map((v) => ({ frames: v!.speechFrames, dbfs: v!.speechDbfs, vsCaller: v!.levelVsCallerDb, confidence: v!.confidence })),
       [
-        { frames: 20, dbfs: -20, vsCaller: 0, confidence: 0.95 },
+        { frames: 20, dbfs: -20, vsCaller: undefined, confidence: 0.95 },
         { frames: 30, dbfs: -38, vsCaller: -18, confidence: 0.95 },
       ],
     );

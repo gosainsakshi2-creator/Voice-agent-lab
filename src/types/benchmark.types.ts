@@ -867,9 +867,10 @@ export interface EndpointingAssignmentRecord {
  *
  *   speechDbfs / speechFrames  mean level of the turn's speech frames
  *                              (agent SPEAKING excluded, so no echo)
- *   levelVsCallerDb            that level minus the caller's own, set
- *                              from their first turn with ~0.3s of speech;
- *                              a voice across the room sits 15-25 dB down
+ *   levelVsCallerDb            that level minus the MEDIAN of the caller's
+ *                              earlier turns (~0.3s+ of speech, their own
+ *                              speaker label); absent on the first such turn.
+ *                              A voice across the room sits 15-25 dB down
  *   speaker / callerSpeaker    the STT speaker label that said most of the
  *   speakerMatchesCaller       turn, and the one who confirmed identity
  *   speakersInTurn             how many labels the turn's words carry

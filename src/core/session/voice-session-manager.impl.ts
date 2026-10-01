@@ -413,6 +413,9 @@ export class DefaultVoiceSessionManager implements VoiceSessionManager, Pipeline
       // The caller's "Bye" ends the call after one fixed goodbye. OFF unless
       // `END_ON_CALLER_GOODBYE=true`.
       endOnCallerGoodbye: optionalEnv("END_ON_CALLER_GOODBYE", "false").trim().toLowerCase() === "true",
+      // A bare "Okay." / "Yeah." is held 1.2s longer in case the caller goes
+      // on. OFF unless `HOLD_BARE_ACKNOWLEDGEMENT=true`.
+      holdBareAcknowledgement: optionalEnv("HOLD_BARE_ACKNOWLEDGEMENT", "false").trim().toLowerCase() === "true",
     });
     this.pipelines.set(record.id, pipeline);
     record.loopPromise = pipeline.run();

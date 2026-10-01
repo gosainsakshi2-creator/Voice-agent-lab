@@ -1675,10 +1675,28 @@ export class AdaptiveTurnDetector {
    * over. `0` releases it immediately — i.e. exactly the behaviour
    * this detector had before the confirmation stage existed.
    */
+  /**
+   * `holdBareAcknowledgement` (pipeline option): how long a turn that is
+   * ONLY an acknowledgement ("Okay.", "Yeah.", "Hmm.", "Haan.") is held
+   * for the caller to carry on. Test call a9d40a12 (2026-10-01): the
+   * caller's thinking "Okay." / "Yeah." were released as turns, the agent
+   * answered each one, and the caller said "you again have interrupted
+   * me" three times. 0 (the default) holds nothing extra.
+   */
+  private bareAcknowledgementHoldMs = 0;
+
+  setBareAcknowledgementHoldMs(ms: number): void {
+    this.bareAcknowledgementHoldMs = Math.max(0, ms);
+  }
+
   private confirmationWindowMs(text: string): number {
     // Words the caller has already spoken are still awaiting their
     // final. Always wait — this is never a finished turn.
     if (this.pendingInterim) return CONFIRMATION_WINDOW_MS;
+    // A bare acknowledgement on its own: give the caller a moment to go on.
+    if (this.bareAcknowledgementHoldMs > 0 && this.continuationGraces === 0 && isBareAcknowledgement(text)) {
+      return this.bareAcknowledgementHoldMs;
+    }
     const endsCompletely = TERMINAL_PUNCTUATION.test(text);
 
     // A turn that already spent a continuation grace has had its extra

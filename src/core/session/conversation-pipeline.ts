@@ -47,6 +47,7 @@ import { detectLanguage, isLockGradeEvidence, type LanguageDetectionResult } fro
 import { currentTurnNote, discoveryNoNote, englishAcknowledgementNote, interruptedReplyNote, languageHintFor, openingLineFor, pendingQuestionNote, shortAnswerNote } from "./system-prompt";
 import { isQuestionTurn } from "../../campaign/outcome/conversation-events";
 import { repairSttHomophones } from "./stt-repair";
+import { SEAT_CONFIRMED as SHARED_SEAT_CONFIRMED } from "../../campaign/outcome/seat-confirmation";
 import { asksWhoIsCalling, classifyIdentityAnswer } from "../../campaign/domain/identity-answer";
 import { SentenceChunker } from "./sentence-chunker";
 import { joinAudioChunks, ttsCacheKey, type TtsAudioCache } from "./tts-audio-cache";
@@ -418,6 +419,12 @@ export interface ConversationPipelineOptions {
    * `isCallerGoodbye`. Off by default.
    */
   readonly endOnCallerGoodbye?: boolean;
+  /**
+   * Hold a caller turn that is only an acknowledgement ("Okay.", "Yeah.")
+   * `BARE_ACK_HOLD_MS` longer before answering it, in case they carry on —
+   * see `AdaptiveTurnDetector.setBareAcknowledgementHoldMs`. Off by default.
+   */
+  readonly holdBareAcknowledgement?: boolean;
   /**
    * Pre-open a turn's LLM request on a SETTLED INTERIM transcript — see
    * `scheduleInterimSpeculation`. Off by default: every harness keeps
@@ -814,6 +821,9 @@ const FILLER_AFTER_SPEECH_END_MS = 2_000;
  * does not need a filler spoken over its first word.
  */
 const FILLER_MIN_AFTER_REQUEST_MS = 700;
+
+/** With `holdBareAcknowledgement`: the extra wait after a turn that is only "Okay." / "Yeah.". */
+const BARE_ACK_HOLD_MS = 1_200;
 
 /**
  * How long after a reply's request opens its filler may start. With no
@@ -1875,8 +1885,8 @@ function scriptedClosingFor(_language: SupportedLanguage): string {
  * reserved", "आपकी free seat … reserve हो गयी है"). See
  * `seatConfirmationSpoken`: the fixed goodbye waits for one.
  */
-const SEAT_CONFIRMED =
-  /\breserved\b|\bregistered\b|reserve\s+(?:हो|ho)\s+(?:गयी|गई|gayi|gai)|(?:reserve|register)\s+kar\s+(?:di|diya|dee)|(?:reserve|register)\s+कर\s+(?:दी|दिया)|रिज़र्व\s+हो|\bbooked\b|seat\s+(?:is\s+)?confirmed|you'?re\s+all\s+set|(?:पक्की|pakki)\s+(?:हो|ho)/iu;
+// Moved to `campaign/outcome/seat-confirmation.ts` so the classifier reads the same one.
+const SEAT_CONFIRMED = SHARED_SEAT_CONFIRMED;
 
 /** Exported so the campaign layer's closing check reads the same words. */
 export const SCRIPTED_GOODBYE = "Okay, thank you.";
@@ -3635,6 +3645,7 @@ export class ConversationPipeline {
     // Resolved here, once, from the one field that holds it. A field
     // initializer cannot do this: it would run before `record` exists.
     this.spokenNames = spokenNameSubstitutions(record.request.campaign?.customer.name, record.request.campaign?.customer.spokenName);
+    if (options.holdBareAcknowledgement === true) record.turnDetector.setBareAcknowledgementHoldMs(BARE_ACK_HOLD_MS);
 
     const identityLine = record.campaignIdentityLine?.trim() ?? "";
     this.openingAsksIdentity =

@@ -69,6 +69,7 @@ import {
 import { checkScriptAdherence, type ScriptAdherenceReport } from "./script-adherence";
 import { VOICEMAIL_MARKERS } from "../../core/session/voicemail-detection";
 import { isBareAcknowledgement } from "../../core/session/turn-detection";
+import { SEAT_CONFIRMED } from "./seat-confirmation";
 import type { TranscriptTurn } from "./transcript";
 
 // ── Phrase tables ─────────────────────────────────────────────────
@@ -125,6 +126,22 @@ const AFFIRMATIONS = [
   "would like to attend", "would like to join",
   "would love to attend", "would love to join",
 ];
+
+/**
+ * Affirmations that are just as often a person acknowledging, or about to
+ * speak, as agreeing. Test call a9d40a12 (2026-10-01): "Would you like me
+ * to reserve your free seat?" -> "Okay." -> "first, first, can you please
+ * tell me one thing: that why are you interrupting me?" — registered and
+ * hung up as FINAL_YES; the agent itself had answered "no problem, thanks
+ * for your time". Real call 33d97c5c is the other side: "ओके।" to the
+ * seat question, and the agent confirmed the seat. So a gate answer made
+ * ONLY of these registers once the agent has confirmed the seat on it
+ * (`SEAT_CONFIRMED` in a later assistant turn); "yes", "haan", "sure",
+ * "kar dijiye", "book it" are unchanged.
+ */
+const WEAK_AFFIRMATIONS = new Set([
+  "ok", "okay", "ओके", "alright", "fine", "theek hai", "thik hai", "ठीक है", "ji", "जी",
+]);
 
 const NEGATIONS = [
   "no", "nope", "nah", "not interested", "no thanks", "no thank you",
@@ -1112,8 +1129,16 @@ export function classifyOutcome(input: ClassifyOutcomeInput): OutcomeClassificat
     (latest, position) => Math.max(latest, position),
     -1,
   );
+  const seatConfirmedAfter = (turnIndex: number): boolean =>
+    input.transcript.some((turn, index) => index > turnIndex && turn.role === "assistant" && SEAT_CONFIRMED.test(turn.text));
+  const onlyWeakIn = (turnIndex: number): boolean =>
+    affirmations.filter((s) => s.turnIndex === turnIndex).every((s) => WEAK_AFFIRMATIONS.has(s.phrase));
   const gateAffirmations = affirmations.filter(
-    (signal) => signal.atGate && positionFor(signal) > lastRetractionPosition,
+    (signal) =>
+      signal.atGate &&
+      positionFor(signal) > lastRetractionPosition &&
+      // A weak "okay" registers only once the agent confirmed the seat on it.
+      (!onlyWeakIn(signal.turnIndex) || seatConfirmedAfter(signal.turnIndex)),
   );
 
   if (gateAffirmations.length > 0) {

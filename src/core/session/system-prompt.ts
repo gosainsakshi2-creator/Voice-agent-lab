@@ -2279,6 +2279,20 @@ export function shortAnswerNote(): string {
   );
 }
 
+/**
+ * Acknowledgements stay English in a Hindi or Hinglish call — the product
+ * owner's call (test call fa2be430, 2026-10-01): "fillers तेरे English के ही
+ * होने चाहिए", Hindi or English. Only the opening acknowledgement; the
+ * reply itself stays in the caller's language.
+ */
+export function englishAcknowledgementNote(): string {
+  return (
+    "[internal note, never speak or acknowledge this: if your reply opens with an acknowledgement, say that acknowledgement" +
+    ' in English — "Okay", "Right", "Got it", "I see", "Sure" — never "अच्छा", "ठीक है", "जी" or "हाँ". Everything after it' +
+    " stays in the caller's language.]"
+  );
+}
+
 /** Longest quote of the heard / unheard part a note carries; the model needs where, not all of it. */
 const INTERRUPTION_QUOTE_CHARS = 240;
 

@@ -404,6 +404,9 @@ export class DefaultVoiceSessionManager implements VoiceSessionManager, Pipeline
       // The next sentence is synthesized while this one still streams (ElevenLabs
       // only). OFF unless `PREFETCH_NEXT_SENTENCE=true`.
       prefetchNextSentence: optionalEnv("PREFETCH_NEXT_SENTENCE", "false").trim().toLowerCase() === "true",
+      // Fillers and the reply's opening acknowledgement in English in every
+      // language. OFF unless `ENGLISH_ACKNOWLEDGEMENTS=true`.
+      englishAcknowledgements: optionalEnv("ENGLISH_ACKNOWLEDGEMENTS", "false").trim().toLowerCase() === "true",
     });
     this.pipelines.set(record.id, pipeline);
     record.loopPromise = pipeline.run();

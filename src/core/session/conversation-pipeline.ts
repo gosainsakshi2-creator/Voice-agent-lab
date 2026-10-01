@@ -44,7 +44,7 @@ import type { TelephonyProvider } from "../../interfaces/providers/telephony-pro
 
 import type { SessionRecord } from "./session-record";
 import { detectLanguage, isLockGradeEvidence, type LanguageDetectionResult } from "./language-detector";
-import { currentTurnNote, interruptedReplyNote, languageHintFor, openingLineFor, pendingQuestionNote, shortAnswerNote } from "./system-prompt";
+import { currentTurnNote, englishAcknowledgementNote, interruptedReplyNote, languageHintFor, openingLineFor, pendingQuestionNote, shortAnswerNote } from "./system-prompt";
 import { isQuestionTurn } from "../../campaign/outcome/conversation-events";
 import { repairSttHomophones } from "./stt-repair";
 import { asksWhoIsCalling, classifyIdentityAnswer } from "../../campaign/domain/identity-answer";
@@ -399,6 +399,13 @@ export interface ConversationPipelineOptions {
    * stream ended. Only on `PREFETCH_SAFE_TTS` providers. Off by default.
    */
   readonly prefetchNextSentence?: boolean;
+  /**
+   * Acknowledgements in English whatever the call's language: the latency
+   * fillers come from the English set, and a reply in Hindi or Hinglish is
+   * told to open its acknowledgement in English ("Okay", "Right", "Got
+   * it") — see `englishAcknowledgementNote`. Off by default.
+   */
+  readonly englishAcknowledgements?: boolean;
   /**
    * Pre-open a turn's LLM request on a SETTLED INTERIM transcript — see
    * `scheduleInterimSpeculation`. Off by default: every harness keeps
@@ -5825,8 +5832,9 @@ export class ConversationPipeline {
   private fillerWords = new Set<string>();
   private fillerEchoUntil = 0;
 
-  /** The fillers for this call's current language and voice. */
+  /** The fillers for this call's current language and voice — English in every language with `englishAcknowledgements`. */
   private fillerSet(): FillerSet {
+    if (this.options.englishAcknowledgements === true) return FILLERS.en;
     return this.record.memory.currentLanguage === "en" ? FILLERS.en : FILLERS.hi[this.record.voiceGender];
   }
 
@@ -5834,7 +5842,8 @@ export class ConversationPipeline {
   private fillerCacheEntry(text: string): { key: string; task: SynthesisTaskRequest } | undefined {
     const tts = this.providers.tts;
     if (typeof tts.cacheIdentity !== "function") return undefined;
-    const language = this.record.memory.currentLanguage;
+    // English fillers are synthesized as English whatever the call's language.
+    const language: SupportedLanguage = this.options.englishAcknowledgements === true ? ("en" as SupportedLanguage) : this.record.memory.currentLanguage;
     const task: SynthesisTaskRequest = {
       sessionId: this.record.id,
       request: { text: pronounceForSpeech(text, language, this.spokenNames), language },
@@ -9338,6 +9347,9 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
           if (callerAsked) {
             turn.content = `${shortAnswerNote()}\n${turn.content}`;
             this.shortAnswerNoted = true;
+          }
+          if (this.options.englishAcknowledgements === true && detectedLanguage !== "en") {
+            turn.content = `${englishAcknowledgementNote()}\n${turn.content}`;
           }
           const note = this.interruptionNote;
           if (note !== undefined) {

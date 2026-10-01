@@ -113,6 +113,7 @@ function startHarness(input: {
   readonly llmDelayMs?: Readonly<Record<number, number>>;
   readonly returnToPendingQuestion?: boolean;
   readonly shortAnswers?: boolean;
+  readonly englishAcknowledgements?: boolean;
 }): Harness {
   const requests: Array<readonly ConversationTurn[]> = [];
   const synthesized: string[] = [];
@@ -269,6 +270,7 @@ function startHarness(input: {
     ...(input.noteInterruptedReply === true ? { noteInterruptedReply: true } : {}),
     ...(input.returnToPendingQuestion === true ? { returnToPendingQuestion: true } : {}),
     ...(input.shortAnswers === true ? { shortAnswers: true } : {}),
+    ...(input.englishAcknowledgements === true ? { englishAcknowledgements: true } : {}),
   });
   const loop = pipeline.run();
 
@@ -630,6 +632,34 @@ await test("D4. OFF: no note, exactly as before", async () => {
   } finally {
     await h.stop();
   }
+});
+
+// ═════════════════════════════════════════════════════════════════
+section("SECTION E — English acknowledgements in a Hindi call (test call fa2be430)");
+// ═════════════════════════════════════════════════════════════════
+
+const ackRequest = async (opts: { on: boolean; hindi: boolean }): Promise<string> => {
+  const h = startHarness({ replies: [ASKING_BLOCK, "Okay."], ...(opts.on ? { englishAcknowledgements: true } : {}) });
+  try {
+    await startBlock(h);
+    if (opts.hindi) h.record.memory.overrideLanguageLock("hi" as never);
+    return await nextRequestAfter(h, opts.hindi ? "नहीं, अभी तक नहीं किया।" : "No, not yet.");
+  } finally {
+    await h.stop();
+  }
+};
+
+await test("E1. ON, Hindi call: the request asks for an English acknowledgement", async () => {
+  const turn = await ackRequest({ on: true, hindi: true });
+  assert.ok(turn.includes('say that acknowledgement in English'), turn.slice(0, 400));
+});
+
+await test("E2. ON, English call: no note — it is English already", async () => {
+  assert.ok(!(await ackRequest({ on: true, hindi: false })).includes("acknowledgement in English"));
+});
+
+await test("E3. OFF: no note, exactly as before", async () => {
+  assert.ok(!(await ackRequest({ on: false, hindi: true })).includes("acknowledgement in English"));
 });
 
 await test("B4. the committed history is the same with the option on and off", async () => {

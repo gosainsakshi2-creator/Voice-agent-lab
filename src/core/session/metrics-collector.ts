@@ -158,6 +158,7 @@ export interface TurnLatencyInput {
   readonly delivery?: DeliveryCounters | undefined;
   readonly pendingQuestionNote?: true | undefined;
   readonly shortAnswerNote?: true | undefined;
+  readonly voice?: TurnLatencyBreakdown["voice"] | undefined;
   // TURN-RELEASE TRACE (2026-09-21) — see `TurnLatencyBreakdown` for
   // what each one is and why it exists. Indexed access rather than a
   // re-declared union, matching `endpointMarkerOutcome` and
@@ -536,6 +537,7 @@ export class SessionMetricsCollector {
       ...(input.delivery !== undefined ? { delivery: input.delivery } : {}),
       ...(input.pendingQuestionNote === true ? { pendingQuestionNote: true as const } : {}),
       ...(input.shortAnswerNote === true ? { shortAnswerNote: true as const } : {}),
+      ...(input.voice !== undefined ? { voice: input.voice } : {}),
       ...(releaseReason !== undefined ? { releaseReason } : {}),
       ...(heldTextReadsUnfinished !== undefined ? { heldTextReadsUnfinished } : {}),
       ...(continuationGracesAtRelease !== undefined ? { continuationGracesAtRelease } : {}),

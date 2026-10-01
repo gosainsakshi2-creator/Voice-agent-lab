@@ -569,6 +569,8 @@ export interface TurnLatencyBreakdown {
   readonly pendingQuestionNote?: true;
   /** True when this turn's request asked for a short answer to the caller's question (`shortAnswers`). */
   readonly shortAnswerNote?: true;
+  /** What the caller's turn sounded like — see `TurnVoiceTelemetry`. */
+  readonly voice?: TurnVoiceTelemetry;
 
   // ── TURN-RELEASE TRACE (2026-09-21) ───────────────────────────────
   //
@@ -857,4 +859,29 @@ export interface EndpointingAssignmentRecord {
    * handed the assignment a key it refused to hash.
    */
   readonly ineligibleReason?: "experiment-disabled" | "no-attempt-id" | "key-not-uuid";
+}
+
+/**
+ * BACKGROUND-VOICE STEP 1 (2026-10-01). Telemetry only: the data a
+ * guard against a background voice deciding a turn will be tuned from.
+ *
+ *   speechDbfs / speechFrames  mean level of the turn's speech frames
+ *                              (agent SPEAKING excluded, so no echo)
+ *   levelVsCallerDb            that level minus the caller's own, set
+ *                              from their first turn with ~0.3s of speech;
+ *                              a voice across the room sits 15-25 dB down
+ *   speaker / callerSpeaker    the STT speaker label that said most of the
+ *   speakerMatchesCaller       turn, and the one who confirmed identity
+ *   speakersInTurn             how many labels the turn's words carry
+ *   confidence                 mean STT confidence of its final segments
+ */
+export interface TurnVoiceTelemetry {
+  readonly speechFrames: number;
+  readonly speechDbfs?: number;
+  readonly levelVsCallerDb?: number;
+  readonly speaker?: string;
+  readonly callerSpeaker?: string;
+  readonly speakerMatchesCaller?: boolean;
+  readonly speakersInTurn: number;
+  readonly confidence?: number;
 }

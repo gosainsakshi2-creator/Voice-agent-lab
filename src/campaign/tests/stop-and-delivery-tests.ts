@@ -22,6 +22,8 @@ const { ConversationPipeline } = await import("../../core/session/conversation-p
 const { isStopRequest } = await import("../../core/session/turn-detection");
 const { SessionMetricsCollector, socketCloseEvent } = await import("../../core/session/metrics-collector");
 const { RuntimeHealthProbe } = await import("../../core/session/runtime-health");
+const { MulawVadSegmenter } = await import("../../server/vad-segmenter");
+const { pcm16ToMulaw } = await import("../../server/audio-codec");
 const { SessionRecord } = await import("../../core/session/session-record");
 const { SessionState, SupportedLanguage, CallDirection, ProviderCategory } = await import(
   "../../types/enums"
@@ -629,6 +631,53 @@ await test("E2. the collector reports `runtime` only when a probe is attached, a
   const first = c.build().runtime;
   assert.ok(first !== undefined);
   assert.deepEqual(c.build().runtime, first, "stopped: the same figures every build");
+});
+
+// ═════════════════════════════════════════════════════════════════
+section("SECTION F — background-voice step 1: how loud, who, how sure (telemetry only)");
+// ═════════════════════════════════════════════════════════════════
+
+/** One 20ms μ-law frame of a tone at `amplitude` (0 = silence). */
+const toneFrame = (amplitude: number): Uint8Array => {
+  const pcm = new Int16Array(160);
+  for (let i = 0; i < pcm.length; i++) pcm[i] = Math.round(amplitude * Math.sin((2 * Math.PI * 300 * i) / 8000));
+  return pcm16ToMulaw(pcm);
+};
+
+await test("F1. the VAD reports the RMS of speech frames only, and nothing without the callback", () => {
+  const seen: number[] = [];
+  const vad = new MulawVadSegmenter(() => undefined, undefined, { speechThreshold: 700, onSpeechFrameRms: (rms) => seen.push(rms) });
+  for (let i = 0; i < 5; i++) vad.push(toneFrame(6000));
+  for (let i = 0; i < 5; i++) vad.push(toneFrame(0));
+  assert.equal(seen.length, 5, `speech frames only, got ${seen.length}`);
+  assert.ok(seen.every((r) => r > 3000 && r < 5000), JSON.stringify(seen.map(Math.round)));
+  new MulawVadSegmenter(() => undefined).push(toneFrame(6000));
+});
+
+await test("F2. each turn records its level against the caller's own, and the STT confidence", async () => {
+  const h = startHarness({ replies: [BLOCK, ANSWER, FOLLOW_UP] });
+  try {
+    await h.waitForReplies(1);
+    // The caller's first turn: 20 frames at -20 dBFS sets their level.
+    h.record.inboundSpeechLevel = { sumDbfs: -20 * 20, frames: 20 };
+    h.say("Yes, tell me.");
+    await h.waitFor("the block to finish", () => h.record.state === SessionState.LISTENING && h.assistantTexts().length >= 2, 30000);
+    // A turn 18 dB quieter: the shape of a voice across the room.
+    h.record.inboundSpeechLevel = { sumDbfs: -38 * 30, frames: 30 };
+    h.say("Okay, sounds good.");
+    await h.waitFor("both turns recorded", () => h.record.metrics.build().turnLatencies.filter((t) => t.voice !== undefined).length >= 2, 20000);
+    const voices = h.record.metrics.build().turnLatencies.map((t) => t.voice).filter((v) => v !== undefined);
+    assert.deepEqual(
+      voices.map((v) => ({ frames: v!.speechFrames, dbfs: v!.speechDbfs, vsCaller: v!.levelVsCallerDb, confidence: v!.confidence })),
+      [
+        { frames: 20, dbfs: -20, vsCaller: 0, confidence: 0.95 },
+        { frames: 30, dbfs: -38, vsCaller: -18, confidence: 0.95 },
+      ],
+    );
+    assert.equal(h.record.inboundSpeechLevel.frames, 0, "read and reset once per turn");
+  } finally {
+    await h.stop();
+  }
 });
 
 void SCRIPT_TEXT;

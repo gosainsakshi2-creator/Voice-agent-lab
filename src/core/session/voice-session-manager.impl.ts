@@ -764,6 +764,19 @@ getTranscript(sessionId: SessionId): readonly import("../../types/provider.types
   }
 
   /**
+   * ADDITIVE, NOT PART OF `VoiceSessionManager`. One caller-side speech
+   * frame's RMS, from the bridge's VAD — see `SessionRecord.inboundSpeechLevel`.
+   * Same contract as `noteOutboundFrameSent`: silent for an unknown
+   * session, throws nothing, decides nothing.
+   */
+  noteInboundSpeechLevel(sessionId: SessionId, rms: number): void {
+    const record = this.sessions.get(sessionId);
+    if (!record || record.state === SessionState.SPEAKING || rms <= 0) return;
+    record.inboundSpeechLevel.sumDbfs += 20 * Math.log10(rms / 32767);
+    record.inboundSpeechLevel.frames += 1;
+  }
+
+  /**
    * ADDITIVE, NOT PART OF `VoiceSessionManager`. A media bridge reporting
    * what it already logs about sending audio — a starved pump, the gap
    * until it had audio again, a late burst, a failed send, the socket's

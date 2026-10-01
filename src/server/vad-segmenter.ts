@@ -83,10 +83,18 @@ export interface VadSegmenterOptions {
    * carrying the run length answers both.
    */
   readonly onLoudSpeech?: (consecutiveLoudMs: number) => void;
+
+  /**
+   * TELEMETRY ONLY — called with the RMS of every frame at or above
+   * `speechThreshold`, so the transport can report how loud each of the
+   * caller's turns was (a background voice arrives 15-25 dB below the
+   * caller). Absent: nothing is called, nothing changes.
+   */
+  readonly onSpeechFrameRms?: (rms: number) => void;
 }
 
 /** The numeric knobs, all defaulted — `onLoudSpeech` has no default. */
-type VadSegmenterThresholds = Required<Omit<VadSegmenterOptions, "onLoudSpeech">>;
+type VadSegmenterThresholds = Required<Omit<VadSegmenterOptions, "onLoudSpeech" | "onSpeechFrameRms">>;
 
 const DEFAULTS: VadSegmenterThresholds = {
   speechThreshold: 150,
@@ -108,6 +116,7 @@ const FRAME_MS = 20;
 export class MulawVadSegmenter {
   private readonly opts: VadSegmenterThresholds;
   private readonly onLoudSpeech: ((consecutiveLoudMs: number) => void) | undefined;
+  private readonly onSpeechFrameRms: ((rms: number) => void) | undefined;
 
   private buffered: Uint8Array[] = [];
   private bufferedMs = 0;
@@ -127,12 +136,13 @@ export class MulawVadSegmenter {
     private readonly onSpeechStart?: () => void,
     options: VadSegmenterOptions = {},
   ) {
-    const { onLoudSpeech, ...thresholds } = options;
+    const { onLoudSpeech, onSpeechFrameRms, ...thresholds } = options;
     this.opts = {
       ...DEFAULTS,
       ...thresholds,
     };
     this.onLoudSpeech = onLoudSpeech;
+    this.onSpeechFrameRms = onSpeechFrameRms;
   }
 
   /**
@@ -151,6 +161,7 @@ export class MulawVadSegmenter {
     this.trackLoudRun(rms, frameMs);
 
     if (isSpeech) {
+      this.onSpeechFrameRms?.(rms);
       this.speaking = true;
       this.consecutiveSpeechFrames += 1;
 

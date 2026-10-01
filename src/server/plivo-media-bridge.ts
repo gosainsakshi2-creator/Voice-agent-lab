@@ -274,6 +274,14 @@ export function attachPlivoMediaBridge(
       loudSpeechThreshold: NEAR_END_SPEECH_THRESHOLD_RMS,
       loudSpeechFrames: NEAR_END_SPEECH_FRAMES,
       onLoudSpeech: (loudMs) => onCallerNearEndSpeech(loudMs),
+      // Telemetry only: how loud each caller turn is — see `noteInboundSpeechLevel`.
+      onSpeechFrameRms: (rms) => {
+        try {
+          manager.noteInboundSpeechLevel(sessionId, rms);
+        } catch {
+          // Telemetry must not break a call.
+        }
+      },
     },
   );
 

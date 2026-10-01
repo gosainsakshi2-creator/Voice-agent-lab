@@ -142,6 +142,16 @@ export class SessionRecord {
   lastSttEvidenceAt = 0;
 
   /**
+   * TELEMETRY ONLY (background-voice step 1, 2026-10-01). Loudness of the
+   * caller-side speech frames since the pipeline last read it: the sum of
+   * their levels in dBFS and how many there were. Written by
+   * `noteInboundSpeechLevel` (never while the agent is SPEAKING, so its
+   * own echo is not counted), read and reset once per caller turn by the
+   * pipeline. Nothing decides anything from it.
+   */
+  inboundSpeechLevel = { sumDbfs: 0, frames: 0 };
+
+  /**
    * PHASE 3 BATCH 1 — TELEMETRY ONLY. Wall clock at which the media
    * bridge's outbound pump sent the first audio frame of the CURRENT
    * TURN toward the caller.

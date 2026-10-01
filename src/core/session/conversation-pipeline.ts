@@ -37,7 +37,7 @@ import type { AudioPayload, ConversationTurn } from "../../types/provider.types"
 import type { CompletionRequest } from "../../interfaces/providers/language-model-provider.interface";
 import type { LanguageModelProvider } from "../../interfaces/providers/language-model-provider.interface";
 import type { LlmStreamEvent } from "../../types/streaming.types";
-import type { BargeInTriggerTelemetry, CutSentenceTelemetry, DeliveryCounters, TurnLatencyBreakdown, TurnOutcome } from "../../types/benchmark.types";
+import type { BargeInTriggerTelemetry, CutSentenceTelemetry, DeliveryCounters, TurnLatencyBreakdown, TurnOutcome, TurnVoiceTelemetry } from "../../types/benchmark.types";
 import type { SpeechToTextProvider } from "../../interfaces/providers/speech-to-text-provider.interface";
 import type { TextToSpeechProvider, SynthesisTaskRequest } from "../../interfaces/providers/text-to-speech-provider.interface";
 import type { TelephonyProvider } from "../../interfaces/providers/telephony-provider.interface";
@@ -2161,6 +2161,9 @@ const CLEAR_SPEECH_MIN_CONFIDENCE = 0.85;
  */
 const RESUMED_TURN_WINDOW_MS = 2_000;
 
+/** A turn needs this many speech frames (~0.3s) to set the caller's own level — see `snapshotTurnVoice`. */
+const CALLER_LEVEL_MIN_FRAMES = 15;
+
 /**
  * ---------------- SELF-ECHO: our own voice, transcribed ----------------
  *
@@ -3084,6 +3087,51 @@ export class ConversationPipeline {
   private shortAnswerNoted = false;
   /** When the caller stopped speaking, for the reply now being generated — see `fillerFromSpeechEnd`. */
   private replyTurnSpeechEndedAtMs: number | undefined;
+  /** Speakers and STT confidence of the final segments since the last turn was acquired — see `TurnVoiceTelemetry`. */
+  private turnVoiceStats = { speakerChars: new Map<string, number>(), confidenceSum: 0, confidenceCount: 0 };
+  /** The caller's own speech level, from their first turn with enough audio, dBFS. */
+  private callerLevelDbfs: number | undefined;
+  /** The acquired turn's voice telemetry, until `recordTurn` takes it. */
+  private pendingTurnVoice: TurnVoiceTelemetry | undefined;
+
+  /**
+   * TELEMETRY ONLY (background-voice step 1, 2026-10-01). What the turn
+   * just acquired sounded like: how loud against the caller's own level,
+   * which STT speaker said it, how sure the STT was. Read and reset here,
+   * once per turn. Decides nothing — it is the data the thresholds for a
+   * background-voice guard will be set from.
+   */
+  private snapshotTurnVoice(): void {
+    const level = this.record.inboundSpeechLevel;
+    const stats = this.turnVoiceStats;
+    const speechDbfs = level.frames > 0 ? level.sumDbfs / level.frames : undefined;
+    if (this.callerLevelDbfs === undefined && speechDbfs !== undefined && level.frames >= CALLER_LEVEL_MIN_FRAMES) {
+      this.callerLevelDbfs = speechDbfs;
+    }
+    const ranked = [...stats.speakerChars].sort((a, b) => b[1] - a[1]);
+    const speaker = ranked[0]?.[0];
+    const caller = this.callerSpeaker;
+    this.pendingTurnVoice = {
+      speechFrames: level.frames,
+      ...(speechDbfs !== undefined ? { speechDbfs: Math.round(speechDbfs * 10) / 10 } : {}),
+      ...(speechDbfs !== undefined && this.callerLevelDbfs !== undefined
+        ? { levelVsCallerDb: Math.round((speechDbfs - this.callerLevelDbfs) * 10) / 10 }
+        : {}),
+      ...(speaker !== undefined && speaker !== "?" ? { speaker } : {}),
+      ...(caller !== undefined ? { callerSpeaker: caller } : {}),
+      ...(speaker !== undefined && speaker !== "?" && caller !== undefined ? { speakerMatchesCaller: speaker === caller } : {}),
+      speakersInTurn: ranked.filter(([label]) => label !== "?").length,
+      ...(stats.confidenceCount > 0 ? { confidence: Math.round((stats.confidenceSum / stats.confidenceCount) * 1000) / 1000 } : {}),
+    };
+    this.record.inboundSpeechLevel = { sumDbfs: 0, frames: 0 };
+    this.turnVoiceStats = { speakerChars: new Map(), confidenceSum: 0, confidenceCount: 0 };
+  }
+
+  private consumeTurnVoice(): TurnVoiceTelemetry | undefined {
+    const voice = this.pendingTurnVoice;
+    this.pendingTurnVoice = undefined;
+    return voice;
+  }
   /**
    * DIAGNOSTIC ONLY (2026-09-21) — what tripped the barge-in that
    * cancelled the response in flight, if one did. Written by
@@ -3650,6 +3698,7 @@ export class ConversationPipeline {
           console.log(`[STT-REPAIR:${sid}] "${acquired.text.slice(0, 100)}" -> "${repairedText.slice(0, 100)}"`);
         }
         const turn = acquired && repairedText !== undefined && repairedText !== acquired.text ? { ...acquired, text: repairedText } : acquired;
+        if (turn) this.snapshotTurnVoice();
         if (!turn || loopSignal.aborted) {
           // eslint-disable-next-line no-console
           console.log(`[PIPELINE:${sid}] acquireNextUserTurn returned null or aborted — exiting loop`);
@@ -4203,6 +4252,7 @@ export class ConversationPipeline {
           interruptionNote: this.consumeInterruptionNoteSent(),
           pendingQuestionNote: this.consumePendingQuestionNoted(),
           shortAnswerNote: this.consumeShortAnswerNoted(),
+          voice: this.consumeTurnVoice(),
           delivery: this.consumeDeliveryDelta(),
           // TURN-RELEASE TRACE — spread so a turn with no trace (batch
           // STT) omits all five rather than storing nulls. Counts and
@@ -8347,6 +8397,15 @@ export class ConversationPipeline {
           this.interimSinceRelease = segment.isFinal ? "" : segment.text.trim();
           // Who said the words the detector is about to hear — see `callerSpeaker`.
           if (segment.isFinal && segment.speaker !== undefined) this.lastFinalSpeaker = segment.speaker;
+          // TELEMETRY ONLY — who said this turn and how sure the STT was; see `TurnVoiceTelemetry`.
+          if (segment.isFinal && segment.text.trim().length > 0) {
+            const label = segment.speaker ?? "?";
+            this.turnVoiceStats.speakerChars.set(label, (this.turnVoiceStats.speakerChars.get(label) ?? 0) + segment.text.trim().length);
+            if (segment.confidence > 0) {
+              this.turnVoiceStats.confidenceSum += segment.confidence;
+              this.turnVoiceStats.confidenceCount += 1;
+            }
+          }
           if (this.speculation !== undefined && !this.sameSpeculatedText(textAfterSegment, this.speculation.text)) {
             this.abandonSpeculation("caller resumed speaking");
           }

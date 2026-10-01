@@ -596,11 +596,11 @@ await test("D6. ON: quiet speech the STT is unsure of still does not stop the re
 section("SECTION E — runtime health: a blocked event loop is measured");
 // ═════════════════════════════════════════════════════════════════
 
-await test("E1. a 250ms synchronous block shows up as loopMaxMs, and the figures freeze at stop", async () => {
+await test("E1. a 400ms synchronous block shows up as loopMaxMs, and the figures freeze at stop", async () => {
   const probe = new RuntimeHealthProbe();
   probe.start();
   await sleep(100);
-  const until = Date.now() + 250;
+  const until = Date.now() + 400;
   while (Date.now() < until) {
     // Block the event loop, as a stalled reply start would.
   }
@@ -608,6 +608,11 @@ await test("E1. a 250ms synchronous block shows up as loopMaxMs, and the figures
   probe.stop();
   const r = probe.snapshot();
   assert.ok(r.loopMaxMs >= 200, `loopMaxMs=${r.loopMaxMs}`);
+  // The block was our own CPU work, so the stall's CPU is about its length.
+  assert.ok(r.stallCount >= 1, `stallCount=${r.stallCount}`);
+  const worst = r.stalls[0]!;
+  assert.ok(worst.gapMs >= 250, JSON.stringify(worst));
+  assert.ok(worst.cpuMs >= worst.gapMs * 0.5, `a busy loop uses CPU: ${JSON.stringify(worst)}`);
   assert.ok(typeof r.nodeEnv === "string" && r.rssMb > 0, JSON.stringify(r));
   await sleep(50);
   assert.deepEqual(probe.snapshot(), r, "frozen after stop");

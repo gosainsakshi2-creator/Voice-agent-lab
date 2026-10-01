@@ -8,6 +8,7 @@
  */
 
 import type { ProviderStackSelection, SessionId } from "./session.types";
+import type { RuntimeHealthRecord } from "../core/session/runtime-health";
 
 /**
  * A generic millisecond latency measurement, reused across every
@@ -778,16 +779,7 @@ export interface BenchmarkMetrics {
    * How long the event loop was blocked during the call and how much of
    * it was GC — see `runtime-health.ts`. Absent for harness sessions.
    */
-  readonly runtime?: {
-    readonly loopMaxMs: number;
-    readonly loopP99Ms: number;
-    readonly loopMeanMs: number;
-    readonly gcCount: number;
-    readonly gcTotalMs: number;
-    readonly gcMaxMs: number;
-    readonly nodeEnv: string;
-    readonly rssMb: number;
-  };
+  readonly runtime?: RuntimeHealthRecord;
   readonly bargeInGate?: {
     readonly uncorroboratedFinals: number;
     readonly uncorroboratedInterims: number;

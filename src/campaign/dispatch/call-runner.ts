@@ -111,6 +111,8 @@ export interface ManagerLike {
    * outcome label, not the call.
    */
   getTranscript?(sessionId: SessionId): readonly ConversationTurn[];
+  /** Test calls only: the caller-side audio capture, taken once — see `RECORD_CALL_AUDIO`. */
+  takeAudioCapture?(sessionId: SessionId): unknown;
   /**
    * OPTIONAL, and read-only. Epoch-ms of the last conversation activity
    * the pipeline heard (streaming STT, interim segments included), or
@@ -931,7 +933,16 @@ async function persistMetrics(
     const firstTurnTotalMs = turns[0]?.total?.milliseconds;
 
     const breakdown = metrics.estimatedCost?.breakdown ?? {};
-    await saveCallMetrics(attemptId, campaign.id, contact.assignedProvider, metrics as unknown as Record<string, unknown>, {
+    // Test calls only (`RECORD_CALL_AUDIO`): stored beside the metrics,
+    // never in `build()`, which the dashboard serializes several times a second.
+    let recording: unknown;
+    try {
+      recording = manager.takeAudioCapture?.(sessionId);
+    } catch {
+      recording = undefined;
+    }
+    const raw = recording !== undefined ? { ...(metrics as unknown as Record<string, unknown>), recording } : (metrics as unknown as Record<string, unknown>);
+    await saveCallMetrics(attemptId, campaign.id, contact.assignedProvider, raw, {
       turnCount: turns.length,
       conversationSeconds: metrics.callDuration?.seconds ?? null,
       sttP50: pick("stt"),

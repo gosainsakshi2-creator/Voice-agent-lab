@@ -45,6 +45,19 @@ import { PostgresTtsAudioStore, TtsAudioCache } from "./tts-audio-cache";
 import { processFirstReplyCache } from "./first-reply-cache";
 import type { OutboundDeliveryEvent } from "./metrics-collector";
 import { RuntimeHealthProbe } from "./runtime-health";
+
+/** Test-call capture cap: 5 minutes of 8kHz μ-law. */
+const AUDIO_CAPTURE_MAX_BYTES = 8000 * 60 * 5;
+
+/** The test-call audio capture as persisted in `call_metrics.raw.recording`. */
+export interface CallAudioCapture {
+  readonly encoding: "MULAW";
+  readonly sampleRateHz: 8000;
+  readonly durationMs: number;
+  /** [startMs, endMs] spans in which the agent was SPEAKING, on the capture's own clock. */
+  readonly speakingSpans: ReadonlyArray<readonly [number, number]>;
+  readonly base64: string;
+}
 import { getDbPool } from "../../campaign/db/client";
 
 /** `undefined` until first asked for; `null` once switched off. */
@@ -109,6 +122,10 @@ export class DefaultVoiceSessionManager implements VoiceSessionManager, Pipeline
     const runtimeProbe = new RuntimeHealthProbe();
     runtimeProbe.start();
     record.metrics.attachRuntimeProbe(runtimeProbe);
+    // Test calls only: keep the caller-side audio — see `SessionRecord.audioCapture`.
+    if (optionalEnv("RECORD_CALL_AUDIO", "false").trim().toLowerCase() === "true") {
+      record.audioCapture = { startedAtMs: Date.now(), chunks: [], bytes: 0, speakingSpans: [] };
+    }
     this.sessions.set(id, record);
     return record.toSnapshot();
   }
@@ -513,6 +530,16 @@ export class DefaultVoiceSessionManager implements VoiceSessionManager, Pipeline
       `[session-mgr:${record.id}] transition: ${record.state} -> ${to} (reason: ${reason ?? "none"})`,
     );
 
+    const capture = record.audioCapture;
+    if (capture !== undefined && (to === SessionState.SPEAKING) !== (record.state === SessionState.SPEAKING)) {
+      // Where the agent's own voice (and its echo) is in the capture.
+      const atMs = Math.round((capture.bytes / 8000) * 1000);
+      if (to === SessionState.SPEAKING) capture.speakingSpans.push([atMs, undefined]);
+      else {
+        const open = capture.speakingSpans[capture.speakingSpans.length - 1];
+        if (open !== undefined && open[1] === undefined) open[1] = atMs;
+      }
+    }
     record.state = to;
     record.updatedAt = transitionRecord.at;
     record.stateHistory.push(transitionRecord);
@@ -552,6 +579,38 @@ export class DefaultVoiceSessionManager implements VoiceSessionManager, Pipeline
     if (!record.mediaStream) {
       record.inboundAudioFallback.push(chunk);
     }
+    const capture = record.audioCapture;
+    if (capture !== undefined && capture.bytes < AUDIO_CAPTURE_MAX_BYTES && chunk.encoding === "MULAW") {
+      capture.chunks.push(new Uint8Array(chunk.data));
+      capture.bytes += chunk.data.byteLength;
+    }
+  }
+
+  /**
+   * ADDITIVE, NOT PART OF `VoiceSessionManager`. The test-call audio
+   * capture for persisting, taken once — see `SessionRecord.audioCapture`.
+   * Undefined when capture is off or already taken.
+   */
+  takeAudioCapture(sessionId: SessionId): CallAudioCapture | undefined {
+    const record = this.sessions.get(sessionId);
+    const capture = record?.audioCapture;
+    if (record === undefined || capture === undefined) return undefined;
+    record.audioCapture = undefined;
+    const joined = new Uint8Array(capture.bytes);
+    let offset = 0;
+    for (const c of capture.chunks) {
+      joined.set(c.subarray(0, Math.max(0, Math.min(c.byteLength, joined.byteLength - offset))), offset);
+      offset += c.byteLength;
+      if (offset >= joined.byteLength) break;
+    }
+    const durationMs = Math.round((joined.byteLength / 8000) * 1000);
+    return {
+      encoding: "MULAW",
+      sampleRateHz: 8000,
+      durationMs,
+      speakingSpans: capture.speakingSpans.map(([start, end]) => [start, end ?? durationMs]),
+      base64: Buffer.from(joined).toString("base64"),
+    };
   }
 
   /** Subscribe to synthesized audio as the pipeline produces it. Returns an unsubscribe function. */

@@ -680,6 +680,46 @@ await test("F2. each turn records its level against the median of the caller's e
   }
 });
 
+// ═════════════════════════════════════════════════════════════════
+section("SECTION G — test-call audio capture (RECORD_CALL_AUDIO)");
+// ═════════════════════════════════════════════════════════════════
+
+const { DefaultVoiceSessionManager } = await import("../../core/session/voice-session-manager.impl");
+const stubRegistry = { resolve: () => ({ descriptor: { category: ProviderCategory.TELEPHONY, id: "stub" } }) } as never;
+const newSession = async (record: boolean) => {
+  const before = process.env.RECORD_CALL_AUDIO;
+  if (record) process.env.RECORD_CALL_AUDIO = "true";
+  else delete process.env.RECORD_CALL_AUDIO;
+  try {
+    const manager = new DefaultVoiceSessionManager(stubRegistry);
+    const created = await manager.createSession({ language: SupportedLanguage.ENGLISH, direction: CallDirection.OUTBOUND, providerStack: STACK as never });
+    return { manager, sessionId: created.id };
+  } finally {
+    if (before === undefined) delete process.env.RECORD_CALL_AUDIO;
+    else process.env.RECORD_CALL_AUDIO = before;
+  }
+};
+const frame = (byte: number): AudioPayload => ({ data: new Uint8Array(160).fill(byte), encoding: "MULAW", sampleRateHz: 8000 });
+
+await test("G1. ON: the caller-side frames are kept in order, with the agent's speaking spans, and taken once", async () => {
+  const { manager, sessionId } = await newSession(true);
+  for (let i = 0; i < 50; i++) manager.pushInboundAudio(sessionId, frame(i));
+  const capture = manager.takeAudioCapture(sessionId)!;
+  assert.ok(capture !== undefined);
+  assert.equal(capture.durationMs, 1000, "50 frames of 20ms");
+  const bytes = Buffer.from(capture.base64, "base64");
+  assert.equal(bytes.length, 8000);
+  assert.equal(bytes[0], 0);
+  assert.equal(bytes[160 * 49], 49, "frames kept in the order they arrived");
+  assert.equal(manager.takeAudioCapture(sessionId), undefined, "taken once");
+});
+
+await test("G2. OFF (the default): nothing is captured", async () => {
+  const { manager, sessionId } = await newSession(false);
+  manager.pushInboundAudio(sessionId, frame(1));
+  assert.equal(manager.takeAudioCapture(sessionId), undefined);
+});
+
 void SCRIPT_TEXT;
 console.log(`\n${failures.length === 0 ? "ALL PASSED" : "FAILURES"} — ${passed} passed, ${failures.length} failed`);
 for (const name of failures) console.log(`  - ${name}`);

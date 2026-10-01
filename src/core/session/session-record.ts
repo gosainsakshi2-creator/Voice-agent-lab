@@ -152,6 +152,18 @@ export class SessionRecord {
   inboundSpeechLevel = { sumDbfs: 0, frames: 0 };
 
   /**
+   * TEST CALLS ONLY (`RECORD_CALL_AUDIO=true`, background-voice step 1b).
+   * The caller-side audio exactly as the STT received it (8kHz μ-law),
+   * capped at `AUDIO_CAPTURE_MAX_BYTES`, and the spans the agent was
+   * SPEAKING (ms from `startedAtMs`) so its echo can be told apart. Taken
+   * once by `takeAudioCapture` when the call's metrics are persisted.
+   * Undefined — nothing captured, nothing stored — unless switched on.
+   */
+  audioCapture:
+    | { readonly startedAtMs: number; readonly chunks: Uint8Array[]; bytes: number; readonly speakingSpans: Array<[number, number | undefined]> }
+    | undefined;
+
+  /**
    * PHASE 3 BATCH 1 — TELEMETRY ONLY. Wall clock at which the media
    * bridge's outbound pump sent the first audio frame of the CURRENT
    * TURN toward the caller.

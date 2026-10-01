@@ -161,6 +161,7 @@ export interface TurnLatencyInput {
   readonly discoveryNoNote?: true | undefined;
   readonly voice?: TurnLatencyBreakdown["voice"] | undefined;
   readonly prefetch?: TurnLatencyBreakdown["prefetch"] | undefined;
+  readonly llmError?: TurnLatencyBreakdown["llmError"] | undefined;
   // TURN-RELEASE TRACE (2026-09-21) — see `TurnLatencyBreakdown` for
   // what each one is and why it exists. Indexed access rather than a
   // re-declared union, matching `endpointMarkerOutcome` and
@@ -542,6 +543,7 @@ export class SessionMetricsCollector {
       ...(input.discoveryNoNote === true ? { discoveryNoNote: true as const } : {}),
       ...(input.voice !== undefined ? { voice: input.voice } : {}),
       ...(input.prefetch !== undefined ? { prefetch: input.prefetch } : {}),
+      ...(input.llmError !== undefined ? { llmError: input.llmError } : {}),
       ...(releaseReason !== undefined ? { releaseReason } : {}),
       ...(heldTextReadsUnfinished !== undefined ? { heldTextReadsUnfinished } : {}),
       ...(continuationGracesAtRelease !== undefined ? { continuationGracesAtRelease } : {}),

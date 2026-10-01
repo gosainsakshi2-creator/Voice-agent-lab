@@ -573,6 +573,11 @@ export interface TurnLatencyBreakdown {
   readonly discoveryNoNote?: true;
   /** What the caller's turn sounded like — see `TurnVoiceTelemetry`. */
   readonly voice?: TurnVoiceTelemetry;
+  /**
+   * Why the LLM stream failed, on a `stream_error` turn: the error's name,
+   * its message (truncated) and HTTP status when the SDK gives one.
+   */
+  readonly llmError?: { readonly name: string; readonly message: string; readonly status?: number; readonly afterFirstToken?: true };
   /** Next-sentence prefetch this turn (`prefetchNextSentence`): clips started, and how many were played. */
   readonly prefetch?: { readonly started: number; readonly played: number };
 

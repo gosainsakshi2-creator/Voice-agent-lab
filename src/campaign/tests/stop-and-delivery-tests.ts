@@ -115,6 +115,8 @@ function startHarness(input: {
   readonly callerFirstTurnTaking?: boolean;
   /** Delay before the Nth request's first token (by request index), so a turn can supersede it while THINKING. */
   readonly llmDelayMs?: Readonly<Record<number, number>>;
+  /** Request indices whose stream throws before any token, like an API error. */
+  readonly llmFailRequests?: ReadonlySet<number>;
 }): Harness {
   const requests: Array<readonly ConversationTurn[]> = [];
   const synthesized: string[] = [];
@@ -156,6 +158,9 @@ function startHarness(input: {
       const reply = input.replies[replyIndex] ?? "Okay.";
       replyIndex += 1;
       await sleep(input.llmDelayMs?.[requests.length - 1] ?? 10);
+      if (input.llmFailRequests?.has(requests.length - 1)) {
+        throw Object.assign(new Error("429 Rate limit reached for requests"), { name: "RateLimitError", status: 429 });
+      }
       if (signal?.aborted) return;
       for (const delta of reply.split(/(?<=\s)/u)) {
         if (signal?.aborted) return;
@@ -743,6 +748,26 @@ await test("G2. OFF (the default): nothing is captured", async () => {
   const { manager, sessionId } = await newSession(false);
   manager.pushInboundAudio(sessionId, frame(1));
   assert.equal(manager.takeAudioCapture(sessionId), undefined);
+});
+
+// ═════════════════════════════════════════════════════════════════
+section("SECTION H — a failed LLM stream says why (call 8b8069a8)");
+// ═════════════════════════════════════════════════════════════════
+
+await test("H1. a turn whose LLM stream throws records the error's name, message and status", async () => {
+  const h = startHarness({ replies: [BLOCK, ANSWER, FOLLOW_UP], llmFailRequests: new Set([1]) });
+  try {
+    await h.waitForReplies(1);
+    h.say("Yes, tell me.");
+    await h.waitFor("the block", () => h.assistantTexts().length >= 2 && h.record.state === SessionState.LISTENING, 30000);
+    h.say("And what does it cost?");
+    await h.waitFor("the failed turn to be recorded", () => h.record.metrics.build().turnLatencies.some((t) => t.llmError !== undefined), 20000);
+    const failed = h.record.metrics.build().turnLatencies.find((t) => t.llmError !== undefined)!;
+    assert.equal(failed.turnOutcome, "stream_error");
+    assert.deepEqual(failed.llmError, { name: "RateLimitError", message: "429 Rate limit reached for requests", status: 429 });
+  } finally {
+    await h.stop();
+  }
 });
 
 void SCRIPT_TEXT;

@@ -3229,6 +3229,15 @@ export class ConversationPipeline {
     return counts.started > 0 || counts.played > 0 ? counts : undefined;
   }
 
+  /** The LLM stream's failure on this turn, if it failed — see `stream_error`. */
+  private pendingLlmError: TurnLatencyBreakdown["llmError"] | undefined;
+
+  private consumeLlmError(): TurnLatencyBreakdown["llmError"] | undefined {
+    const error = this.pendingLlmError;
+    this.pendingLlmError = undefined;
+    return error;
+  }
+
   private consumeTurnVoice(): TurnVoiceTelemetry | undefined {
     const voice = this.pendingTurnVoice;
     this.pendingTurnVoice = undefined;
@@ -4356,6 +4365,7 @@ export class ConversationPipeline {
           shortAnswerNote: this.consumeShortAnswerNoted(),
           discoveryNoNote: this.consumeDiscoveryNoNoted(),
           voice: this.consumeTurnVoice(),
+          llmError: this.consumeLlmError(),
           prefetch: this.consumePrefetchCounts(),
           delivery: this.consumeDeliveryDelta(),
           // TURN-RELEASE TRACE — spread so a turn with no trace (batch
@@ -10106,6 +10116,15 @@ await this.drainPlayback(speakingSignal, true);
       // text DID reach the caller report `spoken`, because it was not a
       // silent turn; `charsGenerated` and this line describe the rest.
       outcome = "stream_error";
+      // Kept for this turn's telemetry: call 8b8069a8 (2026-10-01) lost 11
+      // replies to this catch and only the console knew why.
+      const status = (error as { status?: unknown } | null)?.status;
+      this.pendingLlmError = {
+        name: error instanceof Error ? error.name : typeof error,
+        message: (error instanceof Error ? error.message : String(error)).slice(0, 200),
+        ...(typeof status === "number" ? { status } : {}),
+        ...(llmFirstTokenMs !== undefined ? { afterFirstToken: true } : {}),
+      };
       // eslint-disable-next-line no-console
       console.error(
         `[LLM:${this.record.id}] streaming completion FAILED mid-turn` +

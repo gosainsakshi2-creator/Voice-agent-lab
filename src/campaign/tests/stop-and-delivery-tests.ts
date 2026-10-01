@@ -489,7 +489,23 @@ await test("C1c. each starve records what the producer was doing", () => {
   c.noteOutboundDelivery({ kind: "starved", framesBefore: 200, producer: "tts_streaming" });
   c.noteOutboundDelivery({ kind: "starved", framesBefore: 200, producer: "tts_streaming" });
   c.noteOutboundDelivery({ kind: "starved", framesBefore: 200 });
-  assert.deepEqual(c.build().delivery?.starvedWhile, { ttsFirstChunk: 1, ttsStreaming: 2, waitingLlm: 0 });
+  assert.deepEqual(c.build().delivery?.starvedWhile, { ttsFirstChunk: 1, ttsStreaming: 2, waitingLlm: 0, replyDone: 0 });
+});
+
+await test("C1d. calls 3c0ae749/943a5341: the pump running dry after the reply's last sentence is the reply ending, not a gap", () => {
+  const c = new SessionMetricsCollector("sess-c1d" as SessionId, STACK as never);
+  for (let i = 0; i < 100; i++) c.countOutboundFrame();
+  // The reply ends: dry pump, then the end-of-speech flush restarts it ~450ms later.
+  c.noteOutboundDelivery({ kind: "starved", framesBefore: 100, producer: "reply_done" });
+  c.noteOutboundDelivery({ kind: "gap", ms: 450 });
+  // A real mid-reply gap still counts.
+  c.noteOutboundDelivery({ kind: "starved", framesBefore: 100, producer: "tts_streaming" });
+  c.noteOutboundDelivery({ kind: "gap", ms: 300 });
+  const d = c.build().delivery!;
+  assert.deepEqual(
+    { starved: d.starvedCount, gaps: d.gapCount, gapMs: d.gapMsTotal, replyDone: d.starvedWhile?.replyDone, streaming: d.starvedWhile?.ttsStreaming },
+    { starved: 1, gaps: 1, gapMs: 300, replyDone: 1, streaming: 1 },
+  );
 });
 
 await test("C2. a turn records the counters since the previous turn, and only when something happened", async () => {

@@ -37,7 +37,7 @@ import type { RuntimeHealthProbe } from "./runtime-health";
 
 /** One thing a media bridge saw while sending audio — see `DeliveryCounters`. */
 export type OutboundDeliveryEvent =
-  | { readonly kind: "starved"; readonly framesBefore?: number; readonly producer?: "tts_first_chunk" | "tts_streaming" | "waiting_llm" }
+  | { readonly kind: "starved"; readonly framesBefore?: number; readonly producer?: "tts_first_chunk" | "tts_streaming" | "waiting_llm" | "reply_done" }
   | { readonly kind: "gap"; readonly ms: number }
   | { readonly kind: "burst_capped"; readonly lateMs: number }
   | { readonly kind: "send_error" }
@@ -643,7 +643,9 @@ export class SessionMetricsCollector {
     sendErrors: 0,
   };
   private socketClose: SocketCloseRecord | undefined;
-  private starvedWhile = { ttsFirstChunk: 0, ttsStreaming: 0, waitingLlm: 0 };
+  private starvedWhile = { ttsFirstChunk: 0, ttsStreaming: 0, waitingLlm: 0, replyDone: 0 };
+  /** The last starve was a reply ending, so the gap that closes it is not one. */
+  private pendingEndOfReply = false;
 
   countOutboundFrame(): void {
     this.delivery.framesSent += 1;
@@ -653,6 +655,14 @@ export class SessionMetricsCollector {
     const d = this.delivery;
     switch (event.kind) {
       case "starved":
+        // The reply ended: not a gap anyone hears. Counted apart, and its
+        // "gap" (until the next audio) is not booked — see `pendingEndOfReply`.
+        if (event.producer === "reply_done") {
+          this.starvedWhile.replyDone += 1;
+          this.pendingEndOfReply = true;
+          return;
+        }
+        this.pendingEndOfReply = false;
         d.starvedCount += 1;
         if (event.framesBefore !== undefined && event.framesBefore <= STARVED_EARLY_MAX_FRAMES) d.starvedEarlyCount += 1;
         if (event.producer === "tts_first_chunk") this.starvedWhile.ttsFirstChunk += 1;
@@ -660,6 +670,11 @@ export class SessionMetricsCollector {
         else if (event.producer === "waiting_llm") this.starvedWhile.waitingLlm += 1;
         return;
       case "gap": {
+        // The dry spell that closed a reply is the turn ending, not a gap.
+        if (this.pendingEndOfReply) {
+          this.pendingEndOfReply = false;
+          return;
+        }
         const ms = Math.max(0, Math.round(event.ms));
         d.gapCount += 1;
         d.gapMsTotal += ms;

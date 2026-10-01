@@ -10561,8 +10561,14 @@ await this.drainPlayback(speakingSignal, true);
    * was streaming slower than playback (`tts_streaming`: a stall inside a
    * sentence), or no sentence was ready at all (`waiting_llm`).
    */
-  producerPhase(): "tts_first_chunk" | "tts_streaming" | "waiting_llm" {
+  producerPhase(): "tts_first_chunk" | "tts_streaming" | "waiting_llm" | "reply_done" {
     if (this.ttsInFlight > 0) return this.ttsAwaitingFirstChunk ? "tts_first_chunk" : "tts_streaming";
+    // Every sentence of the reply is handed over and playback is only being
+    // waited out: the pump running dry here is the reply ENDING, not a gap
+    // the caller hears (calls 3c0ae749/849e83d3/943a5341: one ~450ms "gap" per
+    // reply, every one of them here — the bridge's 200ms lead plus the drain
+    // allowance).
+    if (this.replyFullyQueued) return "reply_done";
     return "waiting_llm";
   }
 

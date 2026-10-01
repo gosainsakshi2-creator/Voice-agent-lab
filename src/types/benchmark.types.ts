@@ -819,9 +819,12 @@ export interface DeliveryCounters {
   /**
    * What the reply's audio producer was doing each time the pump ran dry
    * (call-wide only): the TTS had not answered the next request yet, it
-   * was streaming slower than playback, or no sentence was ready.
+   * was streaming slower than playback, or no sentence was ready. A dry
+   * pump after the reply's last sentence was handed over (`replyDone`) is
+   * the reply ending: it is counted here only, never in `starvedCount`,
+   * `gapCount` or `gapMsTotal`.
    */
-  readonly starvedWhile?: { readonly ttsFirstChunk: number; readonly ttsStreaming: number; readonly waitingLlm: number };
+  readonly starvedWhile?: { readonly ttsFirstChunk: number; readonly ttsStreaming: number; readonly waitingLlm: number; readonly replyDone: number };
   readonly gapCount: number;
   readonly gapMsTotal: number;
   readonly maxGapMs: number;

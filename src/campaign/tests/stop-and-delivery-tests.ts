@@ -19,7 +19,7 @@
 import assert from "node:assert/strict";
 
 const { ConversationPipeline } = await import("../../core/session/conversation-pipeline");
-const { isStopRequest } = await import("../../core/session/turn-detection");
+const { isStopRequest, isGoAheadOverReply, isContinuationCue } = await import("../../core/session/turn-detection");
 const { SessionMetricsCollector, socketCloseEvent } = await import("../../core/session/metrics-collector");
 const { RuntimeHealthProbe } = await import("../../core/session/runtime-health");
 const { MulawVadSegmenter } = await import("../../server/vad-segmenter");
@@ -112,6 +112,8 @@ function startHarness(input: {
    */
   readonly bridge?: { readonly highWaterMs?: number };
   readonly stopOnRequest?: boolean;
+  /** `handleStopRequest`: a whole-turn "wait" / "रुको" gets one fixed line, no model request. */
+  readonly stopRequestReply?: boolean;
   readonly callerFirstTurnTaking?: boolean;
   /** Delay before the Nth request's first token (by request index), so a turn can supersede it while THINKING. */
   readonly llmDelayMs?: Readonly<Record<number, number>>;
@@ -277,6 +279,7 @@ function startHarness(input: {
 
   const pipeline = new ConversationPipeline(record, { telephony, stt, llm, tts } as never, host as never, {
     ...(input.stopOnRequest === true ? { stopOnRequest: true } : {}),
+    ...(input.stopRequestReply === true ? { stopRequestReply: true } : {}),
     ...(input.llmErrorFallback === true ? { llmErrorFallback: true } : {}),
     ...(input.backgroundVoiceGuard === true ? { backgroundVoiceGuard: true, ignoreOtherSpeakersOverReply: true } : {}),
     ...(input.openingSilencePrompt === true ? { openingSilencePrompt: true } : {}),
@@ -386,8 +389,27 @@ section("SECTION A — what counts as a stop request");
 // ═════════════════════════════════════════════════════════════════
 
 await test("A1. the stop words, alone, in English, Hinglish and Devanagari", () => {
-  for (const s of ["wait", "Wait.", "wait wait", "hold on", "one second", "just a minute", "stop", "ruko", "rukiye", "ek minute", "रुको", "रुकिए", "एक मिनट"]) {
+  for (const s of ["wait", "Wait.", "wait wait", "hold on", "one second", "just a minute", "stop", "ruko", "rukiye", "ek minute", "रुको", "रुकिए", "एक मिनट",
+    // Real call 449a04fd (2026-10-03): each of these drew the pitch again.
+    "चुप हो जा।", "रुक जा।", "शांत हो जा।", "सुन मेरी बात अब।", "पहले मेरी बात सुन।", "अरे भाई, रुक जा।", "Wait, wait, wait.",
+    "Chup ho jao.", "Let me finish.", "Stop talking.", "Hello, wait.", "मुझे बोलने दो।"]) {
     assert.ok(isStopRequest(s), `"${s}" must be a stop request`);
+  }
+});
+
+await test("A1b. \"Tell.\" / \"Yeah, tell.\" / \"Bolo na.\" are go-aheads over a reply, not stop requests, and not re-ask cues", () => {
+  // Real call 449a04fd: "Tell." right after "Yeah." cut the pitch and the
+  // resume skipped the introduction. Real call be911bbe: "Tell." closed a
+  // long answer — the LLM must answer it, not re-ask the question.
+  for (const s of ["Tell.", "Yeah, tell.", "Haan, tell.", "Tell na.", "Bolo na.", "बोलो ना।", "Okay, go on."]) {
+    assert.ok(isGoAheadOverReply(s), `"${s}" must be a go-ahead over a reply`);
+    assert.ok(!isStopRequest(s), `"${s}" must not be a stop request`);
+  }
+  for (const s of ["Tell.", "Yeah, tell.", "Tell na."]) {
+    assert.ok(!isContinuationCue(s), `"${s}" must NOT be a continuation cue (it would re-ask an answered question)`);
+  }
+  for (const s of ["Tell me the price.", "Tell me more about it", "Tell me who you are."]) {
+    assert.ok(!isGoAheadOverReply(s), `"${s}" carries content and must interrupt`);
   }
 });
 
@@ -935,6 +957,75 @@ await test("J3. ON: a caller who answered and then listens silently to a long pi
     await h.waitFor("the pitch to finish", () => h.assistantTexts().length >= 2 && h.record.state === SessionState.LISTENING, 30000);
     await sleep(10000);
     assert.ok(!h.synthesized.includes(ARE_YOU_THERE), "the caller has spoken, so the 30s window applies");
+  } finally {
+    await h.stop();
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════
+section("SECTION K — a stop request gets one fixed line, not the model (call 449a04fd)");
+// ═════════════════════════════════════════════════════════════════
+
+/** "Wait" asks for a pause; "let me finish" asks for the floor. */
+const STOP_LINE = "Sure.";
+const FLOOR_LINE = "Sure, go ahead.";
+
+await test("K1. ON: \"Wait.\" over the block stops it and draws the fixed line; the model is not asked", async () => {
+  const h = startHarness({ replies: [BLOCK, ANSWER, FOLLOW_UP], stopRequestReply: true });
+  try {
+    await startBlock(h);
+    await sleep(600);
+    h.say("Wait.");
+    await h.waitFor("the fixed line", () => h.synthesized.includes(STOP_LINE), 8000);
+    await h.waitFor("listening again", () => h.record.state === SessionState.LISTENING, 8000);
+    assert.equal(h.assistantTexts().at(-1), STOP_LINE, "the fixed line is the committed turn");
+    assert.ok(!h.synthesized.includes(ANSWER), "the model's next reply was never requested, so never spoken");
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("K1b. ON: \"Let me finish.\" hands the caller the floor in one line", async () => {
+  const h = startHarness({ replies: [BLOCK, ANSWER, FOLLOW_UP], stopRequestReply: true });
+  try {
+    await startBlock(h);
+    await sleep(600);
+    h.say("Let me finish.");
+    await h.waitFor("the fixed line", () => h.synthesized.includes(FLOOR_LINE), 8000);
+    await h.waitFor("listening again", () => h.record.state === SessionState.LISTENING, 8000);
+    assert.equal(h.assistantTexts().at(-1), FLOOR_LINE);
+    assert.ok(!h.synthesized.includes(ANSWER));
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("K2. ON: a second stop request while that line is the last word gets silence, not the line again", async () => {
+  const h = startHarness({ replies: [BLOCK, ANSWER, FOLLOW_UP], stopRequestReply: true });
+  try {
+    await startBlock(h);
+    await sleep(600);
+    h.say("Wait.");
+    await h.waitFor("the fixed line", () => h.synthesized.includes(STOP_LINE), 8000);
+    await h.waitFor("listening again", () => h.record.state === SessionState.LISTENING, 8000);
+    h.say("Hold on.");
+    await sleep(2500);
+    assert.equal(h.synthesized.filter((t) => t === STOP_LINE).length, 1, `spoken: ${JSON.stringify(h.synthesized)}`);
+    assert.ok(!h.synthesized.includes(ANSWER), "still no model request");
+    assert.equal(h.record.state, SessionState.LISTENING, "and the call is still listening");
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("K3. OFF: the same \"Wait.\" reaches the model exactly as before", async () => {
+  const h = startHarness({ replies: [BLOCK, ANSWER, FOLLOW_UP] });
+  try {
+    await startBlock(h);
+    await sleep(600);
+    h.say("Wait.");
+    await h.waitFor("the model's reply", () => h.synthesized.includes(ANSWER), 15000);
+    assert.ok(!h.synthesized.includes(STOP_LINE), "the fixed line belongs to the option");
   } finally {
     await h.stop();
   }

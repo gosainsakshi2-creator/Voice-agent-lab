@@ -407,9 +407,23 @@ const STOP_PHRASES = [
   "(?:please )?listen(?: to me)?(?: first)?(?: please)?", "excuse me",
   "(?:pehle |zara )?(?:meri baat )?sun(?:o|iye|na|lo| lo|o na)(?: na)?(?: pehle)?",
   "(?:पहले |ज़रा |जरा )?(?:मेरी बात )?(?:सुनो|सुनिए|सुनना|सुन लो|सुनो ना|सुन)(?: ना)?(?: पहले)?",
+  // Real call 449a04fd (2026-10-03): "चुप हो जा", "रुक जा", "शांत हो जा",
+  // "सुन मेरी बात अब" each drew the pitch again instead of silence.
+  "chup(?: ho ja(?:o)?| raho| kar(?:o)?)?", "चुप(?: हो जा(?:ओ)?| रहो| कर(?:ो)?)?",
+  "ruk ja(?:o)?", "रुक जा(?:ओ)?", "shant ho ja(?:o)?", "शांत हो जा(?:ओ)?",
+  "(?:ab )?sun(?:o)? meri baat(?: ab)?", "(?:अब )?सुन(?:ो)? मेरी बात(?: अब)?",
+  "mujhe bolne (?:de|do|dijiye)", "मुझे बोलने (?:दे|दो|दीजिए)",
+  "let me (?:finish|speak|talk|complete)",
+  "(?:please )?(?:stop talking|be quiet|shut up|don'?t interrupt(?: me)?|listen to me first)",
 ];
 
-const STOP_PHRASE_ONLY = new RegExp(`^(?:${STOP_PHRASES.join("|")})[\\s,.!?…।-]*$`, "iu");
+/**
+ * What may sit in front of a stop request without making it a longer
+ * turn: "अरे भाई, रुक जा।", "Hello, wait.", "Please, one second." The
+ * phrase itself may repeat ("Wait, wait, wait.").
+ */
+const STOP_PREFIX = "(?:(?:are+y?|arre+y?|अरे|oye|ओए|bhai|भाई|yaar|यार|sir|madam|ma'am|hello|हेलो|हैलो|please|plz|प्लीज़)[\\s,!.]*)*";
+const STOP_PHRASE_ONLY = new RegExp(`^${STOP_PREFIX}(?:(?:${STOP_PHRASES.join("|")})[\\s,.!?…।-]*)+$`, "iu");
 
 /**
  * True when the whole utterance is a request for the agent to stop:
@@ -664,6 +678,35 @@ export function isContinuationCuePrefix(text: string): boolean {
   if (!CUE_FIRST_WORDS.has(last)) return false;
   const rest = words.slice(0, -1).join(" ");
   return rest.length === 0 || isContinuationCue(rest);
+}
+
+/**
+ * "Tell.", "Yeah, tell.", "Bolo na." — the caller handing the floor to the
+ * agent. Indian English says a bare "tell" where "go on" is meant; said
+ * over a reply that has just started it means "keep talking", and cutting
+ * the reply for it dropped the agent's own introduction (real call
+ * 449a04fd, 2026-10-03: "you just skipped the introduction").
+ *
+ * READ ONLY by the over-a-reply checks (`isBackchannel` and the absorbed
+ * late final in the pipeline). With the agent silent, "Tell." is an
+ * ordinary turn — the caller wants an answer — so it is deliberately NOT
+ * a continuation cue: `questionToReask` must never re-ask a question the
+ * caller answered at length and closed with "Tell." (real call be911bbe,
+ * the same evening).
+ */
+const GO_AHEAD_TOKENS = [
+  "tell", "tell na", "tell me na", "bolo na", "boliye na", "batao na", "bataiye na",
+  "बोलो ना", "बोलिए ना", "बताओ ना", "बताइए ना",
+];
+const GO_AHEAD_ONLY = new RegExp(
+  `^(?:(?:${[...GO_AHEAD_TOKENS, ...CONTINUATION_TOKENS, ...ACKNOWLEDGEMENT_TOKENS].join("|")})${CUE_SEPARATOR})+$`,
+  "iu",
+);
+
+export function isGoAheadOverReply(text: string): boolean {
+  const trimmed = text.trim();
+  if (trimmed.length === 0) return false;
+  return isContinuationCue(trimmed) || GO_AHEAD_ONLY.test(trimmed);
 }
 
 /**

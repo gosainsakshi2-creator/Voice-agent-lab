@@ -503,10 +503,19 @@ const CALLBACK = [
 ];
 
 const WRONG_NUMBER = [
-  "wrong number", "wrong person", "no such person", "you have the wrong",
-  "he does not live here", "she does not live here", "this is not",
-  "galat number", "galat", "koi aur hai",
-  "गलत नंबर", "गलत",
+  "wrong number", "wrong person", "no such person", "you have the wrong", "you ve got the wrong", "you got the wrong",
+  "he does not live here", "she does not live here", "he doesn t live here", "she doesn t live here",
+  // "this is not" alone matched "this is not the right way" and "गलत" alone
+  // matched "ये सबसे गलत चीज़ है" (real call 449a04fd, 2026-10-03), and a
+  // live lead was stored wrong_number — never redialled. "This is not
+  // Sakshi" at the gate reaches this classifier as `identityDenied`; the
+  // shapes kept here are the ones that name nobody.
+  "this is not him", "this is not her", "this is not me", "this is not his number", "this is not her number",
+  "this is not my number", "this is not the right number", "this is not the right person",
+  "this isn t him", "this isn t her", "this isn t me", "not his number", "not her number",
+  "no one by that name", "nobody by that name", "no one here by that name",
+  "galat number", "number galat hai", "galat aadmi", "galat insaan", "galat banda", "galat vyakti", "galat jagah", "koi aur hai",
+  "गलत नंबर", "नंबर गलत है", "गलत आदमी", "गलत इंसान", "गलत बंदा", "गलत व्यक्ति", "गलत जगह",
 ];
 
 const OPT_OUT = [

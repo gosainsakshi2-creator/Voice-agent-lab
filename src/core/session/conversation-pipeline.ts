@@ -53,7 +53,7 @@ import { SentenceChunker } from "./sentence-chunker";
 import { joinAudioChunks, ttsCacheKey, type TtsAudioCache } from "./tts-audio-cache";
 import { firstReplyCacheKey, type FirstReplyCache } from "./first-reply-cache";
 import { preparedReplyVariantFor } from "./confirmation-vocabulary";
-import { isBareAcknowledgement, isContinuationCue, isContinuationCuePrefix, isStopRequest, readsAsUnfinishedThought } from "./turn-detection";
+import { isBareAcknowledgement, isContinuationCue, isContinuationCuePrefix, isGoAheadOverReply, isStopRequest, readsAsUnfinishedThought } from "./turn-detection";
 import type { ContinuationHoldEvent, EndpointMarkerOutcome, TurnReleaseTrace } from "./turn-detection";
 import { voicemailPhraseIn } from "./voicemail-detection";
 import { combineSignals, abortableSleep } from "./abort-utils";
@@ -359,6 +359,13 @@ export interface ConversationPipelineOptions {
    * default: every harness keeps its barge-in behaviour exactly.
    */
   readonly stopOnRequest?: boolean;
+  /**
+   * A whole turn that is a request to stop ("wait", "रुको", "चुप हो जा",
+   * "पहले मेरी बात सुन") is answered with ONE short fixed line and no model
+   * request — see `handleStopRequest`. Off by default: every harness keeps
+   * its replies exactly.
+   */
+  readonly stopRequestReply?: boolean;
   /**
    * Stop the reply for clear caller speech even when it is too quiet for
    * the loud-energy gate — see `clearSpeechWithoutEnergy`. Acknowledgements
@@ -4229,6 +4236,14 @@ export class ConversationPipeline {
         // returns false for everything with content of its own, so a
         // question after the confirmation reaches `runThinkingAndSpeaking`
         // on exactly the path it takes today.
+        // ── "Wait" / "रुको" / "चुप हो जा": the caller wants the floor ──
+        // One short fixed line and no model request — see `handleStopRequest`.
+        if (await this.handleStopRequest(turn.text, loopSignal)) {
+          this.abandonSpeculation("the caller asked me to stop — answered without the language model");
+          timer.summarize();
+          this.activeTimer = undefined;
+          continue;
+        }
         if (await this.handleAckAfterQuestion(turn.text, loopSignal, turn.lastFinalArrivedAtMs)) {
           this.abandonSpeculation("the question was re-asked without the language model");
           timer.summarize();
@@ -6322,8 +6337,44 @@ export class ConversationPipeline {
     return question;
   }
 
+  /**
+   * The caller asking the agent to stop and listen — "wait", "रुको", "चुप
+   * हो जा", "पहले मेरी बात सुन", "let me finish" (see `isStopRequest`).
+   * Answered with ONE short fixed line and no model request. Real call
+   * 449a04fd (2026-10-03, Gemma 4): three such turns in a row each drew
+   * "Sorry, मैं सुन रही हूँ। मैं बता रही थी कि…" and the pitch again — the
+   * model read "shut up and listen" as "I didn't catch that". A second
+   * stop request while that line is still the agent's last word gets
+   * silence, not the line again. Behind `stopRequestReply`; the identity
+   * gate and the scripted closing keep their own handling.
+   */
+  private async handleStopRequest(userText: string, loopSignal: AbortSignal): Promise<boolean> {
+    if (this.options.stopRequestReply !== true) return false;
+    if (this.identityState === "outstanding" || this.scriptedClosingArmed) return false;
+    const trimmed = userText.trim();
+    if (!isStopRequest(trimmed)) return false;
+    const hindi = this.record.memory.currentLanguage === "hi" || this.record.memory.currentLanguage === "hi-en";
+    // "Wait" / "one second" asks for a pause — "Sure."; "listen" / "चुप हो
+    // जा" / "let me finish" hands the caller the floor — "Sure, go ahead."
+    const line = ConversationPipeline.HOLD_REQUEST_PATTERN.test(trimmed) ? (hindi ? "जी।" : "Sure.") : hindi ? "जी, बोलिए।" : "Sure, go ahead.";
+    const lastAssistant = [...this.record.memory.history()].reverse().find((t) => t.role === "assistant")?.content.trim();
+    if (lastAssistant === line) {
+      // eslint-disable-next-line no-console
+      console.log(`[PIPELINE:${this.record.id}] "${trimmed.slice(0, 30)}" — already listening, saying nothing`);
+      return true;
+    }
+    // eslint-disable-next-line no-console
+    console.log(`[PIPELINE:${this.record.id}] "${trimmed.slice(0, 30)}" is a request to stop — "${line}", no model request`);
+    await this.speakAttentionUtterance(line, loopSignal, "the caller asked me to stop and listen");
+    return true;
+  }
+
   /** `waitBeforeReask`: the line to speak if the caller stays quiet after a mid-reply listening sound. */
   private reaskOnSilence: string | undefined;
+
+  /** Of the stop requests, the ones asking for a PAUSE rather than for the floor — see `handleStopRequest`. */
+  private static readonly HOLD_REQUEST_PATTERN =
+    /\b(?:wait|stop|hold on|hang on|one (?:second|sec|minute|moment)|just a (?:second|sec|minute|moment)|ek (?:minute|second|sec|min)|ruk(?:o|iye)?(?: ja(?:o)?)?|thoda ruko)\b|रुक|एक मिनट|एक सेकंड/iu;
   /** Wall-clock time the last reply's queued audio finishes playing — set by `drainPlayback`. */
   private lastReplyAudioEndsAt = 0;
 
@@ -7536,12 +7587,13 @@ export class ConversationPipeline {
     if (this.isGreetingBack(utterance) && this.greetingSentenceJustPlayed()) {
       return true;
     }
-    // `isContinuationCue` is a bare acknowledgement OR an invitation to
-    // carry on ("बोलिए", "Yes, sir.") — both mean "keep talking".
+    // `isGoAheadOverReply` is a bare acknowledgement OR an invitation to
+    // carry on ("बोलिए", "Yes, sir.", and the bare "Tell." / "Bolo na." of
+    // Indian English) — all mean "keep talking".
     // ...or an INTERIM that is still on its way to one ("हाँ, पता" before
     // "चला" arrives) — see `isContinuationCuePrefix`. Its final is judged
     // on its own, so content still interrupts.
-    if (!isContinuationCue(utterance) && !(!segment.isFinal && isContinuationCuePrefix(utterance))) return false;
+    if (!isGoAheadOverReply(utterance) && !(!segment.isFinal && isContinuationCuePrefix(utterance))) return false;
     // FIX 1 (natural backchanneling) — `!replyFullyQueued` is the second
     // way of knowing the assistant still has more to say. The
     // remaining-audio test below measures how far ahead the TRANSPORT
@@ -8562,7 +8614,7 @@ export class ConversationPipeline {
             const pending = this.record.turnDetector.getPendingTurnText();
             const utterance =
               pending.length > 0 ? `${pending} ${segment.text}` : segment.text;
-            if (isContinuationCue(utterance)) {
+            if (isGoAheadOverReply(utterance)) {
               this.backchannelInFlight = false;
               this.record.liveUserTranscript = "";
               // eslint-disable-next-line no-console

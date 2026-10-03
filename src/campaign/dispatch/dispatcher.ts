@@ -27,6 +27,7 @@ import {
   campaignProgress,
   claimContacts,
   countPendingContacts,
+  dispatcherLockIsLive,
   heartbeatDispatcherLock,
   logEvent,
   recoverOrphans,
@@ -136,7 +137,14 @@ export class CampaignDispatcher {
     if (!campaign) return { ok: false, blockers: ["Campaign not found."] };
 
     const blockers: string[] = [];
-    if (campaign.status !== "READY" && campaign.status !== "PAUSED") {
+    // RUNNING with no live dispatcher is a run a crash or a redeploy cut
+    // short: the status was never settled. It may be started again — the
+    // lock below still refuses a second dispatcher if one is alive.
+    const orphaned =
+      campaign.status === "RUNNING" && !(await dispatcherLockIsLive(this.campaignId, this.config.lockStaleSeconds));
+    if (campaign.status === "RUNNING" && !orphaned) {
+      blockers.push("Campaign is already running in another process.");
+    } else if (campaign.status !== "READY" && campaign.status !== "PAUSED" && !orphaned) {
       blockers.push(`Campaign status is ${campaign.status}; it must be READY or PAUSED to run.`);
     }
 

@@ -35,9 +35,9 @@
  */
 
 import { getDispatchConfig, type DispatchConfig } from "../config/dispatch.config";
-import { getCampaign } from "../db/repositories/campaign.repo";
+import { getCampaign, listCampaigns } from "../db/repositories/campaign.repo";
 import { getControl, setControl } from "../db/repositories/control.repo";
-import { logEvent } from "../db/repositories/call-attempt.repo";
+import { dispatcherLockIsLive, logEvent } from "../db/repositories/call-attempt.repo";
 import { describeCallCeiling, type CallCeiling } from "../domain/pilot-stage";
 import {
   CampaignDispatcher,
@@ -193,4 +193,45 @@ export async function launchCampaignRun(input: LaunchInput): Promise<LaunchResul
     callingWindow: windowWatcher.describe(),
     loadWarnings: loadSafety.warnings,
   };
+}
+
+/**
+ * Resumes every run a crash or a redeploy cut short: campaigns still
+ * RUNNING whose dispatcher lock has gone stale, and whose stored
+ * instruction is still RUN (a PAUSE or STOP issued before the crash is
+ * honoured). Each goes through `launchCampaignRun`, so preflight, the
+ * ceiling, the calling window and the lock all apply exactly as for an
+ * operator's resume. Never throws; returns the campaigns it resumed.
+ *
+ * Called on a timer by `server.ts` when `CAMPAIGN_AUTO_RESUME=true`: on a
+ * zero-downtime deploy the old instance still holds a live lock when the
+ * new one boots, so one check at startup would never see it go stale.
+ */
+export async function resumeOrphanedRuns(
+  manager: DispatchManager,
+  config: DispatchConfig = getDispatchConfig(),
+  /** Tests only: look at these campaigns alone, and launch through this instead of dialing. */
+  scope: { readonly campaignIds?: readonly string[]; readonly launch?: typeof launchCampaignRun } = {},
+): Promise<string[]> {
+  const resumed: string[] = [];
+  const launch = scope.launch ?? launchCampaignRun;
+  try {
+    for (const campaign of await listCampaigns(200)) {
+      if (scope.campaignIds !== undefined && !scope.campaignIds.includes(campaign.id)) continue;
+      if (campaign.status !== "RUNNING" || getDispatcher(campaign.id)) continue;
+      if (await dispatcherLockIsLive(campaign.id, config.lockStaleSeconds)) continue;
+      if ((await getControl(campaign.id)).desiredState !== "RUN") continue;
+      const result = await launch({ campaignId: campaign.id, manager, requestedBy: "auto-resume", intent: "resume", config });
+      // eslint-disable-next-line no-console
+      console.log(
+        `[auto-resume] campaign ${campaign.id} (${campaign.name}) was left RUNNING with no live dispatcher — ` +
+          (result.started ? "resumed" : `not resumed: ${result.blockers.join("; ")}`),
+      );
+      if (result.started) resumed.push(campaign.id);
+    }
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error(`[auto-resume] check failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  return resumed;
 }

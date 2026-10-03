@@ -128,6 +128,22 @@ async function main(): Promise<void> {
     });
   }
 
+  // A crash or a redeploy leaves a running campaign's row RUNNING with no
+  // dispatcher behind it, and nothing dials until someone notices. With
+  // `CAMPAIGN_AUTO_RESUME=true`, such a run is resumed once its lock has
+  // gone stale — checked every minute, because on a zero-downtime deploy
+  // the old instance's lock is still live when this one boots. Off by
+  // default: it places real calls without an operator pressing a button.
+  if ((process.env.CAMPAIGN_AUTO_RESUME ?? "false").trim().toLowerCase() === "true") {
+    const checkOrphanedRuns = async (): Promise<void> => {
+      if (shuttingDown) return;
+      const { resumeOrphanedRuns } = await import("./src/campaign/dispatch/run-launcher");
+      await resumeOrphanedRuns(getRuntime().manager as never);
+    };
+    setTimeout(() => void checkOrphanedRuns(), 15_000);
+    setInterval(() => void checkOrphanedRuns(), 60_000).unref();
+  }
+
   server.listen(port, () => {
     // eslint-disable-next-line no-console
     console.log(`> Voice Agent Lab ready on http://localhost:${port} (dev=${dev})`);

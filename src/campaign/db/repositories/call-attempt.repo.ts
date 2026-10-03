@@ -350,6 +350,20 @@ export async function acquireDispatcherLock(
   return result.rows.length > 0;
 }
 
+/**
+ * Is some process still running this campaign — a lock row whose
+ * heartbeat is younger than `staleSeconds`? A crash or a redeploy leaves
+ * the row behind with its heartbeat frozen, so it goes stale on its own.
+ */
+export async function dispatcherLockIsLive(campaignId: string, staleSeconds: number): Promise<boolean> {
+  const result = await query<{ live: boolean }>(
+    `SELECT heartbeat_at >= now() - ($2 || ' seconds')::interval AS live
+       FROM dispatcher_locks WHERE scope = $1`,
+    [`campaign:${campaignId}`, String(staleSeconds)],
+  );
+  return result.rows[0]?.live === true;
+}
+
 export async function heartbeatDispatcherLock(campaignId: string, owner: string): Promise<void> {
   await query(
     "UPDATE dispatcher_locks SET heartbeat_at = now() WHERE scope = $1 AND owner = $2",

@@ -1106,6 +1106,66 @@ try {
     await query("UPDATE campaigns SET status='READY' WHERE id=$1", [campaignId]);
   });
 
+  await test("41b. a run a crash left RUNNING may start again once its lock is stale — never while it is live", async () => {
+    const { CampaignDispatcher } = await import("../dispatch/dispatcher");
+    const scope = `campaign:${campaignId}`;
+    const preflight = () => new CampaignDispatcher(campaignId, {} as never, config).preflight();
+    try {
+      await query("UPDATE campaigns SET status='RUNNING' WHERE id=$1", [campaignId]);
+      await query(
+        "INSERT INTO dispatcher_locks (scope, owner, heartbeat_at) VALUES ($1, 'crashed', now() - interval '1 hour') ON CONFLICT (scope) DO UPDATE SET owner='crashed', heartbeat_at = now() - interval '1 hour'",
+        [scope],
+      );
+      const stale = await preflight();
+      assert.ok(!stale.blockers.some((b) => /status|already running/i.test(b)), `stale lock: ${stale.blockers.join("; ")}`);
+
+      await query("UPDATE dispatcher_locks SET heartbeat_at = now() WHERE scope = $1", [scope]);
+      const live = await preflight();
+      assert.ok(live.blockers.some((b) => /already running in another process/.test(b)), `live lock: ${live.blockers.join("; ")}`);
+
+      await query("DELETE FROM dispatcher_locks WHERE scope = $1", [scope]);
+      const none = await preflight();
+      assert.ok(!none.blockers.some((b) => /status|already running/i.test(b)), "no lock row at all is a crashed run too");
+    } finally {
+      await query("DELETE FROM dispatcher_locks WHERE scope = $1", [scope]);
+      await query("UPDATE campaigns SET status='READY' WHERE id=$1", [campaignId]);
+    }
+  });
+
+  await test("41c. auto-resume relaunches an orphaned RUNNING campaign, but honours a stored PAUSE and a live lock", async () => {
+    const { resumeOrphanedRuns } = await import("../dispatch/run-launcher");
+    const scope = `campaign:${campaignId}`;
+    const launched: string[] = [];
+    const launch = (async (input: { campaignId: string; intent: string; requestedBy: string }) => {
+      launched.push(`${input.campaignId}:${input.intent}:${input.requestedBy}`);
+      return { started: false, code: "BLOCKED", blockers: ["stub"] };
+    }) as never;
+    const run = () => resumeOrphanedRuns({} as never, config, { campaignIds: [campaignId], launch });
+    try {
+      await query("UPDATE campaigns SET status='RUNNING' WHERE id=$1", [campaignId]);
+      await setControl({ campaignId, desiredState: "RUN", requestedBy: "test" });
+      await run();
+      assert.deepEqual(launched, [`${campaignId}:resume:auto-resume`]);
+
+      await query("INSERT INTO dispatcher_locks (scope, owner) VALUES ($1, 'alive') ON CONFLICT (scope) DO UPDATE SET heartbeat_at = now()", [scope]);
+      await run();
+      assert.equal(launched.length, 1, "a live dispatcher elsewhere is left alone");
+      await query("DELETE FROM dispatcher_locks WHERE scope = $1", [scope]);
+
+      await setControl({ campaignId, desiredState: "PAUSE", requestedBy: "test" });
+      await run();
+      assert.equal(launched.length, 1, "a PAUSE issued before the crash is honoured");
+
+      await query("UPDATE campaigns SET status='READY' WHERE id=$1", [campaignId]);
+      await setControl({ campaignId, desiredState: "RUN", requestedBy: "test" });
+      await run();
+      assert.equal(launched.length, 1, "only RUNNING campaigns are touched");
+    } finally {
+      await query("DELETE FROM dispatcher_locks WHERE scope = $1", [scope]);
+      await query("UPDATE campaigns SET status='READY' WHERE id=$1", [campaignId]);
+    }
+  });
+
   await test("42. the results report never claims a call was placed when dialing is off", async () => {
     const results = await buildCampaignResults(campaignId);
     assert.equal(results?.dialing.enabled, false);

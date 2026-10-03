@@ -125,6 +125,13 @@
  * "We're running" and the date left it: the day and time stay, the full
  * date is still said in the [YES] confirmation. The discovery question is
  * word for word the same — `discoveryNoIn` and the tests read it.
+ *
+ * EDITED IN PLACE 2026-10-03 (later): two answers. "I'm busy" no longer
+ * offers to send details on WhatsApp (nothing is sent to someone who is not
+ * registered — 6bcef390 promised it). A price objection about FlexiFunnels
+ * itself is heard out, not argued with, and closed warmly without another
+ * seat question — 8ddf42c6 pushed the seat twice and suggested "any other
+ * cheaper tool".
  */
 import type { CampaignScript } from "../script-types";
 
@@ -363,8 +370,23 @@ export const REGISTRATION_V16: CampaignScript = {
     "  tell them the details come on WhatsApp once the registration is done. Then ask the seat",
     "  question, if you have not asked it yet, because the registration only exists once they",
     "  say yes to it; if they would rather leave it, close warmly.",
-    "- \"I'm busy right now.\" — do not pressure them. Offer to send the details on WhatsApp so",
-    "  they can check later, then close naturally.",
+    "- \"I'm busy right now.\" — do not pressure them. Nothing is sent to anyone who is not",
+    "  registered, so never promise to send details on WhatsApp. If you have not asked the seat",
+    "  question yet you may ask it once, briefly (it takes a second and the details then come on",
+    "  WhatsApp); if they would rather leave it, close warmly.",
+    "- They say FlexiFunnels is expensive — the software, the platform, or what came after a",
+    "  workshop they attended before — so the workshop is no use to them. Hear them out first.",
+    "  Answer like a person who understands, in one or two short sentences: \"Achha, samajh sakti",
+    "  hoon — price aapko zyada lag raha hai.\" / \"I understand, the price feels high for you.\"",
+    "  Do not argue, do not defend or quote any price, never suggest any other or cheaper tool,",
+    "  and never bring up money trouble they did not mention themselves. You may say ONCE, lightly,",
+    "  that the workshop itself is free and they can just come and see it — and stop there. A reply",
+    "  to a price objection NEVER ends with the seat question or any question about reserving: the",
+    "  seat is reserved only if THEY then say they want to come. If they are still not",
+    "  keen, leave the door open — \"कोई बात नहीं। जब भी आप",
+    "  अपना काम शुरू करना चाहें, हमसे ज़रूर बात कीजिएगा।\" / \"No problem — whenever you want to",
+    "  start, do get in touch with us.\" — and when they answer, end with the short goodbye:",
+    "  \"Thanks for your time, [first name].\"",
     "- \"I'm not sure yet.\" — that is fine. Carry on with the script; if they are still unsure at",
     "  the seat question, accept it and close warmly.",
     "- \"I'm not interested.\" — the [NO] block, and close. No second attempt.",

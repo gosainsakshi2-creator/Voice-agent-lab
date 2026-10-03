@@ -2438,10 +2438,12 @@ function identityReAskFor(
   // The caller only said "Hello." — they did not hear the question, and
   // nothing went wrong that needs an apology. "Sorry — Am I speaking…?"
   // was the reply on 26 of 73 answered calls (29-30 Sep 2026) and sounded
-  // scripted. Just "Yes — ", in every language: no greeting word, because
-  // a sentence that opens with one is read by `OPENS_WITH_GREETING` as
-  // the pitch's greeting, which changes how a cut is handled.
-  if (afterBareGreeting) return `Yes — ${line}`;
+  // scripted. "Yes — " (2026-09-30) answered a "Hello?" with a yes, which
+  // no person does. "Ji, " is how an Indian caller is answered on the phone
+  // in every language, and it is still no greeting word, because a
+  // sentence that opens with one is read by `OPENS_WITH_GREETING` as the
+  // pitch's greeting, which changes how a cut is handled.
+  if (afterBareGreeting) return `Ji, ${line.charAt(0).toLowerCase()}${line.slice(1)}`;
   switch (language) {
     case "hi":
       return `माफ़ कीजिए — ${line}`;

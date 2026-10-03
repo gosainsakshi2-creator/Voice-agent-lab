@@ -453,10 +453,10 @@ async function run(
 const pitched = (spoken: readonly string[]) => spoken.some((t) => t.includes("free live workshop"));
 /** How many times did it ask who picked up? */
 const idAsks = (spoken: readonly string[]) =>
-  spoken.filter((t) => t.includes("Am I speaking with Sakshi")).length;
-/** A re-ask's lead-in: "Sorry — " after an unclear answer, "Yes — " after a bare greeting. */
+  spoken.filter((t) => t.includes("Am I speaking with Sakshi") || t.startsWith("Ji, am I speaking with Sakshi")).length;
+/** A re-ask's lead-in: "Sorry — " after an unclear answer, "Ji, " after a bare greeting. */
 const reAskLeadIns = (spoken: readonly string[]) =>
-  spoken.filter((t) => t.startsWith("Sorry") || t.startsWith("Yes — ")).length;
+  spoken.filter((t) => t.startsWith("Sorry") || t.startsWith("Ji, ")).length;
 
 // ═════════════════════════════════════════════════════════════════
 section("A. THE CLASSIFIER — HEARING AND IDENTITY ARE DIFFERENT ANSWERS");
@@ -1164,7 +1164,7 @@ await test("D10j. THE REPRODUCTION: a post-opening 'हेलो।' on an ENGLI
   // though the lock had refused it as evidence.
   const r = await run(["हेलो।", "Yes."], { openingLine: ID_FIRST_OPEN, skipPickup: true, afterOpening: true });
   assert.ok(idAsks(r.spoken) >= 1, "a hello after the question is still not an answer — the question is put again");
-  assert.ok(r.spoken.some((t) => t.startsWith("Yes — ")), "…in ENGLISH");
+  assert.ok(r.spoken.some((t) => t.startsWith("Ji, ")), "…in ENGLISH");
   assert.equal(
     r.spoken.filter((t) => t.startsWith("माफ़")).length,
     0,
@@ -1239,7 +1239,7 @@ await test("D10m. a bare 'Hello.' after the question is re-asked WITHOUT an apol
   // 29-30 Sep 2026: "Hello." -> "Sorry — Am I speaking with…?" on 26 of 73
   // answered calls. The caller only did not hear it; nothing needs an apology.
   const hello = await run(["Hello.", "Yes."], { openingLine: ID_FIRST_OPEN, skipPickup: true, afterOpening: true });
-  assert.ok(hello.spoken.some((t) => t === "Yes — Am I speaking with Sakshi?"), `spoken=${JSON.stringify(hello.spoken)}`);
+  assert.ok(hello.spoken.some((t) => t === "Ji, am I speaking with Sakshi?"), `spoken=${JSON.stringify(hello.spoken)}`);
   assert.equal(hello.spoken.filter((t) => t.startsWith("Sorry")).length, 0, "no apology for a hello");
   assert.equal(hello.llmRequests, 1, "and the 'Yes.' then opens the gate");
   // Scope: only the bare-greeting branch changed. An answer that is not a

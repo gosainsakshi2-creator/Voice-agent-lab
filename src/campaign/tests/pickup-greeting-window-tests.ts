@@ -367,11 +367,11 @@ const start = () =>
  * How many times the GATE put the question again. `identityReAskFor` is
  * the ONLY thing that prefixes "Sorry — " on an English call, so this
  * counts exactly the reported symptom. A re-ask after a bare greeting
- * opens "Yes — " instead (2026-09-30), and is
+ * opens "Ji, " instead (2026-10-03), and is
  * counted too so this can never pass just because the wording moved.
  */
 const sorryReAsks = (spoken: readonly string[]) =>
-  spoken.filter((t) => t.startsWith("Sorry") || t.startsWith("Yes — ")).length;
+  spoken.filter((t) => t.startsWith("Sorry") || t.startsWith("Ji, ")).length;
 
 /** Every committed user turn, in order — what the model was shown. */
 const userTurns = (h: Harness) => h.history().filter((t) => t.role === "user").map((t) => t.content);

@@ -78,8 +78,23 @@ const PHRASE_SUBSTITUTIONS: ReadonlyArray<readonly [RegExp, string]> = [
  * Cleans one piece of assistant text for speech. Safe on a full reply
  * or on a single streamed sentence.
  */
+/**
+ * Written formatting a voice would read out: markdown emphasis and code
+ * marks, heading hashes and bullet markers at the start of a line, and
+ * emoji. The prompt forbids all of them; this is the backstop, and it is
+ * a no-op on clean speech text. Numbered markers are left alone, because
+ * a reply can legitimately begin with a number ("10 thousand or 10 lakh?").
+ */
+const MARKDOWN_MARKS = /\*{1,3}|_{2,3}|`{1,3}|~~/gu;
+const LEADING_LINE_MARKUP = /(^|\n)[ \t]{0,3}(?:#{1,6}[ \t]+|[-*•][ \t]+)/gu;
+const EMOJI = /[\u{1F300}-\u{1FAFF}\u{1F1E6}-\u{1F1FF}\u{2600}-\u{27BF}\u{2B50}\u{2B06}\u{FE0F}]/gu;
+
+function stripWrittenMarkup(text: string): string {
+  return text.replace(LEADING_LINE_MARKUP, "$1").replace(MARKDOWN_MARKS, "").replace(EMOJI, "");
+}
+
 export function formatForSpeech(text: string): string {
-  let spoken = text.replace(/\s+/gu, " ").trim();
+  let spoken = stripWrittenMarkup(text).replace(/\s+/gu, " ").trim();
   if (spoken.length === 0) return "";
 
   spoken = stripLeading(spoken, LEADING_HESITATION);

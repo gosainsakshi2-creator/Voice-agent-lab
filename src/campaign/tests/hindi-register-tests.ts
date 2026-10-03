@@ -49,6 +49,7 @@ const { classifyOutcome } = await import("../outcome/classifier");
 const { dispositionFor } = await import("../outcome/disposition");
 const { isFinalYes } = await import("../integrations/final-yes-sheet");
 const { buildSystemPrompt } = await import("../../core/session/system-prompt");
+const { activeConversationPolicyId } = await import("../script/conversation-policy");
 const { SupportedLanguage } = await import("../../types/enums");
 
 import type { TranscriptTurn } from "../outcome/transcript";
@@ -226,7 +227,8 @@ test("C1. a campaign session carries the policy, after the script", () => {
     customerName: "Priya",
     expectedScriptHash: hashScript(script),
   });
-  assert.equal(context.conversationPolicyId, "script-faithful.v5");
+  // The policy in force: v5, or v6-compact under SYSTEM_PROMPT_COMPACT=true.
+  assert.equal(context.conversationPolicyId, activeConversationPolicyId());
   const prompt = buildSystemPrompt(SupportedLanguage.HINDI, "female", context.systemPromptAppendix);
   assert.ok(prompt.includes("IF THE CALL IS NOT IN ENGLISH"), "the section must be in the bytes");
   assert.ok(

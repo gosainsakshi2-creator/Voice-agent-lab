@@ -306,13 +306,19 @@ await test("14. buildSystemPrompt without a campaign is byte-identical", () => {
   // So: re-baseline in the SAME commit as the prompt edit that caused it,
   // never as a separate "fix the red test" change. A value here that cannot
   // be traced to a deliberate prompt edit means the pin has stopped working.
+  //
+  // RE-BASELINED 2026-10-03. The pin had been red since before this day's
+  // edits (its values no longer matched HEAD when the natural-speech pass,
+  // ac42cbe, began). These six are the FULL master prompt with
+  // SYSTEM_PROMPT_COMPACT unset; the compact variant is a different text by
+  // design and is not what this test pins.
   const expected: Record<string, string> = {
-    "en male": "ba4eef6038147c5472a997ddf319ea31ee89fb2d993659493ffdec2531d80c16",
-    "en female": "8008f36c606b1f5cac07fe348601fbb4366a7c5a1adb55830337d8a7c7a26a15",
-    "hi male": "399c8897a6431038213fa1bf231cff46e07531429835f04415022d757cb0d60a",
-    "hi female": "7728ca71db2c245b383f56800ada022cb2077b6ed8a7722bdc2c5024875332b9",
-    "hi-en male": "f6f655c46026067c3b1902f67f67276120015115e844b29d6be489960275b8b5",
-    "hi-en female": "c0f5aa2162388102a4c8cea2930144d52517cea84820afb277507e50a8a2e2c1",
+    "en male": "910d0b4d6a781d7dc0c44e3517bd56feaf5f7c88d15cc643b042d42f36784f5b",
+    "en female": "28782eaa2d44498b6eb5d95e33f86e04881279c3436a1baa12d9c7b0a8cf6e87",
+    "hi male": "e89410a38cd14d56be9ea40a5c6f73df117ad409adb2a4a4ff660e6fee2f60ef",
+    "hi female": "53d5d5df03147e7fb3b97881d593a4ed81e2f744ca90971bde9fadd940e48c48",
+    "hi-en male": "e004611afdc5389fb640bfc9a211bc9b35eb273a7b3726ef95212207a728df26",
+    "hi-en female": "03ed8a4ec08c27340a8d676c0c52da0bbd71c1aa41cba805c8ac088524918b92",
   };
   for (const language of [SupportedLanguage.ENGLISH, SupportedLanguage.HINDI, SupportedLanguage.HINGLISH]) {
     for (const gender of ["male", "female"] as const) {
@@ -369,7 +375,7 @@ await test("14b. a SessionRecord without campaign context is unchanged", () => {
     // The "en male" value from test 14 above — a plain session must build
     // byte-for-byte the same prompt that `buildSystemPrompt` returns.
     // Re-baselined with it; see the note there before changing either.
-    "ba4eef6038147c5472a997ddf319ea31ee89fb2d993659493ffdec2531d80c16",
+    "910d0b4d6a781d7dc0c44e3517bd56feaf5f7c88d15cc643b042d42f36784f5b",
     "the system prompt of a plain session must be exactly what it was",
   );
 

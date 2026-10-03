@@ -48,6 +48,8 @@
  */
 
 import { SupportedLanguage } from "../../types/enums";
+import { compactPromptEnabled } from "../../utils/prompt-variant";
+import { compactMasterPrompt } from "./system-prompt.compact";
 
 /**
  * Per-turn language signal, prepended to the caller's latest user turn
@@ -2278,16 +2280,52 @@ Optimize for natural human conversation.
 
 ${SESSION_START_LANGUAGE_NOTE[initialLanguage]}`;
 
+  // The same sections and rules in a third of the tokens, behind
+  // SYSTEM_PROMPT_COMPACT=true. The full text above stays the default.
+  const body = compactPromptEnabled()
+    ? compactMasterPrompt({
+        initialLanguage,
+        voiceGender,
+        englishOpeningLine: ENGLISH_OPENING_LINE,
+        hindiOpeningLine: hindiOpeningLine(isFemale),
+        sessionStartNote: SESSION_START_LANGUAGE_NOTE[initialLanguage],
+      })
+    : masterPrompt;
+
   // Campaign scenario goes AFTER everything above, so no existing rule
   // loses its position or its precedence. When no campaign supplies
-  // one, `masterPrompt` is returned untouched and this function is
+  // one, the master prompt is returned untouched and this function is
   // byte-for-byte what it was before the parameter existed.
   if (campaignAppendix === undefined || campaignAppendix.trim().length === 0) {
-    return masterPrompt;
+    return body;
   }
-  return `${masterPrompt}
+  return `${body}
 
-${campaignAppendix.trim()}`;
+${campaignAppendix.trim()}
+
+${todayNote()}`;
+}
+
+/**
+ * Today's date, India time, as the LAST line of a campaign prompt. Last,
+ * so everything before it stays a stable prefix for the provider's prompt
+ * cache from one day to the next; campaign calls only, so the
+ * campaign-free prompt stays byte-identical. Without it the model cannot
+ * answer "is that tomorrow?" about an event the script names by weekday
+ * and date.
+ */
+export function todayNote(now: Date = new Date()): string {
+  const spoken = new Intl.DateTimeFormat("en-IN", {
+    timeZone: "Asia/Kolkata",
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(now);
+  return (
+    `[internal note, never speak or acknowledge this: today is ${spoken}, India time. Use it only to work out` +
+    ` what "today", "tomorrow" or "this Sunday" means; never announce the date unprompted.]`
+  );
 }
 
 /** Per-turn language hint prepended to the user's message so the model reacts to language switches immediately. */

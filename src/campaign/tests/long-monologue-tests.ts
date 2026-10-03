@@ -35,7 +35,7 @@
 
 import assert from "node:assert/strict";
 
-const { CAMPAIGN_CONVERSATION_POLICY, CONVERSATION_POLICY_ID, composeCampaignAppendix } =
+const { CAMPAIGN_CONVERSATION_POLICY, CONVERSATION_POLICY_ID, composeCampaignAppendix, activeConversationPolicyId, activeConversationPolicy } =
   await import("../script/conversation-policy");
 const { findScript, hashScript, defaultScriptFor } = await import("../script/script-registry");
 const { buildCampaignContext } = await import("../domain/campaign-context");
@@ -306,7 +306,8 @@ await test("B2. the segmentation rule reaches a real campaign session's system p
     customerName: "Priya",
     expectedScriptHash: hashScript(script),
   });
-  assert.equal(context.conversationPolicyId, CONVERSATION_POLICY_ID);
+  // The policy in force: CONVERSATION_POLICY_ID, or the compact id under SYSTEM_PROMPT_COMPACT=true.
+  assert.equal(context.conversationPolicyId, activeConversationPolicyId());
 
   const prompt = buildSystemPrompt(
     SupportedLanguage.HINGLISH,
@@ -322,7 +323,7 @@ await test("B2. the segmentation rule reaches a real campaign session's system p
     "the policy must still come after the script",
   );
   assert.ok(
-    composeCampaignAppendix("SCRIPT").endsWith(CAMPAIGN_CONVERSATION_POLICY),
+    composeCampaignAppendix("SCRIPT").endsWith(activeConversationPolicy()),
     "the policy is still appended, not interleaved",
   );
 });

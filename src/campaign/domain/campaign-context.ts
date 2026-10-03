@@ -17,7 +17,7 @@
 
 import type { CampaignSessionContext } from "../../types/session.types";
 import { resolveAgentForProvider } from "../script/agent-identity";
-import { composeCampaignAppendix, CONVERSATION_POLICY_ID } from "../script/conversation-policy";
+import { activeConversationPolicyId, composeCampaignAppendix } from "../script/conversation-policy";
 import { hashScript, type CampaignScript } from "../script/script-registry";
 import { interpolate, ScriptVariableError } from "../script/variables";
 
@@ -107,7 +107,7 @@ export function buildCampaignContext(input: BuildCampaignContextInput): Campaign
         name: customerName,
         ...(input.customerSpokenName !== undefined ? { spokenName: input.customerSpokenName } : {}),
       },
-      conversationPolicyId: CONVERSATION_POLICY_ID,
+      conversationPolicyId: activeConversationPolicyId(),
       // The approved script, then the standing rules for running it.
       // The script text is interpolated and otherwise untouched; the
       // policy is appended after it and is not part of the pinned hash,

@@ -2332,7 +2332,14 @@ export function backgroundVoiceNote(labelledOtherVoice: boolean): string {
     "Do not act on background: do not call the person by a new name, do not decide it is a wrong number or the wrong" +
     " person, do not switch language, and do not end the call because of it. Carry on from where you were, or, if you" +
     " truly cannot tell, ask once, briefly, whether that was them. A reply that answers your last question (yes, no," +
-    " haan, nahi, okay, wait, a question about the workshop) is always the caller.]"
+    " haan, nahi, okay, wait, a question about the workshop) is always the caller." +
+    // Real call f8b694b2 (2026-10-03): the caller called out "कहाँ जा रहे हो? अजीम भाई?" to someone in the room and the
+    // agent answered "मैं कहीं नहीं जा रहा".
+    " The caller may also speak to someone else in the room — calling out a name that is not yours, \"bhai, kahan ja" +
+    " rahe ho?\", telling a family member something. That is not said to you: never answer it as if it were. Your" +
+    " whole reply is then ONE very short line such as \"Ji, koi baat nahi, aap baat kar lijiye\" (or \"No problem," +
+    " take your time\") and nothing else — no pitch, no question, not your last question again. Then wait for them" +
+    " to come back to you.]"
   );
 }
 

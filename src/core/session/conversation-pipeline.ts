@@ -428,6 +428,20 @@ export interface ConversationPipelineOptions {
    */
   readonly llmErrorFallback?: boolean;
   /**
+   * The caller has said nothing at all since the call was answered: the
+   * first "are you there?" comes after `OPENING_SILENCE_MS` of silence once
+   * the agent has finished speaking, not after 30s. Silence while the agent
+   * is talking never counts. Off by default.
+   */
+  readonly openingSilencePrompt?: boolean;
+  /**
+   * An "acchha" / "hmm" said WHILE the reply was still playing is a
+   * listening sound to the reply, not a non-answer to its closing
+   * question: the question is re-asked only if the caller then stays
+   * quiet for `REASK_AFTER_SILENCE_MS`. Off by default.
+   */
+  readonly waitBeforeReask?: boolean;
+  /**
    * A caller's whole-turn goodbye ("Bye", "Okay, bye", "बाय") is answered
    * with the fixed goodbye and the call is ended once it has played — see
    * `isCallerGoodbye`. Off by default.
@@ -1487,6 +1501,17 @@ function attentionAcknowledgementFor(language: SupportedLanguage): string {
  * other.
  */
 const SILENCE_RECOVERY_INTERVAL_MS = 30_000;
+/**
+ * `openingSilencePrompt`: silence after the agent's opening, before the
+ * caller has said a word. Real call 1098ac39 (2026-10-03): the caller
+ * picked up, never spoke, and hung up 22s into a silence the agent
+ * would have broken only at 30s.
+ */
+const OPENING_SILENCE_MS = 6_000;
+/** `waitBeforeReask`: quiet after a mid-reply "acchha" before the question is asked again. */
+const REASK_AFTER_SILENCE_MS = 4_000;
+/** A listening sound whose transcript landed this soon after the reply's audio ended still belongs to the reply. */
+const ACK_DURING_REPLY_MARGIN_MS = 300;
 /** Recovery prompts spoken before the call is ended: "are you there?", "is anyone there?". */
 const SILENCE_RECOVERY_MAX_PROMPTS = 2;
 /** `waitForTurnDetectorEnd` returning this means the silence window expired with no turn. */
@@ -4202,7 +4227,7 @@ export class ConversationPipeline {
         // returns false for everything with content of its own, so a
         // question after the confirmation reaches `runThinkingAndSpeaking`
         // on exactly the path it takes today.
-        if (await this.handleAckAfterQuestion(turn.text, loopSignal)) {
+        if (await this.handleAckAfterQuestion(turn.text, loopSignal, turn.lastFinalArrivedAtMs)) {
           this.abandonSpeculation("the question was re-asked without the language model");
           timer.summarize();
           this.activeTimer = undefined;
@@ -6295,7 +6320,12 @@ export class ConversationPipeline {
     return question;
   }
 
-  private async handleAckAfterQuestion(userText: string, loopSignal: AbortSignal): Promise<boolean> {
+  /** `waitBeforeReask`: the line to speak if the caller stays quiet after a mid-reply listening sound. */
+  private reaskOnSilence: string | undefined;
+  /** Wall-clock time the last reply's queued audio finishes playing — set by `drainPlayback`. */
+  private lastReplyAudioEndsAt = 0;
+
+  private async handleAckAfterQuestion(userText: string, loopSignal: AbortSignal, finalArrivedAtMs?: number): Promise<boolean> {
     const identityJustConfirmed = this.identityConfirmedThisTurn;
     this.identityConfirmedThisTurn = false;
     if (identityJustConfirmed || this.identityState === "outstanding") return false;
@@ -6315,6 +6345,23 @@ export class ConversationPipeline {
     const language = this.record.memory.currentLanguage;
     const lead = language === "hi" ? "तो — " : language === "hi-en" ? "Toh — " : "So — ";
     const line = `${lead}${question}`;
+    // Real call f8b694b2 (2026-10-03): "अच्छा" landed 1s into an 8s reply
+    // and the reply's closing question was asked again the moment it
+    // ended — twice in a row. Said over the reply, it was a listening
+    // sound to the reply: give the caller a moment to answer first.
+    if (
+      this.options.waitBeforeReask === true &&
+      finalArrivedAtMs !== undefined &&
+      this.lastReplyAudioEndsAt > 0 &&
+      finalArrivedAtMs < this.lastReplyAudioEndsAt + ACK_DURING_REPLY_MARGIN_MS
+    ) {
+      this.reaskOnSilence = line;
+      // eslint-disable-next-line no-console
+      console.log(
+        `[PIPELINE:${this.record.id}] "${trimmed.slice(0, 30)}" came while the reply was playing — waiting ${REASK_AFTER_SILENCE_MS}ms for an answer before re-asking "${question.slice(0, 60)}"`,
+      );
+      return true;
+    }
     // eslint-disable-next-line no-console
     console.log(`[PIPELINE:${this.record.id}] "${trimmed.slice(0, 30)}" is not an answer to "${question.slice(0, 60)}" — re-asking it once: "${line}"`);
     await this.speakAttentionUtterance(line, loopSignal, "re-asking a question answered only with a listening sound");
@@ -8868,10 +8915,36 @@ export class ConversationPipeline {
     // is one recovery step (a fixed prompt, or the hangup) and then the
     // wait resumes; a released turn ends the episode.
     while (!loopSignal.aborted) {
-      const result = await this.waitForTurnDetectorEnd(loopSignal, SILENCE_RECOVERY_INTERVAL_MS);
+      const reask = this.reaskOnSilence;
+      const opening =
+        this.options.openingSilencePrompt === true &&
+        this.silenceRecoveryPrompts === 0 &&
+        !this.record.memory.history().some((t) => t.role === "user");
+      const windowMs = reask !== undefined ? REASK_AFTER_SILENCE_MS : opening ? OPENING_SILENCE_MS : SILENCE_RECOVERY_INTERVAL_MS;
+      const result = await this.waitForTurnDetectorEnd(loopSignal, windowMs);
       if (result !== SILENCE_ELAPSED) {
+        this.reaskOnSilence = undefined;
         if (result !== null) this.silenceRecoveryPrompts = 0;
         return result;
+      }
+      if (reask !== undefined) {
+        // The caller stayed quiet after their mid-reply "acchha": now it is a non-answer.
+        this.reaskOnSilence = undefined;
+        if (this.record.state === SessionState.LISTENING) {
+          this.abandonSpeculation("re-asking a question after a quiet pause");
+          // eslint-disable-next-line no-console
+          console.log(`[PIPELINE:${this.record.id}] quiet for ${REASK_AFTER_SILENCE_MS}ms after a mid-reply listening sound — re-asking: "${reask}"`);
+          await this.speakAttentionUtterance(reask, loopSignal, "re-asking a question after a quiet pause");
+          if (loopSignal.aborted) return null;
+          if (this.record.state !== SessionState.LISTENING) {
+            this.host.transition(this.record, SessionState.LISTENING, "awaiting user speech after a re-asked question");
+          }
+        }
+        continue;
+      }
+      if (opening) {
+        // eslint-disable-next-line no-console
+        console.log(`[PIPELINE:${this.record.id}] caller has not said a word ${OPENING_SILENCE_MS}ms after the agent finished — first recovery prompt now`);
       }
       const keepWaiting = await this.recoverFromSilence(loopSignal);
       if (!keepWaiting) return null;
@@ -10726,6 +10799,10 @@ await this.drainPlayback(speakingSignal, true);
     // the same reason the flag above is.
     const last = this.spokenUtterances[this.spokenUtterances.length - 1];
     if (last !== undefined) last.complete = true;
+    // When this reply's audio ends — see `waitBeforeReask`.
+    if (this.outboundPlaybackStartedAt > 0) {
+      this.lastReplyAudioEndsAt = this.outboundPlaybackStartedAt + this.outboundQueuedMs + PLAYBACK_PREROLL_ALLOWANCE_MS;
+    }
     if (this.outboundPlaybackStartedAt === 0 || this.outboundQueuedMs <= 0) return;
     if (signal.aborted) return;
 

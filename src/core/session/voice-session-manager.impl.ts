@@ -416,6 +416,12 @@ export class DefaultVoiceSessionManager implements VoiceSessionManager, Pipeline
       // A failed model reply gets "Sorry, could you say that once more?", not
       // silence. OFF unless `LLM_ERROR_FALLBACK=true`.
       llmErrorFallback: optionalEnv("LLM_ERROR_FALLBACK", "false").trim().toLowerCase() === "true",
+      // "Are you there?" after 6s, not 30s, while the caller has not said a
+      // word yet. OFF unless `OPENING_SILENCE_PROMPT=true`.
+      openingSilencePrompt: optionalEnv("OPENING_SILENCE_PROMPT", "false").trim().toLowerCase() === "true",
+      // A mid-reply "acchha" waits 4s before the question is asked again.
+      // OFF unless `WAIT_BEFORE_REASK=true`.
+      waitBeforeReask: optionalEnv("WAIT_BEFORE_REASK", "false").trim().toLowerCase() === "true",
       // The caller's "Bye" ends the call after one fixed goodbye. OFF unless
       // `END_ON_CALLER_GOODBYE=true`.
       endOnCallerGoodbye: optionalEnv("END_ON_CALLER_GOODBYE", "false").trim().toLowerCase() === "true",

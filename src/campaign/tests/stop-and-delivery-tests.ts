@@ -119,6 +119,7 @@ function startHarness(input: {
   readonly llmFailRequests?: ReadonlySet<number>;
   readonly llmErrorFallback?: boolean;
   readonly backgroundVoiceGuard?: boolean;
+  readonly openingSilencePrompt?: boolean;
 }): Harness {
   const requests: Array<readonly ConversationTurn[]> = [];
   const synthesized: string[] = [];
@@ -278,6 +279,7 @@ function startHarness(input: {
     ...(input.stopOnRequest === true ? { stopOnRequest: true } : {}),
     ...(input.llmErrorFallback === true ? { llmErrorFallback: true } : {}),
     ...(input.backgroundVoiceGuard === true ? { backgroundVoiceGuard: true, ignoreOtherSpeakersOverReply: true } : {}),
+    ...(input.openingSilencePrompt === true ? { openingSilencePrompt: true } : {}),
     ...(input.callerFirstTurnTaking === true ? { callerFirstTurnTaking: true } : {}),
   });
   const loop = pipeline.run();
@@ -887,6 +889,52 @@ await test("I4. OFF (the default): the same quiet video line is answered, exactl
     h.record.inboundSpeechLevel = { sumDbfs: -27 * 60, frames: 60 };
     h.say(VIDEO, { speaker: "1" });
     await h.waitFor("a reply", () => h.requests.length > requestsBefore, 20000);
+  } finally {
+    await h.stop();
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════
+section("SECTION J — a caller who never speaks after the opening (call 1098ac39)");
+// ═════════════════════════════════════════════════════════════════
+
+const ARE_YOU_THERE = "Hello, are you there?";
+
+await test("J1. ON: nothing said after the opening — \"are you there?\" ~6s after the agent finished, not 30s", async () => {
+  const h = startHarness({ replies: [BLOCK, ANSWER, FOLLOW_UP], openingSilencePrompt: true });
+  try {
+    await h.waitForReplies(1);
+    await h.waitFor("the opening to finish", () => h.record.state === SessionState.LISTENING, 15000);
+    const finishedAt = Date.now();
+    await h.waitFor("the prompt", () => h.synthesized.includes(ARE_YOU_THERE), 10000);
+    const afterMs = Date.now() - finishedAt;
+    assert.ok(afterMs >= 5000 && afterMs <= 9000, `prompted ${afterMs}ms after the opening finished`);
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("J2. OFF (the default): the same silence gets no prompt within 10s, exactly as before", async () => {
+  const h = startHarness({ replies: [BLOCK, ANSWER, FOLLOW_UP] });
+  try {
+    await h.waitForReplies(1);
+    await h.waitFor("the opening to finish", () => h.record.state === SessionState.LISTENING, 15000);
+    await sleep(10000);
+    assert.ok(!h.synthesized.includes(ARE_YOU_THERE));
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("J3. ON: a caller who answered and then listens silently to a long pitch is NOT asked \"are you there?\" after it", async () => {
+  const h = startHarness({ replies: [BLOCK, ANSWER, FOLLOW_UP], openingSilencePrompt: true });
+  try {
+    await h.waitForReplies(1);
+    h.say("Yes, tell me.");
+    await h.waitFor("the pitch to start", () => h.record.state === SessionState.SPEAKING, 15000);
+    await h.waitFor("the pitch to finish", () => h.assistantTexts().length >= 2 && h.record.state === SessionState.LISTENING, 30000);
+    await sleep(10000);
+    assert.ok(!h.synthesized.includes(ARE_YOU_THERE), "the caller has spoken, so the 30s window applies");
   } finally {
     await h.stop();
   }

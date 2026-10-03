@@ -119,6 +119,12 @@
  * the discovery question are unchanged; only the feature list
  * ("the website, the product, checkout and payments") left the opening.
  * It is still in the facts below for when someone asks.
+ *
+ * EDITED IN PLACE 2026-10-03: shorter again. Two of five answered calls
+ * that morning (f23d5a9d, 89b3fad0) hung up inside the first reply. "Team",
+ * "We're running" and the date left it: the day and time stay, the full
+ * date is still said in the [YES] confirmation. The discovery question is
+ * word for word the same — `discoveryNoIn` and the tests read it.
  */
 import type { CampaignScript } from "../script-types";
 
@@ -126,9 +132,9 @@ const SCRIPT_BODY = `Hello, am I speaking with {{customer_name}}?
 
 [THEY CONFIRM IT IS THEM — only then does the rest of this script happen. From here on, speak the language they answered in.]
 
-Hi, I'm {{agent_name}} from Team FlexiFunnels. We're running a free live workshop on Sunday, 4th October at 11 AM, about building an online business from your phone. Have you tried putting something online before?
+Hi, I'm {{agent_name}} from FlexiFunnels. We have a free live workshop on Sunday at 11 AM, on building an online business from your phone. Have you tried putting something online before?
 
-    In Hinglish: Hi, मैं {{agent_name}}, Team FlexiFunnels से। Sunday, 4th October को 11 AM पर हमारा एक free live workshop है, phone से online business बनाने के बारे में। आपने पहले कभी कुछ online डालने की try की है?
+    In Hinglish: Hi, मैं {{agent_name}}, FlexiFunnels से। Sunday 11 AM पर phone से online business बनाने का एक free live workshop है। आपने पहले कभी कुछ online डालने की try की है?
 
 [THEY ANSWER — take it as an answer, say one short thing back to it, and go on]
 
@@ -252,13 +258,12 @@ export const REGISTRATION_V16: CampaignScript = {
     "",
     "Who you are, why you called, and one question about them — one reply:",
     "",
-    "    \"Hi, I'm {{agent_name}} from Team FlexiFunnels. We're running a free live workshop",
-    "    on Sunday, 4th October at 11 AM, about building an online business from your phone.",
-    "    Have you tried putting something online before?\"",
+    "    \"Hi, I'm {{agent_name}} from FlexiFunnels. We have a free live workshop on Sunday at",
+    "    11 AM, on building an online business from your phone. Have you tried putting something",
+    "    online before?\"",
     "",
-    "    \"Hi, मैं {{agent_name}}, Team FlexiFunnels से। Sunday, 4th October को 11 AM",
-    "    पर हमारा एक free live workshop है, phone से online business बनाने के बारे में। आपने",
-    "    पहले कभी कुछ online डालने की try की है?\"",
+    "    \"Hi, मैं {{agent_name}}, FlexiFunnels से। Sunday 11 AM पर phone से online business",
+    "    बनाने का एक free live workshop है। आपने पहले कभी कुछ online डालने की try की है?\"",
     "",
     "Keep it that short. People who picked up a call from a stranger hang up on a long opening,",
     "so do not add the website, product, checkout and payments to it — those are for when they",

@@ -89,7 +89,7 @@ interface Harness {
   readonly record: InstanceType<typeof SessionRecord>;
   readonly requests: Array<readonly ConversationTurn[]>;
   readonly synthesized: string[];
-  say(text: string): void;
+  say(text: string, opts?: { readonly speaker?: string }): void;
   /** An INTERIM segment only — no final follows unless the test sends one. */
   sayInterim(text: string, opts?: { readonly confidence?: number; readonly startedAtMs?: number }): void;
   waitFor(what: string, predicate: () => boolean, timeoutMs?: number): Promise<void>;
@@ -118,6 +118,7 @@ function startHarness(input: {
   /** Request indices whose stream throws before any token, like an API error. */
   readonly llmFailRequests?: ReadonlySet<number>;
   readonly llmErrorFallback?: boolean;
+  readonly backgroundVoiceGuard?: boolean;
 }): Harness {
   const requests: Array<readonly ConversationTurn[]> = [];
   const synthesized: string[] = [];
@@ -276,6 +277,7 @@ function startHarness(input: {
   const pipeline = new ConversationPipeline(record, { telephony, stt, llm, tts } as never, host as never, {
     ...(input.stopOnRequest === true ? { stopOnRequest: true } : {}),
     ...(input.llmErrorFallback === true ? { llmErrorFallback: true } : {}),
+    ...(input.backgroundVoiceGuard === true ? { backgroundVoiceGuard: true, ignoreOtherSpeakersOverReply: true } : {}),
     ...(input.callerFirstTurnTaking === true ? { callerFirstTurnTaking: true } : {}),
   });
   const loop = pipeline.run();
@@ -297,7 +299,7 @@ function startHarness(input: {
       });
       waiters.shift()?.();
     },
-    say(text) {
+    say(text, opts = {}) {
       const startedAtMs = clockMs;
       clockMs += Math.max(200, msFor(text));
       segments.push({
@@ -308,6 +310,7 @@ function startHarness(input: {
         language: SupportedLanguage.ENGLISH,
         startedAtMs,
         endedAtMs: clockMs,
+        ...(opts.speaker !== undefined ? { speaker: opts.speaker } : {}),
       });
       waiters.shift()?.();
     },
@@ -815,6 +818,84 @@ await test("H4. OFF (the default): a failed reply stays silent, exactly as befor
   try {
     await failedTurns(h, ["And what does it cost?"]);
     assert.ok(!h.synthesized.includes(REPEAT) && !h.synthesized.includes(GIVE_UP));
+  } finally {
+    await h.stop();
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════
+section("SECTION I — background voice (calls 4f59ca66 / 85515f69, 2026-10-03)");
+// ═════════════════════════════════════════════════════════════════
+
+/** The caller (label "2") answers at -20 dBFS; returns once the block has played. */
+async function callerEstablished(h: Harness): Promise<void> {
+  await h.waitForReplies(1);
+  h.record.inboundSpeechLevel = { sumDbfs: -20 * 40, frames: 40 };
+  h.say("Yes, tell me.", { speaker: "2" });
+  await h.waitFor("the block", () => h.assistantTexts().length >= 2 && h.record.state === SessionState.LISTENING, 30000);
+}
+
+const VIDEO = "नमस्ते, मेरा नाम प्रीति है।";
+
+await test("I1. ON: a quieter line in another speaker's label is dropped — no turn, no request, nothing spoken", async () => {
+  const h = startHarness({ replies: [BLOCK, ANSWER, FOLLOW_UP], backgroundVoiceGuard: true });
+  try {
+    await callerEstablished(h);
+    // A request may be PRE-OPENED on the words before the turn is judged
+    // (speculation); it is abandoned, so the test is that nothing is spoken.
+    const spokenBefore = h.synthesized.length;
+    const repliesBefore = h.assistantTexts().length;
+    h.record.inboundSpeechLevel = { sumDbfs: -27 * 60, frames: 60 };
+    h.say(VIDEO, { speaker: "1" });
+    await sleep(2500);
+    assert.equal(h.synthesized.length, spokenBefore, "nothing spoken for the video");
+    assert.equal(h.assistantTexts().length, repliesBefore, "no reply committed");
+    assert.ok(!h.record.memory.history().some((t) => t.role === "user" && t.content.includes("प्रीति")), "not in the transcript");
+    // The caller's next turn is answered, and records that one was dropped before it.
+    const turnsBefore = h.record.metrics.build().turnLatencies.length;
+    h.record.inboundSpeechLevel = { sumDbfs: -20 * 30, frames: 30 };
+    h.say("And what does it cost?", { speaker: "2" });
+    await h.waitFor("the caller's turn recorded", () => h.record.metrics.build().turnLatencies.length > turnsBefore, 20000);
+    assert.equal(h.record.metrics.build().turnLatencies.at(-1)?.backgroundTurnsDropped, 1);
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("I2. ON: the caller's own turn in a flipped label, at their own level, is answered (call 85515f69)", async () => {
+  const h = startHarness({ replies: [BLOCK, ANSWER, FOLLOW_UP], backgroundVoiceGuard: true });
+  try {
+    await callerEstablished(h);
+    const requestsBefore = h.requests.length;
+    h.record.inboundSpeechLevel = { sumDbfs: -21 * 60, frames: 60 };
+    h.say("Listen, I want to ask you something about it.", { speaker: "1" });
+    await h.waitFor("a reply", () => h.requests.length > requestsBefore, 20000);
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("I3. ON: a short quiet \"Okay.\" in another label is never dropped — too little audio to judge", async () => {
+  const h = startHarness({ replies: [BLOCK, ANSWER, FOLLOW_UP], backgroundVoiceGuard: true });
+  try {
+    await callerEstablished(h);
+    const requestsBefore = h.requests.length;
+    h.record.inboundSpeechLevel = { sumDbfs: -28 * 5, frames: 5 };
+    h.say("Is it free?", { speaker: "1" });
+    await h.waitFor("a reply", () => h.requests.length > requestsBefore, 20000);
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("I4. OFF (the default): the same quiet video line is answered, exactly as before", async () => {
+  const h = startHarness({ replies: [BLOCK, ANSWER, FOLLOW_UP] });
+  try {
+    await callerEstablished(h);
+    const requestsBefore = h.requests.length;
+    h.record.inboundSpeechLevel = { sumDbfs: -27 * 60, frames: 60 };
+    h.say(VIDEO, { speaker: "1" });
+    await h.waitFor("a reply", () => h.requests.length > requestsBefore, 20000);
   } finally {
     await h.stop();
   }

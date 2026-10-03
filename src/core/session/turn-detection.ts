@@ -403,6 +403,10 @@ const STOP_PHRASES = [
   "just a (?:second|sec|minute|moment)", "wait a (?:second|sec|minute|moment)",
   "ruko", "ruk(?:iye|o)", "ruk(?:iye|o) zara", "thoda ruko", "ek (?:minute|second|sec|min)",
   "रुको", "रुकिए", "रुक", "एक मिनट", "एक सेकंड",
+  // "Listen" (test call 85515f69, 2026-10-03: "listen" did not stop the reply).
+  "(?:please )?listen(?: to me)?(?: first)?(?: please)?", "excuse me",
+  "(?:pehle |zara )?(?:meri baat )?sun(?:o|iye|na|lo| lo|o na)(?: na)?(?: pehle)?",
+  "(?:पहले |ज़रा |जरा )?(?:मेरी बात )?(?:सुनो|सुनिए|सुनना|सुन लो|सुनो ना|सुन)(?: ना)?(?: पहले)?",
 ];
 
 const STOP_PHRASE_ONLY = new RegExp(`^(?:${STOP_PHRASES.join("|")})[\\s,.!?…।-]*$`, "iu");

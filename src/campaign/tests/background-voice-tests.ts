@@ -10,6 +10,7 @@
 import assert from "node:assert/strict";
 
 import { backgroundVoiceNote } from "../../core/session/system-prompt";
+import { isStopRequest } from "../../core/session/turn-detection";
 
 let passed = 0;
 const failures: string[] = [];
@@ -40,6 +41,15 @@ for (const labelled of [false, true]) {
 test("C. only the labelled note says the phone heard a different voice", () => {
   assert.ok(backgroundVoiceNote(true).includes("different voice"));
   assert.ok(!backgroundVoiceNote(false).includes("different voice"));
+});
+
+test("D. \"listen\" / \"suno\" / \"meri baat suno\" stop the reply; a longer turn or the English word \"sun\" do not", () => {
+  for (const said of ["Listen.", "listen to me", "Please listen to me first.", "Excuse me.", "Suno.", "Suniye", "Meri baat suno", "Pehle meri baat sun lo", "सुनो।", "सुनिए", "मेरी बात सुनो", "पहले मेरी बात सुन लो", "Wait."]) {
+    assert.ok(isStopRequest(said), said);
+  }
+  for (const said of ["Listen, I want to ask about the price.", "The sun is out.", "sun", "I am listening"]) {
+    assert.ok(!isStopRequest(said), said);
+  }
 });
 
 console.log(`\n${failures.length === 0 ? "ALL PASSED" : "FAILURES"} — ${passed} passed, ${failures.length} failed`);

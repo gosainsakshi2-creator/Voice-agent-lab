@@ -2283,6 +2283,12 @@ const RESUMED_TURN_WINDOW_MS = 2_000;
 
 /** A turn needs this many speech frames (~0.3s) to set the caller's own level — see `snapshotTurnVoice`. */
 const CALLER_LEVEL_MIN_FRAMES = 15;
+/** A turn this much quieter than the caller, in another speaker's label, is background — see `isBackgroundTurn`. */
+const BACKGROUND_LEVEL_DB = -3.5;
+/** ...over at least this many speech frames (~0.4s). */
+const BACKGROUND_MIN_FRAMES = 20;
+/** Quieter than this, in another label, the model gets the firmer note — see `turnSoundsLikeOtherVoice`. */
+const OTHER_VOICE_NOTE_LEVEL_DB = -2;
 
 /**
  * ---------------- SELF-ECHO: our own voice, transcribed ----------------
@@ -4017,6 +4023,26 @@ export class ConversationPipeline {
           }
         }
 
+        // ── Background voice, not the caller ────────────────────────
+        //
+        // See `isBackgroundTurn`. Dropped like the pickup acknowledgement
+        // above: nothing recorded, nothing asked of the model, nothing
+        // spoken. If it was the caller after all, they hear silence and
+        // say it again.
+        if (this.isBackgroundTurn()) {
+          this.abandonSpeculation("background voice — no reply is generated");
+          this.record.liveUserTranscript = "";
+          this.backgroundTurnsDropped += 1;
+          const v = this.pendingTurnVoice;
+          this.pendingTurnVoice = undefined;
+          // eslint-disable-next-line no-console
+          console.log(
+            `[PIPELINE:${sid}] background voice ignored (not the caller): "${turn.text.trim().slice(0, 80)}"` +
+              ` — speaker=${v?.speaker} caller=${v?.callerSpeaker} levelVsCallerDb=${v?.levelVsCallerDb} frames=${v?.speechFrames}`,
+          );
+          continue;
+        }
+
         // ── An acknowledgement of something OLDER than the last reply ──
         //
         // Real call 6d25ea34 (2026-09-26): "Yeah, yeah." answered "can
@@ -4446,6 +4472,7 @@ export class ConversationPipeline {
           shortAnswerNote: this.consumeShortAnswerNoted(),
           discoveryNoNote: this.consumeDiscoveryNoNoted(),
           backgroundVoiceNote: this.consumeBackgroundVoiceNoted(),
+          backgroundTurnsDropped: this.consumeBackgroundTurnsDropped(),
           voice: this.consumeTurnVoice(),
           llmError: this.consumeLlmError(),
           prefetch: this.consumePrefetchCounts(),
@@ -6181,7 +6208,47 @@ export class ConversationPipeline {
   private fromAnotherSpeaker(segment: TranscriptSegment): boolean {
     if (this.options.ignoreOtherSpeakersOverReply !== true) return false;
     if (this.callerSpeaker === undefined || segment.speaker === undefined) return false;
+    // With the guard, a label alone is not enough: test call 85515f69
+    // (2026-10-03, nobody else in the room) labelled the caller's own
+    // turns "1" and "2" by turns, and this filter swallowed her "listen".
+    // Only a label already caught as background by `isBackgroundTurn`.
+    if (this.options.backgroundVoiceGuard === true) {
+      return segment.speaker !== this.callerSpeaker && this.backgroundSpeakers.has(segment.speaker);
+    }
     return segment.speaker !== this.callerSpeaker;
+  }
+
+  /** Speaker labels whose turns `isBackgroundTurn` has dropped this call. */
+  private readonly backgroundSpeakers = new Set<string>();
+  /** Turns dropped as background since the last recorded turn; read-and-cleared for telemetry. */
+  private backgroundTurnsDropped = 0;
+
+  /**
+   * `backgroundVoiceGuard`: is the turn just acquired a TV, a video, a
+   * person across the room — not the caller? Both signals are needed:
+   *   - the STT labelled it a different speaker from the one who
+   *     confirmed their identity (alone, wrong: call 85515f69 flipped the
+   *     caller's own label turn by turn), and
+   *   - it was clearly quieter than the caller's own median level
+   *     (`BACKGROUND_LEVEL_DB`), over enough audio to judge
+   *     (`BACKGROUND_MIN_FRAMES`) — a one-word "Okay." is never dropped.
+   * On every call measured so far (2026-10-01..03) the background lines
+   * read -3.7 to -8.6 dB and no caller turn met both conditions.
+   */
+  private isBackgroundTurn(): boolean {
+    // The caller's label (`callerSpeaker`) exists only once their identity is settled.
+    if (this.options.backgroundVoiceGuard !== true) return false;
+    const v = this.pendingTurnVoice;
+    if (v === undefined || v.speakerMatchesCaller !== false || v.speaker === undefined) return false;
+    if (v.levelVsCallerDb === undefined || v.levelVsCallerDb > BACKGROUND_LEVEL_DB || v.speechFrames < BACKGROUND_MIN_FRAMES) return false;
+    this.backgroundSpeakers.add(v.speaker);
+    return true;
+  }
+
+  /** The turn's label is not the caller's and it was quieter than them — see `backgroundVoiceNote`. */
+  private turnSoundsLikeOtherVoice(): boolean {
+    const v = this.pendingTurnVoice;
+    return v?.speakerMatchesCaller === false && v.levelVsCallerDb !== undefined && v.levelVsCallerDb <= OTHER_VOICE_NOTE_LEVEL_DB;
   }
 
   /** An STT result made only of the words of a filler that just played: our own audio back up the line. */
@@ -9380,7 +9447,7 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
     // A turn in another voice (a video's Hindi, a Bengali story) cannot fix
     // the call's language — see `backgroundVoiceGuard`. The return value is
     // unchanged, so a pre-opened request still matches.
-    const otherVoice = this.options.backgroundVoiceGuard === true && this.pendingTurnVoice?.speakerMatchesCaller === false;
+    const otherVoice = this.options.backgroundVoiceGuard === true && this.turnSoundsLikeOtherVoice();
     if (otherVoice && this.qualifiesForLanguageLock(text, detected)) {
       // eslint-disable-next-line no-console
       console.log(`[LANGUAGE:${this.record.id}] lock to ${detected.language} REFUSED — another voice than the caller's: "${text.trim().slice(0, 80)}"`);
@@ -9525,7 +9592,7 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
           }
           if (this.options.backgroundVoiceGuard === true && this.identityState === "confirmed") {
             // Only the acquired turn's snapshot can say "another voice"; a pre-opened request gets the general note.
-            const otherVoice = this.pendingTurnVoice?.speakerMatchesCaller === false;
+            const otherVoice = this.turnSoundsLikeOtherVoice();
             turn.content = `${backgroundVoiceNote(otherVoice)}
 ${turn.content}`;
             this.backgroundVoiceNoted = otherVoice ? "other_voice" : "general";
@@ -9575,6 +9642,13 @@ ${turn.content}`;
       sendErrors: now.sendErrors - (before?.sendErrors ?? 0),
     };
     return Object.values(delta).some((v) => v > 0) ? delta : undefined;
+  }
+
+  /** Read-and-clear, for the turn's telemetry. */
+  private consumeBackgroundTurnsDropped(): number | undefined {
+    const dropped = this.backgroundTurnsDropped;
+    this.backgroundTurnsDropped = 0;
+    return dropped > 0 ? dropped : undefined;
   }
 
   /** Read-and-clear, for the turn's telemetry. */

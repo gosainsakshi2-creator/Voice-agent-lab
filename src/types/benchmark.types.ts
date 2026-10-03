@@ -573,6 +573,8 @@ export interface TurnLatencyBreakdown {
   readonly discoveryNoNote?: true;
   /** The background-voice note was in the request; "other_voice" when the STT labelled the turn as not the caller. */
   readonly backgroundVoiceNote?: "general" | "other_voice";
+  /** Turns dropped as background voice (`isBackgroundTurn`) since the previous recorded turn. */
+  readonly backgroundTurnsDropped?: number;
   /** What the caller's turn sounded like — see `TurnVoiceTelemetry`. */
   readonly voice?: TurnVoiceTelemetry;
   /**

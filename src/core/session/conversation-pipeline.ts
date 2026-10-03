@@ -6343,7 +6343,7 @@ export class ConversationPipeline {
     if (question === this.lastReaskedQuestion) return false;
     this.lastReaskedQuestion = question;
     const language = this.record.memory.currentLanguage;
-    const lead = language === "hi" ? "तो — " : language === "hi-en" ? "Toh — " : "So — ";
+    const lead = language === "hi" || language === "hi-en" ? "तो — " : "So — ";
     const line = `${lead}${question}`;
     // Real call f8b694b2 (2026-10-03): "अच्छा" landed 1s into an 8s reply
     // and the reply's closing question was asked again the moment it

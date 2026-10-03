@@ -44,6 +44,7 @@ import { type NextRequest, NextResponse } from "next/server";
 
 import { VobizTelephonyProvider } from "../../../../../providers/telephony/vobiz.provider";
 import { WEBHOOK_TOKEN_PARAM, webhookTokenValid, withWebhookToken } from "../../../../../server/webhook-auth";
+import { escapeXml } from "../../../../../server/plivo-xml";
 
 /**
  * The public-facing base URL of this app (e.g. https://voice.example.com).
@@ -65,7 +66,9 @@ function buildStreamXml(sessionId: string): string {
     '<?xml version="1.0" encoding="UTF-8"?>',
     "<Response>",
     `  <Stream bidirectional="true" contentType="audio/x-mulaw;rate=8000" keepCallAlive="true">`,
-    `    ${streamUrl}`,
+    // Escaped: with the webhook token the URL carries a second parameter,
+    // and a bare "&" makes the whole answer invalid XML.
+    `    ${escapeXml(streamUrl)}`,
     "  </Stream>",
     "</Response>",
   ].join("\n");

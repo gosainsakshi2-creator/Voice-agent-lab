@@ -97,7 +97,8 @@ await test(
     assert.match(await (await vobiz("sessionId=sess_1")).text(), /<Hangup ?\/>/);
     assert.match(await (await vobiz("sessionId=sess_1&wt=nope")).text(), /<Hangup ?\/>/);
     const ok = await (await vobiz("sessionId=sess_1&wt=abc")).text();
-    assert.match(ok, /<Stream[^>]*>\s*wss:\/\/agent\.example\.com\/api\/voice\/vobiz\/stream\?sessionId=sess_1&wt=abc\s*<\/Stream>/);
+    assert.match(ok, /<Stream[^>]*>\s*wss:\/\/agent\.example\.com\/api\/voice\/vobiz\/stream\?sessionId=sess_1&amp;wt=abc\s*<\/Stream>/);
+    assert.ok(!/&(?!amp;|lt;|gt;|quot;)/.test(ok), "every & in the answer XML is escaped");
   }),
 );
 
@@ -106,7 +107,7 @@ await test(
   withEnv({ TELEPHONY_WEBHOOK_SECRET: "abc", APP_PUBLIC_BASE_URL: "https://agent.example.com" }, async () => {
     assert.match(await (await plivo("sessionId=sess_1&CallUUID=u1")).text(), /<Hangup ?\/>/);
     const ok = await (await plivo("sessionId=sess_1&CallUUID=u1&wt=abc")).text();
-    assert.ok(ok.includes("/api/voice/plivo/stream?sessionId=sess_1&amp;wt=abc") || ok.includes("/api/voice/plivo/stream?sessionId=sess_1&wt=abc"), ok);
+    assert.ok(ok.includes("/api/voice/plivo/stream?sessionId=sess_1&amp;wt=abc"), ok);
   }),
 );
 

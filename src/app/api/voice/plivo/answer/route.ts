@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { claimPendingSession } from "../../../../../server/pending-call";
 import { getPublicWsBaseUrl } from "../../../../../server/public-url";
+import { WEBHOOK_TOKEN_PARAM, webhookTokenValid, withWebhookToken } from "../../../../../server/webhook-auth";
 import { buildStreamAnswerXml } from "../../../../../server/plivo-xml";
 import { PlivoTelephonyProvider } from "../../../../../providers/telephony/plivo.provider";
 
@@ -99,7 +100,7 @@ async function respondToAnswer(
   // not recorded. Detached — see `startRecordingInBackground`.
   startRecordingInBackground(callUuid, sessionId);
 
-  const streamUrl = `${getPublicWsBaseUrl()}/api/voice/plivo/stream?sessionId=${encodeURIComponent(sessionId)}`;
+  const streamUrl = withWebhookToken(`${getPublicWsBaseUrl()}/api/voice/plivo/stream?sessionId=${encodeURIComponent(sessionId)}`);
   const xml = buildStreamAnswerXml(streamUrl);
   // eslint-disable-next-line no-console
   console.log(`[plivo-answer] claimed session "${sessionId}" -> replying with Stream XML pointing to ${streamUrl}`);
@@ -107,11 +108,20 @@ async function respondToAnswer(
   return new NextResponse(xml, { headers: { "Content-Type": "application/xml" } });
 }
 
+/** A request without the webhook token is not from the carrier — see `webhook-auth.ts`. */
+function refuseWebhook(): NextResponse {
+  // eslint-disable-next-line no-console
+  console.warn("[plivo-answer] missing or wrong webhook token -> replying <Hangup/>");
+  return new NextResponse('<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>', { status: 200, headers: { "Content-Type": "application/xml" } });
+}
+
 export async function POST(request: Request) {
   // The session id rides on the URL even for a POST: it is part of the
   // answer URL Plivo was given when the call was placed, not part of
   // the form body Plivo composes.
-  const sessionId = new URL(request.url).searchParams.get("sessionId") ?? undefined;
+  const query = new URL(request.url).searchParams;
+  if (!webhookTokenValid(query.get(WEBHOOK_TOKEN_PARAM))) return refuseWebhook();
+  const sessionId = query.get("sessionId") ?? undefined;
   const form = await request.formData();
   const callUuid = (form.get("CallUUID") as string | null) ?? undefined;
   return respondToAnswer(callUuid, sessionId);
@@ -126,6 +136,7 @@ export async function GET(request: Request) {
   // up the call the instant the callee answers, since it never gets
   // valid Stream XML back.
   const params = new URL(request.url).searchParams;
+  if (!webhookTokenValid(params.get(WEBHOOK_TOKEN_PARAM))) return refuseWebhook();
   const callUuid = params.get("CallUUID") ?? undefined;
   return respondToAnswer(callUuid, params.get("sessionId") ?? undefined);
 }

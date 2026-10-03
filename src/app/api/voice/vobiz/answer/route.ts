@@ -43,6 +43,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 
 import { VobizTelephonyProvider } from "../../../../../providers/telephony/vobiz.provider";
+import { WEBHOOK_TOKEN_PARAM, webhookTokenValid, withWebhookToken } from "../../../../../server/webhook-auth";
 
 /**
  * The public-facing base URL of this app (e.g. https://voice.example.com).
@@ -58,7 +59,7 @@ function buildStreamXml(sessionId: string): string {
   const base = getPublicBaseUrl();
   // Replace http(s):// with ws(s)://
   const wsBase = base.replace(/^http/, "ws");
-  const streamUrl = `${wsBase}/api/voice/vobiz/stream?sessionId=${encodeURIComponent(sessionId)}`;
+  const streamUrl = withWebhookToken(`${wsBase}/api/voice/vobiz/stream?sessionId=${encodeURIComponent(sessionId)}`);
 
   return [
     '<?xml version="1.0" encoding="UTF-8"?>',
@@ -129,6 +130,12 @@ function startRecordingInBackground(callUuid: string | undefined, sessionId: str
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const url = new URL(request.url);
+  if (!webhookTokenValid(url.searchParams.get(WEBHOOK_TOKEN_PARAM))) {
+    // Not from the carrier — see `webhook-auth.ts`.
+    // eslint-disable-next-line no-console
+    console.warn("[vobiz-answer] missing or wrong webhook token -> replying <Hangup/>");
+    return new NextResponse('<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>', { status: 200, headers: { "Content-Type": "application/xml" } });
+  }
   const sessionId = url.searchParams.get("sessionId");
 
   if (!sessionId) {

@@ -24,6 +24,7 @@ import type {
 } from "../../interfaces/providers/telephony-provider.interface";
 import { probeHealth } from "../shared/health";
 import { requireEnv } from "../shared/env";
+import { withWebhookToken } from "../../server/webhook-auth";
 
 /**
  * Environment variables consumed by this adapter. See
@@ -228,7 +229,7 @@ export class PlivoTelephonyProvider implements TelephonyProvider {
         // `withSessionId`. This is the argument that makes concurrent
         // campaign calls correlate correctly; it is passed on the call
         // itself, so no Plivo Application setting changes.
-        withSessionId(this.config.answerUrl, params.sessionId),
+        withWebhookToken(withSessionId(this.config.answerUrl, params.sessionId)),
       );
     } catch (error) {
       const details = error as { status?: number; statusText?: string; moreInfo?: string };

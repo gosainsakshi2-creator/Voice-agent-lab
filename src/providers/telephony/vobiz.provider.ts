@@ -28,6 +28,7 @@
 
 import { TELEPHONY_PROVIDER_IDS } from "../../constants/providers.constants";
 import { ProviderCategory, SupportedLanguage } from "../../types/enums";
+import { withWebhookToken } from "../../server/webhook-auth";
 import type { ProviderDescriptor, ProviderHealthStatus } from "../../types/provider.types";
 import type {
   TelephonyCallHandle,
@@ -148,7 +149,7 @@ export class VobizTelephonyProvider implements TelephonyProvider {
 
     // The answer_url includes the sessionId so the webhook handler
     // knows which session to wire the WebSocket stream to.
-    const answerUrlWithSession = `${answerUrl}?sessionId=${encodeURIComponent(params.sessionId)}`;
+    const answerUrlWithSession = withWebhookToken(`${answerUrl}?sessionId=${encodeURIComponent(params.sessionId)}`);
 
     // eslint-disable-next-line no-console
     console.log(

@@ -26,6 +26,7 @@ import { installHttpKeepAlive } from "./src/server/http-keepalive";
 import { attachPlivoMediaBridge } from "./src/server/plivo-media-bridge";
 import { attachVobizMediaBridge } from "./src/server/vobiz-media-bridge";
 import type { SessionId } from "./src/types/session.types";
+import { WEBHOOK_TOKEN_PARAM, webhookTokenValid } from "./src/server/webhook-auth";
 
 const dev = process.env.NODE_ENV !== "production";
 const hostname = "localhost";
@@ -70,6 +71,16 @@ async function main(): Promise<void> {
     if (!attachBridge) {
       // Not a telephony stream path — let Next.js handle (HMR, etc.).
       nextUpgradeHandler(req, socket, head);
+      return;
+    }
+
+    // The carrier was handed this URL with the webhook token on it — see
+    // `webhook-auth.ts`. Without it, this is not the carrier.
+    const token = query[WEBHOOK_TOKEN_PARAM];
+    if (!webhookTokenValid(Array.isArray(token) ? token[0] : token)) {
+      // eslint-disable-next-line no-console
+      console.warn(`[ws-upgrade] missing or wrong webhook token on "${pathname}" -> destroying socket`);
+      socket.destroy();
       return;
     }
 

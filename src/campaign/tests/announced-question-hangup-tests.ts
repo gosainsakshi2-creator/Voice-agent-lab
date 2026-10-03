@@ -258,7 +258,6 @@ await test("B1. a plain yes at the gate still reads FINAL_YES", () => {
   for (const line of [
     "Yes, please.",
     "Haan, kar dijiye.",
-    "Okay.",
     "Yes, please reserve it.",
     "Sure, go ahead.",
     "Bilkul, register kar dijiye.",

@@ -4023,24 +4023,23 @@ export class ConversationPipeline {
           }
         }
 
-        // ── Background voice, not the caller ────────────────────────
+        // ── Sounds like background voice — REPORTED, NEVER DROPPED ──
         //
-        // See `isBackgroundTurn`. Dropped like the pickup acknowledgement
-        // above: nothing recorded, nothing asked of the model, nothing
-        // spoken. If it was the caller after all, they hear silence and
-        // say it again.
+        // 6593546 dropped these turns. Real call b568b5e1 (2026-10-03):
+        // three of the caller's own questions ("can you tell me about
+        // that?") were in the other label and quieter than her first
+        // answers, so they were dropped and she got 35s of silence. The
+        // label and the level cannot tell a caller who drops her voice
+        // from a television, so the turn is answered as usual and only
+        // counted — see `isBackgroundTurn`.
         if (this.isBackgroundTurn()) {
-          this.abandonSpeculation("background voice — no reply is generated");
-          this.record.liveUserTranscript = "";
-          this.backgroundTurnsDropped += 1;
+          this.backgroundTurnsSuspected += 1;
           const v = this.pendingTurnVoice;
-          this.pendingTurnVoice = undefined;
           // eslint-disable-next-line no-console
           console.log(
-            `[PIPELINE:${sid}] background voice ignored (not the caller): "${turn.text.trim().slice(0, 80)}"` +
+            `[PIPELINE:${sid}] sounds like background voice (kept, answered as usual): "${turn.text.trim().slice(0, 80)}"` +
               ` — speaker=${v?.speaker} caller=${v?.callerSpeaker} levelVsCallerDb=${v?.levelVsCallerDb} frames=${v?.speechFrames}`,
           );
-          continue;
         }
 
         // ── An acknowledgement of something OLDER than the last reply ──
@@ -4472,7 +4471,7 @@ export class ConversationPipeline {
           shortAnswerNote: this.consumeShortAnswerNoted(),
           discoveryNoNote: this.consumeDiscoveryNoNoted(),
           backgroundVoiceNote: this.consumeBackgroundVoiceNoted(),
-          backgroundTurnsDropped: this.consumeBackgroundTurnsDropped(),
+          backgroundTurnsSuspected: this.consumeBackgroundTurnsSuspected(),
           voice: this.consumeTurnVoice(),
           llmError: this.consumeLlmError(),
           prefetch: this.consumePrefetchCounts(),
@@ -6211,7 +6210,8 @@ export class ConversationPipeline {
     // With the guard, a label alone is not enough: test call 85515f69
     // (2026-10-03, nobody else in the room) labelled the caller's own
     // turns "1" and "2" by turns, and this filter swallowed her "listen".
-    // Only a label already caught as background by `isBackgroundTurn`.
+    // With the guard on, the label alone never decides (nothing is added
+    // to `backgroundSpeakers` since b568b5e1 — see `isBackgroundTurn`).
     if (this.options.backgroundVoiceGuard === true) {
       return segment.speaker !== this.callerSpeaker && this.backgroundSpeakers.has(segment.speaker);
     }
@@ -6220,8 +6220,8 @@ export class ConversationPipeline {
 
   /** Speaker labels whose turns `isBackgroundTurn` has dropped this call. */
   private readonly backgroundSpeakers = new Set<string>();
-  /** Turns dropped as background since the last recorded turn; read-and-cleared for telemetry. */
-  private backgroundTurnsDropped = 0;
+  /** Turns that sounded like background since the last recorded turn; read-and-cleared for telemetry. */
+  private backgroundTurnsSuspected = 0;
 
   /**
    * `backgroundVoiceGuard`: is the turn just acquired a TV, a video, a
@@ -6241,7 +6241,6 @@ export class ConversationPipeline {
     const v = this.pendingTurnVoice;
     if (v === undefined || v.speakerMatchesCaller !== false || v.speaker === undefined) return false;
     if (v.levelVsCallerDb === undefined || v.levelVsCallerDb > BACKGROUND_LEVEL_DB || v.speechFrames < BACKGROUND_MIN_FRAMES) return false;
-    this.backgroundSpeakers.add(v.speaker);
     return true;
   }
 
@@ -9592,10 +9591,10 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
           }
           if (this.options.backgroundVoiceGuard === true && this.identityState === "confirmed") {
             // Only the acquired turn's snapshot can say "another voice"; a pre-opened request gets the general note.
-            const otherVoice = this.turnSoundsLikeOtherVoice();
-            turn.content = `${backgroundVoiceNote(otherVoice)}
-${turn.content}`;
-            this.backgroundVoiceNoted = otherVoice ? "other_voice" : "general";
+            // Always the general note: the firmer one would call a caller's
+            // own question "probably background" (b568b5e1).
+            turn.content = `${backgroundVoiceNote(false)}\n${turn.content}`;
+            this.backgroundVoiceNoted = "general";
           }
           if (this.options.englishAcknowledgements === true && detectedLanguage !== "en") {
             turn.content = `${englishAcknowledgementNote()}\n${turn.content}`;
@@ -9645,10 +9644,10 @@ ${turn.content}`;
   }
 
   /** Read-and-clear, for the turn's telemetry. */
-  private consumeBackgroundTurnsDropped(): number | undefined {
-    const dropped = this.backgroundTurnsDropped;
-    this.backgroundTurnsDropped = 0;
-    return dropped > 0 ? dropped : undefined;
+  private consumeBackgroundTurnsSuspected(): number | undefined {
+    const suspected = this.backgroundTurnsSuspected;
+    this.backgroundTurnsSuspected = 0;
+    return suspected > 0 ? suspected : undefined;
   }
 
   /** Read-and-clear, for the turn's telemetry. */

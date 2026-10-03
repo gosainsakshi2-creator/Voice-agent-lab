@@ -125,6 +125,14 @@ const AFFIRMATIONS = [
   // would register. "would like to" has no such negated twin.
   "would like to attend", "would like to join",
   "would love to attend", "would love to join",
+  // Telling the agent to go ahead with the seat. Real call b568b5e1
+  // (2026-10-03): "Right, you can reserve it." to the seat question, the
+  // seat was confirmed, and the call settled interested_not_confirmed —
+  // nothing here matched. Bound to "can" / "please" / "go ahead and" so
+  // "don't reserve it" ("don t reserve it") and "you can't reserve it"
+  // ("you can t reserve it") contain none of them.
+  "you can reserve", "can reserve it", "please reserve", "go ahead and reserve",
+  "you can book", "can book it", "please book",
 ];
 
 /**

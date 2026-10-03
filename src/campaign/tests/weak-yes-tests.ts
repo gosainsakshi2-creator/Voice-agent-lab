@@ -74,6 +74,15 @@ await test("A5. \"Okay, yes\" carries a clear yes, so it does not wait", () => {
   assert.equal(registered([t("assistant", GATE), t("user", "Okay, yes.")]), true);
 });
 
+await test("A6. call b568b5e1: \"Right, you can reserve it.\" registers; \"don't\" / \"can't\" / \"please don't\" do not", () => {
+  for (const said of ["Right, you can reserve it.", "Yes, you can book it.", "Please reserve it.", "Go ahead and reserve it."]) {
+    assert.equal(registered([t("assistant", GATE), t("user", said)]), true, said);
+  }
+  for (const said of ["Don't reserve it.", "No, you can't reserve it.", "Please don't reserve it."]) {
+    assert.equal(registered([t("assistant", GATE), t("user", said)]), false, said);
+  }
+});
+
 console.log(`\n${failures.length === 0 ? "ALL PASSED" : "FAILURES"} — ${passed} passed, ${failures.length} failed`);
 for (const name of failures) console.log(`  - ${name}`);
 process.exit(failures.length === 0 ? 0 : 1);

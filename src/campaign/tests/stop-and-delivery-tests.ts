@@ -837,26 +837,17 @@ async function callerEstablished(h: Harness): Promise<void> {
 
 const VIDEO = "नमस्ते, मेरा नाम प्रीति है।";
 
-await test("I1. ON: a quieter line in another speaker's label is dropped — no turn, no request, nothing spoken", async () => {
+await test("I1. ON: call b568b5e1 — a quieter turn in another label is NEVER dropped: answered, and only counted", async () => {
   const h = startHarness({ replies: [BLOCK, ANSWER, FOLLOW_UP], backgroundVoiceGuard: true });
   try {
     await callerEstablished(h);
-    // A request may be PRE-OPENED on the words before the turn is judged
-    // (speculation); it is abandoned, so the test is that nothing is spoken.
-    const spokenBefore = h.synthesized.length;
-    const repliesBefore = h.assistantTexts().length;
-    h.record.inboundSpeechLevel = { sumDbfs: -27 * 60, frames: 60 };
-    h.say(VIDEO, { speaker: "1" });
-    await sleep(2500);
-    assert.equal(h.synthesized.length, spokenBefore, "nothing spoken for the video");
-    assert.equal(h.assistantTexts().length, repliesBefore, "no reply committed");
-    assert.ok(!h.record.memory.history().some((t) => t.role === "user" && t.content.includes("प्रीति")), "not in the transcript");
-    // The caller's next turn is answered, and records that one was dropped before it.
     const turnsBefore = h.record.metrics.build().turnLatencies.length;
-    h.record.inboundSpeechLevel = { sumDbfs: -20 * 30, frames: 30 };
-    h.say("And what does it cost?", { speaker: "2" });
-    await h.waitFor("the caller's turn recorded", () => h.record.metrics.build().turnLatencies.length > turnsBefore, 20000);
-    assert.equal(h.record.metrics.build().turnLatencies.at(-1)?.backgroundTurnsDropped, 1);
+    // The caller's own question, quieter and in the other label — exactly what was dropped on b568b5e1.
+    h.record.inboundSpeechLevel = { sumDbfs: -27 * 60, frames: 60 };
+    h.say("Okay, like what are you telling me? Tell me about that.", { speaker: "1" });
+    await h.waitFor("the turn answered", () => h.record.metrics.build().turnLatencies.length > turnsBefore, 20000);
+    assert.ok(h.record.memory.history().some((t) => t.role === "user" && t.content.includes("Tell me about that")), "in the transcript");
+    assert.equal(h.record.metrics.build().turnLatencies.at(-1)?.backgroundTurnsSuspected, 1);
   } finally {
     await h.stop();
   }

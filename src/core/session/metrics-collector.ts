@@ -160,7 +160,7 @@ export interface TurnLatencyInput {
   readonly shortAnswerNote?: true | undefined;
   readonly discoveryNoNote?: true | undefined;
   readonly backgroundVoiceNote?: "general" | "other_voice" | undefined;
-  readonly backgroundTurnsDropped?: number | undefined;
+  readonly backgroundTurnsSuspected?: number | undefined;
   readonly voice?: TurnLatencyBreakdown["voice"] | undefined;
   readonly prefetch?: TurnLatencyBreakdown["prefetch"] | undefined;
   readonly llmError?: TurnLatencyBreakdown["llmError"] | undefined;
@@ -544,7 +544,7 @@ export class SessionMetricsCollector {
       ...(input.shortAnswerNote === true ? { shortAnswerNote: true as const } : {}),
       ...(input.discoveryNoNote === true ? { discoveryNoNote: true as const } : {}),
       ...(input.backgroundVoiceNote !== undefined ? { backgroundVoiceNote: input.backgroundVoiceNote } : {}),
-      ...(input.backgroundTurnsDropped !== undefined ? { backgroundTurnsDropped: input.backgroundTurnsDropped } : {}),
+      ...(input.backgroundTurnsSuspected !== undefined ? { backgroundTurnsSuspected: input.backgroundTurnsSuspected } : {}),
       ...(input.voice !== undefined ? { voice: input.voice } : {}),
       ...(input.prefetch !== undefined ? { prefetch: input.prefetch } : {}),
       ...(input.llmError !== undefined ? { llmError: input.llmError } : {}),

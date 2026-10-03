@@ -410,6 +410,9 @@ export class DefaultVoiceSessionManager implements VoiceSessionManager, Pipeline
       // A "no" before the seat question is an answer, not a refusal. OFF unless
       // `CONTINUE_AFTER_DISCOVERY_NO=true`.
       continueAfterDiscoveryNo: optionalEnv("CONTINUE_AFTER_DISCOVERY_NO", "false").trim().toLowerCase() === "true",
+      // A background voice cannot rename, close, or re-language the call. OFF
+      // unless `BACKGROUND_VOICE_GUARD=true`.
+      backgroundVoiceGuard: optionalEnv("BACKGROUND_VOICE_GUARD", "false").trim().toLowerCase() === "true",
       // The caller's "Bye" ends the call after one fixed goodbye. OFF unless
       // `END_ON_CALLER_GOODBYE=true`.
       endOnCallerGoodbye: optionalEnv("END_ON_CALLER_GOODBYE", "false").trim().toLowerCase() === "true",

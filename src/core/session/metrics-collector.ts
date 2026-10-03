@@ -159,6 +159,7 @@ export interface TurnLatencyInput {
   readonly pendingQuestionNote?: true | undefined;
   readonly shortAnswerNote?: true | undefined;
   readonly discoveryNoNote?: true | undefined;
+  readonly backgroundVoiceNote?: "general" | "other_voice" | undefined;
   readonly voice?: TurnLatencyBreakdown["voice"] | undefined;
   readonly prefetch?: TurnLatencyBreakdown["prefetch"] | undefined;
   readonly llmError?: TurnLatencyBreakdown["llmError"] | undefined;
@@ -541,6 +542,7 @@ export class SessionMetricsCollector {
       ...(input.pendingQuestionNote === true ? { pendingQuestionNote: true as const } : {}),
       ...(input.shortAnswerNote === true ? { shortAnswerNote: true as const } : {}),
       ...(input.discoveryNoNote === true ? { discoveryNoNote: true as const } : {}),
+      ...(input.backgroundVoiceNote !== undefined ? { backgroundVoiceNote: input.backgroundVoiceNote } : {}),
       ...(input.voice !== undefined ? { voice: input.voice } : {}),
       ...(input.prefetch !== undefined ? { prefetch: input.prefetch } : {}),
       ...(input.llmError !== undefined ? { llmError: input.llmError } : {}),

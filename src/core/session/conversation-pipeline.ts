@@ -44,7 +44,7 @@ import type { TelephonyProvider } from "../../interfaces/providers/telephony-pro
 
 import type { SessionRecord } from "./session-record";
 import { detectLanguage, isLockGradeEvidence, type LanguageDetectionResult } from "./language-detector";
-import { currentTurnNote, discoveryNoNote, englishAcknowledgementNote, interruptedReplyNote, languageHintFor, openingLineFor, pendingQuestionNote, shortAnswerNote } from "./system-prompt";
+import { backgroundVoiceNote, currentTurnNote, discoveryNoNote, englishAcknowledgementNote, interruptedReplyNote, languageHintFor, openingLineFor, pendingQuestionNote, shortAnswerNote } from "./system-prompt";
 import { isQuestionTurn } from "../../campaign/outcome/conversation-events";
 import { repairSttHomophones } from "./stt-repair";
 import { SEAT_CONFIRMED as SHARED_SEAT_CONFIRMED } from "../../campaign/outcome/seat-confirmation";
@@ -413,6 +413,15 @@ export interface ConversationPipelineOptions {
    * `discoveryNoIn`. Off by default.
    */
   readonly continueAfterDiscoveryNo?: boolean;
+  /**
+   * The line also carries a TV, a video, other people in the room. Every
+   * request tells the model not to act on a turn that does not fit the
+   * conversation (a new name, a "wrong number", a language switch, a
+   * close), more firmly when the STT labelled the turn as a voice other
+   * than the caller's; and such a turn cannot take the call's language
+   * lock. Nothing is dropped — see `backgroundVoiceNote`. Off by default.
+   */
+  readonly backgroundVoiceGuard?: boolean;
   /**
    * A caller's whole-turn goodbye ("Bye", "Okay, bye", "बाय") is answered
    * with the fixed goodbye and the call is ended once it has played — see
@@ -3210,6 +3219,8 @@ export class ConversationPipeline {
   private shortAnswerNoted = false;
   /** `buildRequestHistory` added the discovery-"no" note; read-and-cleared for telemetry. */
   private discoveryNoNoted = false;
+  /** `buildRequestHistory` added the background-voice note; read-and-cleared for telemetry. */
+  private backgroundVoiceNoted: "general" | "other_voice" | undefined;
   /** When the caller stopped speaking, for the reply now being generated — see `fillerFromSpeechEnd`. */
   private replyTurnSpeechEndedAtMs: number | undefined;
   /** Speakers and STT confidence of the final segments since the last turn was acquired — see `TurnVoiceTelemetry`. */
@@ -4407,6 +4418,7 @@ export class ConversationPipeline {
           pendingQuestionNote: this.consumePendingQuestionNoted(),
           shortAnswerNote: this.consumeShortAnswerNoted(),
           discoveryNoNote: this.consumeDiscoveryNoNoted(),
+          backgroundVoiceNote: this.consumeBackgroundVoiceNoted(),
           voice: this.consumeTurnVoice(),
           llmError: this.consumeLlmError(),
           prefetch: this.consumePrefetchCounts(),
@@ -9338,7 +9350,14 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
       return current;
     }
 
-    if (this.qualifiesForLanguageLock(text, detected)) {
+    // A turn in another voice (a video's Hindi, a Bengali story) cannot fix
+    // the call's language — see `backgroundVoiceGuard`. The return value is
+    // unchanged, so a pre-opened request still matches.
+    const otherVoice = this.options.backgroundVoiceGuard === true && this.pendingTurnVoice?.speakerMatchesCaller === false;
+    if (otherVoice && this.qualifiesForLanguageLock(text, detected)) {
+      // eslint-disable-next-line no-console
+      console.log(`[LANGUAGE:${this.record.id}] lock to ${detected.language} REFUSED — another voice than the caller's: "${text.trim().slice(0, 80)}"`);
+    } else if (this.qualifiesForLanguageLock(text, detected)) {
       this.record.memory.lockLanguage(detected.language);
       // eslint-disable-next-line no-console
       console.log(
@@ -9477,6 +9496,13 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
             turn.content = `${discoveryNoNote(discoveryNo)}\n${turn.content}`;
             this.discoveryNoNoted = true;
           }
+          if (this.options.backgroundVoiceGuard === true && this.identityState === "confirmed") {
+            // Only the acquired turn's snapshot can say "another voice"; a pre-opened request gets the general note.
+            const otherVoice = this.pendingTurnVoice?.speakerMatchesCaller === false;
+            turn.content = `${backgroundVoiceNote(otherVoice)}
+${turn.content}`;
+            this.backgroundVoiceNoted = otherVoice ? "other_voice" : "general";
+          }
           if (this.options.englishAcknowledgements === true && detectedLanguage !== "en") {
             turn.content = `${englishAcknowledgementNote()}\n${turn.content}`;
           }
@@ -9522,6 +9548,13 @@ if (this.usesStreamingStt && this.providers.stt.transcribeStream) {
       sendErrors: now.sendErrors - (before?.sendErrors ?? 0),
     };
     return Object.values(delta).some((v) => v > 0) ? delta : undefined;
+  }
+
+  /** Read-and-clear, for the turn's telemetry. */
+  private consumeBackgroundVoiceNoted(): "general" | "other_voice" | undefined {
+    const noted = this.backgroundVoiceNoted;
+    this.backgroundVoiceNoted = undefined;
+    return noted;
   }
 
   /** Read-and-clear, for the turn's telemetry. */

@@ -571,6 +571,8 @@ export interface TurnLatencyBreakdown {
   readonly shortAnswerNote?: true;
   /** True when this turn's request said a pre-seat-question "no" is not a refusal (`continueAfterDiscoveryNo`). */
   readonly discoveryNoNote?: true;
+  /** The background-voice note was in the request; "other_voice" when the STT labelled the turn as not the caller. */
+  readonly backgroundVoiceNote?: "general" | "other_voice";
   /** What the caller's turn sounded like — see `TurnVoiceTelemetry`. */
   readonly voice?: TurnVoiceTelemetry;
   /**

@@ -2311,6 +2311,31 @@ export function discoveryNoNote(question: string): string {
   );
 }
 
+/**
+ * The caller's phone also picks up a TV, a video, other people: real calls
+ * 0ff17041 and 9673d446 (2026-10-01) heard a video's "नमस्ते, मेरा नाम प्रीति
+ * है", called the caller "प्रीति जी" or decided it was a wrong number, and
+ * closed. `labelledOtherVoice` is the STT saying this turn's voice is not
+ * the one that confirmed the caller's identity — reliable on long lines,
+ * not on one or two words, so the note never tells the model to ignore an
+ * answer to its own question.
+ */
+export function backgroundVoiceNote(labelledOtherVoice: boolean): string {
+  return (
+    "[internal note, never speak or acknowledge this: the caller's phone can also pick up a TV, a video or other people" +
+    " in the room. " +
+    (labelledOtherVoice
+      ? "The phone heard this latest turn in a different voice from the person you have been talking to, so it is probably" +
+        " background unless it answers what you just said. "
+      : "A turn that does not fit the conversation — someone introducing themselves by another name, narration, numbers" +
+        " or a story, a language the caller has not used — is probably background, not the caller. ") +
+    "Do not act on background: do not call the person by a new name, do not decide it is a wrong number or the wrong" +
+    " person, do not switch language, and do not end the call because of it. Carry on from where you were, or, if you" +
+    " truly cannot tell, ask once, briefly, whether that was them. A reply that answers your last question (yes, no," +
+    " haan, nahi, okay, wait, a question about the workshop) is always the caller.]"
+  );
+}
+
 /** Longest quote of the heard / unheard part a note carries; the model needs where, not all of it. */
 const INTERRUPTION_QUOTE_CHARS = 240;
 

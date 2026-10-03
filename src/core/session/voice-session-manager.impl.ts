@@ -413,6 +413,9 @@ export class DefaultVoiceSessionManager implements VoiceSessionManager, Pipeline
       // A background voice cannot rename, close, or re-language the call. OFF
       // unless `BACKGROUND_VOICE_GUARD=true`.
       backgroundVoiceGuard: optionalEnv("BACKGROUND_VOICE_GUARD", "false").trim().toLowerCase() === "true",
+      // A failed model reply gets "Sorry, could you say that once more?", not
+      // silence. OFF unless `LLM_ERROR_FALLBACK=true`.
+      llmErrorFallback: optionalEnv("LLM_ERROR_FALLBACK", "false").trim().toLowerCase() === "true",
       // The caller's "Bye" ends the call after one fixed goodbye. OFF unless
       // `END_ON_CALLER_GOODBYE=true`.
       endOnCallerGoodbye: optionalEnv("END_ON_CALLER_GOODBYE", "false").trim().toLowerCase() === "true",

@@ -117,6 +117,7 @@ function startHarness(input: {
   readonly llmDelayMs?: Readonly<Record<number, number>>;
   /** Request indices whose stream throws before any token, like an API error. */
   readonly llmFailRequests?: ReadonlySet<number>;
+  readonly llmErrorFallback?: boolean;
 }): Harness {
   const requests: Array<readonly ConversationTurn[]> = [];
   const synthesized: string[] = [];
@@ -274,6 +275,7 @@ function startHarness(input: {
 
   const pipeline = new ConversationPipeline(record, { telephony, stt, llm, tts } as never, host as never, {
     ...(input.stopOnRequest === true ? { stopOnRequest: true } : {}),
+    ...(input.llmErrorFallback === true ? { llmErrorFallback: true } : {}),
     ...(input.callerFirstTurnTaking === true ? { callerFirstTurnTaking: true } : {}),
   });
   const loop = pipeline.run();
@@ -765,6 +767,54 @@ await test("H1. a turn whose LLM stream throws records the error's name, message
     const failed = h.record.metrics.build().turnLatencies.find((t) => t.llmError !== undefined)!;
     assert.equal(failed.turnOutcome, "stream_error");
     assert.deepEqual(failed.llmError, { name: "RateLimitError", message: "429 Rate limit reached for requests", status: 429 });
+  } finally {
+    await h.stop();
+  }
+});
+
+const { llmErrorLine } = await import("../../core/session/conversation-pipeline");
+const REPEAT = llmErrorLine(SupportedLanguage.ENGLISH, false);
+const GIVE_UP = llmErrorLine(SupportedLanguage.ENGLISH, true);
+
+/** Runs the block, then sends `asks` caller turns, one after each reply settles. */
+async function failedTurns(h: Harness, asks: readonly string[]): Promise<void> {
+  await h.waitForReplies(1);
+  h.say("Yes, tell me.");
+  await h.waitFor("the block", () => h.assistantTexts().length >= 2 && h.record.state === SessionState.LISTENING, 30000);
+  for (const [i, ask] of asks.entries()) {
+    h.say(ask);
+    await h.waitFor(`failed turn ${i + 1}`, () => h.record.metrics.build().turnLatencies.filter((t) => t.llmError !== undefined).length >= i + 1, 20000);
+    await h.waitFor("listening again", () => h.record.state === SessionState.LISTENING, 20000);
+  }
+}
+
+await test("H2. ON: a failed reply is answered with the fixed repeat line, not silence, and committed", async () => {
+  const h = startHarness({ replies: [BLOCK, ANSWER, FOLLOW_UP], llmFailRequests: new Set([1]), llmErrorFallback: true });
+  try {
+    await failedTurns(h, ["And what does it cost?"]);
+    assert.ok(h.synthesized.includes(REPEAT), `spoken: ${JSON.stringify(h.synthesized)}`);
+    assert.equal(h.assistantTexts().at(-1), REPEAT);
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("H3. ON: two failures ask to repeat, the third says the line is unclear, the fourth is silent", async () => {
+  const h = startHarness({ replies: [BLOCK, ANSWER, FOLLOW_UP], llmFailRequests: new Set([1, 2, 3, 4]), llmErrorFallback: true });
+  try {
+    await failedTurns(h, ["What does it cost?", "Is it on Sunday morning?", "Do I need a laptop for it?", "Will there be a recording?"]);
+    assert.equal(h.synthesized.filter((t) => t === REPEAT).length, 2);
+    assert.equal(h.synthesized.filter((t) => t === GIVE_UP).length, 1);
+  } finally {
+    await h.stop();
+  }
+});
+
+await test("H4. OFF (the default): a failed reply stays silent, exactly as before", async () => {
+  const h = startHarness({ replies: [BLOCK, ANSWER, FOLLOW_UP], llmFailRequests: new Set([1]) });
+  try {
+    await failedTurns(h, ["And what does it cost?"]);
+    assert.ok(!h.synthesized.includes(REPEAT) && !h.synthesized.includes(GIVE_UP));
   } finally {
     await h.stop();
   }

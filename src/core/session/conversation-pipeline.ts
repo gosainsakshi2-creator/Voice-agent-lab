@@ -423,6 +423,11 @@ export interface ConversationPipelineOptions {
    */
   readonly backgroundVoiceGuard?: boolean;
   /**
+   * A reply the language model failed before any of it was spoken gets a
+   * fixed line instead of silence — see `llmErrorLine`. Off by default.
+   */
+  readonly llmErrorFallback?: boolean;
+  /**
    * A caller's whole-turn goodbye ("Bye", "Okay, bye", "बाय") is answered
    * with the fixed goodbye and the call is ended once it has played — see
    * `isCallerGoodbye`. Off by default.
@@ -702,6 +707,26 @@ function isContaminatedOutput(text: string): boolean {
 }
 
 /** Language-appropriate fallback greetings when the LLM fails or produces contaminated output. */
+/**
+ * Spoken when the language model fails before a word of the reply was
+ * spoken (`llmErrorFallback`). Call 8b8069a8 (2026-10-01): exhausted
+ * OpenAI credit failed 11 replies in a row and the caller heard silence.
+ * Asks the caller to repeat — a transient failure is then retried by the
+ * next turn — and after `LLM_ERROR_REPEAT_LIMIT` failures in a row says
+ * the line is unclear once. No gendered verbs: the agent's persona varies.
+ */
+export function llmErrorLine(language: SupportedLanguage, giveUp: boolean): string {
+  if (giveUp) {
+    return language === "en"
+      ? "Sorry, the line isn't clear right now. We'll call you back later."
+      : "माफ़ कीजिए, अभी line साफ़ नहीं है। हम आपको बाद में call करेंगे।";
+  }
+  return language === "en" ? "Sorry, could you say that once more?" : "माफ़ कीजिए, एक बार फिर से बोलेंगे?";
+}
+
+/** Failed replies in a row answered by asking the caller to repeat; the next one says the line is unclear. */
+export const LLM_ERROR_REPEAT_LIMIT = 2;
+
 function fallbackGreeting(language: SupportedLanguage): string {
   switch (language) {
     case "hi":
@@ -3219,6 +3244,8 @@ export class ConversationPipeline {
   private shortAnswerNoted = false;
   /** `buildRequestHistory` added the discovery-"no" note; read-and-cleared for telemetry. */
   private discoveryNoNoted = false;
+  /** Replies in a row the language model failed — see `llmErrorLine`. */
+  private consecutiveLlmErrors = 0;
   /** `buildRequestHistory` added the background-voice note; read-and-cleared for telemetry. */
   private backgroundVoiceNoted: "general" | "other_voice" | undefined;
   /** When the caller stopped speaking, for the reply now being generated — see `fillerFromSpeechEnd`. */
@@ -10298,6 +10325,20 @@ await this.drainPlayback(speakingSignal, true);
 
     const rawRemainder = chunker.flush();
     let remainder = rawRemainder ? toSpokenText(rawRemainder) : "";
+    // The model failed and the caller has heard nothing: a fixed line, not
+    // silence — see `llmErrorLine`. After the give-up line, silence as before.
+    let llmFallbackLine: string | undefined;
+    if (outcome === "stream_error" && fullText.trim().length === 0 && ttsChunkCount === 0) {
+      this.consecutiveLlmErrors += 1;
+      if (this.options.llmErrorFallback === true && this.consecutiveLlmErrors <= LLM_ERROR_REPEAT_LIMIT + 1) {
+        llmFallbackLine = llmErrorLine(this.record.memory.currentLanguage, this.consecutiveLlmErrors > LLM_ERROR_REPEAT_LIMIT);
+        remainder = llmFallbackLine;
+        // eslint-disable-next-line no-console
+        console.log(`[LLM:${this.record.id}] reply failed (${this.consecutiveLlmErrors} in a row) — speaking the fixed line: "${llmFallbackLine}"`);
+      }
+    } else if (outcome !== "stream_error") {
+      this.consecutiveLlmErrors = 0;
+    }
     // The skipped introduction was the whole reply: say it after all rather
     // than leave the caller in silence.
     if (skippedIntro.length > 0 && remainder.length === 0 && ttsChunkCount === 0) {
@@ -10364,6 +10405,7 @@ await this.drainPlayback(speakingSignal, true);
     this.warmFillers();
 
     let assistantText = toSpokenText(finalText ?? fullText);
+    if (llmFallbackLine !== undefined && assistantText.trim().length === 0 && ttsFirstChunkMs !== undefined) assistantText = llmFallbackLine;
     // What was spoken starts after the skipped introduction; heard/unheard
     // accounting (`unspokenTail`) needs the committed text to match it.
     // Wherever it stood — first, or behind a bare acknowledgement.

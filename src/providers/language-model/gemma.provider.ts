@@ -127,10 +127,23 @@ const DEFAULT_GEMMA_MODEL = "google/gemma-4-26b-a4b-it";
  */
 const DEFAULT_GEMMA_MAX_TOKENS = 1024;
 
+/**
+ * OpenRouter's provider routing. Its default balances on PRICE, so a
+ * request can land on the cheapest host of the day: on 2026-10-03 one
+ * default-routed turn took 10.8s to its first token, and the 11-14s
+ * TTFTs of September are what made Gemma "go silent" (its replies were
+ * superseded before they were spoken). Measured the same afternoon, five
+ * requests each with the full prompt: default 1.0s median,
+ * `sort: "latency"` 0.89s. Fallbacks stay on, so a slow host is skipped,
+ * not an outage. `GEMMA_PROVIDER_SORT=` (empty) restores the default.
+ */
+const DEFAULT_GEMMA_PROVIDER_SORT = "latency";
+
 interface GemmaEnvConfig {
   readonly apiKey: string;
   readonly model: string;
   readonly maxTokens: number;
+  readonly providerSort: string;
 }
 
 function loadEnvConfig(): GemmaEnvConfig {
@@ -138,6 +151,7 @@ function loadEnvConfig(): GemmaEnvConfig {
     apiKey: requireEnv("OPENROUTER_API_KEY", LANGUAGE_MODEL_PROVIDER_IDS.GEMMA_4),
     model: optionalEnv("GEMMA_MODEL", DEFAULT_GEMMA_MODEL),
     maxTokens: optionalEnvNumber("GEMMA_MAX_TOKENS", DEFAULT_GEMMA_MAX_TOKENS),
+    providerSort: optionalEnv("GEMMA_PROVIDER_SORT", DEFAULT_GEMMA_PROVIDER_SORT).trim(),
   };
 }
 
@@ -208,6 +222,11 @@ export class GemmaLanguageModelProvider implements LanguageModelProvider {
     });
   }
 
+  /** OpenRouter's `provider` extension — see `DEFAULT_GEMMA_PROVIDER_SORT`. Spread into the request body. */
+  private providerRouting(): { provider?: { sort: string } } {
+    return this.config.providerSort.length > 0 ? { provider: { sort: this.config.providerSort } } : {};
+  }
+
   async generateCompletion(request: CompletionRequest): Promise<CompletionResult> {
     const messages: ChatCompletionMessageParam[] = request.history.map((turn) => toOpenAiMessage(turn));
 
@@ -224,6 +243,7 @@ export class GemmaLanguageModelProvider implements LanguageModelProvider {
         // reserves the model's entire context window and a thin balance
         // 402s before a token is generated.
         max_tokens: this.config.maxTokens,
+        ...this.providerRouting(),
       }),
     );
 
@@ -288,6 +308,7 @@ export class GemmaLanguageModelProvider implements LanguageModelProvider {
       // The live path, and the one the 402 was measured on. See
       // `DEFAULT_GEMMA_MAX_TOKENS`.
       max_tokens: this.config.maxTokens,
+      ...this.providerRouting(),
     });
 
     /** Set from the last chunk that carries one; see the warning below. */

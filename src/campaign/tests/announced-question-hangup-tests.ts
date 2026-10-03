@@ -264,9 +264,13 @@ await test("B1. a plain yes at the gate still reads FINAL_YES", () => {
     "Bilkul, register kar dijiye.",
     "हाँ, कर दीजिए।",
     "Haanji.",
-    "Theek hai.",
   ]) {
     assert.equal(liveReading(line), "FINAL_YES", `must still hang up on: "${line}"`);
+  }
+  // Since 49c5f9c a bare "Okay." / "Theek hai." is held until the agent
+  // confirms the seat on it (test call a9d40a12) — see weak-yes-tests.
+  for (const line of ["Okay.", "Theek hai."]) {
+    assert.notEqual(liveReading(line), "FINAL_YES", `a bare weak "${line}" waits for the seat confirmation`);
   }
 });
 

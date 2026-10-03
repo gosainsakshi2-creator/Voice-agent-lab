@@ -69,7 +69,7 @@ import {
 import { checkScriptAdherence, type ScriptAdherenceReport } from "./script-adherence";
 import { VOICEMAIL_MARKERS } from "../../core/session/voicemail-detection";
 import { isBareAcknowledgement } from "../../core/session/turn-detection";
-import { SEAT_CONFIRMED } from "./seat-confirmation";
+import { SEAT_CONFIRMED, SEAT_NOT_RESERVED } from "./seat-confirmation";
 import type { TranscriptTurn } from "./transcript";
 
 // ── Phrase tables ─────────────────────────────────────────────────
@@ -1139,6 +1139,14 @@ export function classifyOutcome(input: ClassifyOutcomeInput): OutcomeClassificat
   );
   const seatConfirmedAfter = (turnIndex: number): boolean =>
     input.transcript.some((turn, index) => index > turnIndex && turn.role === "assistant" && SEAT_CONFIRMED.test(turn.text));
+  // The agent said it is NOT reserving after this answer, and never
+  // confirmed the seat after saying so — see `SEAT_NOT_RESERVED`.
+  const agentDeclinedSeatAfter = (turnIndex: number): boolean => {
+    const declinedAt = input.transcript.findIndex(
+      (turn, index) => index > turnIndex && turn.role === "assistant" && SEAT_NOT_RESERVED.test(turn.text),
+    );
+    return declinedAt >= 0 && !input.transcript.some((turn, index) => index > declinedAt && turn.role === "assistant" && SEAT_CONFIRMED.test(turn.text));
+  };
   const onlyWeakIn = (turnIndex: number): boolean =>
     affirmations.filter((s) => s.turnIndex === turnIndex).every((s) => WEAK_AFFIRMATIONS.has(s.phrase));
   const gateAffirmations = affirmations.filter(
@@ -1146,7 +1154,8 @@ export function classifyOutcome(input: ClassifyOutcomeInput): OutcomeClassificat
       signal.atGate &&
       positionFor(signal) > lastRetractionPosition &&
       // A weak "okay" registers only once the agent confirmed the seat on it.
-      (!onlyWeakIn(signal.turnIndex) || seatConfirmedAfter(signal.turnIndex)),
+      (!onlyWeakIn(signal.turnIndex) || seatConfirmedAfter(signal.turnIndex)) &&
+      !agentDeclinedSeatAfter(signal.turnIndex),
   );
 
   if (gateAffirmations.length > 0) {

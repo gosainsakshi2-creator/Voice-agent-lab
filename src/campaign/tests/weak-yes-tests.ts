@@ -83,6 +83,35 @@ await test("A6. call b568b5e1: \"Right, you can reserve it.\" registers; \"don't
   }
 });
 
+await test("A7. call 7f3df5c1: a conditional \"I will\" the agent answered with \"I'll skip reserving\" is not a registration", () => {
+  const turns = [
+    t("assistant", GATE),
+    t("user", "Uh, actually, I'm—can we talk later? Right now I'm busy somewhere."),
+    t("user", "Somewhere out, and I'm running right now, so— So if I get some time, I will surely join the webinar on Sunday."),
+    t("user", "Sure. Otherwise, we can skip it for now, actually."),
+    t("user", "Okay. Somewhere I'm busy."),
+    t("assistant", "No worries at all, I understand you're busy. I'll skip reserving the seat for now. Thanks for your time, Hardik."),
+    t("user", "Yes, sir."),
+  ];
+  assert.equal(registered(turns), false);
+  assert.notEqual(definitiveAnswerIn(turns, "registration"), "FINAL_YES");
+});
+
+await test("A8. the agent's \"not reserving\" is overridden when it then confirms the seat, and never fires on the seat question", () => {
+  assert.equal(
+    registered([
+      t("assistant", GATE),
+      t("user", "Yes."),
+      t("assistant", "Okay, I won't reserve it then?"),
+      t("user", "No no, please reserve it."),
+      t("assistant", "Done — your seat is reserved."),
+    ]),
+    true,
+  );
+  assert.equal(registered([t("assistant", GATE), t("user", "Yes, please.")]), true);
+  assert.equal(registered([t("assistant", GATE), t("user", "Yes."), t("assistant", "Great, your free seat is reserved for Sunday.")]), true);
+});
+
 console.log(`\n${failures.length === 0 ? "ALL PASSED" : "FAILURES"} — ${passed} passed, ${failures.length} failed`);
 for (const name of failures) console.log(`  - ${name}`);
 process.exit(failures.length === 0 ? 0 : 1);
